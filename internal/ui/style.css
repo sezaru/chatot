@@ -6,3 +6,33 @@
 .chatot-placeholder {
 	opacity: 0.6;
 }
+
+.chatot-avatar {
+	background-color: alpha(currentColor, 0.15);
+	border-radius: 999px;
+	font-weight: bold;
+}
+
+.chatot-chat-name {
+	font-weight: bold;
+}
+
+.chatot-chat-preview {
+	opacity: 0.7;
+	font-size: 0.9em;
+}
+
+.chatot-chat-time {
+	opacity: 0.6;
+	font-size: 0.8em;
+}
+
+.chatot-unread-badge {
+	background-color: @accent_bg_color;
+	color: @accent_fg_color;
+	border-radius: 999px;
+	min-width: 1.4em;
+	padding: 0 0.35em;
+	font-size: 0.75em;
+	font-weight: bold;
+}
