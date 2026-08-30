@@ -98,6 +98,46 @@ func (s *Store) searchMessages(query string, limit int) ([]SearchHit, error) {
 	return out, rows.Err()
 }
 
+// SearchInChat runs the fts5 query scoped to a single chat, ordered oldest
+// first (unlike Search's relevance ordering) since the in-chat search bar
+// steps through hits in reading order. An empty/whitespace-only query
+// returns no hits.
+func (s *Store) SearchInChat(chatJID, query string, limit int) ([]SearchHit, error) {
+	query = strings.TrimSpace(query)
+	if limit <= 0 {
+		limit = 200
+	}
+	ftsQuery := buildFTSQuery(query)
+	if ftsQuery == "" {
+		return nil, nil
+	}
+
+	rows, err := s.db.Query(`
+		SELECT
+			m.chat_jid, m.msg_id, m.ts,
+			snippet(messages_fts, 0, '[', ']', '…', 10)
+		FROM messages_fts
+		JOIN messages m ON m.rowid = messages_fts.rowid
+		WHERE messages_fts MATCH ? AND m.chat_jid = ?
+		ORDER BY m.ts ASC
+		LIMIT ?
+	`, ftsQuery, chatJID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []SearchHit
+	for rows.Next() {
+		var h SearchHit
+		if err := rows.Scan(&h.ChatJID, &h.MsgID, &h.TS, &h.Snippet); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
 // searchChatNames matches query as a case-insensitive substring against
 // each chat's resolved display name. Filtering happens in Go (chat counts
 // are small) so resolveChatName's precedence rules don't need reimplementing

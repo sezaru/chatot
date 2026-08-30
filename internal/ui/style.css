@@ -331,6 +331,15 @@ window {
 	margin: 12px;
 }
 
+.chatot-conv-searchbar {
+	padding-top: 4px;
+}
+
+.chatot-conv-search-count {
+	opacity: 0.6;
+	font-size: 0.85em;
+}
+
 .chatot-chip-row {
 	margin: 0 8px 6px 8px;
 }

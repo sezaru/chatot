@@ -338,6 +338,9 @@ type Client interface {
 	// naming chatJID once ingested; this call only sends the request.
 	RequestMoreHistory(ctx context.Context, chatJID, oldestMsgID string, count int) error
 	Search(query string, limit int) ([]SearchHit, error)
+	// SearchInChat runs query scoped to a single chat, oldest-first, for the
+	// in-chat search bar's hit navigation.
+	SearchInChat(chatJID, query string, limit int) ([]SearchHit, error)
 
 	// writes
 	SendText(ctx context.Context, jid, text string, replyTo *MsgRef) (string, error)
