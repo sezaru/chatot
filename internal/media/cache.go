@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 type fileEntry struct {
@@ -69,6 +70,34 @@ func Evict(dir string, maxBytes int64, nullLocalPath func(path string) error) er
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// RemoveWithinDir deletes path, but only if it resolves inside dir — guards
+// a DB-sourced local_path (e.g. from a clear-chat "also delete media")
+// against ever unlinking a file outside the attachment cache. A path that
+// escapes dir, or a stat failure resolving either side, is silently
+// skipped (not an error): the caller asked to clear a cache entry, and a
+// path outside the cache was never that entry to begin with.
+func RemoveWithinDir(dir, path string) error {
+	if path == "" {
+		return nil
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil
+	}
+	rel, err := filepath.Rel(absDir, absPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil
+	}
+	if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
+		return err
 	}
 	return nil
 }

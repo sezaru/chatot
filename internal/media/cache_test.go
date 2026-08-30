@@ -79,3 +79,58 @@ func TestEvictZeroCapNoop(t *testing.T) {
 		t.Fatalf("Evict: %v", err)
 	}
 }
+
+func TestRemoveWithinDirDeletesFileInCacheDir(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFixture(t, dir, "cached.jpg", 10, time.Minute)
+
+	if err := RemoveWithinDir(dir, path); err != nil {
+		t.Fatalf("RemoveWithinDir: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("file should have been deleted, stat err = %v", err)
+	}
+}
+
+func TestRemoveWithinDirRefusesPathOutsideDir(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	path := writeFixture(t, outside, "secret.jpg", 10, time.Minute)
+
+	if err := RemoveWithinDir(dir, path); err != nil {
+		t.Fatalf("RemoveWithinDir: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("file outside dir should survive, stat err = %v", err)
+	}
+}
+
+func TestRemoveWithinDirRefusesTraversalEscape(t *testing.T) {
+	dir := t.TempDir()
+	cacheDir := filepath.Join(dir, "cache")
+	if err := os.Mkdir(cacheDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	sibling := writeFixture(t, dir, "sibling.jpg", 10, time.Minute)
+	escaping := filepath.Join(cacheDir, "..", "sibling.jpg")
+
+	if err := RemoveWithinDir(cacheDir, escaping); err != nil {
+		t.Fatalf("RemoveWithinDir: %v", err)
+	}
+	if _, err := os.Stat(sibling); err != nil {
+		t.Errorf("file reached via traversal should survive, stat err = %v", err)
+	}
+}
+
+func TestRemoveWithinDirEmptyPathNoop(t *testing.T) {
+	if err := RemoveWithinDir(t.TempDir(), ""); err != nil {
+		t.Fatalf("RemoveWithinDir with empty path: %v", err)
+	}
+}
+
+func TestRemoveWithinDirMissingFileNoop(t *testing.T) {
+	dir := t.TempDir()
+	if err := RemoveWithinDir(dir, filepath.Join(dir, "gone.jpg")); err != nil {
+		t.Fatalf("RemoveWithinDir on missing file: %v", err)
+	}
+}

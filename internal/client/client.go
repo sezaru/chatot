@@ -380,6 +380,10 @@ type Client interface {
 	SendContact(ctx context.Context, jid string, contact Contact, replyTo *MsgRef) (string, error)
 	// ForwardMessage re-sends msg's content to toJID, marked as forwarded.
 	ForwardMessage(ctx context.Context, msg Message, toJID string) (string, error)
+	// ClearChat deletes jid's messages from local storage only — the phone
+	// and the other party's device are never touched. If alsoMedia,
+	// downloaded attachment files are also removed from the local cache.
+	ClearChat(ctx context.Context, jid string, alsoMedia bool) error
 	SendVoice(ctx context.Context, jid string, oggOpus []byte, dur int) (string, error)
 	// SendSticker uploads the file at path and sends it as a sticker message.
 	// Non-webp files are sent best-effort (no image->webp conversion here) and

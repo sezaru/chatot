@@ -422,6 +422,24 @@ func (f *Fake) ForwardMessage(ctx context.Context, msg Message, toJID string) (s
 	return id, nil
 }
 
+// ClearChat drops jid's in-memory messages and blanks its chat-list preview;
+// alsoMedia is accepted for interface parity but there are no cached files
+// to remove in the fake.
+func (f *Fake) ClearChat(ctx context.Context, jid string, alsoMedia bool) error {
+	f.mu.Lock()
+	delete(f.messages, jid)
+	for i := range f.chats {
+		if f.chats[i].JID == jid {
+			f.chats[i].Preview = ""
+			f.chats[i].UnreadCount = 0
+			break
+		}
+	}
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
 func (f *Fake) SendVoice(ctx context.Context, jid string, oggOpus []byte, dur int) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
