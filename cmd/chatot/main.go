@@ -74,6 +74,7 @@ func activate(app *adw.Application, c client.Client) {
 	win.SetTitle("chatot")
 	win.SetDefaultSize(1000, 700)
 	win.SetContent(split)
+	composer.SetWindow(&win.Window)
 	win.Present()
 }
 
