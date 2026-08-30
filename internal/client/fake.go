@@ -17,7 +17,7 @@ type Fake struct {
 	mu       sync.Mutex
 	chats    []Chat
 	messages map[string][]Message // chatJID -> messages, oldest first
-	events   chan Event
+	events   *eventBus
 	qrCodes  chan string
 	loggedIn bool
 	nextID   int
@@ -29,7 +29,7 @@ func NewFake() *Fake {
 	now := time.Now().Unix()
 	f := &Fake{
 		messages: make(map[string][]Message),
-		events:   make(chan Event, 64),
+		events:   newEventBus(nil),
 		qrCodes:  make(chan string, 1),
 		loggedIn: true,
 	}
@@ -73,10 +73,11 @@ func (f *Fake) Logout(ctx context.Context) error {
 	return nil
 }
 
-func (f *Fake) Events() <-chan Event { return f.events }
+func (f *Fake) Events() <-chan Event { return f.events.Subscribe() }
 
-// PushEvent lets tests/UI-dev inject an event onto the Events() channel.
-func (f *Fake) PushEvent(e Event) { f.events <- e }
+// PushEvent lets tests/UI-dev inject an event onto the Events() stream,
+// broadcasting to every current subscriber.
+func (f *Fake) PushEvent(e Event) { f.events.Publish(e) }
 
 func (f *Fake) Chats(limit int) ([]Chat, error) {
 	f.mu.Lock()

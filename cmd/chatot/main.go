@@ -5,6 +5,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
@@ -21,13 +22,41 @@ const appID = "com.sezdm.chatot"
 func main() {
 	app := adw.NewApplication(appID, gio.ApplicationFlagsNone)
 
-	// Fake stands in for the whatsmeow-backed Client until F2; the UI is
-	// built against the Client interface either way.
-	c := client.NewFake()
+	c := buildClient()
 
 	app.ConnectActivate(func() { activate(app, c) })
 
 	os.Exit(app.Run(os.Args))
+}
+
+// buildClient returns the real whatsmeow-backed client, or the seeded Fake
+// when CHATOT_FAKE=1 (dev/mockup path with no live WhatsApp link).
+func buildClient() client.Client {
+	if os.Getenv("CHATOT_FAKE") == "1" {
+		return client.NewFake()
+	}
+	stateDir := stateDir()
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		log.Fatalf("chatot: create state dir: %v", err)
+	}
+	c, err := client.NewWhatsmeow(stateDir)
+	if err != nil {
+		log.Fatalf("chatot: init whatsmeow client: %v", err)
+	}
+	return c
+}
+
+// stateDir resolves $XDG_STATE_HOME/chatot, falling back to
+// ~/.local/state/chatot.
+func stateDir() string {
+	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
+		return filepath.Join(dir, "chatot")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("chatot: resolve home dir: %v", err)
+	}
+	return filepath.Join(home, ".local", "state", "chatot")
 }
 
 func activate(app *adw.Application, c client.Client) {
@@ -73,10 +102,22 @@ func activate(app *adw.Application, c client.Client) {
 	split.SetSidebar(sidebar)
 	split.SetContent(content)
 
+	// The window flips between the QR pairing screen and the main UI via a
+	// stack keyed on login state; whatsmeow pairing/connection events switch it.
+	linking := ui.NewLinkingView()
+	stack := gtk.NewStack()
+	stack.AddNamed(linking, "linking")
+	stack.AddNamed(split, "main")
+	if c.LoggedIn() {
+		stack.SetVisibleChildName("main")
+	} else {
+		stack.SetVisibleChildName("linking")
+	}
+
 	win := adw.NewApplicationWindow(&app.Application)
 	win.SetTitle("chatot")
 	win.SetDefaultSize(1000, 700)
-	win.SetContent(split)
+	win.SetContent(stack)
 	composer.SetWindow(&win.Window)
 
 	// "is-active" tracks OS-level window focus; report available/unavailable
@@ -96,6 +137,48 @@ func activate(app *adw.Application, c client.Client) {
 	ui.NewNotifier(c, &app.Application.Application, func() (bool, string) {
 		return win.IsActive(), conversation.CurrentJID()
 	})
+
+	// Feed pairing QR codes into the linking screen.
+	go func() {
+		for code := range c.QRCodes() {
+			code := code
+			glib.IdleAdd(func() {
+				linking.SetQR(code)
+				linking.SetStatus("Waiting for you to scan…")
+			})
+		}
+	}()
+
+	// Watch login state to flip the stack between the pairing screen and the
+	// main UI. This is its own fan-out subscription — the chat list,
+	// conversation and notifier each have their own (see the eventBus).
+	// Subscribe synchronously (before the goroutine and before Start) so no
+	// early event is dropped.
+	loginCh := c.Events()
+	go func() {
+		for ev := range loginCh {
+			switch {
+			case ev.Kind == client.EventPairSuccess,
+				ev.Kind == client.EventConnection && ev.Connection != nil && ev.Connection.Connected:
+				glib.IdleAdd(func() { stack.SetVisibleChildName("main") })
+			case ev.Kind == client.EventLoggedOut:
+				glib.IdleAdd(func() {
+					stack.SetVisibleChildName("linking")
+					linking.SetStatus("Disconnected — scan to relink")
+				})
+			}
+		}
+	}()
+
+	// Start last: the constructors above (NewChatList/NewConversationView/
+	// NewNotifier) and loginCh all Subscribe synchronously before this runs,
+	// so every subscription happens-before Start and no initial QR/pairing/
+	// connection/history event can be dropped by an unscheduled goroutine.
+	go func() {
+		if err := c.Start(context.Background()); err != nil {
+			log.Printf("chatot: client start failed: %v", err)
+		}
+	}()
 
 	win.Present()
 	go sendPresence(c, true)

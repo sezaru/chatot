@@ -89,6 +89,7 @@ type ChatList struct {
 	*gtk.Box
 
 	c          client.Client
+	events     <-chan client.Event
 	list       *gtk.ListBox
 	rowJIDs    []string // row index -> JID, rebuilt alongside the ListBox rows
 	onSelect   func(jid string)
@@ -111,7 +112,7 @@ func NewChatList(c client.Client) *ChatList {
 	list.SetVExpand(true)
 	root.Append(list)
 
-	cl := &ChatList{Box: root, c: c, list: list, typingJIDs: make(map[string]bool)}
+	cl := &ChatList{Box: root, c: c, events: c.Events(), list: list, typingJIDs: make(map[string]bool)}
 
 	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
 		idx := row.Index()
@@ -206,7 +207,7 @@ func (cl *ChatList) refreshSearch() {
 // clears it) instead of falling through to the generic full refresh, since
 // it needs the event's JID+state before rebuilding rows.
 func (cl *ChatList) watchEvents() {
-	for ev := range cl.c.Events() {
+	for ev := range cl.events {
 		if ev.Kind == client.EventChatPresence && ev.ChatPresence != nil {
 			jid, typing := ev.ChatPresence.ChatJID, ev.ChatPresence.State == "composing"
 			glib.IdleAdd(func() {

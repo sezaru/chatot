@@ -34,11 +34,6 @@ const maxMediaCacheBytes = 1 << 30 // 1 GiB
 
 var _ Client = (*Whatsmeow)(nil)
 
-// eventBufferSize is generous on purpose: translate() runs synchronously
-// inside whatsmeow's own dispatch goroutine, so a full channel must never
-// block it. pushEvent drops the event (with a log line) instead of blocking.
-const eventBufferSize = 1024
-
 // Whatsmeow is the whatsmeow-backed Client. Store reads (Chats, Messages,
 // Search) and every write except lifecycle calls are owned by later
 // features; see the TODO on each stub method below.
@@ -50,7 +45,7 @@ type Whatsmeow struct {
 	wa        *whatsmeow.Client
 	mediaDir  string
 
-	events  chan Event
+	events  *eventBus
 	qrCodes chan string
 
 	presenceMu         sync.Mutex
@@ -104,7 +99,7 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 		wa:        wa,
 		store:     msgStore,
 		mediaDir:  filepath.Join(stateDir, "media"),
-		events:    make(chan Event, eventBufferSize),
+		events:    newEventBus(clientLog.Warnf),
 		qrCodes:   make(chan string, 8),
 	}
 	wa.AddEventHandler(w.handleRaw)
@@ -144,13 +139,7 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 	w.pushEvent(*e)
 }
 
-func (w *Whatsmeow) pushEvent(e Event) {
-	select {
-	case w.events <- e:
-	default:
-		w.log.Warnf("event channel full, dropping event kind=%d", e.Kind)
-	}
-}
+func (w *Whatsmeow) pushEvent(e Event) { w.events.Publish(e) }
 
 // Start connects to WhatsApp. If no device is paired yet, it opens the QR
 // channel *before* connecting (whatsmeow requires this ordering) and fans
@@ -201,7 +190,7 @@ func (w *Whatsmeow) Logout(ctx context.Context) error {
 	return w.wa.Logout(ctx)
 }
 
-func (w *Whatsmeow) Events() <-chan Event { return w.events }
+func (w *Whatsmeow) Events() <-chan Event { return w.events.Subscribe() }
 
 // Chats reads the chat list from the local store.
 func (w *Whatsmeow) Chats(limit int) ([]Chat, error) {

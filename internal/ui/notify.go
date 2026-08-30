@@ -83,6 +83,7 @@ func callNotification(callerName string) (title, body string) {
 // store lookup.
 type Notifier struct {
 	c       client.Client
+	events  <-chan client.Event
 	app     *gio.Application
 	focused func() (focused bool, openJID string)
 }
@@ -91,13 +92,13 @@ type Notifier struct {
 // reports the app window's live activation state and the JID of the
 // currently-open chat ("" if none).
 func NewNotifier(c client.Client, app *gio.Application, focused func() (bool, string)) *Notifier {
-	n := &Notifier{c: c, app: app, focused: focused}
+	n := &Notifier{c: c, events: c.Events(), app: app, focused: focused}
 	go n.watchEvents()
 	return n
 }
 
 func (n *Notifier) watchEvents() {
-	for ev := range n.c.Events() {
+	for ev := range n.events {
 		switch ev.Kind {
 		case client.EventMessage:
 			if ev.Message != nil {

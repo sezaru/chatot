@@ -108,8 +108,9 @@ func dayText(ts int64, now time.Time) string {
 type ConversationView struct {
 	*gtk.Box
 
-	c   client.Client
-	jid string // "" until a chat is loaded
+	c      client.Client
+	events <-chan client.Event
+	jid    string // "" until a chat is loaded
 
 	header        *gtk.Box
 	titleLabel    *gtk.Label
@@ -202,6 +203,7 @@ func NewConversationView(c client.Client) *ConversationView {
 	cv := &ConversationView{
 		Box:           root,
 		c:             c,
+		events:        c.Events(),
 		header:        header,
 		titleLabel:    titleLabel,
 		subtitleLabel: subtitleLabel,
@@ -260,7 +262,7 @@ func (cv *ConversationView) Load(jid string) {
 // switches to that chat) but only repaint the header when they're for the
 // currently-open chat.
 func (cv *ConversationView) watchEvents() {
-	for ev := range cv.c.Events() {
+	for ev := range cv.events {
 		switch ev.Kind {
 		case client.EventMessage:
 			if ev.Message == nil {
