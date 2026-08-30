@@ -1,6 +1,7 @@
 package client
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -387,6 +388,20 @@ func TestTranslateContactsArrayMessage(t *testing.T) {
 	}
 	if len(c.Phones) != 1 || c.Phones[0] != "+1 555 0100" {
 		t.Errorf("Phones = %v", c.Phones)
+	}
+}
+
+func TestBuildVCard(t *testing.T) {
+	got := buildVCard(Contact{DisplayName: "Alan Turing", Phones: []string{"+44 20 7946 0958", "+1 555 0100"}})
+	if !strings.HasPrefix(got, "BEGIN:VCARD\r\nVERSION:3.0\r\n") || !strings.HasSuffix(got, "END:VCARD") {
+		t.Fatalf("buildVCard produced malformed envelope: %q", got)
+	}
+	phones := parseVCardPhones(got)
+	if len(phones) != 2 || phones[0] != "+44 20 7946 0958" || phones[1] != "+1 555 0100" {
+		t.Errorf("round-tripped phones = %v", phones)
+	}
+	if !strings.Contains(got, "FN:Alan Turing\r\n") {
+		t.Errorf("buildVCard missing FN line: %q", got)
 	}
 }
 

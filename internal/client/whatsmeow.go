@@ -613,6 +613,34 @@ func (w *Whatsmeow) SendLocation(ctx context.Context, jid string, loc Location, 
 	return id, nil
 }
 
+// SendContact shares contact as a vCard. Optimistic echo mirrors SendLocation.
+func (w *Whatsmeow) SendContact(ctx context.Context, jid string, contact Contact, replyTo *MsgRef) (string, error) {
+	to, err := types.ParseJID(jid)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+
+	contactMsg := &waE2E.ContactMessage{
+		DisplayName: proto.String(contact.DisplayName),
+		Vcard:       proto.String(buildVCard(contact)),
+	}
+	if replyTo != nil {
+		contactMsg.ContextInfo = w.replyContextInfo(jid, *replyTo)
+	}
+
+	id := w.wa.GenerateMessageID()
+	if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{ContactMessage: contactMsg}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		return "", fmt.Errorf("chatot/client: send contact: %w", err)
+	}
+
+	sent := contact
+	out := Message{ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(), ReplyTo: replyTo, Contact: &sent}
+	if err := w.ingestMessage(&out); err != nil {
+		w.log.Warnf("chatot/client: optimistic upsert of sent contact failed: %v", err)
+	}
+	return id, nil
+}
+
 // CreatePoll sends a poll-creation message and optimistically upserts it into
 // the local store (like SendText), so it renders immediately with zero votes.
 func (w *Whatsmeow) CreatePoll(ctx context.Context, jid, name string, options []string, selectable int) (string, error) {

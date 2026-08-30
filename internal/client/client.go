@@ -336,6 +336,8 @@ type Client interface {
 	SendText(ctx context.Context, jid, text string, replyTo *MsgRef) (string, error)
 	SendMedia(ctx context.Context, jid string, m Attachment, replyTo *MsgRef) (string, error)
 	SendLocation(ctx context.Context, jid string, loc Location, replyTo *MsgRef) (string, error)
+	// SendContact shares a vCard built from contact's name/phone(s).
+	SendContact(ctx context.Context, jid string, contact Contact, replyTo *MsgRef) (string, error)
 	SendVoice(ctx context.Context, jid string, oggOpus []byte, dur int) (string, error)
 	// CreatePoll sends a poll with the given question and options; selectable
 	// is how many options a voter may pick (1 = single-choice).

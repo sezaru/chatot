@@ -276,6 +276,48 @@ func TestComposeStateSubmitLocationClearsReply(t *testing.T) {
 	}
 }
 
+func TestComposeStateSubmitContactNoChat(t *testing.T) {
+	var s composeState
+	if _, ok := s.SubmitContact(client.Contact{DisplayName: "Ada"}); ok {
+		t.Error("expected SubmitContact to fail with no active chat")
+	}
+}
+
+func TestComposeStateSubmitContactClearsReply(t *testing.T) {
+	var s composeState
+	s.SetChat("a@s.whatsapp.net")
+	s.StartReply(client.Message{ID: "m1", ChatJID: "a@s.whatsapp.net"})
+
+	contact := client.Contact{DisplayName: "Alan Turing", Phones: []string{"+44 20 7946 0958"}}
+	action, ok := s.SubmitContact(contact)
+	if !ok {
+		t.Fatal("expected SubmitContact to succeed")
+	}
+	if action.Contact.DisplayName != contact.DisplayName || len(action.Contact.Phones) != 1 {
+		t.Errorf("Contact = %+v, want %+v", action.Contact, contact)
+	}
+	if action.ReplyTo == nil || action.ReplyTo.MsgID != "m1" {
+		t.Errorf("ReplyTo = %+v, want m1", action.ReplyTo)
+	}
+	if _, replying := s.ReplyTarget(); replying {
+		t.Error("expected reply to be cleared after SubmitContact")
+	}
+}
+
+func TestPhoneFromJID(t *testing.T) {
+	cases := map[string]string{
+		"15551234567@s.whatsapp.net": "+15551234567",
+		"":                           "",
+		"noatsign":                   "",
+		"@s.whatsapp.net":            "",
+	}
+	for jid, want := range cases {
+		if got := phoneFromJID(jid); got != want {
+			t.Errorf("phoneFromJID(%q) = %q, want %q", jid, got, want)
+		}
+	}
+}
+
 func TestParsePollFormValid(t *testing.T) {
 	name, opts, sel, ok := parsePollForm("  Lunch?  ", []string{" Pizza ", "", "Sushi", "  "}, 1)
 	if !ok {

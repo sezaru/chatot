@@ -321,6 +321,23 @@ func (f *Fake) SendLocation(ctx context.Context, jid string, loc Location, reply
 	return id, nil
 }
 
+func (f *Fake) SendContact(ctx context.Context, jid string, contact Contact, replyTo *MsgRef) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id := f.nextMsgID()
+	c := contact
+	msg := Message{ID: id, ChatJID: jid, FromJID: "me", FromMe: true, TS: time.Now().Unix(), ReplyTo: replyTo, Contact: &c}
+	f.messages[jid] = append(f.messages[jid], msg)
+	for i := range f.chats {
+		if f.chats[i].JID == jid {
+			f.chats[i].Preview = "👤 " + contact.DisplayName
+			f.chats[i].LastMessageTS = msg.TS
+			break
+		}
+	}
+	return id, nil
+}
+
 func (f *Fake) SendVoice(ctx context.Context, jid string, oggOpus []byte, dur int) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
