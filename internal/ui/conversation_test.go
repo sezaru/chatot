@@ -206,3 +206,35 @@ func TestBubbleVM_DeletedTakesPrecedenceOverMedia(t *testing.T) {
 		t.Errorf("Text = %q, want the tombstone text even though the message carried media", out.Text)
 	}
 }
+
+func TestTickVM(t *testing.T) {
+	cases := []struct {
+		status   int
+		wantText string
+		wantRead bool
+	}{
+		{0, "✓", false},
+		{1, "✓✓", false},
+		{2, "✓✓", true},
+	}
+	for _, c := range cases {
+		text, read := tickVM(c.status)
+		if text != c.wantText || read != c.wantRead {
+			t.Errorf("tickVM(%d) = (%q, %v), want (%q, %v)", c.status, text, read, c.wantText, c.wantRead)
+		}
+	}
+}
+
+func TestBubbleVM_TickOnlyOnFromMe(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+
+	out := bubbleVM(client.Message{ID: "1", FromMe: true, Text: "hi", TS: now.Unix(), Status: 2}, nil, nil, now)
+	if out.TickText != "✓✓" || !out.TickRead {
+		t.Errorf("got TickText=%q TickRead=%v, want read double-tick on a FromMe message", out.TickText, out.TickRead)
+	}
+
+	in := bubbleVM(client.Message{ID: "2", FromMe: false, Text: "hey", TS: now.Unix(), Status: 2}, nil, nil, now)
+	if in.TickText != "" {
+		t.Errorf("got TickText=%q, want no tick on an inbound message", in.TickText)
+	}
+}

@@ -54,7 +54,15 @@ func (w *Whatsmeow) ingestMessage(m *Message) error {
 }
 
 func (w *Whatsmeow) ingestReceipt(r *Receipt) error {
-	if r == nil || !r.Read {
+	if r == nil {
+		return nil
+	}
+	if r.Status > 0 && len(r.MsgIDs) > 0 {
+		if err := w.store.SetMessagesStatus(r.ChatJID, r.MsgIDs, r.Status); err != nil {
+			return err
+		}
+	}
+	if !r.Read {
 		return nil
 	}
 	return w.store.MarkChatRead(r.ChatJID)

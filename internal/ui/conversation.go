@@ -36,6 +36,11 @@ type bubbleView struct {
 	Edited           bool
 	EditedMarker     string
 	Deleted          bool
+	// TickText is the own-message delivery/read indicator ("✓"/"✓✓"), set
+	// only when FromMe; TickRead marks it should render in the accent color
+	// (status == read) rather than the plain dim tick.
+	TickText string
+	TickRead bool
 }
 
 // tombstoneText is what a revoked message renders as, regardless of its
@@ -85,6 +90,10 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 		v.EditedMarker = " · edited"
 	}
 
+	if m.FromMe {
+		v.TickText, v.TickRead = tickVM(m.Status)
+	}
+
 	switch {
 	case m.Location != nil:
 		v.IsLocation = true
@@ -104,6 +113,16 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 	}
 
 	return v
+}
+
+// tickVM maps an outgoing message's delivery/read status to its WhatsApp-style
+// tick glyph: 0 (sent) -> single check, 1 (delivered) or 2 (read) -> double
+// check, the latter flagged for accent-color rendering.
+func tickVM(status int) (text string, read bool) {
+	if status >= client.MessageStatusDelivered {
+		return "✓✓", status >= client.MessageStatusRead
+	}
+	return "✓", false
 }
 
 // mediaChip renders a display-only placeholder for a media attachment; the
@@ -421,8 +440,9 @@ func (cv *ConversationView) loadOlder() {
 
 // watchEvents listens for client events and, for the currently-loaded chat,
 // schedules a UI update on the GTK main loop via glib.IdleAdd. New messages
-// are appended in place; reactions trigger a full reload (simpler, and the
-// thread sizes here don't warrant a targeted patch). Presence/chat-presence
+// are appended in place; reactions and receipts (delivery/read ticks) trigger
+// a full reload (simpler, and the thread sizes here don't warrant a targeted
+// patch). Presence/chat-presence
 // events update cv.presence unconditionally (so it's warm when the user
 // switches to that chat) but only repaint the header when they're for the
 // currently-open chat.
@@ -445,6 +465,17 @@ func (cv *ConversationView) watchEvents() {
 					return
 				}
 				cv.appendMessage(msg)
+			})
+		case client.EventReceipt:
+			if ev.Receipt == nil {
+				continue
+			}
+			chatJID := ev.Receipt.ChatJID
+			glib.IdleAdd(func() {
+				if chatJID != cv.jid {
+					return
+				}
+				cv.Load(cv.jid)
 			})
 		case client.EventReaction:
 			if ev.Reaction == nil {
@@ -661,10 +692,24 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		bubble.Append(text)
 	}
 
+	footer := gtk.NewBox(gtk.OrientationHorizontal, 4)
+	footer.SetHAlign(gtk.AlignEnd)
+
 	timeLabel := gtk.NewLabel(vm.TimeText + vm.EditedMarker)
 	timeLabel.AddCSSClass("chatot-bubble-time")
 	timeLabel.SetXAlign(1)
-	bubble.Append(timeLabel)
+	footer.Append(timeLabel)
+
+	if vm.FromMe && vm.TickText != "" {
+		tick := gtk.NewLabel(vm.TickText)
+		tick.AddCSSClass("chatot-bubble-tick")
+		if vm.TickRead {
+			tick.AddCSSClass("chatot-tick-read")
+		}
+		footer.Append(tick)
+	}
+
+	bubble.Append(footer)
 
 	if len(vm.Reactions) > 0 {
 		reactions := gtk.NewBox(gtk.OrientationHorizontal, 2)

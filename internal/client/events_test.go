@@ -498,6 +498,46 @@ func TestTranslateReceiptDelivered(t *testing.T) {
 	if e.Receipt.Read {
 		t.Error("Read = true, want false for ReceiptTypeDelivered")
 	}
+	if e.Receipt.Status != MessageStatusDelivered {
+		t.Errorf("Status = %d, want %d (delivered)", e.Receipt.Status, MessageStatusDelivered)
+	}
+}
+
+func TestTranslateReceiptStatusMapping(t *testing.T) {
+	cases := []struct {
+		name       string
+		typ        types.ReceiptType
+		wantStatus int
+		wantRead   bool
+	}{
+		{"delivered", types.ReceiptTypeDelivered, MessageStatusDelivered, false},
+		{"read", types.ReceiptTypeRead, MessageStatusRead, true},
+		{"read-self", types.ReceiptTypeReadSelf, MessageStatusRead, true},
+		{"played", types.ReceiptTypePlayed, MessageStatusRead, true},
+		{"played-self", types.ReceiptTypePlayedSelf, MessageStatusRead, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := translate(&events.Receipt{Type: c.typ, MessageIDs: []types.MessageID{"m1"}})
+			if e == nil || e.Kind != EventReceipt {
+				t.Fatalf("expected EventReceipt, got %+v", e)
+			}
+			if e.Receipt.Status != c.wantStatus {
+				t.Errorf("Status = %d, want %d", e.Receipt.Status, c.wantStatus)
+			}
+			if e.Receipt.Read != c.wantRead {
+				t.Errorf("Read = %v, want %v", e.Receipt.Read, c.wantRead)
+			}
+		})
+	}
+}
+
+func TestTranslateReceiptIgnoredKinds(t *testing.T) {
+	for _, typ := range []types.ReceiptType{types.ReceiptTypeSender, types.ReceiptTypeRetry, types.ReceiptTypeServerError, types.ReceiptTypeHistorySync} {
+		if e := translate(&events.Receipt{Type: typ}); e != nil {
+			t.Errorf("translate(%q) = %+v, want nil (not a delivery/read state)", typ, e)
+		}
+	}
 }
 
 func TestTranslateConnected(t *testing.T) {

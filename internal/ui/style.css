@@ -89,6 +89,18 @@
 	font-size: 0.7em;
 }
 
+.chatot-bubble-tick {
+	opacity: 0.6;
+	font-size: 0.7em;
+}
+
+/* WhatsApp's canonical read-tick blue; own bubbles use @accent_bg_color as
+   their background so theming this off @accent_* would make it invisible. */
+.chatot-tick-read {
+	opacity: 1;
+	color: #34b7f1;
+}
+
 .chatot-bubble-reactions {
 	font-size: 0.9em;
 }

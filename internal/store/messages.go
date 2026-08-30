@@ -25,6 +25,26 @@ func (s *Store) UpsertMessage(row MessageRow) error {
 	return err
 }
 
+// SetMessagesStatus advances the delivery/read status of the given messages
+// in chatJID to status, never downgrading it (a delivered receipt arriving
+// after a read one leaves the message at read). No-op for ids not found.
+func (s *Store) SetMessagesStatus(chatJID string, msgIDs []string, status int) error {
+	if len(msgIDs) == 0 {
+		return nil
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(msgIDs)), ",")
+	args := make([]any, 0, len(msgIDs)+2)
+	args = append(args, status, chatJID)
+	for _, id := range msgIDs {
+		args = append(args, id)
+	}
+	_, err := s.db.Exec(`
+		UPDATE messages SET status = MAX(status, ?)
+		WHERE chat_jid = ? AND msg_id IN (`+placeholders+`)
+	`, args...)
+	return err
+}
+
 // MarkMessageDeleted applies a "delete for everyone" (REVOKE) to msgID: it
 // sets deleted=1 sticky, inserting a minimal stub row if the original message
 // hasn't been seen yet (a revoke can arrive before, or without, the original).
@@ -62,7 +82,7 @@ func (s *Store) MessageByID(chatJID, msgID string) (m Message, ok bool, err erro
 const messageSelect = `
 	SELECT
 		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
-		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted,
+		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status,
 		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, '')
 	FROM messages m
 	LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id`
@@ -124,7 +144,7 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 		var mediaKind, mediaFilename, mediaCaption, mediaMime, mediaLocal string
 		if err := rows.Scan(
 			&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID,
-			&m.Kind, &m.Payload, &edited, &deleted,
+			&m.Kind, &m.Payload, &edited, &deleted, &m.Status,
 			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal,
 		); err != nil {
 			return nil, err
