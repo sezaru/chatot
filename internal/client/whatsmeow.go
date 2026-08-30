@@ -537,6 +537,25 @@ func (w *Whatsmeow) DeleteMessage(ctx context.Context, chatJID, msgID string) er
 	return nil
 }
 
+// ClearChat wipes jid's messages from the local store only (never sent to
+// WhatsApp — the phone and the other party keep their own copy). If
+// alsoMedia, downloaded attachment files are removed from the local cache;
+// media.RemoveWithinDir guards against ever unlinking a path outside
+// w.mediaDir even though local_path is our own DB's data.
+func (w *Whatsmeow) ClearChat(ctx context.Context, jid string, alsoMedia bool) error {
+	paths, err := w.store.ClearChat(jid, alsoMedia)
+	if err != nil {
+		return fmt.Errorf("chatot/client: clear chat: %w", err)
+	}
+	for _, p := range paths {
+		if err := media.RemoveWithinDir(w.mediaDir, p); err != nil {
+			w.log.Warnf("chatot/client: delete cached media file %s: %v", p, err)
+		}
+	}
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
 // replyContextInfo builds the ContextInfo for a reply, quoting the target
 // message's text and, for group chats, naming its original sender so
 // WhatsApp can resolve the "@X replied" attribution. Best-effort: if the

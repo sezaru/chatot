@@ -377,3 +377,52 @@ func (s *Store) StarredMessages(limit int) ([]Message, error) {
 	}
 	return out, nil
 }
+
+// ClearChat deletes every stored message (and its reactions/poll votes/media
+// metadata) belonging to jid — every query below is scoped by the chat_jid
+// param, so it can't reach another chat's rows. If alsoMedia, the deleted
+// media rows' local_path values are returned (before the media table is
+// wiped) so the caller can remove the cached files from disk; the store
+// itself never touches the filesystem.
+func (s *Store) ClearChat(jid string, alsoMedia bool) (mediaPaths []string, err error) {
+	if alsoMedia {
+		rows, err := s.db.Query(`SELECT local_path FROM media WHERE chat_jid = ? AND local_path IS NOT NULL AND local_path != ''`, jid)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var p string
+			if err := rows.Scan(&p); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			mediaPaths = append(mediaPaths, p)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	for _, q := range []string{
+		`DELETE FROM messages WHERE chat_jid = ?`,
+		`DELETE FROM media WHERE chat_jid = ?`,
+		`DELETE FROM reactions WHERE chat_jid = ?`,
+		`DELETE FROM poll_votes WHERE chat_jid = ?`,
+	} {
+		if _, err := tx.Exec(q, jid); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return mediaPaths, nil
+}

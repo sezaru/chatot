@@ -633,6 +633,48 @@ func TestFakeChatLinksReturnsURLMessages(t *testing.T) {
 	}
 }
 
+func TestFakeClearChat(t *testing.T) {
+	f := NewFake()
+	jid := "1234567890@s.whatsapp.net"
+	sub := f.Events()
+
+	msgs, err := f.Messages(jid, 0)
+	if err != nil || len(msgs) == 0 {
+		t.Fatalf("Messages: %v, %+v", err, msgs)
+	}
+
+	if err := f.ClearChat(context.Background(), jid, false); err != nil {
+		t.Fatalf("ClearChat: %v", err)
+	}
+
+	msgs, err = f.Messages(jid, 0)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("got %d messages after clear, want 0", len(msgs))
+	}
+
+	chats, err := f.Chats(0)
+	if err != nil {
+		t.Fatalf("Chats: %v", err)
+	}
+	for _, c := range chats {
+		if c.JID == jid && c.Preview != "" {
+			t.Fatalf("got preview %q after clear, want empty", c.Preview)
+		}
+	}
+
+	select {
+	case ev := <-sub:
+		if ev.Kind != EventChatUpdate || ev.ChatUpdate == nil || ev.ChatUpdate.JID != jid {
+			t.Fatalf("got event %+v, want an EventChatUpdate for %s", ev, jid)
+		}
+	default:
+		t.Fatal("expected an event after ClearChat")
+	}
+}
+
 func TestFakeChatMediaDocsLinksEmptyForUnknownChat(t *testing.T) {
 	f := NewFake()
 	if media, _ := f.ChatMedia("nobody@s.whatsapp.net"); len(media) != 0 {

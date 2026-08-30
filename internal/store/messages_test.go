@@ -365,3 +365,76 @@ func TestStarredMessagesReturnsOnlyStarredAcrossChatsNewestFirst(t *testing.T) {
 		}
 	}
 }
+
+func TestClearChatDeletesOnlyTargetChat(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertChat(ChatRow{JID: "b@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "for a", TS: 1}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "b@s.whatsapp.net", MsgID: "m2", Text: "for b", TS: 2}))
+	must(t, s.UpsertReaction(ReactionRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", ReactorJID: "x", Emoji: "👍"}))
+	must(t, s.UpsertReaction(ReactionRow{ChatJID: "b@s.whatsapp.net", MsgID: "m2", ReactorJID: "x", Emoji: "👍"}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Kind: "image", LocalPath: "/tmp/a.jpg"}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "b@s.whatsapp.net", MsgID: "m2", Kind: "image", LocalPath: "/tmp/b.jpg"}))
+
+	if _, err := s.ClearChat("a@s.whatsapp.net", false); err != nil {
+		t.Fatalf("ClearChat: %v", err)
+	}
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if len(msgs) != 0 {
+		t.Fatalf("got %d messages left in cleared chat, want 0", len(msgs))
+	}
+	other, err := s.Messages("b@s.whatsapp.net", 50)
+	must(t, err)
+	if len(other) != 1 || other[0].ID != "m2" {
+		t.Fatalf("got %+v, want chat b untouched", other)
+	}
+	if len(other[0].Reactions) != 1 {
+		t.Fatalf("got %+v, want chat b's reaction untouched", other[0])
+	}
+	media, err := s.ChatMedia("b@s.whatsapp.net")
+	must(t, err)
+	if len(media) != 1 {
+		t.Fatalf("got %+v, want chat b's media untouched", media)
+	}
+}
+
+func TestClearChatAlsoMediaReturnsLocalPaths(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", TS: 1}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m2", TS: 2}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Kind: "image", LocalPath: "/tmp/downloaded.jpg"}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "m2", Kind: "document"})) // never downloaded
+
+	paths, err := s.ClearChat("a@s.whatsapp.net", true)
+	if err != nil {
+		t.Fatalf("ClearChat: %v", err)
+	}
+	if len(paths) != 1 || paths[0] != "/tmp/downloaded.jpg" {
+		t.Fatalf("got paths %+v, want just the one downloaded local_path", paths)
+	}
+
+	media, err := s.ChatMedia("a@s.whatsapp.net")
+	must(t, err)
+	if len(media) != 0 {
+		t.Fatalf("got %+v media rows left, want 0", media)
+	}
+}
+
+func TestClearChatWithoutAlsoMediaReturnsNoPaths(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", TS: 1}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Kind: "image", LocalPath: "/tmp/downloaded.jpg"}))
+
+	paths, err := s.ClearChat("a@s.whatsapp.net", false)
+	if err != nil {
+		t.Fatalf("ClearChat: %v", err)
+	}
+	if len(paths) != 0 {
+		t.Fatalf("got paths %+v, want none when alsoMedia is false", paths)
+	}
+}
