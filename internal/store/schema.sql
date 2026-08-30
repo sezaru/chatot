@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS messages (
     -- 1 once a REVOKE for this id has been applied; sticky like edited, so a
     -- redelivery of the original message afterwards can't un-delete it.
     deleted INTEGER NOT NULL DEFAULT 0,
+    -- Outgoing delivery/read state for our own messages: 0=sent, 1=delivered,
+    -- 2=read. Monotonic (see SetMessagesStatus) so a late delivered receipt
+    -- after a read one can't downgrade it. Meaningless for inbound messages.
+    status INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat_jid, msg_id)
 );
 

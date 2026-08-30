@@ -32,11 +32,22 @@ func translate(evt interface{}) *Event {
 		}
 		return translateMessage(v)
 	case *events.Receipt:
-		read := v.Type == types.ReceiptTypeRead || v.Type == types.ReceiptTypeReadSelf
+		var status int
+		switch v.Type {
+		case types.ReceiptTypeDelivered:
+			status = MessageStatusDelivered
+		case types.ReceiptTypeRead, types.ReceiptTypeReadSelf, types.ReceiptTypePlayed, types.ReceiptTypePlayedSelf:
+			status = MessageStatusRead
+		default:
+			// sender/retry/server-error/hist_sync/... acks aren't a
+			// delivery/read state chatot tracks.
+			return nil
+		}
 		return &Event{Kind: EventReceipt, Receipt: &Receipt{
 			ChatJID: v.Chat.String(),
 			MsgIDs:  append([]types.MessageID(nil), v.MessageIDs...),
-			Read:    read,
+			Read:    status == MessageStatusRead,
+			Status:  status,
 		}}
 	case *events.Presence:
 		var lastSeen int64

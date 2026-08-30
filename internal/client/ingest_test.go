@@ -120,6 +120,27 @@ func TestIngestReadReceiptClearsUnread(t *testing.T) {
 	}
 }
 
+func TestIngestReceiptSetsMessageStatus(t *testing.T) {
+	w := newIngestFixture(t)
+	must(t, w.ingestMessage(&Message{ChatJID: "1234567890@s.whatsapp.net", ID: "m1", Text: "hi", TS: 10, FromMe: true}))
+
+	must(t, w.ingestReceipt(&Receipt{ChatJID: "1234567890@s.whatsapp.net", MsgIDs: []string{"m1"}, Status: MessageStatusDelivered}))
+
+	msgs, err := w.store.Messages("1234567890@s.whatsapp.net", 50)
+	must(t, err)
+	if len(msgs) != 1 || msgs[0].Status != MessageStatusDelivered {
+		t.Fatalf("got %+v, want status=delivered", msgs)
+	}
+
+	must(t, w.ingestReceipt(&Receipt{ChatJID: "1234567890@s.whatsapp.net", MsgIDs: []string{"m1"}, Read: true, Status: MessageStatusRead}))
+
+	msgs, err = w.store.Messages("1234567890@s.whatsapp.net", 50)
+	must(t, err)
+	if len(msgs) != 1 || msgs[0].Status != MessageStatusRead {
+		t.Fatalf("got %+v, want status=read", msgs)
+	}
+}
+
 func TestIngestDeliveredReceiptDoesNotClearUnread(t *testing.T) {
 	w := newIngestFixture(t)
 	must(t, w.ingestMessage(&Message{ChatJID: "1234567890@s.whatsapp.net", ID: "m1", Text: "hi", TS: 10, FromMe: false}))

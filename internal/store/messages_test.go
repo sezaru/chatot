@@ -225,3 +225,33 @@ func TestUpsertMessageDeletedIsSticky(t *testing.T) {
 		t.Fatal("deleted flag was cleared by a later redelivery of the original; want sticky")
 	}
 }
+
+func TestSetMessagesStatusAdvances(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "hi", TS: 1, FromMe: true}))
+
+	must(t, s.SetMessagesStatus("a@s.whatsapp.net", []string{"m1"}, 1))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if msgs[0].Status != 1 {
+		t.Fatalf("got Status = %d, want 1 (delivered)", msgs[0].Status)
+	}
+}
+
+func TestSetMessagesStatusIsMonotonic(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "hi", TS: 1, FromMe: true}))
+	must(t, s.SetMessagesStatus("a@s.whatsapp.net", []string{"m1"}, 2)) // read
+
+	// A late delivered receipt for the same message must not downgrade it.
+	must(t, s.SetMessagesStatus("a@s.whatsapp.net", []string{"m1"}, 1))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if msgs[0].Status != 2 {
+		t.Fatalf("got Status = %d, want 2 (read status must stick despite a later delivered receipt)", msgs[0].Status)
+	}
+}

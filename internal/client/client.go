@@ -44,8 +44,20 @@ type Event struct {
 type Receipt struct {
 	ChatJID string
 	MsgIDs  []string
-	Read    bool
+	Read    bool // true for a read-type receipt; still drives MarkChatRead
+	// Status is the message status this receipt advances MsgIDs to: 1 for
+	// delivered, 2 for read (see MessageStatus* constants). 0 means "don't
+	// touch status" (kept only for older callers that never set it).
+	Status int
 }
+
+// Outgoing message delivery/read states, mirrored 1:1 in the store's
+// messages.status column.
+const (
+	MessageStatusSent      = 0
+	MessageStatusDelivered = 1
+	MessageStatusRead      = 2
+)
 
 // Presence is a contact's overall online/offline state.
 type Presence struct {
@@ -118,6 +130,9 @@ type Message struct {
 	// Deleted is true once this message was revoked ("delete for everyone");
 	// it renders as a tombstone regardless of its original content.
 	Deleted bool
+	// Status is the delivery/read tick state for a FromMe message: see the
+	// MessageStatus* constants. Meaningless (always 0) for inbound messages.
+	Status int
 }
 
 // Poll is a poll-creation message with its immutable definition (Name,

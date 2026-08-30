@@ -45,6 +45,9 @@ type Message struct {
 	// interprets these; package client matches the hashes against the poll's
 	// option names to compute per-option counts.
 	PollVotes []PollVoteRow
+	// Status is the outgoing delivery/read state for a FromMe message: 0=sent,
+	// 1=delivered, 2=read. See SetMessagesStatus.
+	Status int
 }
 
 // PollVoteRow is a single voter's selection of one poll option, identified by
@@ -97,6 +100,10 @@ type MessageRow struct {
 	Payload      string // opaque JSON body for a rich kind, "" otherwise
 	Edited       bool   // true for a MESSAGE_EDIT upsert; sticky in the store
 	Deleted      bool   // true for a REVOKE upsert; sticky in the store
+	// Status is unused by UpsertMessage (delivery/read state is only ever
+	// advanced via SetMessagesStatus, so a re-upsert can never regress it);
+	// kept here so callers building a full row have the field available.
+	Status int
 }
 
 // ContactRow is the upsert seam for the contacts table. Empty fields leave
