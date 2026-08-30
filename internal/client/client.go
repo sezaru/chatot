@@ -249,6 +249,23 @@ type Attachment struct {
 	ProtoBlob []byte
 }
 
+// GroupParticipant is one member of a group, as returned by GroupInfo.
+type GroupParticipant struct {
+	JID          string
+	IsAdmin      bool
+	IsSuperAdmin bool
+}
+
+// GroupInfo is a group's metadata and membership, read-only (mutating a
+// group is out of scope here).
+type GroupInfo struct {
+	JID          string
+	Name         string
+	Topic        string
+	OwnerJID     string
+	Participants []GroupParticipant
+}
+
 // SearchHit is a single fts5 match over the local store. MsgID is "" for a
 // chat-name match (Snippet then holds the chat name, not a message excerpt).
 type SearchHit struct {
@@ -343,6 +360,9 @@ type Client interface {
 	SetChatLabeled(ctx context.Context, labelID, chatJID string, labeled bool) error
 	// LabelsForChat returns the ids of labels currently on chatJID.
 	LabelsForChat(chatJID string) ([]string, error)
+
+	// GroupInfo fetches a group's current name/topic/membership. Read-only.
+	GroupInfo(ctx context.Context, jid string) (*GroupInfo, error)
 
 	// media
 	DownloadMedia(ctx context.Context, msgID string) (localPath string, err error)

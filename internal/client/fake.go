@@ -502,6 +502,23 @@ func (f *Fake) PrivacySettings(ctx context.Context) (map[string]string, error) {
 	}, nil
 }
 
+// GroupInfo returns a canned group for any @g.us jid; other jids error.
+func (f *Fake) GroupInfo(ctx context.Context, jid string) (*GroupInfo, error) {
+	if !strings.HasSuffix(jid, "@g.us") {
+		return nil, fmt.Errorf("chatot/client: %s is not a group", jid)
+	}
+	return &GroupInfo{
+		JID:      jid,
+		Name:     "Weekend Trip",
+		Topic:    "Planning for the cabin trip",
+		OwnerJID: "1234567890@s.whatsapp.net",
+		Participants: []GroupParticipant{
+			{JID: "1234567890@s.whatsapp.net", IsAdmin: true, IsSuperAdmin: true},
+			{JID: "1112223333@s.whatsapp.net"},
+		},
+	}, nil
+}
+
 // Labels returns the non-deleted labels.
 func (f *Fake) Labels() ([]Label, error) {
 	f.mu.Lock()
