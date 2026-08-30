@@ -12,8 +12,8 @@ func TestFakeChatsReturnsSeeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chats: %v", err)
 	}
-	if len(chats) != 2 {
-		t.Fatalf("got %d chats, want 2", len(chats))
+	if len(chats) != 3 {
+		t.Fatalf("got %d chats, want 3", len(chats))
 	}
 	if chats[0].Name != "Ada Lovelace" {
 		t.Errorf("chats[0].Name = %q, want Ada Lovelace", chats[0].Name)

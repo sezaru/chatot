@@ -60,8 +60,17 @@ func NewFake() *Fake {
 		},
 		labelChats: map[string]map[string]bool{
 			"1": {"1234567890@s.whatsapp.net": true},
+			"2": {"1112223333@s.whatsapp.net": true},
 		},
-		groups:        make(map[string]*GroupInfo),
+		groups: map[string]*GroupInfo{
+			"weekendtrip@g.us": {
+				JID: "weekendtrip@g.us", Name: "Weekend Trip", Topic: "Planning for the cabin trip", OwnerJID: fakeOwnJID,
+				Participants: []GroupParticipant{
+					{JID: fakeOwnJID, IsAdmin: true, IsSuperAdmin: true},
+					{JID: "1112223333@s.whatsapp.net"},
+				},
+			},
+		},
 		historySynced: make(map[string]bool),
 		newsletters: map[string]*Newsletter{
 			"111111@newsletter": {ID: "111111@newsletter", Name: "Chatot News", Description: "Release notes and updates", Muted: false},
@@ -81,6 +90,7 @@ func NewFake() *Fake {
 	f.chats = []Chat{
 		{JID: "1234567890@s.whatsapp.net", Name: "Ada Lovelace", Preview: "See you tomorrow!", UnreadCount: 2, LastMessageTS: now - 60, Pinned: true},
 		{JID: "1112223333@s.whatsapp.net", Name: "Grace Hopper", Preview: "Bug found in the relay", UnreadCount: 0, LastMessageTS: now - 3600},
+		{JID: "weekendtrip@g.us", Name: "Weekend Trip", Preview: "See everyone Friday!", UnreadCount: 1, LastMessageTS: now - 7200, IsGroup: true},
 	}
 
 	f.messages["1234567890@s.whatsapp.net"] = []Message{

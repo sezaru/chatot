@@ -330,3 +330,28 @@ window {
 	font-style: italic;
 	margin: 12px;
 }
+
+.chatot-chip-row {
+	margin: 0 8px 6px 8px;
+}
+
+.chatot-chip {
+	background-image: none;
+	background-color: alpha(currentColor, 0.08);
+	border-radius: 999px;
+	padding: 3px 12px;
+	font-size: 0.85em;
+	min-height: 0;
+}
+
+/* Brand green hard-coded, like .chatot-unread-badge/.chatot-send: the
+   runtime accent system would otherwise repaint this system blue. */
+/* The active chip's green fill is applied via a per-widget CSSProvider in
+   buildChipButton (a class rule on the shared sheet loses to libadwaita's own
+   button provider); this class only carries the shared pill shape below. */
+
+.chatot-label-dot {
+	border-radius: 999px;
+	min-width: 10px;
+	min-height: 10px;
+}
