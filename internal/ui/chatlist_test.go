@@ -263,3 +263,67 @@ func TestStarredSnippet(t *testing.T) {
 		})
 	}
 }
+
+func TestStatusRowVM(t *testing.T) {
+	now := time.Date(2026, 8, 30, 15, 0, 0, 0, time.UTC)
+
+	t.Run("text status", func(t *testing.T) {
+		vm := statusRowVM(client.Message{
+			FromJID: "1234567890@s.whatsapp.net",
+			Text:    "Off to the mountains!",
+			TS:      now.Add(-2 * time.Hour).Unix(),
+		}, "Ada Lovelace", now)
+		if vm.PosterName != "Ada Lovelace" {
+			t.Errorf("PosterName = %q, want Ada Lovelace", vm.PosterName)
+		}
+		if vm.Snippet != "Off to the mountains!" {
+			t.Errorf("Snippet = %q, want the text", vm.Snippet)
+		}
+		if vm.Initial != "A" {
+			t.Errorf("Initial = %q, want A", vm.Initial)
+		}
+		if vm.TimeText != "13:00" {
+			t.Errorf("TimeText = %q, want 13:00", vm.TimeText)
+		}
+	})
+
+	t.Run("image status shows photo placeholder", func(t *testing.T) {
+		vm := statusRowVM(client.Message{
+			FromJID:    "1234567890@s.whatsapp.net",
+			Attachment: &client.Attachment{Kind: "image"},
+			TS:         now.Unix(),
+		}, "Grace", now)
+		if vm.Snippet != "📷 Photo" {
+			t.Errorf("Snippet = %q, want 📷 Photo", vm.Snippet)
+		}
+	})
+
+	t.Run("video status shows video placeholder", func(t *testing.T) {
+		vm := statusRowVM(client.Message{
+			Attachment: &client.Attachment{Kind: "video"},
+		}, "Grace", now)
+		if vm.Snippet != "🎥 Video" {
+			t.Errorf("Snippet = %q, want 🎥 Video", vm.Snippet)
+		}
+	})
+
+	t.Run("empty poster name falls back to jid", func(t *testing.T) {
+		vm := statusRowVM(client.Message{FromJID: "raw@jid"}, "", now)
+		if vm.PosterName != "raw@jid" {
+			t.Errorf("PosterName = %q, want raw@jid fallback", vm.PosterName)
+		}
+	})
+}
+
+func TestPosterName(t *testing.T) {
+	names := map[string]string{"1234567890@s.whatsapp.net": "Ada"}
+	if got := posterName("1234567890@s.whatsapp.net", names); got != "Ada" {
+		t.Errorf("known chat: got %q, want Ada", got)
+	}
+	if got := posterName("5551234567@s.whatsapp.net", names); got != "+5551234567" {
+		t.Errorf("unknown numeric: got %q, want +5551234567", got)
+	}
+	if got := posterName("weird@server", names); got != "weird@server" {
+		t.Errorf("non-numeric: got %q, want raw jid", got)
+	}
+}

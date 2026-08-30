@@ -282,6 +282,40 @@ func TestSetChatUnreadDoesNotClobberExistingCount(t *testing.T) {
 	}
 }
 
+func TestChatsExcludesStatusBroadcast(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "dm@s.whatsapp.net", Name: "Friend"}))
+	// A status message goes through normal ingest, creating a status@broadcast
+	// chat row — which must not surface as a conversation.
+	must(t, s.BumpChatActivity("status@broadcast", false, 100, 1))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "status@broadcast", MsgID: "s1", FromJID: "friend@s.whatsapp.net", Text: "my status", TS: 100}))
+
+	chats := mustChats(t, s)
+	if len(chats) != 1 || chats[0].JID != "dm@s.whatsapp.net" {
+		t.Fatalf("got %+v, want only the DM (status@broadcast hidden)", chats)
+	}
+}
+
+func TestStatusesReturnsOnlyBroadcastNewestFirst(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "dm@s.whatsapp.net", Name: "Friend"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "dm@s.whatsapp.net", MsgID: "n1", Text: "normal", TS: 50}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "status@broadcast", MsgID: "s1", FromJID: "a@s.whatsapp.net", Text: "first", TS: 100}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "status@broadcast", MsgID: "s2", FromJID: "b@s.whatsapp.net", Text: "second", TS: 200}))
+
+	statuses, err := s.Statuses(50)
+	must(t, err)
+	if len(statuses) != 2 {
+		t.Fatalf("got %d statuses, want 2 (normal-chat message excluded)", len(statuses))
+	}
+	if statuses[0].ID != "s2" || statuses[1].ID != "s1" {
+		t.Fatalf("got %+v, want newest-first (s2, s1)", statuses)
+	}
+	if statuses[0].FromJID != "b@s.whatsapp.net" {
+		t.Fatalf("got poster %q, want b@s.whatsapp.net (FromJID = poster)", statuses[0].FromJID)
+	}
+}
+
 func mustChats(t *testing.T, s *Store) []Chat {
 	t.Helper()
 	chats, err := s.Chats(50)

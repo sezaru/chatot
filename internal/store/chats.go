@@ -117,6 +117,7 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		) lm ON lm.chat_jid = c.jid
 		LEFT JOIN media md ON md.chat_jid = lm.chat_jid AND md.msg_id = lm.msg_id
 		WHERE COALESCE(g.is_parent, 0) = 0 AND COALESCE(g.linked_parent_jid, '') = ''
+			AND c.jid != 'status@broadcast'
 	`)
 	if err != nil {
 		return nil, err

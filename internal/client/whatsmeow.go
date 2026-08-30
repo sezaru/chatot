@@ -1044,6 +1044,37 @@ func (w *Whatsmeow) StarredMessages(limit int) ([]Message, error) {
 	return out, nil
 }
 
+// Statuses reads recent status ("stories") updates from the store's
+// status@broadcast chat, newest first.
+func (w *Whatsmeow) Statuses(limit int) ([]Message, error) {
+	rows, err := w.store.Statuses(limit)
+	if err != nil {
+		return nil, err
+	}
+	selfJID := w.ownJID()
+	out := make([]Message, len(rows))
+	for i, m := range rows {
+		out[i] = messageFromStore(m, selfJID)
+	}
+	return out, nil
+}
+
+// PostStatus posts a text status update to the status broadcast.
+//
+// Live-unverifiable risk: whatsmeow may need the broadcast recipient list
+// addressed for a status to actually reach contacts; we make the plain
+// SendMessage call and surface whatever error it returns rather than faking
+// success. Untested against a live account (no linked device here).
+func (w *Whatsmeow) PostStatus(ctx context.Context, text string) error {
+	msg := &waE2E.Message{
+		ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String(text)},
+	}
+	if _, err := w.wa.SendMessage(ctx, types.StatusBroadcastJID, msg); err != nil {
+		return fmt.Errorf("chatot/client: post status: %w", err)
+	}
+	return nil
+}
+
 // applyBlocklistEvent updates the cached blocked set from an inbound
 // *events.Blocklist. A "modify" action carries no Changes and means the
 // whole list must be re-fetched; anything else is a batch of individual
