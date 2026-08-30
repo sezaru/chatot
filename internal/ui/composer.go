@@ -312,7 +312,13 @@ type Composer struct {
 	entry      *gtk.Entry
 	attachBtn  *gtk.MenuButton
 	emojiBtn   *gtk.Button
+	gifBtn     *gtk.MenuButton
 	recordBtn  *gtk.Button
+
+	gifProvider GIFProvider
+	// pickerStack backs gifBtn's popover; F38 (stickers) adds its page here
+	// via pickerStack.AddTitled, alongside the "gif" page this feature adds.
+	pickerStack *gtk.Stack
 
 	recorder  *audio.Recorder // non-nil only while a recording is in progress
 	recording bool
@@ -379,6 +385,11 @@ func NewComposer(c client.Client) *Composer {
 	emojiBtn.AddCSSClass("flat")
 	entryRow.Append(emojiBtn)
 
+	gifBtn := gtk.NewMenuButton()
+	gifBtn.SetLabel("GIF")
+	gifBtn.AddCSSClass("flat")
+	entryRow.Append(gifBtn)
+
 	recordBtn := gtk.NewButtonWithLabel("🎤")
 	recordBtn.AddCSSClass("flat")
 	recordBtn.SetSensitive(false)
@@ -391,19 +402,24 @@ func NewComposer(c client.Client) *Composer {
 	root.Append(entryRow)
 
 	comp := &Composer{
-		Box:        root,
-		c:          c,
-		quoteBar:   quoteBar,
-		quoteLabel: quoteLabel,
-		editBar:    editBar,
-		entry:      entry,
-		attachBtn:  attachBtn,
-		emojiBtn:   emojiBtn,
-		recordBtn:  recordBtn,
-		typing:     newTypingModel(typingDebounce),
+		Box:         root,
+		c:           c,
+		quoteBar:    quoteBar,
+		quoteLabel:  quoteLabel,
+		editBar:     editBar,
+		entry:       entry,
+		attachBtn:   attachBtn,
+		emojiBtn:    emojiBtn,
+		gifBtn:      gifBtn,
+		recordBtn:   recordBtn,
+		gifProvider: unconfiguredGIFProvider{},
+		typing:      newTypingModel(typingDebounce),
 	}
 
 	attachBtn.SetPopover(newAttachPopover(comp))
+	pickerPopover, pickerStack := newPickerPopover(comp)
+	gifBtn.SetPopover(pickerPopover)
+	comp.pickerStack = pickerStack
 
 	entry.ConnectActivate(comp.submit)
 	entry.ConnectChanged(comp.onEntryChanged)
@@ -674,6 +690,33 @@ func newAttachPopover(c *Composer) *gtk.Popover {
 	popover.SetChild(grid)
 	return popover
 }
+
+// newPickerPopover builds the GIF button's popover: a Stack + StackSwitcher
+// holding one page today ("GIF"); F38 (stickers) adds a second page to the
+// returned stack rather than replacing this popover.
+func newPickerPopover(c *Composer) (*gtk.Popover, *gtk.Stack) {
+	stack := gtk.NewStack()
+	switcher := gtk.NewStackSwitcher()
+	switcher.SetStack(stack)
+
+	stack.AddTitled(newGIFTab(c.gifProvider, c.onGIFChosen), "gif", "GIF")
+
+	box := gtk.NewBox(gtk.OrientationVertical, 4)
+	box.SetMarginTop(6)
+	box.SetMarginBottom(6)
+	box.SetMarginStart(6)
+	box.SetMarginEnd(6)
+	box.Append(switcher)
+	box.Append(stack)
+
+	popover := gtk.NewPopover()
+	popover.SetChild(box)
+	return popover, stack
+}
+
+// onGIFChosen would send the picked GIF; unwired until a real GIFProvider
+// exists to source a SendURL from (see GIFProvider in gif.go).
+func (c *Composer) onGIFChosen(GIFResult) {}
 
 // pickAttachment opens a file-choose dialog (filtered to images/videos when
 // filter is non-nil) and, on a picked file, hands off to sendMedia. No-ops if

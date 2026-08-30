@@ -77,6 +77,8 @@ type Attachment struct {
 	Caption   string
 	// Thumbnail is the small embedded preview shown before LocalPath is set.
 	Thumbnail []byte
+	// IsGif marks a video message WhatsApp flags gifPlayback (looped, muted).
+	IsGif bool
 }
 
 // SearchHit is a single Search result: either a message match (MsgID set,
@@ -175,4 +177,6 @@ type MediaRow struct {
 	// Thumbnail is the small embedded JPEG/PNG preview; nil leaves any
 	// existing value untouched.
 	Thumbnail []byte
+	// IsGif marks a video message WhatsApp flags gifPlayback (looped, muted).
+	IsGif bool
 }

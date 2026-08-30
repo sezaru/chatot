@@ -162,7 +162,7 @@ func extractText(m *waProto.Message, msg *Message) {
 		ctx = img.GetContextInfo()
 	case m.GetVideoMessage() != nil:
 		vid := m.GetVideoMessage()
-		msg.Attachment = &Attachment{Kind: "video", MimeType: vid.GetMimetype(), Caption: vid.GetCaption(), ProtoBlob: marshalMedia(vid), Thumbnail: vid.GetJPEGThumbnail()}
+		msg.Attachment = &Attachment{Kind: "video", MimeType: vid.GetMimetype(), Caption: vid.GetCaption(), ProtoBlob: marshalMedia(vid), Thumbnail: vid.GetJPEGThumbnail(), IsGIF: vid.GetGifPlayback()}
 		ctx = vid.GetContextInfo()
 	case m.GetAudioMessage() != nil:
 		aud := m.GetAudioMessage()

@@ -276,6 +276,10 @@ type Attachment struct {
 	// the message proto, shown instantly while the full media downloads.
 	// Never set outbound.
 	Thumbnail []byte
+	// IsGIF marks a "video" attachment WhatsApp flags gifPlayback: it plays
+	// looped and muted. Inline looping playback is deferred (F37 ships only
+	// the badge); this just tags the kind.
+	IsGIF bool
 }
 
 // GroupParticipant is one member of a group, as returned by GroupInfo.

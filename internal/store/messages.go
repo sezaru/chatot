@@ -124,7 +124,7 @@ const messageSelect = `
 	SELECT
 		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
 		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status, m.starred,
-		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail
+		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, COALESCE(md.is_gif, 0)
 	FROM messages m
 	LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id`
 
@@ -184,10 +184,11 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 		var fromMe, edited, deleted, starred int
 		var mediaKind, mediaFilename, mediaCaption, mediaMime, mediaLocal string
 		var mediaThumb []byte
+		var mediaIsGif int
 		if err := rows.Scan(
 			&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID,
 			&m.Kind, &m.Payload, &edited, &deleted, &m.Status, &starred,
-			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb,
+			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb, &mediaIsGif,
 		); err != nil {
 			return nil, err
 		}
@@ -199,7 +200,7 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 		if mediaKind != "" {
 			m.Attachment = &Attachment{
 				Kind: mediaKind, Filename: mediaFilename, Caption: mediaCaption,
-				MimeType: mediaMime, LocalPath: mediaLocal, Thumbnail: mediaThumb,
+				MimeType: mediaMime, LocalPath: mediaLocal, Thumbnail: mediaThumb, IsGif: mediaIsGif != 0,
 			}
 		}
 		out = append(out, m)
@@ -294,7 +295,7 @@ func (s *Store) StarredMessages(limit int) ([]Message, error) {
 		SELECT
 			m.chat_jid, m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
 			m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status,
-			COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail
+			COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, COALESCE(md.is_gif, 0)
 		FROM messages m
 		LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id
 		WHERE m.starred = 1
@@ -312,10 +313,11 @@ func (s *Store) StarredMessages(limit int) ([]Message, error) {
 		var fromMe, edited, deleted int
 		var mediaKind, mediaFilename, mediaCaption, mediaMime, mediaLocal string
 		var mediaThumb []byte
+		var mediaIsGif int
 		if err := rows.Scan(
 			&m.ChatJID, &m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID,
 			&m.Kind, &m.Payload, &edited, &deleted, &m.Status,
-			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb,
+			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb, &mediaIsGif,
 		); err != nil {
 			return nil, err
 		}
@@ -326,7 +328,7 @@ func (s *Store) StarredMessages(limit int) ([]Message, error) {
 		if mediaKind != "" {
 			m.Attachment = &Attachment{
 				Kind: mediaKind, Filename: mediaFilename, Caption: mediaCaption,
-				MimeType: mediaMime, LocalPath: mediaLocal, Thumbnail: mediaThumb,
+				MimeType: mediaMime, LocalPath: mediaLocal, Thumbnail: mediaThumb, IsGif: mediaIsGif != 0,
 			}
 		}
 		out = append(out, m)

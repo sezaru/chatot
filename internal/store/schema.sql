@@ -136,5 +136,7 @@ CREATE TABLE IF NOT EXISTS media (
     proto_blob BLOB,
     -- small embedded JPEG/PNG preview, shown instantly before local_path is set.
     thumbnail BLOB,
+    -- true for a video message WhatsApp flags gifPlayback (looped, muted).
+    is_gif INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat_jid, msg_id)
 );

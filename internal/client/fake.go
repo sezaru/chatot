@@ -100,6 +100,8 @@ func NewFake() *Fake {
 				{Name: "Sushi"},
 				{Name: "Salad"},
 			}}},
+		{ID: "m8", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2700,
+			Attachment: &Attachment{Kind: "video", MimeType: "video/mp4", IsGIF: true}},
 	}
 
 	f.messages[statusBroadcastJID] = []Message{
