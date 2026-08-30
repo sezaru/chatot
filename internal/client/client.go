@@ -293,6 +293,11 @@ type Client interface {
 	// MessagesBefore returns up to limit messages older than beforeMsgID
 	// (oldest first), for the conversation view's scroll-up paging.
 	MessagesBefore(jid, beforeMsgID string, limit int) ([]Message, error)
+	// RequestMoreHistory asks the phone for up to count messages older than
+	// oldestMsgID in chatJID, for when MessagesBefore has run out of locally
+	// stored history. The reply arrives asynchronously as an EventHistorySync
+	// naming chatJID once ingested; this call only sends the request.
+	RequestMoreHistory(ctx context.Context, chatJID, oldestMsgID string, count int) error
 	Search(query string, limit int) ([]SearchHit, error)
 
 	// writes

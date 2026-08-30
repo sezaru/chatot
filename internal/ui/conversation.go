@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -208,6 +209,14 @@ type ConversationView struct {
 	oldestID     string
 	hasMore      bool
 	loadingOlder bool
+	// historyRequested is set once loadOlder has asked the phone for more
+	// history and stays set until a batch actually arrives (reset on a genuine
+	// non-empty prepend), so a second empty page after a request means
+	// "genuinely no more". Reset in Load too. historyInFlight guards the window
+	// between firing a request and its EventHistorySync reply, so a rapid
+	// second scroll can't prematurely mark the thread exhausted.
+	historyRequested bool
+	historyInFlight  bool
 
 	// presence is the UI's own view of contact/chat presence, built from
 	// EventPresence/EventChatPresence on Events() — chosen over growing the
@@ -273,6 +282,25 @@ const conversationPageSize = 40
 // olderLoadThreshold is how close to the top (in px) the reader must scroll
 // before the next older page is fetched.
 const olderLoadThreshold = 300
+
+// historySyncRequestSize is how many older messages RequestMoreHistory asks
+// the phone for once local paging runs dry.
+const historySyncRequestSize = 50
+
+// nextHistoryAction decides what loadOlder should do once MessagesBefore
+// returns olderCount messages: a non-empty page means keep paging locally;
+// an empty page requests more from the phone the first time (request), and
+// only gives up (exhausted) once that's already been tried and is still
+// empty.
+func nextHistoryAction(olderCount int, alreadyRequested bool) (request, exhausted bool) {
+	if olderCount > 0 {
+		return false, false
+	}
+	if alreadyRequested {
+		return false, true
+	}
+	return true, false
+}
 
 // NewConversationView builds an empty ConversationView backed by c and
 // subscribes to c.Events() for live append.
@@ -418,7 +446,7 @@ func (cv *ConversationView) bindRow(item *gtk.ListItem) {
 // the GTK main loop (fired by the adjustment). loadingOlder debounces the
 // burst of value-changed signals a single scroll gesture emits.
 func (cv *ConversationView) onScroll() {
-	if cv.loadingOlder || !cv.hasMore || cv.jid == "" {
+	if cv.loadingOlder || cv.historyInFlight || !cv.hasMore || cv.jid == "" {
 		return
 	}
 	if cv.scroller.VAdjustment().Value() <= olderLoadThreshold {
@@ -432,6 +460,8 @@ func (cv *ConversationView) onScroll() {
 func (cv *ConversationView) Load(jid string) {
 	cv.jid = jid
 	cv.loadingOlder = false
+	cv.historyRequested = false
+	cv.historyInFlight = false
 	cv.refreshHeader()
 
 	msgs, err := cv.c.Messages(jid, conversationPageSize)
@@ -470,12 +500,30 @@ func (cv *ConversationView) loadOlder() {
 	cv.loadingOlder = true
 
 	older, err := cv.c.MessagesBefore(cv.jid, cv.oldestID, conversationPageSize)
-	if err != nil || len(older) == 0 {
+	if err != nil {
 		cv.hasMore = false
 		cv.loadingOlder = false
 		return
 	}
+	if len(older) == 0 {
+		request, exhausted := nextHistoryAction(len(older), cv.historyRequested)
+		cv.hasMore = !exhausted
+		cv.loadingOlder = false
+		if request {
+			cv.historyRequested = true
+			cv.historyInFlight = true
+			jid, oldestID := cv.jid, cv.oldestID
+			go func() {
+				_ = cv.c.RequestMoreHistory(context.Background(), jid, oldestID, historySyncRequestSize)
+			}()
+		}
+		return
+	}
 
+	// A genuine older page arrived (from local store or a landed history sync):
+	// clear historyRequested so hitting the store's floor again re-requests the
+	// next batch, deepening one page at a time rather than stopping after one.
+	cv.historyRequested = false
 	anchor := len(older)
 	cv.msgs = append(older, cv.msgs...)
 	cv.oldestID = cv.msgs[0].ID
@@ -588,6 +636,23 @@ func (cv *ConversationView) watchEvents() {
 				cv.presence[cp.ChatJID] = state
 				if cp.ChatJID == cv.jid {
 					cv.refreshHeader()
+				}
+			})
+		case client.EventHistorySync:
+			if ev.HistorySync == nil {
+				continue
+			}
+			jids := ev.HistorySync.ChatJIDs
+			glib.IdleAdd(func() {
+				if cv.loadingOlder || !cv.historyRequested {
+					return
+				}
+				for _, j := range jids {
+					if j == cv.jid {
+						cv.historyInFlight = false
+						cv.loadOlder()
+						return
+					}
 				}
 			})
 		case client.EventAvatar:
