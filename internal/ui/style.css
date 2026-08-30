@@ -58,6 +58,11 @@
 	color: @accent_fg_color;
 }
 
+.chatot-bubble-deleted {
+	font-style: italic;
+	opacity: 0.65;
+}
+
 .chatot-bubble-quote {
 	opacity: 0.65;
 	font-size: 0.85em;

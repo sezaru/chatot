@@ -35,7 +35,12 @@ type bubbleView struct {
 	Poll             pollView
 	Edited           bool
 	EditedMarker     string
+	Deleted          bool
 }
+
+// tombstoneText is what a revoked message renders as, regardless of its
+// original content.
+const tombstoneText = "🚫 This message was deleted"
 
 // bubbleVM derives the display view-model for a single message. prev is the
 // previous message in the thread (nil for the first), used to decide
@@ -50,6 +55,12 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 	if prev == nil || !sameDay(prev.TS, m.TS, now.Location()) {
 		v.ShowDaySeparator = true
 		v.DayText = dayText(m.TS, now)
+	}
+
+	if m.Deleted {
+		v.Deleted = true
+		v.Text = tombstoneText
+		return v
 	}
 
 	if m.ReplyTo != nil {
@@ -170,10 +181,11 @@ type ConversationView struct {
 	// online/last-seen line is expected to cover.
 	presence map[string]PresenceState
 
-	onReply func(client.Message)
-	onReact func(msg client.Message, emoji string)
-	onVote  func(msg client.Message, options []string)
-	onEdit  func(client.Message)
+	onReply  func(client.Message)
+	onReact  func(msg client.Message, emoji string)
+	onVote   func(msg client.Message, options []string)
+	onEdit   func(client.Message)
+	onDelete func(client.Message)
 }
 
 // OnReplyRequested registers f to be called when the user picks the reply
@@ -196,6 +208,10 @@ func (cv *ConversationView) OnVoteRequested(f func(msg client.Message, options [
 // affordance on one of their own text bubbles; the composer wires this to
 // enter edit mode.
 func (cv *ConversationView) OnEditRequested(f func(client.Message)) { cv.onEdit = f }
+
+// OnDeleteRequested registers f to be called when the user picks the delete
+// affordance on one of their own bubbles.
+func (cv *ConversationView) OnDeleteRequested(f func(client.Message)) { cv.onDelete = f }
 
 // Messages returns the currently-loaded thread, for mark-read on open.
 func (cv *ConversationView) Messages() []client.Message { return cv.msgs }
@@ -325,7 +341,7 @@ func (cv *ConversationView) bindRow(item *gtk.ListItem) {
 		prev = &cv.msgs[pos-1]
 	}
 	vm := bubbleVM(msg, prev, cv.byID, time.Now())
-	box.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact, cv.onVote, cv.onEdit))
+	box.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact, cv.onVote, cv.onEdit, cv.onDelete))
 }
 
 // onScroll fetches the next older page when the reader nears the top. Runs on
@@ -435,6 +451,17 @@ func (cv *ConversationView) watchEvents() {
 				continue
 			}
 			chatJID := ev.Reaction.ChatJID
+			glib.IdleAdd(func() {
+				if chatJID != cv.jid {
+					return
+				}
+				cv.Load(cv.jid)
+			})
+		case client.EventRevoke:
+			if ev.Revoke == nil {
+				continue
+			}
+			chatJID := ev.Revoke.ChatJID
 			glib.IdleAdd(func() {
 				if chatJID != cv.jid {
 					return
@@ -582,7 +609,7 @@ func removeAllChildren(box *gtk.Box) {
 // buildBubble constructs the GTK widget tree for a single message from its
 // pre-computed view-model, wiring the reply/react affordances (if the
 // callbacks are set) to msg.
-func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply func(client.Message), onReact func(msg client.Message, emoji string), onVote func(msg client.Message, options []string), onEdit func(client.Message)) *gtk.Box {
+func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply func(client.Message), onReact func(msg client.Message, emoji string), onVote func(msg client.Message, options []string), onEdit func(client.Message), onDelete func(client.Message)) *gtk.Box {
 	wrapper := gtk.NewBox(gtk.OrientationVertical, 4)
 
 	if vm.ShowDaySeparator {
@@ -626,6 +653,9 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 	} else {
 		text := gtk.NewLabel(vm.Text)
 		text.AddCSSClass("chatot-bubble-text")
+		if vm.Deleted {
+			text.AddCSSClass("chatot-bubble-deleted")
+		}
 		text.SetXAlign(0)
 		text.SetWrap(true)
 		bubble.Append(text)
@@ -646,10 +676,12 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		bubble.Append(reactions)
 	}
 
-	// Editing is a text-only, own-message affordance (WhatsApp only edits text).
-	canEdit := msg.FromMe && !vm.IsMedia && !vm.IsLocation && !vm.IsContact && !vm.IsPoll
-	if onReply != nil || onReact != nil || (canEdit && onEdit != nil) {
-		bubble.Append(buildBubbleActions(msg, onReply, onReact, onEdit, canEdit))
+	// Editing is a text-only, own-message affordance (WhatsApp only edits text);
+	// a deleted bubble gets no affordances at all (nothing left to act on).
+	canEdit := !vm.Deleted && msg.FromMe && !vm.IsMedia && !vm.IsLocation && !vm.IsContact && !vm.IsPoll
+	canDelete := !vm.Deleted && msg.FromMe
+	if !vm.Deleted && (onReply != nil || onReact != nil || (canEdit && onEdit != nil) || (canDelete && onDelete != nil)) {
+		bubble.Append(buildBubbleActions(msg, onReply, onReact, onEdit, onDelete, canEdit, canDelete))
 	}
 
 	row.Append(bubble)
@@ -658,9 +690,9 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 	return wrapper
 }
 
-// buildBubbleActions builds the small reply/react affordance row shown on
-// every bubble.
-func buildBubbleActions(msg client.Message, onReply func(client.Message), onReact func(msg client.Message, emoji string), onEdit func(client.Message), canEdit bool) *gtk.Box {
+// buildBubbleActions builds the small reply/react/edit/delete affordance row
+// shown on non-deleted bubbles.
+func buildBubbleActions(msg client.Message, onReply func(client.Message), onReact func(msg client.Message, emoji string), onEdit func(client.Message), onDelete func(client.Message), canEdit, canDelete bool) *gtk.Box {
 	actions := gtk.NewBox(gtk.OrientationHorizontal, 2)
 	actions.AddCSSClass("chatot-bubble-actions")
 
@@ -697,6 +729,13 @@ func buildBubbleActions(msg client.Message, onReply func(client.Message), onReac
 		popover.SetParent(menuBtn)
 		menuBtn.ConnectClicked(func() { popover.Popup() })
 		actions.Append(menuBtn)
+	}
+
+	if canDelete && onDelete != nil {
+		deleteBtn := gtk.NewButtonWithLabel("🗑")
+		deleteBtn.AddCSSClass("flat")
+		deleteBtn.ConnectClicked(func() { onDelete(msg) })
+		actions.Append(deleteBtn)
 	}
 
 	return actions

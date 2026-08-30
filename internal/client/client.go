@@ -21,6 +21,7 @@ const (
 	EventLoggedOut
 	EventReaction
 	EventPollVote
+	EventRevoke
 )
 
 // Event is a normalized notification pushed on Client.Events(). Only the
@@ -36,6 +37,7 @@ type Event struct {
 	HistorySync  *HistorySync
 	Reaction     *Reaction
 	PollVote     *PollVote
+	Revoke       *Revoke
 }
 
 // Receipt is a delivery/read acknowledgement for previously sent messages.
@@ -113,6 +115,9 @@ type Message struct {
 	// Edited is true once the sender edited this message's text (WhatsApp
 	// allows editing a text message for ~15 min); drives the "edited" marker.
 	Edited bool
+	// Deleted is true once this message was revoked ("delete for everyone");
+	// it renders as a tombstone regardless of its original content.
+	Deleted bool
 }
 
 // Poll is a poll-creation message with its immutable definition (Name,
@@ -168,6 +173,13 @@ type Reaction struct {
 	ReactorJID string
 	Emoji      string // "" clears the reaction
 	TS         int64
+}
+
+// Revoke is a "delete for everyone" applied to a message.
+type Revoke struct {
+	ChatJID string
+	MsgID   string
+	TS      int64
 }
 
 // MsgRef points at a message being replied to or reacted to.
@@ -232,6 +244,9 @@ type Client interface {
 	// EditMessage replaces an own text message's content (WhatsApp's ~15-min
 	// edit window); reflected optimistically in the store + open chat.
 	EditMessage(ctx context.Context, chatJID, msgID, newText string) error
+	// DeleteMessage revokes ("delete for everyone") an own message; reflected
+	// optimistically in the store + open chat.
+	DeleteMessage(ctx context.Context, chatJID, msgID string) error
 	React(ctx context.Context, jid, msgID, emoji string) error // "" clears
 	MarkRead(ctx context.Context, jid string, msgIDs []string) error
 	SendPresence(available bool) error

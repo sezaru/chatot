@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS messages (
     -- 1 once a MESSAGE_EDIT for this id has been applied; sticky (a later
     -- non-edit re-upsert of the same row never clears it, see UpsertMessage).
     edited INTEGER NOT NULL DEFAULT 0,
+    -- 1 once a REVOKE for this id has been applied; sticky like edited, so a
+    -- redelivery of the original message afterwards can't un-delete it.
+    deleted INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat_jid, msg_id)
 );
 
