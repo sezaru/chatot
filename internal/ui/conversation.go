@@ -267,6 +267,31 @@ type ConversationView struct {
 	onStar    func(client.Message)
 	onForward func(client.Message)
 
+	// onShowMedia/onExportChat/onClearChat are the header "⋮" menu's stubbed
+	// seams for F43 (media/links/docs page) and F44 (export/clear chat);
+	// onGlobalSearch is the in-chat search bar's "Search all chats" link.
+	onShowMedia    func(jid string)
+	onExportChat   func(jid string)
+	onClearChat    func(jid string)
+	onGlobalSearch func(query string)
+
+	menuBtn *gtk.Button
+
+	// In-chat search: searchQuery drives bindRow's highlight check (any
+	// currently-bound row whose text contains it, case-insensitively, is
+	// rendered with Pango highlight markup); searchHits is the ordered
+	// (oldest-first) store match set for the open chat, searchIdx the
+	// currently-selected hit ("-1" = none). highlightedPositions tracks which
+	// cv.msgs positions were last force-rebound so a narrowing query can
+	// un-highlight rows that no longer match.
+	searchRevealer       *gtk.Revealer
+	searchEntry          *gtk.SearchEntry
+	searchHitLabel       *gtk.Label
+	searchQuery          string
+	searchHits           []client.SearchHit
+	searchIdx            int
+	highlightedPositions map[int]bool
+
 	toastOverlay *adw.ToastOverlay
 }
 
@@ -302,6 +327,23 @@ func (cv *ConversationView) OnStarRequested(f func(client.Message)) { cv.onStar 
 // OnForwardRequested registers f to be called when the user picks Forward
 // from a bubble's "⋯" menu; msg is the message to forward.
 func (cv *ConversationView) OnForwardRequested(f func(client.Message)) { cv.onForward = f }
+
+// OnShowMediaRequested registers f to be called when the user picks "Media,
+// links and docs" from the header menu; STUBBED until F43 builds the page.
+func (cv *ConversationView) OnShowMediaRequested(f func(jid string)) { cv.onShowMedia = f }
+
+// OnExportRequested registers f to be called when the user picks "Export
+// chat…" from the header menu; STUBBED until F44.
+func (cv *ConversationView) OnExportRequested(f func(jid string)) { cv.onExportChat = f }
+
+// OnClearRequested registers f to be called when the user picks "Clear
+// chat…" from the header menu; STUBBED until F44.
+func (cv *ConversationView) OnClearRequested(f func(jid string)) { cv.onClearChat = f }
+
+// OnSearchAllChatsRequested registers f to be called when the user clicks
+// "Search all chats" in the in-chat search bar; main.go wires this to the
+// sidebar's global search.
+func (cv *ConversationView) OnSearchAllChatsRequested(f func(query string)) { cv.onGlobalSearch = f }
 
 // SetWindow supplies the parent window the group-info dialog needs; call
 // once after NewConversationView.
@@ -382,8 +424,54 @@ func NewConversationView(c client.Client) *ConversationView {
 	groupInfoBtn.SetVisible(false)
 	header.Append(groupInfoBtn)
 
+	menuBtn := gtk.NewButtonWithLabel("⋮")
+	menuBtn.AddCSSClass("flat")
+	menuBtn.SetTooltipText("Chat options")
+	menuBtn.SetHAlign(gtk.AlignEnd)
+	menuBtn.SetSensitive(false)
+	header.Append(menuBtn)
+
 	header.SetVisible(false)
 	root.Append(header)
+
+	searchBar := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	searchBar.AddCSSClass("chatot-conv-searchbar")
+	searchBar.SetMarginStart(10)
+	searchBar.SetMarginEnd(10)
+	searchBar.SetMarginBottom(6)
+
+	searchEntry := gtk.NewSearchEntry()
+	searchEntry.SetPlaceholderText("Search in chat")
+	searchEntry.SetHExpand(true)
+	searchBar.Append(searchEntry)
+
+	searchHitLabel := gtk.NewLabel("")
+	searchHitLabel.AddCSSClass("chatot-conv-search-count")
+	searchBar.Append(searchHitLabel)
+
+	searchUpBtn := gtk.NewButtonFromIconName("go-up-symbolic")
+	searchUpBtn.AddCSSClass("flat")
+	searchUpBtn.SetTooltipText("Previous match")
+	searchBar.Append(searchUpBtn)
+
+	searchDownBtn := gtk.NewButtonFromIconName("go-down-symbolic")
+	searchDownBtn.AddCSSClass("flat")
+	searchDownBtn.SetTooltipText("Next match")
+	searchBar.Append(searchDownBtn)
+
+	searchAllBtn := gtk.NewButtonWithLabel("Search all chats")
+	searchAllBtn.AddCSSClass("flat")
+	searchBar.Append(searchAllBtn)
+
+	searchCloseBtn := gtk.NewButtonFromIconName("window-close-symbolic")
+	searchCloseBtn.AddCSSClass("flat")
+	searchCloseBtn.SetTooltipText("Close search")
+	searchBar.Append(searchCloseBtn)
+
+	searchRevealer := gtk.NewRevealer()
+	searchRevealer.SetChild(searchBar)
+	searchRevealer.SetRevealChild(false)
+	root.Append(searchRevealer)
 
 	empty := gtk.NewLabel("Select a chat")
 	empty.AddCSSClass("chatot-placeholder")
@@ -399,19 +487,25 @@ func NewConversationView(c client.Client) *ConversationView {
 	scroller := gtk.NewScrolledWindow()
 
 	cv := &ConversationView{
-		Box:           root,
-		c:             c,
-		events:        c.Events(),
-		header:        header,
-		avatarSlot:    avatarSlot,
-		avatarCache:   newAvatarCache(),
-		titleLabel:    titleLabel,
-		subtitleLabel: subtitleLabel,
-		groupInfoBtn:  groupInfoBtn,
-		scroller:      scroller,
-		model:         model,
-		empty:         empty,
-		presence:      make(map[string]PresenceState),
+		Box:                  root,
+		c:                    c,
+		events:               c.Events(),
+		header:               header,
+		avatarSlot:           avatarSlot,
+		avatarCache:          newAvatarCache(),
+		titleLabel:           titleLabel,
+		subtitleLabel:        subtitleLabel,
+		groupInfoBtn:         groupInfoBtn,
+		menuBtn:              menuBtn,
+		searchRevealer:       searchRevealer,
+		searchEntry:          searchEntry,
+		searchHitLabel:       searchHitLabel,
+		searchIdx:            -1,
+		highlightedPositions: make(map[int]bool),
+		scroller:             scroller,
+		model:                model,
+		empty:                empty,
+		presence:             make(map[string]PresenceState),
 	}
 
 	groupInfoBtn.ConnectClicked(func() {
@@ -419,6 +513,36 @@ func NewConversationView(c client.Client) *ConversationView {
 			showGroupInfoDialog(cv.window, cv.c, cv.jid)
 		}
 	})
+
+	cv.setupHeaderMenu(menuBtn)
+
+	searchEntry.ConnectSearchChanged(func() {
+		cv.runSearch(searchEntry.Text())
+	})
+	keyController := gtk.NewEventControllerKey()
+	keyController.SetPropagationPhase(gtk.PhaseCapture)
+	keyController.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
+		switch keyval {
+		case gdk.KEY_Return, gdk.KEY_KP_Enter:
+			cv.stepHit(state&gdk.ShiftMask == 0)
+			return true
+		case gdk.KEY_Escape:
+			cv.closeSearchBar()
+			return true
+		}
+		return false
+	})
+	searchEntry.AddController(keyController)
+	searchUpBtn.ConnectClicked(func() { cv.stepHit(false) })
+	searchDownBtn.ConnectClicked(func() { cv.stepHit(true) })
+	searchAllBtn.ConnectClicked(func() {
+		query := cv.searchQuery
+		cv.closeSearchBar()
+		if cv.onGlobalSearch != nil {
+			cv.onGlobalSearch(query)
+		}
+	})
+	searchCloseBtn.ConnectClicked(func() { cv.closeSearchBar() })
 
 	factory.ConnectSetup(func(obj *glib.Object) {
 		item := obj.Cast().(*gtk.ListItem)
@@ -481,7 +605,7 @@ func (cv *ConversationView) bindRow(item *gtk.ListItem) {
 		prev = &cv.msgs[pos-1]
 	}
 	vm := bubbleVM(msg, prev, cv.byID, time.Now())
-	box.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact, cv.onVote, cv.onEdit, cv.onDelete, cv.onStar, cv.onForward, cv.toastOverlay))
+	box.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact, cv.onVote, cv.onEdit, cv.onDelete, cv.onStar, cv.onForward, cv.toastOverlay, cv.searchQuery))
 }
 
 // onScroll fetches the next older page when the reader nears the top. Runs on
@@ -500,6 +624,12 @@ func (cv *ConversationView) onScroll() {
 // whatever was shown before; older messages are pulled in on scroll-up (see
 // loadOlder). Must run on the GTK main loop.
 func (cv *ConversationView) Load(jid string) {
+	// A reload of the currently-open chat (receipts/reactions/revokes/poll
+	// votes all trigger one) keeps the search bar open; only an actual chat
+	// switch resets it.
+	if cv.jid != jid {
+		cv.closeSearchBar()
+	}
 	cv.jid = jid
 	cv.loadingOlder = false
 	cv.historyRequested = false
@@ -562,21 +692,30 @@ func (cv *ConversationView) loadOlder() {
 		return
 	}
 
-	// A genuine older page arrived (from local store or a landed history sync):
-	// clear historyRequested so hitting the store's floor again re-requests the
-	// next batch, deepening one page at a time rather than stopping after one.
-	cv.historyRequested = false
+	// A genuine older page arrived (from local store or a landed history sync).
 	anchor := len(older)
-	cv.msgs = append(older, cv.msgs...)
-	cv.oldestID = cv.msgs[0].ID
-	cv.byID = indexByID(cv.msgs)
-	cv.hasMore = len(older) == conversationPageSize
-	cv.model.Splice(0, 0, older...)
+	cv.prependOlder(older)
 
 	glib.IdleAdd(func() {
 		cv.listView.ScrollTo(uint(anchor), gtk.ListScrollNone, nil)
 		cv.loadingOlder = false
 	})
+}
+
+// prependOlder splices older (oldest-first) onto the front of the currently
+// loaded thread, updating the pagination cursor/index. Shared by loadOlder
+// (scroll-up paging) and jumpToMessage (loading pages synchronously to reach
+// a search hit that isn't loaded yet). historyRequested is cleared so hitting
+// the store's floor again re-requests the next batch from the phone, one
+// page at a time rather than stopping after one. Must run on the GTK main
+// loop.
+func (cv *ConversationView) prependOlder(older []client.Message) {
+	cv.historyRequested = false
+	cv.msgs = append(older, cv.msgs...)
+	cv.oldestID = cv.msgs[0].ID
+	cv.byID = indexByID(cv.msgs)
+	cv.hasMore = len(older) == conversationPageSize
+	cv.model.Splice(0, 0, older...)
 }
 
 // watchEvents listens for client events and, for the currently-loaded chat,
@@ -725,6 +864,7 @@ const conversationAvatarSize = 40
 func (cv *ConversationView) refreshHeader() {
 	if cv.jid == "" {
 		cv.header.SetVisible(false)
+		cv.menuBtn.SetSensitive(false)
 		return
 	}
 	name := cv.chatName(cv.jid)
@@ -732,6 +872,7 @@ func (cv *ConversationView) refreshHeader() {
 	cv.subtitleLabel.SetLabel(presenceSubtitle(cv.presence[cv.jid], time.Now()))
 	cv.groupInfoBtn.SetVisible(strings.HasSuffix(cv.jid, "@g.us"))
 	cv.header.SetVisible(true)
+	cv.menuBtn.SetSensitive(true)
 
 	if cv.avatarJID != cv.jid {
 		cv.avatarJID = cv.jid
@@ -825,7 +966,7 @@ func removeAllChildren(box *gtk.Box) {
 // buildBubble constructs the GTK widget tree for a single message from its
 // pre-computed view-model, wiring the reply/react affordances (if the
 // callbacks are set) to msg.
-func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply func(client.Message), onReact func(msg client.Message, emoji string), onVote func(msg client.Message, options []string), onEdit func(client.Message), onDelete func(client.Message), onStar func(client.Message), onForward func(client.Message), toastOverlay *adw.ToastOverlay) *gtk.Box {
+func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply func(client.Message), onReact func(msg client.Message, emoji string), onVote func(msg client.Message, options []string), onEdit func(client.Message), onDelete func(client.Message), onStar func(client.Message), onForward func(client.Message), toastOverlay *adw.ToastOverlay, searchQuery string) *gtk.Box {
 	wrapper := gtk.NewBox(gtk.OrientationVertical, 4)
 
 	if vm.ShowDaySeparator {
@@ -884,7 +1025,7 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 	} else if vm.IsMedia {
 		bubble.Append(buildMediaContent(msg, vm.Media, c))
 	} else {
-		text := gtk.NewLabel(vm.Text)
+		text := gtk.NewLabel("")
 		text.AddCSSClass("chatot-bubble-text")
 		if vm.Deleted {
 			text.AddCSSClass("chatot-bubble-deleted")
@@ -894,6 +1035,11 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		}
 		text.SetXAlign(0)
 		text.SetWrap(true)
+		if !vm.Deleted && searchQuery != "" && len(findMatches(vm.Text, searchQuery)) > 0 {
+			text.SetMarkup(highlightMarkup(vm.Text, searchQuery))
+		} else {
+			text.SetLabel(vm.Text)
+		}
 		bubble.Append(text)
 	}
 

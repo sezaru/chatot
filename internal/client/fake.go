@@ -276,6 +276,25 @@ func (f *Fake) Search(query string, limit int) ([]SearchHit, error) {
 	return hits, nil
 }
 
+func (f *Fake) SearchInChat(chatJID, query string, limit int) ([]SearchHit, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return nil, nil
+	}
+	var hits []SearchHit
+	for _, m := range f.messages[chatJID] {
+		if strings.Contains(strings.ToLower(m.Text), query) {
+			hits = append(hits, SearchHit{ChatJID: chatJID, MsgID: m.ID, ChatName: f.chatName(chatJID), Snippet: m.Text, TS: m.TS})
+			if limit > 0 && len(hits) >= limit {
+				break
+			}
+		}
+	}
+	return hits, nil
+}
+
 // chatName looks up jid's display name among the seeded/fake chats, falling
 // back to the JID itself.
 func (f *Fake) chatName(jid string) string {

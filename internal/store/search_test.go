@@ -66,6 +66,42 @@ func TestSearchMatchesChatName(t *testing.T) {
 	}
 }
 
+func TestSearchInChatScopesToChatAndOrdersOldestFirst(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertChat(ChatRow{JID: "b@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "pizza tonight?", TS: 2}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m2", Text: "yes pizza", TS: 1}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "b@s.whatsapp.net", MsgID: "m3", Text: "pizza too", TS: 3}))
+
+	hits, err := s.SearchInChat("a@s.whatsapp.net", "pizza", 10)
+	must(t, err)
+
+	if len(hits) != 2 {
+		t.Fatalf("got %d hits, want 2 (scoped to chat a): %+v", len(hits), hits)
+	}
+	if hits[0].MsgID != "m2" || hits[1].MsgID != "m1" {
+		t.Errorf("got order %s, %s, want m2, m1 (oldest first)", hits[0].MsgID, hits[1].MsgID)
+	}
+	for _, h := range hits {
+		if h.ChatJID != "a@s.whatsapp.net" {
+			t.Errorf("hit %+v leaked from another chat", h)
+		}
+	}
+}
+
+func TestSearchInChatEmptyQueryReturnsNoHits(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "hello", TS: 1}))
+
+	hits, err := s.SearchInChat("a@s.whatsapp.net", "   ", 10)
+	must(t, err)
+	if len(hits) != 0 {
+		t.Errorf("got %d hits, want 0 for blank query", len(hits))
+	}
+}
+
 func TestSearchAdversarialQueriesDoNotError(t *testing.T) {
 	s := newTestStore(t)
 	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))

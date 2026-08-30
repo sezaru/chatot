@@ -383,6 +383,14 @@ func (cl *ChatList) OnChatSelected(f func(jid string)) {
 	cl.onSelect = f
 }
 
+// OpenGlobalSearch switches the sidebar into search mode with query
+// pre-filled, clearing any active starred/status/channels filter — the
+// "Search all chats" link in the in-chat search bar funnels here.
+func (cl *ChatList) OpenGlobalSearch(query string) {
+	cl.search.SetText(query)
+	cl.search.GrabFocus()
+}
+
 // refresh rebuilds the row widgets from Statuses (status mode),
 // StarredMessages (starred mode), Search (query set) or Chats (none of the
 // above). Must run on the GTK main loop.

@@ -113,6 +113,17 @@ func activate(app *adw.Application, c client.Client) {
 			}
 		}()
 	})
+	// Media/export/clear are STUBBED here; F43 builds the media/links/docs
+	// page and F44 builds export/clear.
+	conversation.OnShowMediaRequested(func(jid string) {
+		log.Printf("chatot: show media for %s (not yet implemented, see F43)", jid)
+	})
+	conversation.OnExportRequested(func(jid string) {
+		log.Printf("chatot: export chat %s (not yet implemented, see F44)", jid)
+	})
+	conversation.OnClearRequested(func(jid string) {
+		log.Printf("chatot: clear chat %s (not yet implemented, see F44)", jid)
+	})
 	// openChat is the single "show this chat" path: the chat-list click and
 	// the notification's click-to-open action both funnel through it.
 	openChat := func(jid string) {
@@ -149,6 +160,10 @@ func activate(app *adw.Application, c client.Client) {
 
 	conversation.OnForwardRequested(func(msg client.Message) {
 		ui.ShowForwardDialog(&win.Window, c, msg, toastOverlay)
+	})
+	conversation.OnSearchAllChatsRequested(func(query string) {
+		split.SetShowContent(false) // reveal the sidebar when the split view is collapsed
+		chatList.OpenGlobalSearch(query)
 	})
 
 	// "is-active" tracks OS-level window focus; report available/unavailable

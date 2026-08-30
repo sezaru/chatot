@@ -406,6 +406,19 @@ func (w *Whatsmeow) Search(query string, limit int) ([]SearchHit, error) {
 	return out, nil
 }
 
+// SearchInChat runs an fts5 query scoped to a single chat, oldest first.
+func (w *Whatsmeow) SearchInChat(chatJID, query string, limit int) ([]SearchHit, error) {
+	rows, err := w.store.SearchInChat(chatJID, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: search in chat: %w", err)
+	}
+	out := make([]SearchHit, len(rows))
+	for i, r := range rows {
+		out[i] = SearchHit{ChatJID: r.ChatJID, MsgID: r.MsgID, ChatName: r.ChatName, Snippet: r.Snippet, TS: r.TS}
+	}
+	return out, nil
+}
+
 // SendText sends a plain-text (optionally reply) message. On success the
 // sent message is upserted into the local store immediately (optimistic
 // echo), rather than waiting for whatsmeow to redeliver it as an event.
