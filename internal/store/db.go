@@ -145,3 +145,16 @@ func boolToInt(b bool) int {
 	}
 	return 0
 }
+
+// scanIDs collects a single TEXT column from rows into a slice of strings.
+func scanIDs(rows *sql.Rows) ([]string, error) {
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}

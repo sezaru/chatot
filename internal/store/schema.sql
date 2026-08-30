@@ -100,6 +100,19 @@ CREATE TABLE IF NOT EXISTS poll_votes (
     PRIMARY KEY (chat_jid, poll_msg_id, voter_jid, option_hash)
 );
 
+CREATE TABLE IF NOT EXISTS labels (
+    label_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    color INTEGER NOT NULL DEFAULT 0,
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS label_chats (
+    label_id TEXT NOT NULL,
+    chat_jid TEXT NOT NULL,
+    PRIMARY KEY (label_id, chat_jid)
+);
+
 CREATE TABLE IF NOT EXISTS media (
     chat_jid TEXT NOT NULL,
     msg_id TEXT NOT NULL,

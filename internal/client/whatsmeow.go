@@ -188,6 +188,23 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 		w.pushEvent(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: jid, MsgID: st.MessageID}})
 		return
 	}
+	// Label app-state: a LabelEdit updates the label registry; a
+	// LabelAssociationChat toggles a chat's membership in a label. Both push
+	// an EventLabelUpdate so the sidebar's label filter and chat list refresh.
+	if le, ok := evt.(*events.LabelEdit); ok {
+		if err := w.store.UpsertLabel(le.LabelID, le.Action.GetName(), int(le.Action.GetColor()), le.Action.GetDeleted()); err != nil {
+			w.log.Warnf("chatot/client: apply label-edit app-state: %v", err)
+		}
+		w.pushEvent(Event{Kind: EventLabelUpdate})
+		return
+	}
+	if la, ok := evt.(*events.LabelAssociationChat); ok {
+		if err := w.store.SetChatLabel(la.LabelID, la.JID.String(), la.Action.GetLabeled()); err != nil {
+			w.log.Warnf("chatot/client: apply label-association app-state: %v", err)
+		}
+		w.pushEvent(Event{Kind: EventLabelUpdate})
+		return
+	}
 	// Blocklist changes: either a full list (Action == "modify", re-fetch) or
 	// a batch of individual Changes applied to the cached set in place.
 	if bl, ok := evt.(*events.Blocklist); ok {

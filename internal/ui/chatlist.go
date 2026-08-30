@@ -152,6 +152,11 @@ type ChatList struct {
 	window       *gtk.Window // parent for the new-chat dialog; set via SetWindow
 	showArchived bool        // toggled by the "Archived" button; see showChatInList
 	showStarred  bool        // toggled by the "Starred" button; overrides search/archived
+	labelFilter  *gtk.DropDown
+	// filterLabelIDs maps the label-filter dropdown's row index to a label id;
+	// index 0 is "All" (empty id). Rebuilt with the dropdown from c.Labels().
+	filterLabelIDs []string
+	selectedLabel  string // label id the chat list is filtered to; "" = All
 }
 
 // SetWindow supplies the parent window the new-chat dialog needs; call once
@@ -185,6 +190,10 @@ func NewChatList(c client.Client) *ChatList {
 	starredToggle.SetTooltipText("Starred messages")
 	searchRow.Append(starredToggle)
 
+	labelFilter := gtk.NewDropDownFromStrings([]string{"All"})
+	labelFilter.SetTooltipText("Filter by label")
+	searchRow.Append(labelFilter)
+
 	privacyBtn := gtk.NewButtonFromIconName("preferences-system-privacy-symbolic")
 	privacyBtn.SetTooltipText("Privacy settings")
 	searchRow.Append(privacyBtn)
@@ -196,7 +205,7 @@ func NewChatList(c client.Client) *ChatList {
 	list.SetVExpand(true)
 	root.Append(list)
 
-	cl := &ChatList{Box: root, c: c, events: c.Events(), list: list, typingJIDs: make(map[string]bool), avatarCache: newAvatarCache()}
+	cl := &ChatList{Box: root, c: c, events: c.Events(), list: list, typingJIDs: make(map[string]bool), avatarCache: newAvatarCache(), labelFilter: labelFilter}
 
 	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
 		idx := row.Index()
@@ -239,6 +248,17 @@ func NewChatList(c client.Client) *ChatList {
 		showPrivacyDialog(cl.window, cl.c)
 	})
 
+	labelFilter.Connect("notify::selected", func() {
+		idx := int(labelFilter.Selected())
+		if idx >= 0 && idx < len(cl.filterLabelIDs) {
+			cl.selectedLabel = cl.filterLabelIDs[idx]
+		} else {
+			cl.selectedLabel = ""
+		}
+		cl.refresh()
+	})
+
+	cl.rebuildLabelFilter()
 	cl.refresh()
 	go cl.watchEvents()
 
@@ -277,6 +297,9 @@ func (cl *ChatList) refreshChats() {
 		if !showChatInList(chat, cl.showArchived) {
 			continue
 		}
+		if !chatHasLabel(cl.c, chat.JID, cl.selectedLabel) {
+			continue
+		}
 		vm := chatRowVM(chat, now)
 		if cl.typingJIDs[chat.JID] {
 			vm.Preview = "typing…"
@@ -284,7 +307,7 @@ func (cl *ChatList) refreshChats() {
 		}
 		vm.Blocked = cl.c.IsBlocked(chat.JID)
 		row := buildChatRow(cl.c, cl.avatarCache, vm)
-		attachChatContextMenu(row, cl.c, chat)
+		attachChatContextMenu(row, cl.c, chat, cl.window)
 		cl.list.Append(row)
 		cl.rowJIDs = append(cl.rowJIDs, vm.JID)
 	}
@@ -402,6 +425,13 @@ func (cl *ChatList) watchEvents() {
 			})
 			continue
 		}
+		if ev.Kind == client.EventLabelUpdate {
+			glib.IdleAdd(func() {
+				cl.rebuildLabelFilter()
+				cl.refresh()
+			})
+			continue
+		}
 		glib.IdleAdd(func() {
 			cl.refresh()
 		})
@@ -484,18 +514,18 @@ func buildChatRow(c client.Client, cache *avatarCache, vm chatRowView) *gtk.Box 
 // Each action calls the matching Client method in a goroutine; the resulting
 // EventChatUpdate (or, for the fake, the equivalent) drives the list refresh
 // via ChatList.watchEvents, so nothing here touches the row directly.
-func attachChatContextMenu(row *gtk.Box, c client.Client, chat client.Chat) {
+func attachChatContextMenu(row *gtk.Box, c client.Client, chat client.Chat, window *gtk.Window) {
 	gesture := gtk.NewGestureClick()
 	gesture.SetButton(gdk.BUTTON_SECONDARY)
 	gesture.ConnectPressed(func(nPress int, x, y float64) {
-		showChatContextMenu(row, c, chat, x, y)
+		showChatContextMenu(row, c, chat, window, x, y)
 	})
 	row.AddController(gesture)
 }
 
 // showChatContextMenu builds and pops a Popover of action buttons anchored at
 // (x, y) within row.
-func showChatContextMenu(row *gtk.Box, c client.Client, chat client.Chat, x, y float64) {
+func showChatContextMenu(row *gtk.Box, c client.Client, chat client.Chat, window *gtk.Window, x, y float64) {
 	labels := chatActionLabels(chat)
 	pop := gtk.NewPopover()
 	box := gtk.NewBox(gtk.OrientationVertical, 0)
@@ -520,6 +550,14 @@ func showChatContextMenu(row *gtk.Box, c client.Client, chat client.Chat, x, y f
 	addAction(labels.Unread, func(ctx context.Context) error {
 		return c.MarkChatUnread(ctx, chat.JID, chat.UnreadCount == 0)
 	})
+	labelsBtn := gtk.NewButtonWithLabel("Labels…")
+	labelsBtn.AddCSSClass("flat")
+	labelsBtn.ConnectClicked(func() {
+		pop.Popdown()
+		showLabelsDialog(window, c, chat)
+	})
+	box.Append(labelsBtn)
+
 	// Blocking is per-contact; groups have no meaningful block target.
 	if !chat.IsGroup {
 		blocked := c.IsBlocked(chat.JID)
