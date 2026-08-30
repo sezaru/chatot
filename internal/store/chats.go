@@ -57,7 +57,7 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 	}
 	rows, err := s.db.Query(`
 		SELECT
-			c.jid, c.is_group, COALESCE(c.name, ''), c.pinned, c.unread_count, c.last_message_ts,
+			c.jid, c.is_group, COALESCE(c.name, ''), c.pinned, c.muted, c.unread_count, c.last_message_ts,
 			COALESCE(g.name, ''), COALESCE(g.is_parent, 0), COALESCE(g.linked_parent_jid, ''),
 			COALESCE(ct.business_name, ''), COALESCE(ct.full_name, ''), COALESCE(ct.push_name, ''), COALESCE(ct.system_name, ''),
 			COALESCE(lm.from_me, 0), COALESCE(lm.text, ''),
@@ -85,12 +85,12 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 	var out []Chat
 	for rows.Next() {
 		var c Chat
-		var isGroup, pinned, groupIsParent, fromMe int
+		var isGroup, pinned, muted, groupIsParent, fromMe int
 		var chatName, groupName, groupLinkedParent string
 		var business, full, push, system string
 		var lastText, mediaKind, mediaCaption, mediaFilename string
 		if err := rows.Scan(
-			&c.JID, &isGroup, &chatName, &pinned, &c.UnreadCount, &c.LastMessageTS,
+			&c.JID, &isGroup, &chatName, &pinned, &muted, &c.UnreadCount, &c.LastMessageTS,
 			&groupName, &groupIsParent, &groupLinkedParent,
 			&business, &full, &push, &system,
 			&fromMe, &lastText,
@@ -100,6 +100,7 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		}
 		c.IsGroup = isGroup != 0
 		c.Pinned = pinned != 0
+		c.Muted = muted != 0
 		c.Name = resolveChatName(chatName, groupName, business, full, push, system, c.JID)
 		c.Preview = buildPreview(fromMe != 0, lastText, mediaKind, mediaCaption, mediaFilename)
 		out = append(out, c)

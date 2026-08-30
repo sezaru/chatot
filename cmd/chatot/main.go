@@ -60,11 +60,14 @@ func activate(app *adw.Application, c client.Client) {
 		}()
 	})
 
-	chatList.OnChatSelected(func(jid string) {
+	// openChat is the single "show this chat" path: the chat-list click and
+	// the notification's click-to-open action both funnel through it.
+	openChat := func(jid string) {
 		conversation.Load(jid)
 		composer.SetChat(jid)
 		go markReadOnOpen(c, jid, conversation.Messages())
-	})
+	}
+	chatList.OnChatSelected(openChat)
 
 	split := adw.NewNavigationSplitView()
 	split.SetSidebar(sidebar)
@@ -80,6 +83,18 @@ func activate(app *adw.Application, c client.Client) {
 	// so contacts see accurate presence rather than a permanent "online".
 	win.NotifyProperty("is-active", func() {
 		go sendPresence(c, win.IsActive())
+	})
+
+	openChatAction := gio.NewSimpleAction("open-chat", glib.NewVariantType("s"))
+	openChatAction.ConnectActivate(func(param *glib.Variant) {
+		jid := param.String()
+		win.Present()
+		openChat(jid)
+	})
+	app.AddAction(openChatAction)
+
+	ui.NewNotifier(c, &app.Application.Application, func() (bool, string) {
+		return win.IsActive(), conversation.CurrentJID()
 	})
 
 	win.Present()

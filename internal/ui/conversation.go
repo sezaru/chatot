@@ -148,6 +148,9 @@ func (cv *ConversationView) OnReactRequested(f func(msg client.Message, emoji st
 // Messages returns the currently-loaded thread, for mark-read on open.
 func (cv *ConversationView) Messages() []client.Message { return cv.msgs }
 
+// CurrentJID returns the chat currently loaded, "" if none.
+func (cv *ConversationView) CurrentJID() string { return cv.jid }
+
 const conversationLimit = 200
 
 // NewConversationView builds an empty ConversationView backed by c and

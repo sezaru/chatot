@@ -85,6 +85,7 @@ type Chat struct {
 	UnreadCount   int
 	LastMessageTS int64
 	Pinned        bool
+	Muted         bool
 	IsGroup       bool
 }
 
