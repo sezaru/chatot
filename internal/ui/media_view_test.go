@@ -112,6 +112,35 @@ func TestMediaVM_NoThumbnail(t *testing.T) {
 	}
 }
 
+func TestMediaVM_IsGIF(t *testing.T) {
+	m := client.Message{
+		ID:         "1",
+		Attachment: &client.Attachment{Kind: "video", IsGIF: true},
+	}
+	out := mediaVM(m)
+	if !out.IsGIF {
+		t.Error("expected IsGIF=true when the attachment is a GIF-playback video")
+	}
+}
+
+func TestChipLabel_GIFSuffix(t *testing.T) {
+	mv := mediaView{Chip: "[video]", IsGIF: true}
+	got := chipLabel(mv)
+	want := "⬇ [video]  GIF"
+	if got != want {
+		t.Errorf("chipLabel = %q, want %q", got, want)
+	}
+}
+
+func TestChipLabel_NoGIFSuffix(t *testing.T) {
+	mv := mediaView{Chip: "[image]"}
+	got := chipLabel(mv)
+	want := "⬇ [image]"
+	if got != want {
+		t.Errorf("chipLabel = %q, want %q", got, want)
+	}
+}
+
 func TestInlineable(t *testing.T) {
 	for _, kind := range []string{"image", "video", "sticker", "audio"} {
 		if !inlineable(kind) {

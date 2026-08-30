@@ -95,6 +95,25 @@ func TestMessagesMediaAttachment(t *testing.T) {
 	}
 }
 
+func TestMessagesMediaGifFlagRoundTrips(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", TS: 1}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Kind: "video", MimeType: "video/mp4", IsGif: true}))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if msgs[0].Attachment == nil || !msgs[0].Attachment.IsGif {
+		t.Fatalf("got %+v, want IsGif=true", msgs[0].Attachment)
+	}
+
+	row, ok, err := s.MediaByMsgID("m1")
+	must(t, err)
+	if !ok || !row.IsGif {
+		t.Fatalf("MediaByMsgID = %+v ok=%v, want IsGif=true", row, ok)
+	}
+}
+
 func TestMessagesBeforePagesOlderInChronologicalOrder(t *testing.T) {
 	s := newTestStore(t)
 	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))

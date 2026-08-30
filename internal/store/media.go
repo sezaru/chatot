@@ -14,8 +14,8 @@ func (s *Store) UpsertMedia(row MediaRow) error {
 		thumb = row.Thumbnail
 	}
 	_, err := s.db.Exec(`
-		INSERT INTO media(chat_jid, msg_id, kind, filename, caption, mime_type, local_path, proto_blob, thumbnail)
-		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?)
+		INSERT INTO media(chat_jid, msg_id, kind, filename, caption, mime_type, local_path, proto_blob, thumbnail, is_gif)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?)
 		ON CONFLICT(chat_jid, msg_id) DO UPDATE SET
 			kind = excluded.kind,
 			filename = COALESCE(excluded.filename, media.filename),
@@ -23,8 +23,9 @@ func (s *Store) UpsertMedia(row MediaRow) error {
 			mime_type = COALESCE(excluded.mime_type, media.mime_type),
 			local_path = COALESCE(excluded.local_path, media.local_path),
 			proto_blob = COALESCE(excluded.proto_blob, media.proto_blob),
-			thumbnail = COALESCE(excluded.thumbnail, media.thumbnail)
-	`, row.ChatJID, row.MsgID, row.Kind, row.Filename, row.Caption, row.MimeType, row.LocalPath, blob, thumb)
+			thumbnail = COALESCE(excluded.thumbnail, media.thumbnail),
+			is_gif = excluded.is_gif
+	`, row.ChatJID, row.MsgID, row.Kind, row.Filename, row.Caption, row.MimeType, row.LocalPath, blob, thumb, boolToInt(row.IsGif))
 	return err
 }
 
@@ -35,12 +36,13 @@ func (s *Store) UpsertMedia(row MediaRow) error {
 func (s *Store) MediaByMsgID(msgID string) (row MediaRow, ok bool, err error) {
 	r := s.db.QueryRow(`
 		SELECT chat_jid, msg_id, kind, COALESCE(filename, ''), COALESCE(caption, ''),
-			COALESCE(mime_type, ''), COALESCE(local_path, ''), proto_blob, thumbnail
+			COALESCE(mime_type, ''), COALESCE(local_path, ''), proto_blob, thumbnail, is_gif
 		FROM media WHERE msg_id = ? LIMIT 1
 	`, msgID)
 	var blob, thumb []byte
+	var isGif int
 	if err := r.Scan(&row.ChatJID, &row.MsgID, &row.Kind, &row.Filename, &row.Caption,
-		&row.MimeType, &row.LocalPath, &blob, &thumb); err != nil {
+		&row.MimeType, &row.LocalPath, &blob, &thumb, &isGif); err != nil {
 		if err == sql.ErrNoRows {
 			return MediaRow{}, false, nil
 		}
@@ -48,6 +50,7 @@ func (s *Store) MediaByMsgID(msgID string) (row MediaRow, ok bool, err error) {
 	}
 	row.ProtoBlob = blob
 	row.Thumbnail = thumb
+	row.IsGif = isGif != 0
 	return row, true, nil
 }
 

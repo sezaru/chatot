@@ -23,6 +23,7 @@ type mediaView struct {
 	LocalPath    string
 	HasThumbnail bool
 	Thumbnail    []byte
+	IsGIF        bool
 }
 
 // mediaVM derives the media view-model for m. HasLocal requires both a
@@ -36,7 +37,7 @@ func mediaVM(m client.Message) mediaView {
 		return mediaView{}
 	}
 	a := *m.Attachment
-	v := mediaView{IsMedia: true, Kind: a.Kind, Chip: mediaChip(a)}
+	v := mediaView{IsMedia: true, Kind: a.Kind, Chip: mediaChip(a), IsGIF: a.IsGIF}
 	if a.LocalPath != "" {
 		if info, err := os.Stat(a.LocalPath); err == nil && !info.IsDir() {
 			v.HasLocal = true
@@ -71,7 +72,11 @@ func buildMediaContent(msg client.Message, mv mediaView, c client.Client) gtk.Wi
 	slot := gtk.NewBox(gtk.OrientationVertical, 0)
 
 	if mv.HasLocal && inlineable(mv.Kind) {
-		slot.Append(inlineMediaWidget(mv))
+		widget := inlineMediaWidget(mv)
+		if mv.IsGIF {
+			widget = withGIFBadge(widget)
+		}
+		slot.Append(widget)
 		return slot
 	}
 
@@ -110,8 +115,34 @@ func buildThumbnailContent(texture *gdk.Texture, msg client.Message, mv mediaVie
 	btn.SetVAlign(gtk.AlignCenter)
 	overlay.AddOverlay(btn)
 
+	if mv.IsGIF {
+		overlay.AddOverlay(gifBadge())
+	}
+
 	state := mv
 	btn.ConnectClicked(func() { onThumbnailClicked(&state, msg, c, slot, overlay, btn) })
+	return overlay
+}
+
+// gifBadge builds the small green "GIF" chip overlaid on a GIF attachment's
+// thumbnail/inline widget — whether it loops on playback (deferred to a
+// future feature) is a marker for now, not yet an actual player.
+func gifBadge() *gtk.Label {
+	badge := gtk.NewLabel("GIF")
+	badge.AddCSSClass("chatot-gif-badge")
+	badge.SetHAlign(gtk.AlignStart)
+	badge.SetVAlign(gtk.AlignStart)
+	badge.SetMarginStart(6)
+	badge.SetMarginTop(6)
+	return badge
+}
+
+// withGIFBadge wraps an already-built inline media widget in an overlay
+// carrying the GIF badge, for the fully-downloaded render path.
+func withGIFBadge(widget gtk.Widgetter) gtk.Widgetter {
+	overlay := gtk.NewOverlay()
+	overlay.SetChild(widget)
+	overlay.AddOverlay(gifBadge())
 	return overlay
 }
 
@@ -146,10 +177,14 @@ func onThumbnailClicked(mv *mediaView, msg client.Message, c client.Client, slot
 }
 
 func chipLabel(mv mediaView) string {
-	if mv.HasLocal {
-		return mv.Chip
+	label := mv.Chip
+	if !mv.HasLocal {
+		label = "⬇ " + label
 	}
-	return "⬇ " + mv.Chip
+	if mv.IsGIF {
+		label += "  GIF"
+	}
+	return label
 }
 
 func inlineMediaWidget(mv mediaView) gtk.Widgetter {

@@ -176,6 +176,15 @@ window {
 	opacity: 0.85;
 }
 
+.chatot-gif-badge {
+	background-color: #1b8c72;
+	color: white;
+	font-size: 0.75em;
+	font-weight: bold;
+	padding: 1px 6px;
+	border-radius: 4px;
+}
+
 .chatot-location-title {
 	font-weight: bold;
 }
