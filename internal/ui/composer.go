@@ -3,9 +3,12 @@ package ui
 import (
 	"context"
 	"log"
+	"mime"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
@@ -59,6 +62,30 @@ func (s *composeState) ReplyTarget() (client.Message, bool) {
 		return client.Message{}, false
 	}
 	return *s.replyTo, true
+}
+
+// mediaAction is what an attach-file pick resolves to.
+type mediaAction struct {
+	JID     string
+	Path    string
+	Caption string
+	ReplyTo *client.MsgRef
+}
+
+// SubmitMedia resolves an attach-file send given the picked path and the
+// composer's current entry text (used as the caption, then cleared like a
+// text send). Fails (ok=false) if there's no active chat or path is blank.
+func (s *composeState) SubmitMedia(path, caption string) (mediaAction, bool) {
+	path = strings.TrimSpace(path)
+	if path == "" || s.jid == "" {
+		return mediaAction{}, false
+	}
+	action := mediaAction{JID: s.jid, Path: path, Caption: strings.TrimSpace(caption)}
+	if s.replyTo != nil {
+		action.ReplyTo = &client.MsgRef{ChatJID: s.replyTo.ChatJID, MsgID: s.replyTo.ID}
+	}
+	s.replyTo = nil
+	return action, true
 }
 
 // Submit resolves a send attempt for text. It fails (ok=false) if there's no
@@ -116,12 +143,14 @@ func MarkReadOnOpen(ctx context.Context, c client.Client, jid string, msgs []cli
 type Composer struct {
 	*gtk.Box
 
-	c     client.Client
-	state composeState
+	c      client.Client
+	state  composeState
+	window *gtk.Window // parent for gtk.FileDialog; set via SetWindow
 
 	quoteBar   *gtk.Box
 	quoteLabel *gtk.Label
 	entry      *gtk.Entry
+	attachBtn  *gtk.Button
 
 	onSent func(client.Message)
 }
@@ -153,6 +182,11 @@ func NewComposer(c client.Client) *Composer {
 	entryRow.SetMarginStart(8)
 	entryRow.SetMarginEnd(8)
 
+	attachBtn := gtk.NewButtonWithLabel("📎")
+	attachBtn.AddCSSClass("flat")
+	attachBtn.SetSensitive(false)
+	entryRow.Append(attachBtn)
+
 	entry := gtk.NewEntry()
 	entry.SetHExpand(true)
 	entry.SetPlaceholderText("Message")
@@ -170,10 +204,12 @@ func NewComposer(c client.Client) *Composer {
 		quoteBar:   quoteBar,
 		quoteLabel: quoteLabel,
 		entry:      entry,
+		attachBtn:  attachBtn,
 	}
 
 	entry.ConnectActivate(comp.submit)
 	sendBtn.ConnectClicked(comp.submit)
+	attachBtn.ConnectClicked(comp.pickAttachment)
 	cancelQuote.ConnectClicked(func() {
 		comp.state.CancelReply()
 		comp.refreshQuoteBar()
@@ -182,6 +218,11 @@ func NewComposer(c client.Client) *Composer {
 	return comp
 }
 
+// SetWindow supplies the parent window gtk.FileDialog needs; call once
+// before the attach button can be used (main.go does this after the window
+// is constructed).
+func (c *Composer) SetWindow(w *gtk.Window) { c.window = w }
+
 // OnSent registers f to be called (on the GTK main loop) with the optimistic
 // outbound message right after a successful send.
 func (c *Composer) OnSent(f func(client.Message)) { c.onSent = f }
@@ -189,6 +230,7 @@ func (c *Composer) OnSent(f func(client.Message)) { c.onSent = f }
 // SetChat switches the composer to jid, clearing any pending reply.
 func (c *Composer) SetChat(jid string) {
 	c.state.SetChat(jid)
+	c.attachBtn.SetSensitive(jid != "")
 	c.refreshQuoteBar()
 }
 
@@ -239,4 +281,77 @@ func (c *Composer) submit() {
 		}
 		glib.IdleAdd(func() { c.onSent(msg) })
 	}()
+}
+
+// pickAttachment opens a file-choose dialog and, on a picked file, hands off
+// to sendMedia. No-ops if there's no active chat or no window has been set
+// yet (attachBtn is also disabled in that first case, but this guards
+// against a stray click racing SetChat/SetWindow).
+func (c *Composer) pickAttachment() {
+	if !c.attachBtn.Sensitive() || c.window == nil {
+		return
+	}
+	dialog := gtk.NewFileDialog()
+	dialog.SetTitle("Send file")
+	dialog.Open(context.Background(), c.window, func(res gio.AsyncResulter) {
+		file, err := dialog.OpenFinish(res)
+		if err != nil {
+			return // cancelled or failed; nothing to log, this is the common case
+		}
+		c.sendMedia(file.Path())
+	})
+}
+
+// sendMedia resolves the picked path (using the current entry text as
+// caption) against composeState and sends it in the background, mirroring
+// submit's clear-then-send-then-idle-append flow.
+func (c *Composer) sendMedia(path string) {
+	action, ok := c.state.SubmitMedia(path, c.entry.Text())
+	if !ok {
+		return
+	}
+	c.entry.SetText("")
+	c.refreshQuoteBar()
+	c.attachBtn.SetSensitive(false)
+
+	go func() {
+		att := client.Attachment{LocalPath: action.Path, Filename: filepath.Base(action.Path), Caption: action.Caption}
+		id, err := c.c.SendMedia(context.Background(), action.JID, att, action.ReplyTo)
+		glib.IdleAdd(func() {
+			c.attachBtn.SetSensitive(c.state.jid != "")
+			if err != nil {
+				log.Printf("chatot: send media failed: %v", err)
+				return
+			}
+			if c.onSent == nil {
+				return
+			}
+			msg := client.Message{
+				ID: id, ChatJID: action.JID, FromMe: true, TS: time.Now().Unix(), ReplyTo: action.ReplyTo,
+				Attachment: &client.Attachment{
+					Kind: guessAttachmentKind(action.Path), Filename: att.Filename,
+					LocalPath: action.Path, Caption: action.Caption,
+				},
+			}
+			c.onSent(msg)
+		})
+	}()
+}
+
+// guessAttachmentKind best-effort classifies path by extension, for the
+// optimistic sent-bubble render only; Whatsmeow.SendMedia's own detection
+// (sniffed from file bytes, see detectAttachmentKind) is authoritative and
+// is what actually lands in the store row.
+func guessAttachmentKind(path string) string {
+	mt := mime.TypeByExtension(filepath.Ext(path))
+	switch {
+	case strings.HasPrefix(mt, "image/"):
+		return "image"
+	case strings.HasPrefix(mt, "video/"):
+		return "video"
+	case strings.HasPrefix(mt, "audio/"):
+		return "audio"
+	default:
+		return "document"
+	}
 }

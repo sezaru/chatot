@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -276,10 +278,145 @@ func (w *Whatsmeow) ownJID() string {
 	return w.wa.Store.ID.String()
 }
 
-// SendMedia uploads and sends an attachment.
-// TODO(F8): implement media send.
+// SendMedia uploads m's bytes and sends it as an image/video/audio/document
+// message. Like SendText, the sent message (plus its media row, with
+// ProtoBlob and a local cache copy so it renders inline without a
+// re-download) is upserted into the local store optimistically.
 func (w *Whatsmeow) SendMedia(ctx context.Context, jid string, m Attachment, replyTo *MsgRef) (string, error) {
-	return "", errors.New("not implemented: SendMedia (F8)")
+	to, err := types.ParseJID(jid)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+
+	data := m.Data
+	if len(data) == 0 {
+		if m.LocalPath == "" {
+			return "", errors.New("chatot/client: send media: attachment has no data or local path")
+		}
+		if data, err = os.ReadFile(m.LocalPath); err != nil {
+			return "", fmt.Errorf("chatot/client: send media: read file: %w", err)
+		}
+	}
+
+	mimeType := m.MimeType
+	if mimeType == "" {
+		mimeType = http.DetectContentType(data)
+	}
+	kind, mediaType := detectAttachmentKind(mimeType, m.Filename)
+
+	resp, err := w.wa.Upload(ctx, data, mediaType)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: send media: upload: %w", err)
+	}
+
+	var ctxInfo *waE2E.ContextInfo
+	if replyTo != nil {
+		ctxInfo = w.replyContextInfo(jid, *replyTo)
+	}
+	waMsg, mediaProto := buildMediaMessage(kind, mimeType, m, &resp, ctxInfo)
+
+	id := w.wa.GenerateMessageID()
+	if _, err := w.wa.SendMessage(ctx, to, waMsg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		return "", fmt.Errorf("chatot/client: send media: %w", err)
+	}
+
+	localPath, cacheErr := w.writeMediaFile(jid, id, mimeType, data)
+	if cacheErr != nil {
+		w.log.Warnf("chatot/client: cache outbound media failed: %v", cacheErr)
+	}
+
+	// AudioMessage carries no caption on the wire; don't show one locally.
+	caption := m.Caption
+	if kind == "audio" {
+		caption = ""
+	}
+	out := Message{
+		ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(), ReplyTo: replyTo,
+		Attachment: &Attachment{
+			Kind: kind, Filename: attachmentFilename(m), MimeType: mimeType,
+			LocalPath: localPath, Caption: caption, ProtoBlob: marshalMedia(mediaProto),
+		},
+	}
+	if err := w.ingestMessage(&out); err != nil {
+		w.log.Warnf("chatot/client: optimistic upsert of sent media failed: %v", err)
+	}
+	return id, nil
+}
+
+// detectAttachmentKind maps a mime type to chatot's media kind and
+// whatsmeow's upload MediaType. If mimeType is empty or the generic sniffed
+// fallback, it tries the filename extension before giving up. Anything that
+// isn't image/video/audio is sent as a document.
+func detectAttachmentKind(mimeType, filename string) (string, whatsmeow.MediaType) {
+	mt := strings.ToLower(strings.TrimSpace(strings.SplitN(mimeType, ";", 2)[0]))
+	if mt == "" || mt == "application/octet-stream" {
+		if ext := filepath.Ext(filename); ext != "" {
+			if guessed := mime.TypeByExtension(ext); guessed != "" {
+				mt = strings.ToLower(strings.SplitN(guessed, ";", 2)[0])
+			}
+		}
+	}
+	switch {
+	case strings.HasPrefix(mt, "image/"):
+		return "image", whatsmeow.MediaImage
+	case strings.HasPrefix(mt, "video/"):
+		return "video", whatsmeow.MediaVideo
+	case strings.HasPrefix(mt, "audio/"):
+		return "audio", whatsmeow.MediaAudio
+	default:
+		return "document", whatsmeow.MediaDocument
+	}
+}
+
+// attachmentFilename derives a document's display filename: the caller's
+// explicit name, else the source file's basename, else a generic fallback.
+func attachmentFilename(m Attachment) string {
+	if m.Filename != "" {
+		return m.Filename
+	}
+	if m.LocalPath != "" {
+		return filepath.Base(m.LocalPath)
+	}
+	return "file"
+}
+
+// buildMediaMessage constructs the waE2E.Message envelope and returns the
+// concrete media sub-message alongside it (so the caller can marshalMedia it
+// for ProtoBlob, mirroring how extractText stashes inbound descriptors).
+// Dimensions/duration are left nil — deriving them would need decoding the
+// file, which SendMedia deliberately doesn't block on.
+func buildMediaMessage(kind, mimeType string, m Attachment, resp *whatsmeow.UploadResponse, ctxInfo *waE2E.ContextInfo) (*waE2E.Message, proto.Message) {
+	switch kind {
+	case "image":
+		img := &waE2E.ImageMessage{
+			URL: &resp.URL, DirectPath: &resp.DirectPath, MediaKey: resp.MediaKey,
+			FileEncSHA256: resp.FileEncSHA256, FileSHA256: resp.FileSHA256, FileLength: &resp.FileLength,
+			Mimetype: proto.String(mimeType), Caption: proto.String(m.Caption), ContextInfo: ctxInfo,
+		}
+		return &waE2E.Message{ImageMessage: img}, img
+	case "video":
+		vid := &waE2E.VideoMessage{
+			URL: &resp.URL, DirectPath: &resp.DirectPath, MediaKey: resp.MediaKey,
+			FileEncSHA256: resp.FileEncSHA256, FileSHA256: resp.FileSHA256, FileLength: &resp.FileLength,
+			Mimetype: proto.String(mimeType), Caption: proto.String(m.Caption), ContextInfo: ctxInfo,
+		}
+		return &waE2E.Message{VideoMessage: vid}, vid
+	case "audio":
+		aud := &waE2E.AudioMessage{
+			URL: &resp.URL, DirectPath: &resp.DirectPath, MediaKey: resp.MediaKey,
+			FileEncSHA256: resp.FileEncSHA256, FileSHA256: resp.FileSHA256, FileLength: &resp.FileLength,
+			Mimetype: proto.String(mimeType), ContextInfo: ctxInfo,
+		}
+		return &waE2E.Message{AudioMessage: aud}, aud
+	default:
+		doc := &waE2E.DocumentMessage{
+			URL: &resp.URL, DirectPath: &resp.DirectPath, MediaKey: resp.MediaKey,
+			FileEncSHA256: resp.FileEncSHA256, FileSHA256: resp.FileSHA256, FileLength: &resp.FileLength,
+			Mimetype: proto.String(mimeType), FileName: proto.String(attachmentFilename(m)),
+			Caption: proto.String(m.Caption), ContextInfo: ctxInfo,
+		}
+		return &waE2E.Message{DocumentMessage: doc}, doc
+	}
 }
 
 // SendVoice uploads and sends a voice note.
