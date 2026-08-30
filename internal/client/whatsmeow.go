@@ -224,6 +224,20 @@ func (w *Whatsmeow) Messages(jid string, limit int) ([]Message, error) {
 	return out, nil
 }
 
+// MessagesBefore reads an older page of a conversation from the local store,
+// for the conversation view's scroll-up paging.
+func (w *Whatsmeow) MessagesBefore(jid, beforeMsgID string, limit int) ([]Message, error) {
+	rows, err := w.store.MessagesBefore(jid, beforeMsgID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: messages before: %w", err)
+	}
+	out := make([]Message, len(rows))
+	for i, m := range rows {
+		out[i] = messageFromStore(m)
+	}
+	return out, nil
+}
+
 // subscribePresence asks whatsmeow to start pushing presence updates for
 // jid, once per jid for this client's lifetime (SubscribePresence itself is
 // idempotent server-side, but there's no reason to re-request it on every

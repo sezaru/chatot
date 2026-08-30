@@ -102,6 +102,31 @@ func (f *Fake) Messages(jid string, limit int) ([]Message, error) {
 	return out, nil
 }
 
+// MessagesBefore returns up to limit messages older than beforeMsgID (oldest
+// first). An unknown beforeMsgID yields no messages, matching the store.
+func (f *Fake) MessagesBefore(jid, beforeMsgID string, limit int) ([]Message, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	msgs := f.messages[jid]
+	end := -1
+	for i := range msgs {
+		if msgs[i].ID == beforeMsgID {
+			end = i
+			break
+		}
+	}
+	if end <= 0 {
+		return nil, nil
+	}
+	start := 0
+	if limit > 0 && end-limit > 0 {
+		start = end - limit
+	}
+	out := make([]Message, end-start)
+	copy(out, msgs[start:end])
+	return out, nil
+}
+
 func (f *Fake) Search(query string, limit int) ([]SearchHit, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
