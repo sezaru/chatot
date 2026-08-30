@@ -873,6 +873,62 @@ func (w *Whatsmeow) SendVoice(ctx context.Context, jid string, oggOpus []byte, d
 	return id, nil
 }
 
+// stickerMimetype is what a proper WhatsApp sticker carries on the wire.
+// Sending anything else still goes through (best-effort — no image->webp
+// conversion here) but may not render as a sticker on other clients.
+const stickerMimetype = "image/webp"
+
+// SendSticker uploads the file at path and sends it as a sticker message.
+// Stickers upload through the same MediaImage bucket as regular images
+// (whatsmeow's classToMediaType maps StickerMessage -> MediaImage too); only
+// the message type and mimetype mark it as a sticker on the wire. Optimistic
+// echo mirrors SendMedia.
+func (w *Whatsmeow) SendSticker(ctx context.Context, jid, path string) (string, error) {
+	to, err := types.ParseJID(jid)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: send sticker: read file: %w", err)
+	}
+
+	mimeType := stickerMimetype
+	if sniffed := http.DetectContentType(data); sniffed != "image/webp" && sniffed != "application/octet-stream" {
+		mimeType = sniffed
+	}
+
+	resp, err := w.wa.Upload(ctx, data, whatsmeow.MediaImage)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: send sticker: upload: %w", err)
+	}
+
+	sticker := &waE2E.StickerMessage{
+		URL: &resp.URL, DirectPath: &resp.DirectPath, MediaKey: resp.MediaKey,
+		FileEncSHA256: resp.FileEncSHA256, FileSHA256: resp.FileSHA256, FileLength: &resp.FileLength,
+		Mimetype: proto.String(mimeType),
+	}
+
+	id := w.wa.GenerateMessageID()
+	if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{StickerMessage: sticker}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		return "", fmt.Errorf("chatot/client: send sticker: %w", err)
+	}
+
+	localPath, cacheErr := w.writeMediaFile(jid, id, mimeType, data)
+	if cacheErr != nil {
+		w.log.Warnf("chatot/client: cache outbound sticker failed: %v", cacheErr)
+	}
+	out := Message{
+		ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(),
+		Attachment: &Attachment{Kind: "sticker", MimeType: mimeType, LocalPath: localPath, ProtoBlob: marshalMedia(sticker)},
+	}
+	if err := w.ingestMessage(&out); err != nil {
+		w.log.Warnf("chatot/client: optimistic upsert of sent sticker failed: %v", err)
+	}
+	return id, nil
+}
+
 // React sets ("" clears) a reaction on a message. sender in BuildReaction
 // must be the *target* message's original sender (empty/self for our own
 // messages), not the reactor — whatsmeow needs it to build the message key

@@ -122,6 +122,41 @@ func TestFakeSendContactAppendsAndReturnsID(t *testing.T) {
 	}
 }
 
+func TestFakeSendStickerAppendsAndReturnsID(t *testing.T) {
+	f := NewFake()
+	jid := "1234567890@s.whatsapp.net"
+
+	id, err := f.SendSticker(context.Background(), jid, "/tmp/party.webp")
+	if err != nil {
+		t.Fatalf("SendSticker: %v", err)
+	}
+	if id == "" {
+		t.Fatal("expected a non-empty message ID")
+	}
+
+	msgs, err := f.Messages(jid, 0)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	last := msgs[len(msgs)-1]
+	if last.ID != id || !last.FromMe || last.Attachment == nil {
+		t.Fatalf("last message = %+v, want appended sticker send", last)
+	}
+	if last.Attachment.Kind != "sticker" || last.Attachment.LocalPath != "/tmp/party.webp" {
+		t.Errorf("Attachment = %+v, want kind sticker with the sent path", last.Attachment)
+	}
+
+	chats, err := f.Chats(0)
+	if err != nil {
+		t.Fatalf("Chats: %v", err)
+	}
+	for _, c := range chats {
+		if c.JID == jid && !strings.Contains(c.Preview, "Sticker") {
+			t.Errorf("chat preview = %q, want it to mention the sticker", c.Preview)
+		}
+	}
+}
+
 func TestFakeSearchFindsSeededMessage(t *testing.T) {
 	f := NewFake()
 	hits, err := f.Search("relay", 0)

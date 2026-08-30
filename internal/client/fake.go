@@ -102,6 +102,10 @@ func NewFake() *Fake {
 			}}},
 		{ID: "m8", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2700,
 			Attachment: &Attachment{Kind: "video", MimeType: "video/mp4", IsGIF: true}},
+		// No LocalPath: renders via the tap-to-load placeholder path, exercising
+		// the no-bubble sticker render without needing a bundled webp asset.
+		{ID: "m9", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2600,
+			Attachment: &Attachment{Kind: "sticker", MimeType: "image/webp"}},
 	}
 
 	f.messages[statusBroadcastJID] = []Message{
@@ -346,6 +350,28 @@ func (f *Fake) SendVoice(ctx context.Context, jid string, oggOpus []byte, dur in
 	id := f.nextMsgID()
 	att := Attachment{Kind: "audio", MimeType: "audio/ogg", Data: oggOpus}
 	f.appendOutbound(jid, Message{ID: id, ChatJID: jid, FromJID: "me", FromMe: true, TS: time.Now().Unix(), Attachment: &att})
+	return id, nil
+}
+
+// SendSticker appends an outbound sticker attachment message; path is only
+// recorded as LocalPath so the sender's own bubble renders inline without a
+// download round-trip, mirroring the real Whatsmeow client's optimistic echo.
+func (f *Fake) SendSticker(ctx context.Context, jid, path string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id := f.nextMsgID()
+	msg := Message{
+		ID: id, ChatJID: jid, FromJID: "me", FromMe: true, TS: time.Now().Unix(),
+		Attachment: &Attachment{Kind: "sticker", MimeType: "image/webp", LocalPath: path},
+	}
+	f.messages[jid] = append(f.messages[jid], msg)
+	for i := range f.chats {
+		if f.chats[i].JID == jid {
+			f.chats[i].Preview = "🎨 Sticker"
+			f.chats[i].LastMessageTS = msg.TS
+			break
+		}
+	}
 	return id, nil
 }
 

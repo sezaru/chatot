@@ -212,7 +212,9 @@ func buildPreview(fromMe bool, msgKind, text, mediaKind, mediaCaption, mediaFile
 	case "poll":
 		body = "📊 Poll"
 	}
-	if mediaKind != "" {
+	if mediaKind == "sticker" {
+		body = "🎨 Sticker"
+	} else if mediaKind != "" {
 		switch {
 		case mediaCaption != "":
 			body = mediaCaption

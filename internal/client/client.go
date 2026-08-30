@@ -343,6 +343,10 @@ type Client interface {
 	// SendContact shares a vCard built from contact's name/phone(s).
 	SendContact(ctx context.Context, jid string, contact Contact, replyTo *MsgRef) (string, error)
 	SendVoice(ctx context.Context, jid string, oggOpus []byte, dur int) (string, error)
+	// SendSticker uploads the file at path and sends it as a sticker message.
+	// Non-webp files are sent best-effort (no image->webp conversion here) and
+	// may not render as a sticker on other clients.
+	SendSticker(ctx context.Context, jid, path string) (string, error)
 	// CreatePoll sends a poll with the given question and options; selectable
 	// is how many options a voter may pick (1 = single-choice).
 	CreatePoll(ctx context.Context, jid, name string, options []string, selectable int) (string, error)

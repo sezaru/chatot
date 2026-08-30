@@ -129,11 +129,23 @@ func TestChatsPreviewMediaKindPlaceholder(t *testing.T) {
 	s := newTestStore(t)
 	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
 	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", TS: 1}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Kind: "document"}))
+
+	chats := mustChats(t, s)
+	if chats[0].Preview != "[document]" {
+		t.Fatalf("got %q, want [document] placeholder", chats[0].Preview)
+	}
+}
+
+func TestChatsPreviewStickerKind(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", TS: 1}))
 	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Kind: "sticker"}))
 
 	chats := mustChats(t, s)
-	if chats[0].Preview != "[sticker]" {
-		t.Fatalf("got %q, want [sticker] placeholder", chats[0].Preview)
+	if chats[0].Preview != "🎨 Sticker" {
+		t.Fatalf("got %q, want sticker preview", chats[0].Preview)
 	}
 }
 

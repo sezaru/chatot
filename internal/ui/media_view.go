@@ -100,10 +100,15 @@ func buildMediaContent(msg client.Message, mv mediaView, c client.Client) gtk.Wi
 // with a small "tap to load" button overlaid, so the message reads
 // instantly instead of showing a bare chip while the full media downloads.
 func buildThumbnailContent(texture *gdk.Texture, msg client.Message, mv mediaView, c client.Client, slot *gtk.Box) gtk.Widgetter {
+	size := 280
+	height := 200
+	if mv.Kind == "sticker" {
+		size, height = stickerRenderSize, stickerRenderSize
+	}
 	pic := gtk.NewPictureForPaintable(texture)
 	pic.SetCanShrink(true)
 	pic.SetContentFit(gtk.ContentFitCover)
-	pic.SetSizeRequest(280, 200)
+	pic.SetSizeRequest(size, height)
 
 	overlay := gtk.NewOverlay()
 	overlay.SetChild(pic)
@@ -187,6 +192,10 @@ func chipLabel(mv mediaView) string {
 	return label
 }
 
+// stickerRenderSize is the mockup's bare-sticker footprint: no bubble, no
+// media chip, just the image at roughly this size.
+const stickerRenderSize = 120
+
 func inlineMediaWidget(mv mediaView) gtk.Widgetter {
 	switch mv.Kind {
 	case "video":
@@ -200,6 +209,13 @@ func inlineMediaWidget(mv mediaView) gtk.Widgetter {
 		controls := gtk.NewMediaControls(stream)
 		controls.SetSizeRequest(240, -1)
 		return controls
+	case "sticker":
+		p := gtk.NewPictureForFilename(mv.LocalPath)
+		p.SetCanShrink(true)
+		p.SetContentFit(gtk.ContentFitContain)
+		p.SetSizeRequest(stickerRenderSize, stickerRenderSize)
+		p.AddCSSClass("chatot-sticker")
+		return p
 	}
 	p := gtk.NewPictureForFilename(mv.LocalPath)
 	p.SetCanShrink(true)

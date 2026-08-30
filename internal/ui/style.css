@@ -158,6 +158,21 @@ window {
 	opacity: 0.6;
 }
 
+/* Stickers and emoji-only text render bare: no background, no padding. */
+.chatot-bubble-bare {
+	background-color: transparent;
+	padding: 0;
+	margin: 2px 0;
+}
+
+.chatot-sticker {
+	background-color: transparent;
+}
+
+.chatot-emoji-only {
+	font-size: 2.5em;
+}
+
 .chatot-bubble-quote {
 	opacity: 0.65;
 	font-size: 0.85em;

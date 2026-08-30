@@ -316,9 +316,10 @@ type Composer struct {
 	recordBtn  *gtk.Button
 
 	gifProvider GIFProvider
-	// pickerStack backs gifBtn's popover; F38 (stickers) adds its page here
-	// via pickerStack.AddTitled, alongside the "gif" page this feature adds.
+	// pickerStack backs gifBtn's popover: a "gif" page and a "stickers" page.
 	pickerStack *gtk.Stack
+
+	stickerRecents *stickerRecents
 
 	recorder  *audio.Recorder // non-nil only while a recording is in progress
 	recording bool
@@ -402,18 +403,19 @@ func NewComposer(c client.Client) *Composer {
 	root.Append(entryRow)
 
 	comp := &Composer{
-		Box:         root,
-		c:           c,
-		quoteBar:    quoteBar,
-		quoteLabel:  quoteLabel,
-		editBar:     editBar,
-		entry:       entry,
-		attachBtn:   attachBtn,
-		emojiBtn:    emojiBtn,
-		gifBtn:      gifBtn,
-		recordBtn:   recordBtn,
-		gifProvider: unconfiguredGIFProvider{},
-		typing:      newTypingModel(typingDebounce),
+		Box:            root,
+		c:              c,
+		quoteBar:       quoteBar,
+		quoteLabel:     quoteLabel,
+		editBar:        editBar,
+		entry:          entry,
+		attachBtn:      attachBtn,
+		emojiBtn:       emojiBtn,
+		gifBtn:         gifBtn,
+		recordBtn:      recordBtn,
+		gifProvider:    unconfiguredGIFProvider{},
+		typing:         newTypingModel(typingDebounce),
+		stickerRecents: newStickerRecents(stickerRecentsCap),
 	}
 
 	attachBtn.SetPopover(newAttachPopover(comp))
@@ -692,14 +694,16 @@ func newAttachPopover(c *Composer) *gtk.Popover {
 }
 
 // newPickerPopover builds the GIF button's popover: a Stack + StackSwitcher
-// holding one page today ("GIF"); F38 (stickers) adds a second page to the
-// returned stack rather than replacing this popover.
+// holding a "GIF" page and a "Stickers" page.
 func newPickerPopover(c *Composer) (*gtk.Popover, *gtk.Stack) {
+	popover := gtk.NewPopover()
+
 	stack := gtk.NewStack()
 	switcher := gtk.NewStackSwitcher()
 	switcher.SetStack(stack)
 
 	stack.AddTitled(newGIFTab(c.gifProvider, c.onGIFChosen), "gif", "GIF")
+	stack.AddTitled(newStickerTab(c, popover), "stickers", "Stickers")
 
 	box := gtk.NewBox(gtk.OrientationVertical, 4)
 	box.SetMarginTop(6)
@@ -709,7 +713,6 @@ func newPickerPopover(c *Composer) (*gtk.Popover, *gtk.Stack) {
 	box.Append(switcher)
 	box.Append(stack)
 
-	popover := gtk.NewPopover()
 	popover.SetChild(box)
 	return popover, stack
 }
@@ -774,6 +777,53 @@ func (c *Composer) sendMedia(path string) {
 			}
 			c.onSent(msg)
 		})
+	}()
+}
+
+// pickSticker opens a file-choose dialog filtered to webp/images and, on a
+// picked file, sends it as a sticker and pops popover down. No-ops if there's
+// no active chat or no window set yet.
+func (c *Composer) pickSticker(popover *gtk.Popover) {
+	if c.state.jid == "" || c.window == nil {
+		return
+	}
+	dialog := gtk.NewFileDialog()
+	dialog.SetTitle("Send sticker")
+	dialog.SetDefaultFilter(stickerFilter())
+	dialog.Open(context.Background(), c.window, func(res gio.AsyncResulter) {
+		file, err := dialog.OpenFinish(res)
+		if err != nil {
+			return // cancelled or failed; nothing to log, this is the common case
+		}
+		popover.Popdown()
+		c.sendSticker(file.Path())
+	})
+}
+
+// sendSticker sends path as a sticker to the active chat and records it in
+// the recents ring, mirroring sendMedia's goroutine + IdleAdd flow. No reply
+// support (stickers aren't quoted in practice, like voice notes).
+func (c *Composer) sendSticker(path string) {
+	jid := c.state.jid
+	if jid == "" || path == "" {
+		return
+	}
+	c.stickerRecents.Add(path)
+
+	go func() {
+		id, err := c.c.SendSticker(context.Background(), jid, path)
+		if err != nil {
+			log.Printf("chatot: send sticker failed: %v", err)
+			return
+		}
+		if c.onSent == nil {
+			return
+		}
+		msg := client.Message{
+			ID: id, ChatJID: jid, FromMe: true, TS: time.Now().Unix(),
+			Attachment: &client.Attachment{Kind: "sticker", MimeType: "image/webp", LocalPath: path},
+		}
+		glib.IdleAdd(func() { c.onSent(msg) })
 	}()
 }
 

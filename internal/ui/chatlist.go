@@ -593,6 +593,8 @@ func statusSnippet(m client.Message) string {
 			return "🎥 Video"
 		case "audio":
 			return "🎤 Audio"
+		case "sticker":
+			return "🎨 Sticker"
 		default:
 			return "📎 " + m.Attachment.Kind
 		}

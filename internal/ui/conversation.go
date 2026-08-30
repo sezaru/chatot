@@ -46,6 +46,9 @@ type bubbleView struct {
 	// StarGlyph/StarTooltip drive the bubble's star toggle; see starAffordanceVM.
 	StarGlyph   string
 	StarTooltip string
+	// IsEmojiOnly marks a text message that's 1-3 emoji and nothing else: it
+	// renders large with no bubble, like a sticker.
+	IsEmojiOnly bool
 }
 
 // starAffordanceVM derives the bubble star-toggle's glyph and tooltip from
@@ -125,6 +128,7 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 		v.MediaChip = v.Media.Chip
 	default:
 		v.Text = m.Text
+		v.IsEmojiOnly = isEmojiOnly(m.Text)
 	}
 
 	return v
@@ -800,12 +804,22 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		row.SetHAlign(gtk.AlignStart)
 	}
 
+	// A sticker or an emoji-only text renders bare — no bubble background or
+	// padding, per the mockup — while still keeping the quote/footer/reactions
+	// affordances every other bubble gets.
+	isSticker := vm.IsMedia && vm.Media.Kind == "sticker"
+	noChrome := isSticker || vm.IsEmojiOnly
+
 	bubble := gtk.NewBox(gtk.OrientationVertical, 2)
-	bubble.AddCSSClass("chatot-bubble")
-	if vm.FromMe {
-		bubble.AddCSSClass("chatot-bubble-out")
+	if noChrome {
+		bubble.AddCSSClass("chatot-bubble-bare")
 	} else {
-		bubble.AddCSSClass("chatot-bubble-in")
+		bubble.AddCSSClass("chatot-bubble")
+		if vm.FromMe {
+			bubble.AddCSSClass("chatot-bubble-out")
+		} else {
+			bubble.AddCSSClass("chatot-bubble-in")
+		}
 	}
 
 	if vm.HasQuote {
@@ -829,6 +843,9 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		text.AddCSSClass("chatot-bubble-text")
 		if vm.Deleted {
 			text.AddCSSClass("chatot-bubble-deleted")
+		}
+		if vm.IsEmojiOnly {
+			text.AddCSSClass("chatot-emoji-only")
 		}
 		text.SetXAlign(0)
 		text.SetWrap(true)
