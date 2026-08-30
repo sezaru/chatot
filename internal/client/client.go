@@ -272,6 +272,11 @@ type Client interface {
 	DeleteMessage(ctx context.Context, chatJID, msgID string) error
 	React(ctx context.Context, jid, msgID, emoji string) error // "" clears
 	MarkRead(ctx context.Context, jid string, msgIDs []string) error
+	// CheckOnWhatsApp looks up an E.164 phone number and reports its canonical
+	// JID and whether it's registered on WhatsApp. onWhatsApp is false (with a
+	// nil error) for a well-formed but unregistered number; err is reserved
+	// for transport failures.
+	CheckOnWhatsApp(ctx context.Context, phone string) (jid string, onWhatsApp bool, err error)
 	SendPresence(available bool) error
 	SendTyping(jid string, typing bool) error
 

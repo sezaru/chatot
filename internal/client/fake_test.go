@@ -263,3 +263,26 @@ func TestFakeDeleteMessageNotFound(t *testing.T) {
 		t.Error("expected error deleting a non-existent message")
 	}
 }
+
+func TestFakeCheckOnWhatsApp(t *testing.T) {
+	f := NewFake()
+
+	jid, onWA, err := f.CheckOnWhatsApp(context.Background(), "+15559876543")
+	if err != nil {
+		t.Fatalf("CheckOnWhatsApp: %v", err)
+	}
+	if !onWA {
+		t.Error("expected a numeric phone to be reported on WhatsApp")
+	}
+	if jid != "15559876543@s.whatsapp.net" {
+		t.Errorf("jid = %q, want 15559876543@s.whatsapp.net", jid)
+	}
+
+	_, onWA, err = f.CheckOnWhatsApp(context.Background(), "not-a-number")
+	if err != nil {
+		t.Fatalf("CheckOnWhatsApp: %v", err)
+	}
+	if onWA {
+		t.Error("expected a non-numeric input to not be on WhatsApp")
+	}
+}

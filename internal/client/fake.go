@@ -343,6 +343,22 @@ func (f *Fake) MarkRead(ctx context.Context, jid string, msgIDs []string) error 
 	return nil
 }
 
+// CheckOnWhatsApp treats any string of 7-15 digits (optionally "+"-prefixed)
+// as registered, deriving a synthetic jid from its digits; anything else is
+// reported as not on WhatsApp.
+func (f *Fake) CheckOnWhatsApp(ctx context.Context, phone string) (string, bool, error) {
+	digits := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, phone)
+	if len(digits) < 7 || len(digits) > 15 {
+		return "", false, nil
+	}
+	return digits + "@s.whatsapp.net", true, nil
+}
+
 func (f *Fake) SendPresence(available bool) error { return nil }
 
 func (f *Fake) SendTyping(jid string, typing bool) error { return nil }

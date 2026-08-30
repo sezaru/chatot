@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -96,17 +98,31 @@ type ChatList struct {
 	typingJIDs  map[string]bool // chat JID -> peer currently composing
 	query       string          // current search text; "" shows the normal chat list
 	avatarCache *avatarCache
+	window      *gtk.Window // parent for the new-chat dialog; set via SetWindow
 }
+
+// SetWindow supplies the parent window the new-chat dialog needs; call once
+// after the top-level window exists.
+func (cl *ChatList) SetWindow(w *gtk.Window) { cl.window = w }
 
 // NewChatList builds a ChatList for c and populates it with the current
 // chats. It also subscribes to c.Events() to keep the list live.
 func NewChatList(c client.Client) *ChatList {
 	root := gtk.NewBox(gtk.OrientationVertical, 0)
 
+	searchRow := gtk.NewBox(gtk.OrientationHorizontal, 4)
+
 	search := gtk.NewSearchEntry()
 	search.SetPlaceholderText("Search chats and messages")
 	search.AddCSSClass("chatot-search-entry")
-	root.Append(search)
+	search.SetHExpand(true)
+	searchRow.Append(search)
+
+	newChatBtn := gtk.NewButtonFromIconName("list-add-symbolic")
+	newChatBtn.SetTooltipText("New chat")
+	searchRow.Append(newChatBtn)
+
+	root.Append(searchRow)
 
 	list := gtk.NewListBox()
 	list.AddCSSClass("navigation-sidebar")
@@ -128,6 +144,10 @@ func NewChatList(c client.Client) *ChatList {
 	search.ConnectSearchChanged(func() {
 		cl.query = strings.TrimSpace(search.Text())
 		cl.refresh()
+	})
+
+	newChatBtn.ConnectClicked(func() {
+		cl.showNewChatDialog()
 	})
 
 	cl.refresh()
@@ -366,4 +386,97 @@ func buildSearchHitRow(vm searchHitView) *gtk.Box {
 	row.Append(timeLabel)
 
 	return row
+}
+
+// normalizePhone strips spaces/dashes/parens from input and checks the
+// result looks like an E.164 number: a leading "+" followed by 7-15 digits.
+func normalizePhone(input string) (string, bool) {
+	var b strings.Builder
+	for _, r := range input {
+		switch {
+		case r == ' ' || r == '-' || r == '(' || r == ')':
+			continue
+		case r == '+' && b.Len() == 0:
+			b.WriteRune(r)
+		case unicode.IsDigit(r):
+			b.WriteRune(r)
+		default:
+			return "", false
+		}
+	}
+	s := b.String()
+	if !strings.HasPrefix(s, "+") {
+		return "", false
+	}
+	digits := s[1:]
+	if len(digits) < 7 || len(digits) > 15 {
+		return "", false
+	}
+	return s, true
+}
+
+// showNewChatDialog opens a small modal to compose a new chat: a phone-number
+// entry validated by normalizePhone, then checked against WhatsApp via
+// c.CheckOnWhatsApp before opening the conversation through the same
+// onSelect seam a chat-list row activation uses.
+func (cl *ChatList) showNewChatDialog() {
+	dialog := gtk.NewWindow()
+	dialog.SetTitle("New chat")
+	if cl.window != nil {
+		dialog.SetTransientFor(cl.window)
+	}
+	dialog.SetModal(true)
+
+	box := gtk.NewBox(gtk.OrientationVertical, 8)
+	box.SetMarginTop(12)
+	box.SetMarginBottom(12)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
+
+	entry := gtk.NewEntry()
+	entry.SetPlaceholderText("Phone number, e.g. +15551234567")
+	box.Append(entry)
+
+	status := gtk.NewLabel("")
+	status.SetXAlign(0)
+	status.AddCSSClass("chatot-newchat-status")
+	box.Append(status)
+
+	startBtn := gtk.NewButtonWithLabel("Start")
+	startBtn.AddCSSClass("suggested-action")
+	box.Append(startBtn)
+
+	startChat := func() {
+		phone, ok := normalizePhone(entry.Text())
+		if !ok {
+			status.SetText("Enter a valid phone number, e.g. +15551234567")
+			return
+		}
+		startBtn.SetSensitive(false)
+		status.SetText("Checking…")
+
+		go func() {
+			jid, onWhatsApp, err := cl.c.CheckOnWhatsApp(context.Background(), phone)
+			glib.IdleAdd(func() {
+				startBtn.SetSensitive(true)
+				switch {
+				case err != nil:
+					status.SetText("Couldn't check that number, try again")
+				case !onWhatsApp:
+					status.SetText("This number isn't on WhatsApp")
+				default:
+					dialog.Close()
+					if cl.onSelect != nil {
+						cl.onSelect(jid)
+					}
+				}
+			})
+		}()
+	}
+	startBtn.ConnectClicked(startChat)
+	entry.ConnectActivate(startChat)
+
+	dialog.SetChild(box)
+	dialog.SetDefaultWidget(startBtn)
+	dialog.Present()
 }

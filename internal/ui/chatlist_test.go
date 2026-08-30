@@ -129,3 +129,29 @@ func TestFormatChatTime(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizePhone(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+		ok    bool
+	}{
+		{"spaces stripped", "+1 555 123 4567", "+15551234567", true},
+		{"dashes and parens stripped", "+1 (555)-123-4567", "+15551234567", true},
+		{"missing plus", "15551234567", "", false},
+		{"too short", "+1555", "", false},
+		{"too long", "+1555123456789012", "", false},
+		{"letters rejected", "+1555abc4567", "", false},
+		{"empty", "", "", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := normalizePhone(tc.input)
+			if ok != tc.ok || got != tc.want {
+				t.Errorf("normalizePhone(%q) = (%q, %v), want (%q, %v)", tc.input, got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
