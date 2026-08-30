@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/core/gioutil"
@@ -185,6 +186,8 @@ type ConversationView struct {
 	avatarJID     string // jid the avatar widget currently shows, "" until set
 	titleLabel    *gtk.Label
 	subtitleLabel *gtk.Label
+	groupInfoBtn  *gtk.Button // shown only when the open chat is a group
+	window        *gtk.Window // parent for the group-info dialog; set via SetWindow
 	scroller      *gtk.ScrolledWindow
 	listView      *gtk.ListView
 	model         *gioutil.ListModel[client.Message]
@@ -253,6 +256,10 @@ func (cv *ConversationView) OnDeleteRequested(f func(client.Message)) { cv.onDel
 // star toggle, on any message (own or theirs).
 func (cv *ConversationView) OnStarRequested(f func(client.Message)) { cv.onStar = f }
 
+// SetWindow supplies the parent window the group-info dialog needs; call
+// once after NewConversationView.
+func (cv *ConversationView) SetWindow(w *gtk.Window) { cv.window = w }
+
 // Messages returns the currently-loaded thread, for mark-read on open.
 func (cv *ConversationView) Messages() []client.Message { return cv.msgs }
 
@@ -297,6 +304,14 @@ func NewConversationView(c client.Client) *ConversationView {
 	subtitleLabel.AddCSSClass("chatot-conv-subtitle")
 	textCol.Append(subtitleLabel)
 
+	textCol.SetHExpand(true)
+
+	groupInfoBtn := gtk.NewButtonFromIconName("dialog-information-symbolic")
+	groupInfoBtn.SetTooltipText("Group info")
+	groupInfoBtn.SetHAlign(gtk.AlignEnd)
+	groupInfoBtn.SetVisible(false)
+	header.Append(groupInfoBtn)
+
 	header.SetVisible(false)
 	root.Append(header)
 
@@ -322,11 +337,18 @@ func NewConversationView(c client.Client) *ConversationView {
 		avatarCache:   newAvatarCache(),
 		titleLabel:    titleLabel,
 		subtitleLabel: subtitleLabel,
+		groupInfoBtn:  groupInfoBtn,
 		scroller:      scroller,
 		model:         model,
 		empty:         empty,
 		presence:      make(map[string]PresenceState),
 	}
+
+	groupInfoBtn.ConnectClicked(func() {
+		if cv.jid != "" {
+			showGroupInfoDialog(cv.window, cv.c, cv.jid)
+		}
+	})
 
 	factory.ConnectSetup(func(obj *glib.Object) {
 		item := obj.Cast().(*gtk.ListItem)
@@ -601,6 +623,7 @@ func (cv *ConversationView) refreshHeader() {
 	name := cv.chatName(cv.jid)
 	cv.titleLabel.SetLabel(name)
 	cv.subtitleLabel.SetLabel(presenceSubtitle(cv.presence[cv.jid], time.Now()))
+	cv.groupInfoBtn.SetVisible(strings.HasSuffix(cv.jid, "@g.us"))
 	cv.header.SetVisible(true)
 
 	if cv.avatarJID != cv.jid {

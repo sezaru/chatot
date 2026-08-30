@@ -211,6 +211,13 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 		w.applyBlocklistEvent(bl)
 		return
 	}
+	// Group metadata/membership changed. events.GroupInfo carries deltas
+	// (Join/Leave/Promote/Demote/Name/Topic); rather than reassemble state
+	// from those, just re-fetch the group in the background.
+	if gi, ok := evt.(*events.GroupInfo); ok {
+		w.refreshGroupInfo(gi.JID.String())
+		return
+	}
 	if _, ok := evt.(*events.Connected); ok {
 		// whatsmeow only delivers other users' presence after we've sent our
 		// own at least once; do it on every (re)connect rather than tracking

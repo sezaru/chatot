@@ -134,9 +134,17 @@ type ContactRow struct {
 type GroupRow struct {
 	JID             string
 	Name            string
+	Topic           string
 	IsParent        bool   // community parent group
 	LinkedParentJID string // set for a group linked to (e.g. an announcement
 	// channel of) a community; non-empty excludes it from the chat list
+}
+
+// GroupParticipant is one row of a group's membership.
+type GroupParticipant struct {
+	JID          string
+	IsAdmin      bool
+	IsSuperAdmin bool
 }
 
 // ReactionRow is the upsert seam for the reactions table. An empty Emoji

@@ -20,8 +20,17 @@ CREATE TABLE IF NOT EXISTS contacts (
 CREATE TABLE IF NOT EXISTS groups (
     jid TEXT PRIMARY KEY,
     name TEXT,
+    topic TEXT,
     is_parent INTEGER NOT NULL DEFAULT 0,
     linked_parent_jid TEXT
+);
+
+CREATE TABLE IF NOT EXISTS group_participants (
+    group_jid TEXT NOT NULL,
+    participant_jid TEXT NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    is_super_admin INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (group_jid, participant_jid)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
