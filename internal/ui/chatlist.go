@@ -23,6 +23,7 @@ type chatRowView struct {
 	TimeText   string
 	UnreadText string
 	ShowUnread bool
+	Typing     bool // set by ChatList.refresh from live presence, not chatRowVM
 }
 
 // chatRowVM derives the display view-model for a single chat row. now is
@@ -81,9 +82,10 @@ func formatChatTime(ts int64, now time.Time) string {
 type ChatList struct {
 	*gtk.ListBox
 
-	c        client.Client
-	rowJIDs  []string // row index -> JID, rebuilt alongside the ListBox rows
-	onSelect func(jid string)
+	c          client.Client
+	rowJIDs    []string // row index -> JID, rebuilt alongside the ListBox rows
+	onSelect   func(jid string)
+	typingJIDs map[string]bool // chat JID -> peer currently composing
 }
 
 // NewChatList builds a ChatList for c and populates it with the current
@@ -92,7 +94,7 @@ func NewChatList(c client.Client) *ChatList {
 	box := gtk.NewListBox()
 	box.AddCSSClass("navigation-sidebar")
 
-	cl := &ChatList{ListBox: box, c: c}
+	cl := &ChatList{ListBox: box, c: c, typingJIDs: make(map[string]bool)}
 
 	box.ConnectRowActivated(func(row *gtk.ListBoxRow) {
 		idx := row.Index()
@@ -129,6 +131,10 @@ func (cl *ChatList) refresh() {
 	cl.rowJIDs = make([]string, 0, len(chats))
 	for _, chat := range chats {
 		vm := chatRowVM(chat, now)
+		if cl.typingJIDs[chat.JID] {
+			vm.Preview = "typing…"
+			vm.Typing = true
+		}
 		cl.Append(buildChatRow(vm))
 		cl.rowJIDs = append(cl.rowJIDs, vm.JID)
 	}
@@ -138,8 +144,23 @@ func (cl *ChatList) refresh() {
 // GTK main loop via glib.IdleAdd. Runs on its own goroutine for the
 // lifetime of the process; the fake/whatsmeow Events() channel is never
 // explicitly closed today, so this goroutine simply exits if it is.
+// EventChatPresence updates typingJIDs (composing sets it, anything else
+// clears it) instead of falling through to the generic full refresh, since
+// it needs the event's JID+state before rebuilding rows.
 func (cl *ChatList) watchEvents() {
-	for range cl.c.Events() {
+	for ev := range cl.c.Events() {
+		if ev.Kind == client.EventChatPresence && ev.ChatPresence != nil {
+			jid, typing := ev.ChatPresence.ChatJID, ev.ChatPresence.State == "composing"
+			glib.IdleAdd(func() {
+				if typing {
+					cl.typingJIDs[jid] = true
+				} else {
+					delete(cl.typingJIDs, jid)
+				}
+				cl.refresh()
+			})
+			continue
+		}
 		glib.IdleAdd(func() {
 			cl.refresh()
 		})
@@ -174,6 +195,9 @@ func buildChatRow(vm chatRowView) *gtk.Box {
 	previewLabel.SetLines(2)
 	previewLabel.SetEllipsize(pango.EllipsizeEnd)
 	previewLabel.AddCSSClass("chatot-chat-preview")
+	if vm.Typing {
+		previewLabel.AddCSSClass("chatot-chat-typing")
+	}
 	textCol.Append(previewLabel)
 
 	row.Append(textCol)

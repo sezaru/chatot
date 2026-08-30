@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -51,6 +52,9 @@ type Whatsmeow struct {
 
 	events  chan Event
 	qrCodes chan string
+
+	presenceMu         sync.Mutex
+	presenceSubscribed map[string]bool // jid -> SubscribePresence already requested
 }
 
 // NewWhatsmeow opens (or creates) the whatsmeow auth/session store under
@@ -121,6 +125,16 @@ func defaultStateDir() (string, error) {
 func (w *Whatsmeow) handleRaw(evt interface{}) {
 	if hs, ok := evt.(*events.HistorySync); ok {
 		w.applyHistorySync(hs.Data)
+	}
+	if _, ok := evt.(*events.Connected); ok {
+		// whatsmeow only delivers other users' presence after we've sent our
+		// own at least once; do it on every (re)connect rather than tracking
+		// whether it already succeeded.
+		go func() {
+			if err := w.SendPresence(true); err != nil {
+				w.log.Warnf("chatot/client: send initial presence: %v", err)
+			}
+		}()
 	}
 	e := translate(evt)
 	if e == nil {
@@ -202,8 +216,14 @@ func (w *Whatsmeow) Chats(limit int) ([]Chat, error) {
 	return out, nil
 }
 
-// Messages reads a conversation's messages from the local store.
+// Messages reads a conversation's messages from the local store. Opening a
+// chat is the natural "the user is looking at this JID now" signal, so this
+// is also where we lazily ask whatsmeow to start pushing that contact's
+// presence (see subscribePresence) — there's no separate "open chat" seam
+// in the Client interface, and adding one just for this would be overkill.
 func (w *Whatsmeow) Messages(jid string, limit int) ([]Message, error) {
+	w.subscribePresence(jid)
+
 	rows, err := w.store.Messages(jid, limit)
 	if err != nil {
 		return nil, fmt.Errorf("chatot/client: messages: %w", err)
@@ -213,6 +233,35 @@ func (w *Whatsmeow) Messages(jid string, limit int) ([]Message, error) {
 		out[i] = messageFromStore(m)
 	}
 	return out, nil
+}
+
+// subscribePresence asks whatsmeow to start pushing presence updates for
+// jid, once per jid for this client's lifetime (SubscribePresence itself is
+// idempotent server-side, but there's no reason to re-request it on every
+// Messages() call for a chat that's already open). Runs the actual request
+// in a goroutine since Messages is called from UI code that shouldn't block
+// on a network round-trip just to render a chat.
+func (w *Whatsmeow) subscribePresence(jid string) {
+	w.presenceMu.Lock()
+	if w.presenceSubscribed == nil {
+		w.presenceSubscribed = make(map[string]bool)
+	}
+	if w.presenceSubscribed[jid] {
+		w.presenceMu.Unlock()
+		return
+	}
+	w.presenceSubscribed[jid] = true
+	w.presenceMu.Unlock()
+
+	to, err := types.ParseJID(jid)
+	if err != nil {
+		return
+	}
+	go func() {
+		if err := w.wa.SubscribePresence(context.Background(), to); err != nil {
+			w.log.Warnf("chatot/client: subscribe presence for %s: %v", jid, err)
+		}
+	}()
 }
 
 // Search runs an fts5 query over the local store.
@@ -528,16 +577,36 @@ func (w *Whatsmeow) MarkRead(ctx context.Context, jid string, msgIDs []string) e
 	return w.store.MarkChatRead(jid)
 }
 
-// SendPresence sets the account's overall online/offline state.
-// TODO(F10): implement presence.
+// SendPresence sets the account's overall online/offline state. Also the
+// call whatsmeow needs at least once after connecting before it will
+// deliver other users' presence to us; handleRaw fires this on every
+// events.Connected.
 func (w *Whatsmeow) SendPresence(available bool) error {
-	return errors.New("not implemented: SendPresence (F10)")
+	state := types.PresenceUnavailable
+	if available {
+		state = types.PresenceAvailable
+	}
+	if err := w.wa.SendPresence(context.Background(), state); err != nil {
+		return fmt.Errorf("chatot/client: send presence: %w", err)
+	}
+	return nil
 }
 
-// SendTyping sends a per-chat composing/paused indicator.
-// TODO(F10): implement typing indicators.
+// SendTyping sends a per-chat composing/paused indicator. Always as plain
+// text media — chatot has no seam today for a "recording" chat presence.
 func (w *Whatsmeow) SendTyping(jid string, typing bool) error {
-	return errors.New("not implemented: SendTyping (F10)")
+	to, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+	state := types.ChatPresencePaused
+	if typing {
+		state = types.ChatPresenceComposing
+	}
+	if err := w.wa.SendChatPresence(context.Background(), to, state, types.ChatPresenceMediaText); err != nil {
+		return fmt.Errorf("chatot/client: send chat presence: %w", err)
+	}
+	return nil
 }
 
 // DownloadMedia fetches and caches an attachment's bytes to disk, decrypting
