@@ -41,6 +41,18 @@ type bubbleView struct {
 	// (status == read) rather than the plain dim tick.
 	TickText string
 	TickRead bool
+	// StarGlyph/StarTooltip drive the bubble's star toggle; see starAffordanceVM.
+	StarGlyph   string
+	StarTooltip string
+}
+
+// starAffordanceVM derives the bubble star-toggle's glyph and tooltip from
+// the message's current starred state.
+func starAffordanceVM(starred bool) (glyph, tooltip string) {
+	if starred {
+		return "★", "Unstar"
+	}
+	return "☆", "Star"
 }
 
 // tombstoneText is what a revoked message renders as, regardless of its
@@ -56,6 +68,7 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 		TimeText: time.Unix(m.TS, 0).In(now.Location()).Format("15:04"),
 		FromMe:   m.FromMe,
 	}
+	v.StarGlyph, v.StarTooltip = starAffordanceVM(m.Starred)
 
 	if prev == nil || !sameDay(prev.TS, m.TS, now.Location()) {
 		v.ShowDaySeparator = true
@@ -208,6 +221,7 @@ type ConversationView struct {
 	onVote   func(msg client.Message, options []string)
 	onEdit   func(client.Message)
 	onDelete func(client.Message)
+	onStar   func(client.Message)
 }
 
 // OnReplyRequested registers f to be called when the user picks the reply
@@ -234,6 +248,10 @@ func (cv *ConversationView) OnEditRequested(f func(client.Message)) { cv.onEdit 
 // OnDeleteRequested registers f to be called when the user picks the delete
 // affordance on one of their own bubbles.
 func (cv *ConversationView) OnDeleteRequested(f func(client.Message)) { cv.onDelete = f }
+
+// OnStarRequested registers f to be called when the user clicks a bubble's
+// star toggle, on any message (own or theirs).
+func (cv *ConversationView) OnStarRequested(f func(client.Message)) { cv.onStar = f }
 
 // Messages returns the currently-loaded thread, for mark-read on open.
 func (cv *ConversationView) Messages() []client.Message { return cv.msgs }
@@ -371,7 +389,7 @@ func (cv *ConversationView) bindRow(item *gtk.ListItem) {
 		prev = &cv.msgs[pos-1]
 	}
 	vm := bubbleVM(msg, prev, cv.byID, time.Now())
-	box.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact, cv.onVote, cv.onEdit, cv.onDelete))
+	box.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact, cv.onVote, cv.onEdit, cv.onDelete, cv.onStar))
 }
 
 // onScroll fetches the next older page when the reader nears the top. Runs on
@@ -677,7 +695,7 @@ func removeAllChildren(box *gtk.Box) {
 // buildBubble constructs the GTK widget tree for a single message from its
 // pre-computed view-model, wiring the reply/react affordances (if the
 // callbacks are set) to msg.
-func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply func(client.Message), onReact func(msg client.Message, emoji string), onVote func(msg client.Message, options []string), onEdit func(client.Message), onDelete func(client.Message)) *gtk.Box {
+func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply func(client.Message), onReact func(msg client.Message, emoji string), onVote func(msg client.Message, options []string), onEdit func(client.Message), onDelete func(client.Message), onStar func(client.Message)) *gtk.Box {
 	wrapper := gtk.NewBox(gtk.OrientationVertical, 4)
 
 	if vm.ShowDaySeparator {
@@ -762,8 +780,8 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 	// a deleted bubble gets no affordances at all (nothing left to act on).
 	canEdit := !vm.Deleted && msg.FromMe && !vm.IsMedia && !vm.IsLocation && !vm.IsContact && !vm.IsPoll
 	canDelete := !vm.Deleted && msg.FromMe
-	if !vm.Deleted && (onReply != nil || onReact != nil || (canEdit && onEdit != nil) || (canDelete && onDelete != nil)) {
-		bubble.Append(buildBubbleActions(msg, onReply, onReact, onEdit, onDelete, canEdit, canDelete))
+	if !vm.Deleted && (onReply != nil || onReact != nil || (canEdit && onEdit != nil) || (canDelete && onDelete != nil) || onStar != nil) {
+		bubble.Append(buildBubbleActions(msg, vm, onReply, onReact, onEdit, onDelete, onStar, canEdit, canDelete))
 	}
 
 	row.Append(bubble)
@@ -772,9 +790,10 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 	return wrapper
 }
 
-// buildBubbleActions builds the small reply/react/edit/delete affordance row
-// shown on non-deleted bubbles.
-func buildBubbleActions(msg client.Message, onReply func(client.Message), onReact func(msg client.Message, emoji string), onEdit func(client.Message), onDelete func(client.Message), canEdit, canDelete bool) *gtk.Box {
+// buildBubbleActions builds the small reply/react/edit/delete/star affordance
+// row shown on non-deleted bubbles. Star applies to any message, own or
+// theirs, unlike edit/delete which are own-message only.
+func buildBubbleActions(msg client.Message, vm bubbleView, onReply func(client.Message), onReact func(msg client.Message, emoji string), onEdit func(client.Message), onDelete func(client.Message), onStar func(client.Message), canEdit, canDelete bool) *gtk.Box {
 	actions := gtk.NewBox(gtk.OrientationHorizontal, 2)
 	actions.AddCSSClass("chatot-bubble-actions")
 
@@ -818,6 +837,14 @@ func buildBubbleActions(msg client.Message, onReply func(client.Message), onReac
 		deleteBtn.AddCSSClass("flat")
 		deleteBtn.ConnectClicked(func() { onDelete(msg) })
 		actions.Append(deleteBtn)
+	}
+
+	if onStar != nil {
+		starBtn := gtk.NewButtonWithLabel(vm.StarGlyph)
+		starBtn.SetTooltipText(vm.StarTooltip)
+		starBtn.AddCSSClass("flat")
+		starBtn.ConnectClicked(func() { onStar(msg) })
+		actions.Append(starBtn)
 	}
 
 	return actions

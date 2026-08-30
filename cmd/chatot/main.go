@@ -103,6 +103,13 @@ func activate(app *adw.Application, c client.Client) {
 			}
 		}()
 	})
+	conversation.OnStarRequested(func(msg client.Message) {
+		go func() {
+			if err := c.StarMessage(context.Background(), msg.ChatJID, msg.ID, !msg.Starred); err != nil {
+				log.Printf("chatot: star message failed: %v", err)
+			}
+		}()
+	})
 
 	// openChat is the single "show this chat" path: the chat-list click and
 	// the notification's click-to-open action both funnel through it.

@@ -49,6 +49,8 @@ type Message struct {
 	// Status is the outgoing delivery/read state for a FromMe message: 0=sent,
 	// 1=delivered, 2=read. See SetMessagesStatus.
 	Status int
+	// Starred is true once the message has been starred via app-state.
+	Starred bool
 }
 
 // PollVoteRow is a single voter's selection of one poll option, identified by
@@ -105,6 +107,9 @@ type MessageRow struct {
 	// advanced via SetMessagesStatus, so a re-upsert can never regress it);
 	// kept here so callers building a full row have the field available.
 	Status int
+	// Starred is unused by UpsertMessage, same as Status: only
+	// SetMessageStarred ever changes it, so a re-upsert can't unstar.
+	Starred bool
 }
 
 // ContactRow is the upsert seam for the contacts table. Empty fields leave

@@ -140,6 +140,7 @@ type ChatList struct {
 	avatarCache  *avatarCache
 	window       *gtk.Window // parent for the new-chat dialog; set via SetWindow
 	showArchived bool        // toggled by the "Archived" button; see showChatInList
+	showStarred  bool        // toggled by the "Starred" button; overrides search/archived
 }
 
 // SetWindow supplies the parent window the new-chat dialog needs; call once
@@ -168,6 +169,11 @@ func NewChatList(c client.Client) *ChatList {
 	archiveToggle.SetTooltipText("Show archived chats")
 	searchRow.Append(archiveToggle)
 
+	starredToggle := gtk.NewToggleButton()
+	starredToggle.SetIconName("starred-symbolic")
+	starredToggle.SetTooltipText("Starred messages")
+	searchRow.Append(starredToggle)
+
 	root.Append(searchRow)
 
 	list := gtk.NewListBox()
@@ -189,6 +195,10 @@ func NewChatList(c client.Client) *ChatList {
 
 	search.ConnectSearchChanged(func() {
 		cl.query = strings.TrimSpace(search.Text())
+		if cl.query != "" && cl.showStarred {
+			cl.showStarred = false
+			starredToggle.SetActive(false)
+		}
 		cl.refresh()
 	})
 
@@ -198,6 +208,15 @@ func NewChatList(c client.Client) *ChatList {
 
 	archiveToggle.ConnectToggled(func() {
 		cl.showArchived = archiveToggle.Active()
+		cl.refresh()
+	})
+
+	starredToggle.ConnectToggled(func() {
+		cl.showStarred = starredToggle.Active()
+		if cl.showStarred && cl.query != "" {
+			cl.query = ""
+			search.SetText("")
+		}
 		cl.refresh()
 	})
 
@@ -212,14 +231,17 @@ func (cl *ChatList) OnChatSelected(f func(jid string)) {
 	cl.onSelect = f
 }
 
-// refresh rebuilds the row widgets from either Search (query set) or Chats
-// (query empty). Must run on the GTK main loop.
+// refresh rebuilds the row widgets from StarredMessages (starred mode),
+// Search (query set) or Chats (neither). Must run on the GTK main loop.
 func (cl *ChatList) refresh() {
-	if cl.query != "" {
+	switch {
+	case cl.showStarred:
+		cl.refreshStarred()
+	case cl.query != "":
 		cl.refreshSearch()
-		return
+	default:
+		cl.refreshChats()
 	}
-	cl.refreshChats()
 }
 
 func (cl *ChatList) refreshChats() {
@@ -273,6 +295,59 @@ func (cl *ChatList) refreshSearch() {
 	for _, h := range hits {
 		cl.list.Append(buildSearchHitRow(searchHitVM(h, now)))
 		cl.rowJIDs = append(cl.rowJIDs, h.ChatJID)
+	}
+}
+
+// refreshStarred rebuilds the list from StarredMessages, reusing the
+// search-hit row style (chat name + snippet + time); clicking a hit opens
+// its chat via the same onSelect seam as everything else.
+func (cl *ChatList) refreshStarred() {
+	msgs, err := cl.c.StarredMessages(searchResultLimit)
+	if err != nil {
+		msgs = nil
+	}
+
+	cl.list.RemoveAll()
+
+	if len(msgs) == 0 {
+		cl.rowJIDs = nil
+		empty := gtk.NewLabel("No starred messages")
+		empty.AddCSSClass("chatot-search-empty")
+		cl.list.Append(empty)
+		return
+	}
+
+	chats, _ := cl.c.Chats(0)
+	names := make(map[string]string, len(chats))
+	for _, c := range chats {
+		names[c.JID] = c.Name
+	}
+
+	now := time.Now()
+	cl.rowJIDs = make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		hit := client.SearchHit{ChatJID: m.ChatJID, MsgID: m.ID, ChatName: names[m.ChatJID], Snippet: starredSnippet(m), TS: m.TS}
+		cl.list.Append(buildSearchHitRow(searchHitVM(hit, now)))
+		cl.rowJIDs = append(cl.rowJIDs, m.ChatJID)
+	}
+}
+
+// starredSnippet renders a starred message's preview line, falling back to a
+// kind label for non-text bodies like the chat-list preview does.
+func starredSnippet(m client.Message) string {
+	switch {
+	case m.Text != "":
+		return m.Text
+	case m.Attachment != nil:
+		return mediaChip(*m.Attachment)
+	case m.Location != nil:
+		return "📍 Location"
+	case m.Contact != nil:
+		return "👤 Contact"
+	case m.Poll != nil:
+		return "📊 " + m.Poll.Name
+	default:
+		return ""
 	}
 }
 

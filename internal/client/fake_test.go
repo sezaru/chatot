@@ -286,3 +286,47 @@ func TestFakeCheckOnWhatsApp(t *testing.T) {
 		t.Error("expected a non-numeric input to not be on WhatsApp")
 	}
 }
+
+func TestFakeStarMessage(t *testing.T) {
+	f := NewFake()
+	sub := f.Events()
+
+	if err := f.StarMessage(context.Background(), "1234567890@s.whatsapp.net", "m2", true); err != nil {
+		t.Fatalf("StarMessage: %v", err)
+	}
+
+	select {
+	case ev := <-sub:
+		if ev.Kind != EventReaction || ev.Reaction == nil || ev.Reaction.MsgID != "m2" {
+			t.Fatalf("got kind=%v reaction=%v, want an EventReaction for m2", ev.Kind, ev.Reaction)
+		}
+	default:
+		t.Fatal("StarMessage did not publish a refresh event")
+	}
+
+	starred, err := f.StarredMessages(0)
+	if err != nil {
+		t.Fatalf("StarredMessages: %v", err)
+	}
+	if len(starred) != 1 || starred[0].ID != "m2" {
+		t.Fatalf("got %+v, want only m2 starred", starred)
+	}
+
+	if err := f.StarMessage(context.Background(), "1234567890@s.whatsapp.net", "m2", false); err != nil {
+		t.Fatalf("StarMessage (unstar): %v", err)
+	}
+	starred, err = f.StarredMessages(0)
+	if err != nil {
+		t.Fatalf("StarredMessages: %v", err)
+	}
+	if len(starred) != 0 {
+		t.Fatalf("got %+v, want none starred after unstar", starred)
+	}
+}
+
+func TestFakeStarMessageNotFound(t *testing.T) {
+	f := NewFake()
+	if err := f.StarMessage(context.Background(), "1234567890@s.whatsapp.net", "nope", true); err == nil {
+		t.Error("expected error starring a non-existent message")
+	}
+}
