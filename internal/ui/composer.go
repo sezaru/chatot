@@ -157,6 +157,8 @@ type Composer struct {
 	recorder  *audio.Recorder // non-nil only while a recording is in progress
 	recording bool
 
+	typing *typingModel // debounces our own composing/paused SendTyping calls
+
 	onSent func(client.Message)
 }
 
@@ -216,9 +218,11 @@ func NewComposer(c client.Client) *Composer {
 		entry:      entry,
 		attachBtn:  attachBtn,
 		recordBtn:  recordBtn,
+		typing:     newTypingModel(typingDebounce),
 	}
 
 	entry.ConnectActivate(comp.submit)
+	entry.ConnectChanged(comp.onEntryChanged)
 	sendBtn.ConnectClicked(comp.submit)
 	attachBtn.ConnectClicked(comp.pickAttachment)
 	recordBtn.ConnectClicked(comp.toggleRecording)
@@ -227,7 +231,60 @@ func NewComposer(c client.Client) *Composer {
 		comp.refreshQuoteBar()
 	})
 
+	// Ticks the typing debounce every second so a burst of keystrokes with
+	// no explicit "stopped typing" signal (send, clear, chat switch) still
+	// resolves to paused after typingDebounce of silence. Runs for the
+	// composer's lifetime — return true to keep repeating.
+	glib.TimeoutAdd(1000, func() bool {
+		comp.tickTyping()
+		return true
+	})
+
 	return comp
+}
+
+// onEntryChanged drives the typing debounce off every entry edit: a
+// non-empty entry records a keystroke (sending composing only on the first
+// keystroke of a burst); an entry cleared back to empty forces paused
+// immediately rather than waiting out the debounce window.
+func (c *Composer) onEntryChanged() {
+	jid := c.state.jid
+	if jid == "" {
+		return
+	}
+	if strings.TrimSpace(c.entry.Text()) == "" {
+		if c.typing.Cleared() {
+			c.sendTypingAsync(jid, false)
+		}
+		return
+	}
+	if send, composing := c.typing.Keystroke(time.Now()); send {
+		c.sendTypingAsync(jid, composing)
+	}
+}
+
+// tickTyping is invoked on the GTK main loop roughly once a second; it asks
+// the debounce model whether the silence window has elapsed and, if so,
+// sends the paused transition.
+func (c *Composer) tickTyping() {
+	jid := c.state.jid
+	if jid == "" {
+		return
+	}
+	if send, composing := c.typing.Tick(time.Now()); send {
+		c.sendTypingAsync(jid, composing)
+	}
+}
+
+// sendTypingAsync fires SendTyping in the background so a slow/failed
+// network call never blocks the GTK main loop; failures are logged only,
+// mirroring submit/sendMedia's error handling for outbound calls.
+func (c *Composer) sendTypingAsync(jid string, typing bool) {
+	go func() {
+		if err := c.c.SendTyping(jid, typing); err != nil {
+			log.Printf("chatot: send typing failed: %v", err)
+		}
+	}()
 }
 
 // SetWindow supplies the parent window gtk.FileDialog needs; call once
@@ -239,9 +296,16 @@ func (c *Composer) SetWindow(w *gtk.Window) { c.window = w }
 // outbound message right after a successful send.
 func (c *Composer) OnSent(f func(client.Message)) { c.onSent = f }
 
-// SetChat switches the composer to jid, clearing any pending reply.
+// SetChat switches the composer to jid, clearing any pending reply. If we
+// were mid-burst composing in the previous chat, tell it we've stopped —
+// the entry's text isn't cleared on a chat switch, so nothing else would
+// trigger that paused transition.
 func (c *Composer) SetChat(jid string) {
+	prevJID := c.state.jid
 	c.state.SetChat(jid)
+	if c.typing.Cleared() && prevJID != "" {
+		c.sendTypingAsync(prevJID, false)
+	}
 	c.attachBtn.SetSensitive(jid != "")
 	c.recordBtn.SetSensitive(jid != "" && !c.recording)
 	c.refreshQuoteBar()

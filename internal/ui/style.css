@@ -92,3 +92,22 @@
 	background-color: alpha(currentColor, 0.06);
 	border-left: 2px solid @accent_bg_color;
 }
+
+.chatot-conv-header {
+	border-bottom: 1px solid alpha(currentColor, 0.15);
+}
+
+.chatot-conv-title {
+	font-weight: bold;
+}
+
+.chatot-conv-subtitle {
+	opacity: 0.65;
+	font-size: 0.85em;
+	min-height: 1.2em;
+}
+
+.chatot-chat-typing {
+	font-style: italic;
+	color: @accent_bg_color;
+}

@@ -111,12 +111,25 @@ type ConversationView struct {
 	c   client.Client
 	jid string // "" until a chat is loaded
 
-	scroller *gtk.ScrolledWindow
-	list     *gtk.Box
-	empty    *gtk.Label
+	header        *gtk.Box
+	titleLabel    *gtk.Label
+	subtitleLabel *gtk.Label
+	scroller      *gtk.ScrolledWindow
+	list          *gtk.Box
+	empty         *gtk.Label
 
 	msgs []client.Message
 	byID map[string]client.Message
+
+	// presence is the UI's own view of contact/chat presence, built from
+	// EventPresence/EventChatPresence on Events() — chosen over growing the
+	// Client interface with a Presence(jid) getter, since ConversationView
+	// (and ChatList, for the typing preview override) already consume that
+	// stream directly. Keyed by contact JID for EventPresence (online/
+	// last-seen) and by chat JID for EventChatPresence (typing); those
+	// coincide for 1:1 chats, which is the only case the header's
+	// online/last-seen line is expected to cover.
+	presence map[string]PresenceState
 
 	onReply func(client.Message)
 	onReact func(msg client.Message, emoji string)
@@ -144,6 +157,26 @@ func NewConversationView(c client.Client) *ConversationView {
 	root.SetVExpand(true)
 	root.SetHExpand(true)
 
+	header := gtk.NewBox(gtk.OrientationVertical, 0)
+	header.AddCSSClass("chatot-conv-header")
+	header.SetMarginTop(6)
+	header.SetMarginBottom(6)
+	header.SetMarginStart(10)
+	header.SetMarginEnd(10)
+
+	titleLabel := gtk.NewLabel("")
+	titleLabel.SetXAlign(0)
+	titleLabel.AddCSSClass("chatot-conv-title")
+	header.Append(titleLabel)
+
+	subtitleLabel := gtk.NewLabel("")
+	subtitleLabel.SetXAlign(0)
+	subtitleLabel.AddCSSClass("chatot-conv-subtitle")
+	header.Append(subtitleLabel)
+
+	header.SetVisible(false)
+	root.Append(header)
+
 	empty := gtk.NewLabel("Select a chat")
 	empty.AddCSSClass("chatot-placeholder")
 	empty.SetVExpand(true)
@@ -164,11 +197,15 @@ func NewConversationView(c client.Client) *ConversationView {
 	root.Append(scroller)
 
 	cv := &ConversationView{
-		Box:      root,
-		c:        c,
-		scroller: scroller,
-		list:     list,
-		empty:    empty,
+		Box:           root,
+		c:             c,
+		header:        header,
+		titleLabel:    titleLabel,
+		subtitleLabel: subtitleLabel,
+		scroller:      scroller,
+		list:          list,
+		empty:         empty,
+		presence:      make(map[string]PresenceState),
 	}
 
 	go cv.watchEvents()
@@ -180,6 +217,7 @@ func NewConversationView(c client.Client) *ConversationView {
 // replacing whatever was shown before. Must run on the GTK main loop.
 func (cv *ConversationView) Load(jid string) {
 	cv.jid = jid
+	cv.refreshHeader()
 
 	msgs, err := cv.c.Messages(jid, conversationLimit)
 	if err != nil {
@@ -214,7 +252,10 @@ func (cv *ConversationView) Load(jid string) {
 // watchEvents listens for client events and, for the currently-loaded chat,
 // schedules a UI update on the GTK main loop via glib.IdleAdd. New messages
 // are appended in place; reactions trigger a full reload (simpler, and the
-// thread sizes here don't warrant a targeted patch).
+// thread sizes here don't warrant a targeted patch). Presence/chat-presence
+// events update cv.presence unconditionally (so it's warm when the user
+// switches to that chat) but only repaint the header when they're for the
+// currently-open chat.
 func (cv *ConversationView) watchEvents() {
 	for ev := range cv.c.Events() {
 		switch ev.Kind {
@@ -240,8 +281,64 @@ func (cv *ConversationView) watchEvents() {
 				}
 				cv.Load(cv.jid)
 			})
+		case client.EventPresence:
+			if ev.Presence == nil {
+				continue
+			}
+			p := *ev.Presence
+			glib.IdleAdd(func() {
+				state := cv.presence[p.JID]
+				state.Online = p.Online
+				if p.LastSeen != 0 {
+					state.LastSeen = time.Unix(p.LastSeen, 0)
+				}
+				cv.presence[p.JID] = state
+				if p.JID == cv.jid {
+					cv.refreshHeader()
+				}
+			})
+		case client.EventChatPresence:
+			if ev.ChatPresence == nil {
+				continue
+			}
+			cp := *ev.ChatPresence
+			glib.IdleAdd(func() {
+				state := cv.presence[cp.ChatJID]
+				state.Typing = cp.State == "composing"
+				cv.presence[cp.ChatJID] = state
+				if cp.ChatJID == cv.jid {
+					cv.refreshHeader()
+				}
+			})
 		}
 	}
+}
+
+// refreshHeader repaints the title/subtitle for the currently-open chat
+// (hides the whole header if none is open). Must run on the GTK main loop.
+func (cv *ConversationView) refreshHeader() {
+	if cv.jid == "" {
+		cv.header.SetVisible(false)
+		return
+	}
+	cv.titleLabel.SetLabel(cv.chatName(cv.jid))
+	cv.subtitleLabel.SetLabel(presenceSubtitle(cv.presence[cv.jid], time.Now()))
+	cv.header.SetVisible(true)
+}
+
+// chatName looks up jid's display name from the chat list, falling back to
+// the raw JID if it isn't found (e.g. a chat not yet synced into the store).
+func (cv *ConversationView) chatName(jid string) string {
+	chats, err := cv.c.Chats(0)
+	if err != nil {
+		return jid
+	}
+	for _, c := range chats {
+		if c.JID == jid && c.Name != "" {
+			return c.Name
+		}
+	}
+	return jid
 }
 
 // AppendSentMessage appends an optimistic echo of a just-sent message if

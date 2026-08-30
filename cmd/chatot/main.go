@@ -75,7 +75,21 @@ func activate(app *adw.Application, c client.Client) {
 	win.SetDefaultSize(1000, 700)
 	win.SetContent(split)
 	composer.SetWindow(&win.Window)
+
+	// "is-active" tracks OS-level window focus; report available/unavailable
+	// so contacts see accurate presence rather than a permanent "online".
+	win.NotifyProperty("is-active", func() {
+		go sendPresence(c, win.IsActive())
+	})
+
 	win.Present()
+	go sendPresence(c, true)
+}
+
+func sendPresence(c client.Client, available bool) {
+	if err := c.SendPresence(available); err != nil {
+		log.Printf("chatot: send presence failed: %v", err)
+	}
 }
 
 // markReadOnOpen looks up jid's unread count from the chat list and, if
