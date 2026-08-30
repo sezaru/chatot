@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -81,6 +82,42 @@ func TestFakeSendTextAppendsAndReturnsID(t *testing.T) {
 	for _, c := range chats {
 		if c.JID == jid && c.Preview != "on my way" {
 			t.Errorf("chat preview not updated: %q", c.Preview)
+		}
+	}
+}
+
+func TestFakeSendContactAppendsAndReturnsID(t *testing.T) {
+	f := NewFake()
+	jid := "1234567890@s.whatsapp.net"
+	contact := Contact{DisplayName: "Alan Turing", Phones: []string{"+44 20 7946 0958"}}
+
+	id, err := f.SendContact(context.Background(), jid, contact, nil)
+	if err != nil {
+		t.Fatalf("SendContact: %v", err)
+	}
+	if id == "" {
+		t.Fatal("expected a non-empty message ID")
+	}
+
+	msgs, err := f.Messages(jid, 0)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	last := msgs[len(msgs)-1]
+	if last.ID != id || !last.FromMe || last.Contact == nil {
+		t.Fatalf("last message = %+v, want appended contact send", last)
+	}
+	if last.Contact.DisplayName != "Alan Turing" {
+		t.Errorf("Contact.DisplayName = %q", last.Contact.DisplayName)
+	}
+
+	chats, err := f.Chats(0)
+	if err != nil {
+		t.Fatalf("Chats: %v", err)
+	}
+	for _, c := range chats {
+		if c.JID == jid && !strings.Contains(c.Preview, "Alan Turing") {
+			t.Errorf("chat preview = %q, want it to mention the shared contact", c.Preview)
 		}
 	}
 }

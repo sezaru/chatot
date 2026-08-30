@@ -181,6 +181,28 @@ func parseLocation(name, address, lat, long string) (client.Location, bool) {
 	}, true
 }
 
+// contactAction is what a contact-pick submission resolves to.
+type contactAction struct {
+	JID     string
+	Contact client.Contact
+	ReplyTo *client.MsgRef
+}
+
+// SubmitContact resolves a contact send given the picked contact. Fails
+// (ok=false) if there's no active chat; on success it clears any pending
+// reply like the other sends.
+func (s *composeState) SubmitContact(contact client.Contact) (contactAction, bool) {
+	if s.jid == "" {
+		return contactAction{}, false
+	}
+	action := contactAction{JID: s.jid, Contact: contact}
+	if s.replyTo != nil {
+		action.ReplyTo = &client.MsgRef{ChatJID: s.replyTo.ChatJID, MsgID: s.replyTo.ID}
+	}
+	s.replyTo = nil
+	return action, true
+}
+
 // pollAction is what a poll-dialog submission resolves to.
 type pollAction struct {
 	JID        string
@@ -284,15 +306,13 @@ type Composer struct {
 	state  composeState
 	window *gtk.Window // parent for gtk.FileDialog; set via SetWindow
 
-	quoteBar    *gtk.Box
-	quoteLabel  *gtk.Label
-	editBar     *gtk.Box
-	entry       *gtk.Entry
-	attachBtn   *gtk.Button
-	locationBtn *gtk.Button
-	pollBtn     *gtk.Button
-	emojiBtn    *gtk.Button
-	recordBtn   *gtk.Button
+	quoteBar   *gtk.Box
+	quoteLabel *gtk.Label
+	editBar    *gtk.Box
+	entry      *gtk.Entry
+	attachBtn  *gtk.MenuButton
+	emojiBtn   *gtk.Button
+	recordBtn  *gtk.Button
 
 	recorder  *audio.Recorder // non-nil only while a recording is in progress
 	recording bool
@@ -344,20 +364,11 @@ func NewComposer(c client.Client) *Composer {
 	entryRow.SetMarginStart(8)
 	entryRow.SetMarginEnd(8)
 
-	attachBtn := gtk.NewButtonWithLabel("📎")
+	attachBtn := gtk.NewMenuButton()
+	attachBtn.SetIconName("list-add-symbolic")
 	attachBtn.AddCSSClass("flat")
 	attachBtn.SetSensitive(false)
 	entryRow.Append(attachBtn)
-
-	locationBtn := gtk.NewButtonWithLabel("📍")
-	locationBtn.AddCSSClass("flat")
-	locationBtn.SetSensitive(false)
-	entryRow.Append(locationBtn)
-
-	pollBtn := gtk.NewButtonWithLabel("📊")
-	pollBtn.AddCSSClass("flat")
-	pollBtn.SetSensitive(false)
-	entryRow.Append(pollBtn)
 
 	entry := gtk.NewEntry()
 	entry.SetHExpand(true)
@@ -380,26 +391,23 @@ func NewComposer(c client.Client) *Composer {
 	root.Append(entryRow)
 
 	comp := &Composer{
-		Box:         root,
-		c:           c,
-		quoteBar:    quoteBar,
-		quoteLabel:  quoteLabel,
-		editBar:     editBar,
-		entry:       entry,
-		attachBtn:   attachBtn,
-		locationBtn: locationBtn,
-		pollBtn:     pollBtn,
-		emojiBtn:    emojiBtn,
-		recordBtn:   recordBtn,
-		typing:      newTypingModel(typingDebounce),
+		Box:        root,
+		c:          c,
+		quoteBar:   quoteBar,
+		quoteLabel: quoteLabel,
+		editBar:    editBar,
+		entry:      entry,
+		attachBtn:  attachBtn,
+		emojiBtn:   emojiBtn,
+		recordBtn:  recordBtn,
+		typing:     newTypingModel(typingDebounce),
 	}
+
+	attachBtn.SetPopover(newAttachPopover(comp))
 
 	entry.ConnectActivate(comp.submit)
 	entry.ConnectChanged(comp.onEntryChanged)
 	sendBtn.ConnectClicked(comp.submit)
-	attachBtn.ConnectClicked(comp.pickAttachment)
-	locationBtn.ConnectClicked(comp.pickLocation)
-	pollBtn.ConnectClicked(comp.pickPoll)
 	emojiBtn.ConnectClicked(comp.pickEmoji)
 	recordBtn.ConnectClicked(comp.toggleRecording)
 	cancelQuote.ConnectClicked(func() {
@@ -484,8 +492,6 @@ func (c *Composer) SetChat(jid string) {
 		c.sendTypingAsync(prevJID, false)
 	}
 	c.attachBtn.SetSensitive(jid != "")
-	c.locationBtn.SetSensitive(jid != "")
-	c.pollBtn.SetSensitive(jid != "")
 	c.recordBtn.SetSensitive(jid != "" && !c.recording)
 	c.refreshQuoteBar()
 	c.refreshEditBar()
@@ -606,16 +612,83 @@ func insertAtCursor(entry *gtk.Entry, text string) {
 	entry.SetPosition(pos + int(n))
 }
 
-// pickAttachment opens a file-choose dialog and, on a picked file, hands off
-// to sendMedia. No-ops if there's no active chat or no window has been set
-// yet (attachBtn is also disabled in that first case, but this guards
-// against a stray click racing SetChat/SetWindow).
-func (c *Composer) pickAttachment() {
+// mediaFilter matches images and videos, for the "Photo or video" attach
+// tile; a nil filter (used for "Document") leaves the file dialog unfiltered.
+func mediaFilter() *gtk.FileFilter {
+	f := gtk.NewFileFilter()
+	f.AddMIMEType("image/*")
+	f.AddMIMEType("video/*")
+	return f
+}
+
+// newAttachTile builds one icon-over-label tile button for the attach
+// popover, matching the mockup's "+" menu.
+func newAttachTile(iconName, label string, onClick func()) *gtk.Button {
+	box := gtk.NewBox(gtk.OrientationVertical, 4)
+	box.SetHAlign(gtk.AlignCenter)
+	img := gtk.NewImageFromIconName(iconName)
+	img.SetPixelSize(32)
+	box.Append(img)
+	box.Append(gtk.NewLabel(label))
+
+	btn := gtk.NewButton()
+	btn.AddCSSClass("flat")
+	btn.SetChild(box)
+	btn.SetSizeRequest(88, 72)
+	btn.ConnectClicked(onClick)
+	return btn
+}
+
+// newAttachPopover builds the "+" button's popover: five tiles for the
+// attachment sources the mockup groups behind one button. Camera (a future
+// GStreamer-capture feature) and Event (F52) are intentionally omitted.
+func newAttachPopover(c *Composer) *gtk.Popover {
+	popover := gtk.NewPopover()
+
+	tiles := []struct {
+		icon, label string
+		activate    func()
+	}{
+		{"insert-image-symbolic", "Photo or video", func() { c.pickAttachment(mediaFilter()) }},
+		{"text-x-generic-symbolic", "Document", func() { c.pickAttachment(nil) }},
+		{"mark-location-symbolic", "Location", c.pickLocation},
+		{"avatar-default-symbolic", "Contact", c.pickContact},
+		{"view-list-symbolic", "Poll", c.pickPoll},
+	}
+
+	grid := gtk.NewGrid()
+	grid.SetRowSpacing(4)
+	grid.SetColumnSpacing(4)
+	grid.SetMarginTop(8)
+	grid.SetMarginBottom(8)
+	grid.SetMarginStart(8)
+	grid.SetMarginEnd(8)
+	for i, t := range tiles {
+		activate := t.activate
+		tile := newAttachTile(t.icon, t.label, func() {
+			popover.Popdown()
+			activate()
+		})
+		grid.Attach(tile, i%3, i/3, 1, 1)
+	}
+	popover.SetChild(grid)
+	return popover
+}
+
+// pickAttachment opens a file-choose dialog (filtered to images/videos when
+// filter is non-nil) and, on a picked file, hands off to sendMedia. No-ops if
+// there's no active chat or no window has been set yet (attachBtn is also
+// disabled in that first case, but this guards against a stray click racing
+// SetChat/SetWindow).
+func (c *Composer) pickAttachment(filter *gtk.FileFilter) {
 	if !c.attachBtn.Sensitive() || c.window == nil {
 		return
 	}
 	dialog := gtk.NewFileDialog()
 	dialog.SetTitle("Send file")
+	if filter != nil {
+		dialog.SetDefaultFilter(filter)
+	}
 	dialog.Open(context.Background(), c.window, func(res gio.AsyncResulter) {
 		file, err := dialog.OpenFinish(res)
 		if err != nil {
@@ -665,7 +738,7 @@ func (c *Composer) sendMedia(path string) {
 // on send, hands the parsed coordinates to sendLocation. No-ops if there's no
 // active chat or no window set yet.
 func (c *Composer) pickLocation() {
-	if !c.locationBtn.Sensitive() || c.window == nil {
+	if c.state.jid == "" || c.window == nil {
 		return
 	}
 
@@ -746,7 +819,7 @@ const pollOptionCount = 4
 // and, on send, hands the parsed form to sendPoll. No-ops if there's no active
 // chat or no window set yet.
 func (c *Composer) pickPoll() {
-	if !c.pollBtn.Sensitive() || c.window == nil {
+	if c.state.jid == "" || c.window == nil {
 		return
 	}
 
@@ -825,6 +898,114 @@ func (c *Composer) sendPoll(question string, options []string) bool {
 		glib.IdleAdd(func() { c.onSent(msg) })
 	}()
 	return true
+}
+
+// pickContact opens a searchable list of the user's chats and, on a pick,
+// hands off to sendContact. No-ops if there's no active chat or no window
+// set yet.
+func (c *Composer) pickContact() {
+	if c.state.jid == "" || c.window == nil {
+		return
+	}
+
+	chats, err := c.c.Chats(0)
+	if err != nil {
+		log.Printf("chatot: load contacts failed: %v", err)
+		return
+	}
+
+	dialog := gtk.NewWindow()
+	dialog.SetTitle("Send contact")
+	dialog.SetTransientFor(c.window)
+	dialog.SetModal(true)
+	dialog.SetDefaultSize(320, 400)
+
+	box := gtk.NewBox(gtk.OrientationVertical, 6)
+	box.SetMarginTop(12)
+	box.SetMarginBottom(12)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
+
+	search := gtk.NewSearchEntry()
+	search.SetPlaceholderText("Search contacts")
+	box.Append(search)
+
+	list := gtk.NewListBox()
+	list.SetSelectionMode(gtk.SelectionNone)
+
+	scroller := gtk.NewScrolledWindow()
+	scroller.SetVExpand(true)
+	scroller.SetChild(list)
+	box.Append(scroller)
+
+	rebuild := func(query string) {
+		for child := list.FirstChild(); child != nil; {
+			next := gtk.BaseWidget(child).NextSibling()
+			list.Remove(child)
+			child = next
+		}
+		query = strings.ToLower(strings.TrimSpace(query))
+		for _, chat := range chats {
+			if chat.IsGroup {
+				continue
+			}
+			if query != "" && !strings.Contains(strings.ToLower(chat.Name), query) {
+				continue
+			}
+			row := gtk.NewButtonWithLabel(chat.Name)
+			row.AddCSSClass("flat")
+			pick := chat
+			row.ConnectClicked(func() {
+				c.sendContact(pick.JID, pick.Name)
+				dialog.Close()
+			})
+			list.Append(row)
+		}
+	}
+	rebuild("")
+	search.ConnectSearchChanged(func() { rebuild(search.Text()) })
+
+	dialog.SetChild(box)
+	dialog.Present()
+}
+
+// sendContact resolves a contact send from the picked chat's name/JID against
+// composeState and sends it in the background, mirroring sendLocation's flow.
+func (c *Composer) sendContact(jid, name string) {
+	action, ok := c.state.SubmitContact(client.Contact{DisplayName: name, Phones: []string{phoneFromJID(jid)}})
+	if !ok {
+		return
+	}
+	c.refreshQuoteBar()
+
+	go func() {
+		id, err := c.c.SendContact(context.Background(), action.JID, action.Contact, action.ReplyTo)
+		if err != nil {
+			log.Printf("chatot: send contact failed: %v", err)
+			return
+		}
+		if c.onSent == nil {
+			return
+		}
+		contact := action.Contact
+		msg := client.Message{
+			ID: id, ChatJID: action.JID, FromMe: true, TS: time.Now().Unix(),
+			ReplyTo: action.ReplyTo, Contact: &contact,
+		}
+		glib.IdleAdd(func() { c.onSent(msg) })
+	}()
+}
+
+// phoneFromJID extracts the phone-number portion of a WhatsApp JID
+// ("15551234567@s.whatsapp.net" -> "+15551234567"), used as the picked
+// chat's sole phone number since Chat carries no separate phone field.
+func phoneFromJID(jid string) string {
+	user, _, ok := strings.Cut(jid, "@")
+	if !ok || user == "" {
+		return ""
+	}
+	user, _, _ = strings.Cut(user, ":") // drop any device suffix (user:device@…)
+	return "+" + user
 }
 
 // toggleRecording starts a voice-note recording on the first click and

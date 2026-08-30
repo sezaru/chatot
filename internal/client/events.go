@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"strings"
 
 	waProto "go.mau.fi/whatsmeow/binary/proto"
@@ -271,4 +272,18 @@ func parseVCardPhones(vcard string) []string {
 		}
 	}
 	return phones
+}
+
+// buildVCard renders contact as a minimal vCard 3.0 (FN plus one TEL line per
+// phone) — the same shape parseVCardPhones reads back on the receiving end.
+func buildVCard(contact Contact) string {
+	var b strings.Builder
+	b.WriteString("BEGIN:VCARD\r\n")
+	b.WriteString("VERSION:3.0\r\n")
+	fmt.Fprintf(&b, "FN:%s\r\n", contact.DisplayName)
+	for _, phone := range contact.Phones {
+		fmt.Fprintf(&b, "TEL;type=CELL:%s\r\n", phone)
+	}
+	b.WriteString("END:VCARD")
+	return b.String()
 }
