@@ -1,0 +1,154 @@
+package ui
+
+import (
+	"testing"
+	"time"
+
+	"chatot/internal/client"
+)
+
+func mustParse(t *testing.T, s string) time.Time {
+	t.Helper()
+	tm, err := time.ParseInLocation("2006-01-02 15:04:05", s, time.UTC)
+	if err != nil {
+		t.Fatalf("parse %q: %v", s, err)
+	}
+	return tm
+}
+
+func TestBubbleVM_FromMe(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+
+	out := bubbleVM(client.Message{ID: "1", FromMe: true, Text: "hi", TS: now.Unix()}, nil, map[string]client.Message{}, now)
+	if !out.FromMe {
+		t.Error("expected FromMe=true for outbound message")
+	}
+
+	in := bubbleVM(client.Message{ID: "2", FromMe: false, Text: "hey", TS: now.Unix()}, nil, map[string]client.Message{}, now)
+	if in.FromMe {
+		t.Error("expected FromMe=false for incoming message")
+	}
+}
+
+func TestBubbleVM_ReplyResolved(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+	byID := map[string]client.Message{
+		"orig": {ID: "orig", Text: "original text"},
+	}
+	m := client.Message{ID: "2", Text: "reply text", TS: now.Unix(), ReplyTo: &client.MsgRef{MsgID: "orig"}}
+
+	out := bubbleVM(m, nil, byID, now)
+	if !out.HasQuote {
+		t.Fatal("expected HasQuote=true")
+	}
+	if out.QuotedText != "original text" {
+		t.Errorf("QuotedText = %q, want %q", out.QuotedText, "original text")
+	}
+}
+
+func TestBubbleVM_ReplyNotFoundFallback(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+	m := client.Message{ID: "2", Text: "reply text", TS: now.Unix(), ReplyTo: &client.MsgRef{MsgID: "missing"}}
+
+	out := bubbleVM(m, nil, map[string]client.Message{}, now)
+	if !out.HasQuote {
+		t.Fatal("expected HasQuote=true even when the target isn't found")
+	}
+	if out.QuotedText != "↩ reply" {
+		t.Errorf("QuotedText = %q, want fallback %q", out.QuotedText, "↩ reply")
+	}
+}
+
+func TestBubbleVM_DaySeparator(t *testing.T) {
+	now := mustParse(t, "2026-08-30 18:00:00")
+	day1 := mustParse(t, "2026-08-30 09:00:00")
+	day2 := mustParse(t, "2026-08-31 09:00:00")
+
+	first := client.Message{ID: "1", Text: "a", TS: day1.Unix()}
+	sameDayMsg := client.Message{ID: "2", Text: "b", TS: day1.Add(time.Hour).Unix()}
+	nextDayMsg := client.Message{ID: "3", Text: "c", TS: day2.Unix()}
+
+	vFirst := bubbleVM(first, nil, nil, now)
+	if !vFirst.ShowDaySeparator {
+		t.Error("expected a day separator for the first message in the thread")
+	}
+
+	vSame := bubbleVM(sameDayMsg, &first, nil, now)
+	if vSame.ShowDaySeparator {
+		t.Error("expected no day separator for a message on the same day as prev")
+	}
+
+	vNext := bubbleVM(nextDayMsg, &sameDayMsg, nil, now)
+	if !vNext.ShowDaySeparator {
+		t.Error("expected a day separator when the calendar day changes")
+	}
+}
+
+func TestDayText(t *testing.T) {
+	now := mustParse(t, "2026-08-30 18:00:00")
+
+	if got := dayText(now.Unix(), now); got != "Today" {
+		t.Errorf("dayText(today) = %q, want Today", got)
+	}
+	yesterday := now.AddDate(0, 0, -1)
+	if got := dayText(yesterday.Unix(), now); got != "Yesterday" {
+		t.Errorf("dayText(yesterday) = %q, want Yesterday", got)
+	}
+	older := now.AddDate(0, 0, -10)
+	want := older.Format("02/01/2006")
+	if got := dayText(older.Unix(), now); got != want {
+		t.Errorf("dayText(older) = %q, want %q", got, want)
+	}
+}
+
+func TestBubbleVM_Reactions(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+	m := client.Message{
+		ID:        "1",
+		Text:      "funny",
+		TS:        now.Unix(),
+		Reactions: map[string]string{"👍": "a@s.whatsapp.net", "😂": "b@s.whatsapp.net"},
+	}
+
+	out := bubbleVM(m, nil, nil, now)
+	if len(out.Reactions) != 2 {
+		t.Fatalf("Reactions = %v, want 2 entries", out.Reactions)
+	}
+}
+
+func TestBubbleVM_MediaMessage(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+
+	m := client.Message{
+		ID: "1",
+		TS: now.Unix(),
+		Attachment: &client.Attachment{
+			Kind:     "document",
+			Filename: "report.pdf",
+		},
+	}
+
+	out := bubbleVM(m, nil, nil, now)
+	if !out.IsMedia {
+		t.Fatal("expected IsMedia=true for an attachment message")
+	}
+	if out.MediaChip != "[document] report.pdf" {
+		t.Errorf("MediaChip = %q, want %q", out.MediaChip, "[document] report.pdf")
+	}
+	if out.Text != "" {
+		t.Errorf("Text = %q, want empty for a media message", out.Text)
+	}
+}
+
+func TestBubbleVM_TextMessage(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+
+	m := client.Message{ID: "1", Text: "plain text", TS: now.Unix()}
+	out := bubbleVM(m, nil, nil, now)
+	if out.IsMedia {
+		t.Error("expected IsMedia=false for a plain text message")
+	}
+	if out.Text != "plain text" {
+		t.Errorf("Text = %q, want %q", out.Text, "plain text")
+	}
+}

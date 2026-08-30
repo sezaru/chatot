@@ -33,11 +33,11 @@ func activate(app *adw.Application, c client.Client) {
 	chatList := ui.NewChatList(c)
 	sidebar := adw.NewNavigationPage(chatList, "Chats")
 
-	contentLabel := placeholderLabel("Select a chat", "")
-	content := adw.NewNavigationPage(contentLabel, "Conversation")
+	conversation := ui.NewConversationView(c)
+	content := adw.NewNavigationPage(conversation, "Conversation")
 
 	chatList.OnChatSelected(func(jid string) {
-		contentLabel.SetLabel("Selected: " + jid)
+		conversation.Load(jid)
 	})
 
 	split := adw.NewNavigationSplitView()
@@ -49,15 +49,6 @@ func activate(app *adw.Application, c client.Client) {
 	win.SetDefaultSize(1000, 700)
 	win.SetContent(split)
 	win.Present()
-}
-
-func placeholderLabel(text, cssClass string) *gtk.Label {
-	label := gtk.NewLabel(text)
-	label.AddCSSClass("chatot-placeholder")
-	if cssClass != "" {
-		label.AddCSSClass(cssClass)
-	}
-	return label
 }
 
 func loadCSS() {
