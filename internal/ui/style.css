@@ -1,6 +1,29 @@
-/* chatot custom look; grows as chatlist/conversation panes land. */
+/* chatot look, matched to the design mockup (light + dark).
+ *
+ * Surfaces use Adwaita named colors so they auto-adapt between light/dark;
+ * only the WhatsApp brand green and small brand tints are hard-coded (they
+ * are identical in both schemes). Do NOT add a `.dark` selector — libadwaita
+ * doesn't tag arbitrary widgets with it; rely on the named colors instead.
+ */
+
+/* Nudge libadwaita's own controls (entries, selection, text highlight) toward
+   the brand. NOTE: libadwaita 1.6+ computes the accent for suggested-action /
+   selection at runtime via AdwStyleManager (a read-only *system* preference —
+   there is no setter), so this @define-color override is ignored for those.
+   Brand-critical elements therefore hard-code #1b8c72 via our own classes
+   below rather than relying on the accent system. */
+@define-color accent_color #147a63;
+@define-color accent_bg_color #1b8c72;
+@define-color accent_fg_color #ffffff;
+
+/* Cantarell is the mockup UI font; packaged separately, fallback covers dev.
+   No root font-size here so the user's text scale is respected. */
+window {
+	font-family: "Cantarell", system-ui, sans-serif;
+}
 
 .chatot-sidebar {
+	background-color: @sidebar_bg_color;
 }
 
 .chatot-placeholder {
@@ -13,8 +36,71 @@
 	font-weight: bold;
 }
 
+/* Per-contact initials-avatar palette (assigned by FNV hash in avatar.go).
+   White bold text on each; photo avatars (.chatot-avatar-img) are unaffected. */
+.chatot-avatar-c0,
+.chatot-avatar-c1,
+.chatot-avatar-c2,
+.chatot-avatar-c3,
+.chatot-avatar-c4,
+.chatot-avatar-c5,
+.chatot-avatar-c6,
+.chatot-avatar-c7 {
+	color: #ffffff;
+}
+
+.chatot-avatar-c0 {
+	background-color: #5a7ab5;
+}
+
+.chatot-avatar-c1 {
+	background-color: #b58a4a;
+}
+
+.chatot-avatar-c2 {
+	background-color: #9c5b8a;
+}
+
+.chatot-avatar-c3 {
+	background-color: #c26b5c;
+}
+
+.chatot-avatar-c4 {
+	background-color: #7a8b5a;
+}
+
+.chatot-avatar-c5 {
+	background-color: #e8a34a;
+}
+
+.chatot-avatar-c6 {
+	background-color: #427677;
+}
+
+.chatot-avatar-c7 {
+	background-color: #6a6a8c;
+}
+
 .chatot-avatar-img {
 	border-radius: 999px;
+}
+
+/* Sidebar chat rows: rounded, gentle hover, light-green selection tint (an
+   alpha of the brand green so it reads right in both schemes rather than the
+   solid accent selection Adwaita would otherwise paint). */
+.navigation-sidebar > row {
+	border-radius: 8px;
+	margin: 1px 6px;
+	padding: 6px 8px;
+}
+
+.navigation-sidebar > row:selected {
+	background-color: alpha(#1b8c72, 0.16);
+	color: inherit;
+}
+
+.navigation-sidebar > row:hover:not(:selected) {
+	background-color: alpha(currentColor, 0.05);
 }
 
 .chatot-chat-name {
@@ -22,56 +108,67 @@
 }
 
 .chatot-chat-preview {
-	opacity: 0.7;
+	opacity: 0.55;
 	font-size: 0.9em;
 }
 
 .chatot-chat-time {
-	opacity: 0.6;
+	opacity: 0.45;
 	font-size: 0.8em;
 }
 
+/* Brand green hard-coded, not @accent_bg_color: libadwaita's runtime accent
+   overrides that named colour (would render the system blue). */
 .chatot-unread-badge {
-	background-color: @accent_bg_color;
-	color: @accent_fg_color;
+	background-color: #1b8c72;
+	color: #ffffff;
 	border-radius: 999px;
 	min-width: 1.4em;
 	padding: 0 0.35em;
-	font-size: 0.75em;
+	font-size: 0.72em;
 	font-weight: bold;
 }
 
 .chatot-day-separator {
-	opacity: 0.6;
+	opacity: 0.55;
 	font-size: 0.8em;
-	margin: 6px 0;
+	border-radius: 999px;
+	background-color: alpha(currentColor, 0.06);
+	padding: 2px 10px;
+	margin: 8px 0;
 }
 
 .chatot-bubble {
-	border-radius: 12px;
-	padding: 6px 10px;
+	border-radius: 14px;
+	padding: 6px 11px;
 	margin: 2px 0;
 }
 
 .chatot-bubble-in {
-	background-color: alpha(currentColor, 0.08);
+	background-color: @card_bg_color;
 }
 
 .chatot-bubble-out {
-	background-color: @accent_bg_color;
-	color: @accent_fg_color;
+	background-color: #1b8c72;
+	color: #ffffff;
 }
 
 .chatot-bubble-deleted {
 	font-style: italic;
-	opacity: 0.65;
+	opacity: 0.6;
 }
 
 .chatot-bubble-quote {
 	opacity: 0.65;
 	font-size: 0.85em;
-	border-left: 2px solid alpha(currentColor, 0.4);
+	border-left: 3px solid alpha(currentColor, 0.4);
 	padding-left: 6px;
+}
+
+/* Quote inside an outgoing (green) bubble: keep the accent on the light text. */
+.chatot-bubble-out .chatot-bubble-quote {
+	opacity: 0.8;
+	border-left-color: alpha(currentColor, 0.6);
 }
 
 .chatot-bubble-media {
@@ -89,13 +186,21 @@
 }
 
 .chatot-bubble-time {
-	opacity: 0.6;
+	opacity: 0.5;
 	font-size: 0.7em;
 }
 
 .chatot-bubble-tick {
-	opacity: 0.6;
+	opacity: 0.5;
 	font-size: 0.7em;
+}
+
+/* Outgoing-bubble timestamp/tick sit on green: whiten them (mockup uses
+   rgba(255,255,255,.7)) instead of the dark alpha above. */
+.chatot-bubble-out .chatot-bubble-time,
+.chatot-bubble-out .chatot-bubble-tick {
+	color: alpha(#ffffff, 0.7);
+	opacity: 1;
 }
 
 /* WhatsApp's canonical read-tick blue; own bubbles use @accent_bg_color as
@@ -116,7 +221,7 @@
 /* Strip GtkListView's default row background/padding so the message bubbles
  * sit on the plain surface, and give the thread a little top/bottom margin. */
 .chatot-conv-list {
-	padding: 8px 0;
+	padding: 8px 4px;
 }
 
 .chatot-conv-list > row {
@@ -125,17 +230,44 @@
 }
 
 .chatot-composer {
-	border-top: 1px solid alpha(currentColor, 0.15);
+	border-top: 1px solid alpha(currentColor, 0.12);
+	padding: 4px;
+}
+
+/* Rounded message entry to match the mockup's pill-ish composer input. */
+.chatot-composer entry {
+	border-radius: 8px;
+}
+
+/* Round, solid-green send button. Brand green hard-coded (not the accent
+   system, which libadwaita drives to the system blue at runtime). */
+.chatot-send {
+	/* Adwaita buttons paint a background-image gradient that hides
+	   background-color; clear it so the brand green shows. */
+	background-image: none;
+	background-color: #1b8c72;
+	color: #ffffff;
+	border-radius: 999px;
+	min-height: 34px;
+	padding: 4px 14px;
+}
+
+.chatot-send:hover {
+	background-color: #0f6350;
+}
+
+.chatot-send:active {
+	background-color: #147a63;
 }
 
 .chatot-composer-quote {
 	padding: 4px 10px;
 	background-color: alpha(currentColor, 0.06);
-	border-left: 2px solid @accent_bg_color;
+	border-left: 3px solid #1b8c72;
 }
 
 .chatot-conv-header {
-	border-bottom: 1px solid alpha(currentColor, 0.15);
+	border-bottom: 1px solid alpha(currentColor, 0.12);
 }
 
 .chatot-conv-title {
@@ -143,14 +275,15 @@
 }
 
 .chatot-conv-subtitle {
-	opacity: 0.65;
+	opacity: 0.55;
 	font-size: 0.85em;
 	min-height: 1.2em;
 }
 
 .chatot-chat-typing {
 	font-style: italic;
-	color: @accent_bg_color;
+	color: #1b8c72;
+	opacity: 1;
 }
 
 .chatot-search-entry {
@@ -158,12 +291,12 @@
 }
 
 .chatot-search-snippet {
-	opacity: 0.7;
+	opacity: 0.55;
 	font-size: 0.9em;
 }
 
 .chatot-search-empty {
-	opacity: 0.6;
+	opacity: 0.55;
 	font-style: italic;
 	margin: 12px;
 }

@@ -232,6 +232,12 @@ func activate(app *adw.Application, c client.Client) {
 
 	win.Present()
 	go sendPresence(c, true)
+
+	// Dev/screenshot hook: CHATOT_SHOT_CHAT=<jid> opens that chat on launch so
+	// the conversation pane can be captured non-interactively. No-op unset.
+	if jid := os.Getenv("CHATOT_SHOT_CHAT"); jid != "" {
+		openChat(jid)
+	}
 }
 
 func sendPresence(c client.Client, available bool) {

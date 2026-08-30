@@ -2,6 +2,8 @@ package ui
 
 import (
 	"context"
+	"fmt"
+	"hash/fnv"
 	"strings"
 
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -47,12 +49,12 @@ func buildAvatar(c client.Client, cache *avatarCache, jid, initial string, size 
 		if path != "" {
 			box.Append(newAvatarPicture(path, size))
 		} else {
-			box.Append(newAvatarInitial(initial, size))
+			box.Append(newAvatarInitial(jid, initial, size))
 		}
 		return box
 	}
 
-	box.Append(newAvatarInitial(initial, size))
+	box.Append(newAvatarInitial(jid, initial, size))
 
 	go func() {
 		path, err := c.Avatar(context.Background(), jid)
@@ -72,11 +74,20 @@ func buildAvatar(c client.Client, cache *avatarCache, jid, initial string, size 
 	return box
 }
 
-func newAvatarInitial(initial string, size int) *gtk.Label {
+func newAvatarInitial(jid, initial string, size int) *gtk.Label {
 	label := gtk.NewLabel(initial)
 	label.AddCSSClass("chatot-avatar")
+	label.AddCSSClass(avatarColorClass(jid))
 	label.SetSizeRequest(size, size)
 	return label
+}
+
+// avatarColorClass maps jid to one of the 8 fixed initials-avatar palette
+// classes via FNV-1a, so a contact always gets the same colour.
+func avatarColorClass(jid string) string {
+	h := fnv.New32a()
+	h.Write([]byte(jid))
+	return fmt.Sprintf("chatot-avatar-c%d", h.Sum32()%8)
 }
 
 func newAvatarPicture(path string, size int) *gtk.Picture {
