@@ -350,6 +350,11 @@ type Client interface {
 	// StarredMessages returns starred messages across every chat, newest
 	// first, for the starred-messages sidebar view.
 	StarredMessages(limit int) ([]Message, error)
+	// Statuses returns recent status ("stories") updates, newest first; each
+	// message's FromJID is the poster. Backed by the status@broadcast chat.
+	Statuses(limit int) ([]Message, error)
+	// PostStatus posts a text status update to the status broadcast.
+	PostStatus(ctx context.Context, text string) error
 	// RejectCall declines an incoming call offer identified by callID from
 	// callJID. chatot never places or answers calls (whatsmeow can't); this
 	// is the only call action supported.

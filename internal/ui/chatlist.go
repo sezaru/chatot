@@ -152,6 +152,8 @@ type ChatList struct {
 	window        *gtk.Window // parent for the new-chat dialog; set via SetWindow
 	showArchived  bool        // toggled by the "Archived" button; see showChatInList
 	showStarred   bool        // toggled by the "Starred" button; overrides search/archived
+	showStatus    bool        // toggled by the "Status" button; overrides search/starred
+	postStatusBar *gtk.Box    // "Post status" bar, visible only in status mode
 	labelFilter   *gtk.DropDown
 	// filterLabelIDs maps the label-filter dropdown's row index to a label id;
 	// index 0 is "All" (empty id). Rebuilt with the dropdown from c.Labels().
@@ -198,6 +200,11 @@ func NewChatList(c client.Client) *ChatList {
 	starredToggle.SetTooltipText("Starred messages")
 	searchRow.Append(starredToggle)
 
+	statusToggle := gtk.NewToggleButton()
+	statusToggle.SetIconName("emblem-photos-symbolic")
+	statusToggle.SetTooltipText("Status updates")
+	searchRow.Append(statusToggle)
+
 	labelFilter := gtk.NewDropDownFromStrings([]string{"All"})
 	labelFilter.SetTooltipText("Filter by label")
 	searchRow.Append(labelFilter)
@@ -208,12 +215,20 @@ func NewChatList(c client.Client) *ChatList {
 
 	root.Append(searchRow)
 
+	postStatusBar := gtk.NewBox(gtk.OrientationHorizontal, 0)
+	postStatusBtn := gtk.NewButtonWithLabel("➕ Post status")
+	postStatusBtn.AddCSSClass("flat")
+	postStatusBtn.SetHExpand(true)
+	postStatusBar.Append(postStatusBtn)
+	postStatusBar.SetVisible(false)
+	root.Append(postStatusBar)
+
 	list := gtk.NewListBox()
 	list.AddCSSClass("navigation-sidebar")
 	list.SetVExpand(true)
 	root.Append(list)
 
-	cl := &ChatList{Box: root, c: c, events: c.Events(), list: list, composingJIDs: make(map[string]string), avatarCache: newAvatarCache(), labelFilter: labelFilter}
+	cl := &ChatList{Box: root, c: c, events: c.Events(), list: list, composingJIDs: make(map[string]string), avatarCache: newAvatarCache(), labelFilter: labelFilter, postStatusBar: postStatusBar}
 
 	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
 		idx := row.Index()
@@ -230,6 +245,9 @@ func NewChatList(c client.Client) *ChatList {
 		if cl.query != "" && cl.showStarred {
 			cl.showStarred = false
 			starredToggle.SetActive(false)
+		}
+		if cl.query != "" && cl.showStatus {
+			statusToggle.SetActive(false)
 		}
 		cl.refresh()
 	})
@@ -257,7 +275,30 @@ func NewChatList(c client.Client) *ChatList {
 			cl.query = ""
 			search.SetText("")
 		}
+		if cl.showStarred && cl.showStatus {
+			statusToggle.SetActive(false)
+		}
 		cl.refresh()
+	})
+
+	statusToggle.ConnectToggled(func() {
+		cl.showStatus = statusToggle.Active()
+		cl.postStatusBar.SetVisible(cl.showStatus)
+		if cl.showStatus {
+			if cl.query != "" {
+				cl.query = ""
+				search.SetText("")
+			}
+			if cl.showStarred {
+				cl.showStarred = false
+				starredToggle.SetActive(false)
+			}
+		}
+		cl.refresh()
+	})
+
+	postStatusBtn.ConnectClicked(func() {
+		cl.showPostStatusDialog()
 	})
 
 	privacyBtn.ConnectClicked(func() {
@@ -286,10 +327,13 @@ func (cl *ChatList) OnChatSelected(f func(jid string)) {
 	cl.onSelect = f
 }
 
-// refresh rebuilds the row widgets from StarredMessages (starred mode),
-// Search (query set) or Chats (neither). Must run on the GTK main loop.
+// refresh rebuilds the row widgets from Statuses (status mode),
+// StarredMessages (starred mode), Search (query set) or Chats (none of the
+// above). Must run on the GTK main loop.
 func (cl *ChatList) refresh() {
 	switch {
+	case cl.showStatus:
+		cl.refreshStatus()
 	case cl.showStarred:
 		cl.refreshStarred()
 	case cl.query != "":
@@ -389,6 +433,174 @@ func (cl *ChatList) refreshStarred() {
 		cl.list.Append(buildSearchHitRow(searchHitVM(hit, now)))
 		cl.rowJIDs = append(cl.rowJIDs, m.ChatJID)
 	}
+}
+
+// refreshStatus rebuilds the list from Statuses (received status updates),
+// reusing the search-hit row style: one row per status showing the poster's
+// name, a snippet and the time. Clicking a row opens the poster's chat via
+// the same onSelect seam as everything else.
+func (cl *ChatList) refreshStatus() {
+	msgs, err := cl.c.Statuses(searchResultLimit)
+	if err != nil {
+		msgs = nil
+	}
+
+	cl.list.RemoveAll()
+
+	if len(msgs) == 0 {
+		cl.rowJIDs = nil
+		empty := gtk.NewLabel("No status updates")
+		empty.AddCSSClass("chatot-search-empty")
+		cl.list.Append(empty)
+		return
+	}
+
+	chats, _ := cl.c.Chats(0)
+	names := make(map[string]string, len(chats))
+	for _, c := range chats {
+		names[c.JID] = c.Name
+	}
+
+	now := time.Now()
+	cl.rowJIDs = make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		vm := statusRowVM(m, posterName(m.FromJID, names), now)
+		cl.list.Append(buildSearchHitRow(searchHitView{
+			ChatName: vm.PosterName, Snippet: vm.Snippet, TimeText: vm.TimeText, Initial: vm.Initial,
+		}))
+		cl.rowJIDs = append(cl.rowJIDs, m.FromJID)
+	}
+}
+
+// posterName resolves a status poster's JID to a display name: a known chat
+// name if we have one, else a "+number" derived from the JID, else the raw
+// JID.
+func posterName(jid string, names map[string]string) string {
+	if n := names[jid]; n != "" {
+		return n
+	}
+	at := strings.IndexByte(jid, '@')
+	if at > 0 {
+		user := jid[:at]
+		allDigits := true
+		for _, r := range user {
+			if r < '0' || r > '9' {
+				allDigits = false
+				break
+			}
+		}
+		if allDigits {
+			return "+" + user
+		}
+	}
+	return jid
+}
+
+// statusRowView holds the pure display fields for one status row.
+type statusRowView struct {
+	PosterName string
+	Snippet    string
+	TimeText   string
+	Initial    string
+}
+
+// statusRowVM derives the display view-model for a single status update.
+// posterName is resolved by the caller; now is injected for deterministic
+// time formatting in tests.
+func statusRowVM(m client.Message, posterName string, now time.Time) statusRowView {
+	name := posterName
+	if name == "" {
+		name = m.FromJID
+	}
+	initial := "?"
+	for _, r := range name {
+		initial = strings.ToUpper(string(r))
+		break
+	}
+	return statusRowView{
+		PosterName: name,
+		Snippet:    statusSnippet(m),
+		TimeText:   formatChatTime(m.TS, now),
+		Initial:    initial,
+	}
+}
+
+// statusSnippet renders a status update's preview line: its text, or a media
+// placeholder ("📷 Photo" / "🎥 Video" / …) for a media status.
+func statusSnippet(m client.Message) string {
+	if m.Text != "" {
+		return m.Text
+	}
+	if m.Attachment != nil {
+		switch m.Attachment.Kind {
+		case "image":
+			return "📷 Photo"
+		case "video":
+			return "🎥 Video"
+		case "audio":
+			return "🎤 Audio"
+		default:
+			return "📎 " + m.Attachment.Kind
+		}
+	}
+	return ""
+}
+
+// showPostStatusDialog opens a small modal to post a text status: a text
+// entry, then PostStatus in a goroutine.
+func (cl *ChatList) showPostStatusDialog() {
+	dialog := gtk.NewWindow()
+	dialog.SetTitle("Post status")
+	if cl.window != nil {
+		dialog.SetTransientFor(cl.window)
+	}
+	dialog.SetModal(true)
+
+	box := gtk.NewBox(gtk.OrientationVertical, 8)
+	box.SetMarginTop(12)
+	box.SetMarginBottom(12)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
+
+	entry := gtk.NewEntry()
+	entry.SetPlaceholderText("What's on your mind?")
+	box.Append(entry)
+
+	status := gtk.NewLabel("")
+	status.SetXAlign(0)
+	box.Append(status)
+
+	postBtn := gtk.NewButtonWithLabel("Post")
+	postBtn.AddCSSClass("suggested-action")
+	box.Append(postBtn)
+
+	post := func() {
+		text := strings.TrimSpace(entry.Text())
+		if text == "" {
+			status.SetText("Enter some text to post")
+			return
+		}
+		postBtn.SetSensitive(false)
+		status.SetText("Posting…")
+		go func() {
+			err := cl.c.PostStatus(context.Background(), text)
+			glib.IdleAdd(func() {
+				postBtn.SetSensitive(true)
+				if err != nil {
+					status.SetText("Couldn't post status, try again")
+					return
+				}
+				dialog.Close()
+				cl.refresh()
+			})
+		}()
+	}
+	postBtn.ConnectClicked(post)
+	entry.ConnectActivate(post)
+
+	dialog.SetChild(box)
+	dialog.SetDefaultWidget(postBtn)
+	dialog.Present()
 }
 
 // composingPreviewText renders the chat-list preview override for a peer

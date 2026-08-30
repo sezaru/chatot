@@ -85,6 +85,38 @@ func (s *Store) MessageByID(chatJID, msgID string) (m Message, ok bool, err erro
 	return m, true, nil
 }
 
+// statusBroadcastJID is the special chat every WhatsApp status ("story")
+// message belongs to. It's excluded from the normal chat list (see Chats)
+// and surfaced on its own via Statuses.
+const statusBroadcastJID = "status@broadcast"
+
+// Statuses returns recent status ("stories") updates — messages whose chat
+// is statusBroadcastJID — newest first, with the same media/reaction
+// enrichment as Messages. Each row's ChatJID is statusBroadcastJID and its
+// FromJID is the poster.
+func (s *Store) Statuses(limit int) ([]Message, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.Query(messageSelect+`
+		WHERE m.chat_jid = ?
+		ORDER BY m.ts DESC, m.rowid DESC
+		LIMIT ?
+	`, statusBroadcastJID, limit)
+	if err != nil {
+		return nil, err
+	}
+	// pageFromRows returns oldest-first; a status feed reads newest-first.
+	msgs, err := s.pageFromRows(statusBroadcastJID, rows)
+	if err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+		msgs[i], msgs[j] = msgs[j], msgs[i]
+	}
+	return msgs, nil
+}
+
 // messageSelect is the shared column list + joins for a page of messages;
 // callers append their own WHERE/ORDER/LIMIT. Kept identical across Messages
 // and MessagesBefore so both pages scan the same shape (see scanMessages).

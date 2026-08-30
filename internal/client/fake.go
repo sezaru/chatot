@@ -85,6 +85,12 @@ func NewFake() *Fake {
 			}}},
 	}
 
+	f.messages[statusBroadcastJID] = []Message{
+		{ID: "s1", ChatJID: statusBroadcastJID, FromJID: "1234567890@s.whatsapp.net", FromMe: false, Text: "Off to the mountains! 🏔️", TS: now - 1800},
+		{ID: "s2", ChatJID: statusBroadcastJID, FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 900,
+			Attachment: &Attachment{Kind: "image"}},
+	}
+
 	return f
 }
 
@@ -515,6 +521,42 @@ func (f *Fake) StarredMessages(limit int) ([]Message, error) {
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+// statusBroadcastJID is the special chat every status ("story") message
+// belongs to (mirrors types.StatusBroadcastJID.String()).
+const statusBroadcastJID = "status@broadcast"
+
+// Statuses returns the seeded/posted status messages, newest first.
+func (f *Fake) Statuses(limit int) ([]Message, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	src := f.messages[statusBroadcastJID]
+	out := make([]Message, len(src))
+	copy(out, src)
+	sort.Slice(out, func(i, j int) bool { return out[i].TS > out[j].TS })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// PostStatus appends a text status to the in-memory broadcast and returns
+// nil (the real client would SendMessage to the status broadcast).
+func (f *Fake) PostStatus(ctx context.Context, text string) error {
+	f.mu.Lock()
+	f.nextID++
+	msg := Message{
+		ID:      fmt.Sprintf("status-%d", f.nextID),
+		ChatJID: statusBroadcastJID,
+		FromJID: fakeOwnJID,
+		FromMe:  true,
+		Text:    text,
+		TS:      time.Now().Unix(),
+	}
+	f.messages[statusBroadcastJID] = append(f.messages[statusBroadcastJID], msg)
+	f.mu.Unlock()
+	return nil
 }
 
 // Blocklist returns the blocked JIDs, sorted for deterministic output.
