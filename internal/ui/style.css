@@ -83,6 +83,17 @@
 	opacity: 0.6;
 }
 
+/* Strip GtkListView's default row background/padding so the message bubbles
+ * sit on the plain surface, and give the thread a little top/bottom margin. */
+.chatot-conv-list {
+	padding: 8px 0;
+}
+
+.chatot-conv-list > row {
+	padding: 2px 0;
+	background: none;
+}
+
 .chatot-composer {
 	border-top: 1px solid alpha(currentColor, 0.15);
 }

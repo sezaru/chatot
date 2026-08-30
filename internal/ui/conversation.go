@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/diamondburned/gotk4/pkg/core/gioutil"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
@@ -116,9 +117,14 @@ type ConversationView struct {
 	titleLabel    *gtk.Label
 	subtitleLabel *gtk.Label
 	scroller      *gtk.ScrolledWindow
-	list          *gtk.Box
+	listView      *gtk.ListView
+	model         *gioutil.ListModel[client.Message]
 	empty         *gtk.Label
 
+	// msgs mirrors model 1:1 and is the authoritative slice the bind factory
+	// indexes by ListItem position (for the message and its predecessor, which
+	// bubbleVM needs for day separators). byID resolves reply targets across
+	// the whole loaded window.
 	msgs []client.Message
 	byID map[string]client.Message
 
@@ -201,24 +207,13 @@ func NewConversationView(c client.Client) *ConversationView {
 	empty.SetVExpand(true)
 	root.Append(empty)
 
-	list := gtk.NewBox(gtk.OrientationVertical, 4)
-	list.SetMarginTop(8)
-	list.SetMarginBottom(8)
-	list.SetMarginStart(8)
-	list.SetMarginEnd(8)
+	model := conversationModelType.New()
 
+	// GtkListView virtualizes: it only realizes bubble widgets for rows in (or
+	// near) the viewport and unrealizes the rest as they scroll off, so the
+	// live widget count stays bounded no matter how far back history is paged.
+	factory := gtk.NewSignalListItemFactory()
 	scroller := gtk.NewScrolledWindow()
-	scroller.SetVExpand(true)
-	scroller.SetHExpand(true)
-	// Keep the scroller's own height request minimal so a tall thread scrolls
-	// internally instead of growing the pane and pushing the composer (a
-	// sibling below this view) off the bottom of the window.
-	scroller.SetPropagateNaturalHeight(false)
-	scroller.SetMinContentHeight(0)
-	scroller.SetChild(list)
-	scroller.SetVisible(false)
-
-	root.Append(scroller)
 
 	cv := &ConversationView{
 		Box:           root,
@@ -228,16 +223,73 @@ func NewConversationView(c client.Client) *ConversationView {
 		titleLabel:    titleLabel,
 		subtitleLabel: subtitleLabel,
 		scroller:      scroller,
-		list:          list,
+		model:         model,
 		empty:         empty,
 		presence:      make(map[string]PresenceState),
 	}
+
+	factory.ConnectSetup(func(obj *glib.Object) {
+		item := obj.Cast().(*gtk.ListItem)
+		row := gtk.NewBox(gtk.OrientationVertical, 0)
+		row.SetMarginStart(8)
+		row.SetMarginEnd(8)
+		item.SetChild(row)
+	})
+	factory.ConnectBind(func(obj *glib.Object) {
+		item := obj.Cast().(*gtk.ListItem)
+		cv.bindRow(item)
+	})
+
+	cv.listView = gtk.NewListView(gtk.NewNoSelection(model), &factory.ListItemFactory)
+	cv.listView.AddCSSClass("chatot-conv-list")
+
+	scroller.SetVExpand(true)
+	scroller.SetHExpand(true)
+	// Keep the scroller's own height request minimal so a tall thread scrolls
+	// internally instead of growing the pane and pushing the composer (a
+	// sibling below this view) off the bottom of the window.
+	scroller.SetPropagateNaturalHeight(false)
+	scroller.SetMinContentHeight(0)
+	scroller.SetChild(cv.listView)
+	scroller.SetVisible(false)
+
+	root.Append(scroller)
 
 	scroller.VAdjustment().ConnectValueChanged(cv.onScroll)
 
 	go cv.watchEvents()
 
 	return cv
+}
+
+// conversationModelType is the shared typed-model constructor for the
+// conversation's message list; ObjectValue recovers a client.Message from a
+// row's GObject inside the bind factory.
+var conversationModelType = gioutil.NewListModelType[client.Message]()
+
+// bindRow (re)renders one virtualized row: it rebuilds the bubble for the
+// message at the item's position into the row's box. Called whenever a row
+// scrolls into view or its position shifts (e.g. after an older page is
+// prepended), so day separators and reply quotes always reflect the current
+// neighbours.
+func (cv *ConversationView) bindRow(item *gtk.ListItem) {
+	box, ok := item.Child().(*gtk.Box)
+	if !ok {
+		return
+	}
+	removeAllChildren(box)
+
+	pos := int(item.Position())
+	if pos < 0 || pos >= len(cv.msgs) {
+		return
+	}
+	msg := cv.msgs[pos]
+	var prev *client.Message
+	if pos > 0 {
+		prev = &cv.msgs[pos-1]
+	}
+	vm := bubbleVM(msg, prev, cv.byID, time.Now())
+	box.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact))
 }
 
 // onScroll fetches the next older page when the reader nears the top. Runs on
@@ -273,8 +325,10 @@ func (cv *ConversationView) Load(jid string) {
 		cv.oldestID = ""
 	}
 
+	// Replace the whole model with the new page in one splice.
+	cv.model.Splice(0, cv.model.Len(), msgs...)
+
 	if len(msgs) == 0 {
-		removeAllChildren(cv.list)
 		cv.empty.SetLabel("No messages yet")
 		cv.empty.SetVisible(true)
 		cv.scroller.SetVisible(false)
@@ -283,27 +337,13 @@ func (cv *ConversationView) Load(jid string) {
 
 	cv.empty.SetVisible(false)
 	cv.scroller.SetVisible(true)
-	cv.rebuildList()
 	cv.scrollToBottom()
 }
 
-// rebuildList re-renders every bubble from cv.msgs (chronological). Used by
-// the initial Load and by loadOlder after an older page is prepended. Must
-// run on the GTK main loop.
-func (cv *ConversationView) rebuildList() {
-	removeAllChildren(cv.list)
-	now := time.Now()
-	var prev *client.Message
-	for i := range cv.msgs {
-		vm := bubbleVM(cv.msgs[i], prev, cv.byID, now)
-		cv.list.Append(buildBubble(cv.msgs[i], vm, cv.c, cv.onReply, cv.onReact))
-		prev = &cv.msgs[i]
-	}
-}
-
-// loadOlder prepends the next older page, preserving the reader's position by
-// re-anchoring the scroll to the same content after the relayout. Must run on
-// the GTK main loop.
+// loadOlder prepends the next older page. GtkListView keeps the viewport
+// anchored on a model splice-at-front only loosely, so we re-scroll to the
+// message that was at the top (now shifted down by len(older)) once the rows
+// relayout. Must run on the GTK main loop.
 func (cv *ConversationView) loadOlder() {
 	cv.loadingOlder = true
 
@@ -314,20 +354,15 @@ func (cv *ConversationView) loadOlder() {
 		return
 	}
 
-	adj := cv.scroller.VAdjustment()
-	prevUpper, prevValue := adj.Upper(), adj.Value()
-
+	anchor := len(older)
 	cv.msgs = append(older, cv.msgs...)
 	cv.oldestID = cv.msgs[0].ID
 	cv.byID = indexByID(cv.msgs)
 	cv.hasMore = len(older) == conversationPageSize
-	cv.rebuildList()
+	cv.model.Splice(0, 0, older...)
 
-	// After the prepended rows lay out, the content grew by (newUpper -
-	// prevUpper); shift the viewport down by that much so the message that was
-	// at the top stays put instead of the view jumping to the new top.
 	glib.IdleAdd(func() {
-		adj.SetValue(adj.Upper() - prevUpper + prevValue)
+		cv.listView.ScrollTo(uint(anchor), gtk.ListScrollNone, nil)
 		cv.loadingOlder = false
 	})
 }
@@ -445,14 +480,10 @@ func (cv *ConversationView) ApplyOwnReaction(chatJID string) {
 	cv.Load(cv.jid)
 }
 
-// appendMessage adds msg to the end of the currently-loaded thread without
-// reloading the whole list. Must run on the GTK main loop.
+// appendMessage adds msg to the end of the currently-loaded thread. The
+// factory renders the new row when it realizes at the bottom. Must run on the
+// GTK main loop.
 func (cv *ConversationView) appendMessage(msg client.Message) {
-	var prev *client.Message
-	if n := len(cv.msgs); n > 0 {
-		prev = &cv.msgs[n-1]
-	}
-
 	cv.msgs = append(cv.msgs, msg)
 	cv.byID[msg.ID] = msg
 
@@ -461,18 +492,20 @@ func (cv *ConversationView) appendMessage(msg client.Message) {
 		cv.scroller.SetVisible(true)
 	}
 
-	vm := bubbleVM(msg, prev, cv.byID, time.Now())
-	cv.list.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact))
+	cv.model.Append(msg)
 	cv.scrollToBottom()
 }
 
-// scrollToBottom scrolls the message list to the newest message. Deferred
-// via glib.IdleAdd since the scrolled window's adjustment upper bound isn't
-// updated until after the just-appended widget is laid out.
+// scrollToBottom scrolls the list to the newest message. Deferred via
+// glib.IdleAdd since the list view hasn't laid out the just-appended row (so
+// can't scroll to it) until after this turn of the main loop.
 func (cv *ConversationView) scrollToBottom() {
 	glib.IdleAdd(func() {
-		adj := cv.scroller.VAdjustment()
-		adj.SetValue(adj.Upper())
+		n := cv.model.Len()
+		if n == 0 {
+			return
+		}
+		cv.listView.ScrollTo(uint(n-1), gtk.ListScrollNone, nil)
 	})
 }
 
