@@ -149,11 +149,14 @@ type ChatList struct {
 	composingJIDs map[string]string // chat JID -> "typing" or "recording" for a peer currently composing
 	query         string            // current search text; "" shows the normal chat list
 	avatarCache   *avatarCache
-	window        *gtk.Window // parent for the new-chat dialog; set via SetWindow
-	showArchived  bool        // toggled by the "Archived" button; see showChatInList
-	showStarred   bool        // toggled by the "Starred" button; overrides search/archived
-	showStatus    bool        // toggled by the "Status" button; overrides search/starred
-	postStatusBar *gtk.Box    // "Post status" bar, visible only in status mode
+	window        *gtk.Window         // parent for the new-chat dialog; set via SetWindow
+	showArchived  bool                // toggled by the "Archived" button; see showChatInList
+	showStarred   bool                // toggled by the "Starred" button; overrides search/archived
+	showStatus    bool                // toggled by the "Status" button; overrides search/starred
+	showChannels  bool                // toggled by the "Channels" button; overrides the others
+	postStatusBar *gtk.Box            // "Post status" bar, visible only in status mode
+	followBar     *gtk.Box            // "Follow channel" bar, visible only in channels mode
+	newsletters   []client.Newsletter // channels backing the sidebar in channels mode
 	labelFilter   *gtk.DropDown
 	// filterLabelIDs maps the label-filter dropdown's row index to a label id;
 	// index 0 is "All" (empty id). Rebuilt with the dropdown from c.Labels().
@@ -205,6 +208,11 @@ func NewChatList(c client.Client) *ChatList {
 	statusToggle.SetTooltipText("Status updates")
 	searchRow.Append(statusToggle)
 
+	channelsToggle := gtk.NewToggleButton()
+	channelsToggle.SetIconName("emblem-shared-symbolic")
+	channelsToggle.SetTooltipText("Channels")
+	searchRow.Append(channelsToggle)
+
 	labelFilter := gtk.NewDropDownFromStrings([]string{"All"})
 	labelFilter.SetTooltipText("Filter by label")
 	searchRow.Append(labelFilter)
@@ -223,16 +231,28 @@ func NewChatList(c client.Client) *ChatList {
 	postStatusBar.SetVisible(false)
 	root.Append(postStatusBar)
 
+	followBar := gtk.NewBox(gtk.OrientationHorizontal, 0)
+	followChannelBtn := gtk.NewButtonWithLabel("➕ Follow channel")
+	followChannelBtn.AddCSSClass("flat")
+	followChannelBtn.SetHExpand(true)
+	followBar.Append(followChannelBtn)
+	followBar.SetVisible(false)
+	root.Append(followBar)
+
 	list := gtk.NewListBox()
 	list.AddCSSClass("navigation-sidebar")
 	list.SetVExpand(true)
 	root.Append(list)
 
-	cl := &ChatList{Box: root, c: c, events: c.Events(), list: list, composingJIDs: make(map[string]string), avatarCache: newAvatarCache(), labelFilter: labelFilter, postStatusBar: postStatusBar}
+	cl := &ChatList{Box: root, c: c, events: c.Events(), list: list, composingJIDs: make(map[string]string), avatarCache: newAvatarCache(), labelFilter: labelFilter, postStatusBar: postStatusBar, followBar: followBar}
 
 	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
 		idx := row.Index()
 		if idx < 0 || idx >= len(cl.rowJIDs) {
+			return
+		}
+		if cl.showChannels {
+			cl.openChannel(cl.rowJIDs[idx])
 			return
 		}
 		if cl.onSelect != nil {
@@ -248,6 +268,9 @@ func NewChatList(c client.Client) *ChatList {
 		}
 		if cl.query != "" && cl.showStatus {
 			statusToggle.SetActive(false)
+		}
+		if cl.query != "" && cl.showChannels {
+			channelsToggle.SetActive(false)
 		}
 		cl.refresh()
 	})
@@ -278,6 +301,9 @@ func NewChatList(c client.Client) *ChatList {
 		if cl.showStarred && cl.showStatus {
 			statusToggle.SetActive(false)
 		}
+		if cl.showStarred && cl.showChannels {
+			channelsToggle.SetActive(false)
+		}
 		cl.refresh()
 	})
 
@@ -293,8 +319,34 @@ func NewChatList(c client.Client) *ChatList {
 				cl.showStarred = false
 				starredToggle.SetActive(false)
 			}
+			if cl.showChannels {
+				channelsToggle.SetActive(false)
+			}
 		}
 		cl.refresh()
+	})
+
+	channelsToggle.ConnectToggled(func() {
+		cl.showChannels = channelsToggle.Active()
+		cl.followBar.SetVisible(cl.showChannels)
+		if cl.showChannels {
+			if cl.query != "" {
+				cl.query = ""
+				search.SetText("")
+			}
+			if cl.showStarred {
+				cl.showStarred = false
+				starredToggle.SetActive(false)
+			}
+			if cl.showStatus {
+				statusToggle.SetActive(false)
+			}
+		}
+		cl.refresh()
+	})
+
+	followChannelBtn.ConnectClicked(func() {
+		cl.showFollowChannelDialog()
 	})
 
 	postStatusBtn.ConnectClicked(func() {
@@ -332,6 +384,8 @@ func (cl *ChatList) OnChatSelected(f func(jid string)) {
 // above). Must run on the GTK main loop.
 func (cl *ChatList) refresh() {
 	switch {
+	case cl.showChannels:
+		cl.refreshChannels()
 	case cl.showStatus:
 		cl.refreshStatus()
 	case cl.showStarred:

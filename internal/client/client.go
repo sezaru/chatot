@@ -232,6 +232,28 @@ type Label struct {
 	Color int
 }
 
+// Newsletter is a subscribed WhatsApp channel ("newsletter"), a one-to-many
+// broadcast feed. Channels are fetched live from whatsmeow, never persisted
+// to the local store.
+type Newsletter struct {
+	ID          string
+	Name        string
+	Description string
+	Muted       bool
+}
+
+// NewsletterMessage is a single post in a channel. ServerID (whatsmeow's
+// MessageServerID, an int) is carried as int64; it plus ID identify the post
+// when reacting.
+type NewsletterMessage struct {
+	ID        string
+	ServerID  int64
+	Text      string
+	TS        int64
+	Views     int
+	Reactions map[string]int // emoji -> count
+}
+
 // MsgRef points at a message being replied to or reacted to.
 type MsgRef struct {
 	ChatJID string
@@ -415,6 +437,25 @@ type Client interface {
 	// JoinGroupWithLink joins via an invite link or bare code and returns the
 	// joined group's JID, persisting it as a chat.
 	JoinGroupWithLink(ctx context.Context, code string) (jid string, err error)
+
+	// Newsletters returns the channels ("newsletters") this account is
+	// subscribed to, fetched live from WhatsApp (never persisted).
+	Newsletters(ctx context.Context) ([]Newsletter, error)
+	// NewsletterMessages returns up to count recent posts in channel jid,
+	// as returned by WhatsApp (newest first).
+	NewsletterMessages(ctx context.Context, jid string, count int) ([]NewsletterMessage, error)
+	// FollowNewsletter subscribes to channel jid.
+	FollowNewsletter(ctx context.Context, jid string) error
+	// UnfollowNewsletter unsubscribes from channel jid.
+	UnfollowNewsletter(ctx context.Context, jid string) error
+	// NewsletterSetMuted mutes/unmutes channel jid.
+	NewsletterSetMuted(ctx context.Context, jid string, mute bool) error
+	// NewsletterReact reacts to a channel post identified by messageID +
+	// serverID with emoji ("" clears the reaction).
+	NewsletterReact(ctx context.Context, jid, messageID string, serverID int64, emoji string) error
+	// FollowNewsletterByLink resolves a whatsapp.com/channel/<key> link to a
+	// channel and follows it, returning the followed channel's JID.
+	FollowNewsletterByLink(ctx context.Context, link string) (jid string, err error)
 
 	// media
 	DownloadMedia(ctx context.Context, msgID string) (localPath string, err error)

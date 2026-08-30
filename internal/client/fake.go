@@ -34,6 +34,10 @@ type Fake struct {
 	// so a chat only grows one extra page of synthetic older history rather
 	// than without bound.
 	historySynced map[string]bool
+	// newsletters holds mutable in-memory channel state keyed by JID (never
+	// persisted); newsletterMsgs holds a few seeded posts per channel.
+	newsletters    map[string]*Newsletter
+	newsletterMsgs map[string][]NewsletterMessage
 }
 
 // fakeOwnJID is the Fake's own user JID. It matches the canned group's owner
@@ -59,6 +63,19 @@ func NewFake() *Fake {
 		},
 		groups:        make(map[string]*GroupInfo),
 		historySynced: make(map[string]bool),
+		newsletters: map[string]*Newsletter{
+			"111111@newsletter": {ID: "111111@newsletter", Name: "Chatot News", Description: "Release notes and updates", Muted: false},
+			"222222@newsletter": {ID: "222222@newsletter", Name: "Weather Alerts", Description: "Daily local forecast", Muted: true},
+		},
+		newsletterMsgs: map[string][]NewsletterMessage{
+			"111111@newsletter": {
+				{ID: "n1", ServerID: 1, Text: "Welcome to the channel!", TS: now - 7200, Views: 120, Reactions: map[string]int{"👍": 8, "❤️": 3}},
+				{ID: "n2", ServerID: 2, Text: "v2.0 is out with channels support.", TS: now - 3600, Views: 64, Reactions: map[string]int{"🎉": 5}},
+			},
+			"222222@newsletter": {
+				{ID: "n3", ServerID: 1, Text: "Rain expected this afternoon.", TS: now - 1800, Views: 42, Reactions: map[string]int{}},
+			},
+		},
 	}
 
 	f.chats = []Chat{
@@ -557,6 +574,104 @@ func (f *Fake) PostStatus(ctx context.Context, text string) error {
 	f.messages[statusBroadcastJID] = append(f.messages[statusBroadcastJID], msg)
 	f.mu.Unlock()
 	return nil
+}
+
+// Newsletters returns the seeded channels, sorted by name for deterministic
+// output.
+func (f *Fake) Newsletters(ctx context.Context) ([]Newsletter, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]Newsletter, 0, len(f.newsletters))
+	for _, n := range f.newsletters {
+		out = append(out, *n)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// NewsletterMessages returns up to count posts for channel jid, newest first.
+func (f *Fake) NewsletterMessages(ctx context.Context, jid string, count int) ([]NewsletterMessage, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	src := f.newsletterMsgs[jid]
+	out := make([]NewsletterMessage, len(src))
+	copy(out, src)
+	sort.Slice(out, func(i, j int) bool { return out[i].TS > out[j].TS })
+	if count > 0 && len(out) > count {
+		out = out[:count]
+	}
+	return out, nil
+}
+
+// FollowNewsletter adds a channel to the in-memory set (seeding a placeholder
+// if unknown) and pushes a refresh event.
+func (f *Fake) FollowNewsletter(ctx context.Context, jid string) error {
+	f.mu.Lock()
+	if _, ok := f.newsletters[jid]; !ok {
+		f.newsletters[jid] = &Newsletter{ID: jid, Name: jid, Description: ""}
+	}
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+// UnfollowNewsletter removes a channel from the in-memory set.
+func (f *Fake) UnfollowNewsletter(ctx context.Context, jid string) error {
+	f.mu.Lock()
+	delete(f.newsletters, jid)
+	delete(f.newsletterMsgs, jid)
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+// NewsletterSetMuted flips a channel's muted flag.
+func (f *Fake) NewsletterSetMuted(ctx context.Context, jid string, mute bool) error {
+	f.mu.Lock()
+	if n, ok := f.newsletters[jid]; ok {
+		n.Muted = mute
+	}
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+// NewsletterReact bumps the reaction count on the named post (a no-op if the
+// channel/post is unknown).
+func (f *Fake) NewsletterReact(ctx context.Context, jid, messageID string, serverID int64, emoji string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	msgs := f.newsletterMsgs[jid]
+	for i := range msgs {
+		if msgs[i].ID != messageID {
+			continue
+		}
+		if msgs[i].Reactions == nil {
+			msgs[i].Reactions = make(map[string]int)
+		}
+		if emoji != "" {
+			msgs[i].Reactions[emoji]++
+		}
+		return nil
+	}
+	return nil
+}
+
+// FollowNewsletterByLink parses the invite key, follows a synthetic channel
+// derived from it, and returns its JID.
+func (f *Fake) FollowNewsletterByLink(ctx context.Context, link string) (string, error) {
+	key := parseChannelInvite(link)
+	if key == "" {
+		return "", fmt.Errorf("chatot/client: empty channel invite key")
+	}
+	jid := key + "@newsletter"
+	f.mu.Lock()
+	if _, ok := f.newsletters[jid]; !ok {
+		f.newsletters[jid] = &Newsletter{ID: jid, Name: "Channel " + key, Description: "Followed via link"}
+	}
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return jid, nil
 }
 
 // Blocklist returns the blocked JIDs, sorted for deterministic output.
