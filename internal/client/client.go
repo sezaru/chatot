@@ -19,6 +19,7 @@ const (
 	EventQR
 	EventPairSuccess
 	EventLoggedOut
+	EventReaction
 )
 
 // Event is a normalized notification pushed on Client.Events(). Only the
@@ -32,6 +33,7 @@ type Event struct {
 	Call         *Call
 	Connection   *Connection
 	HistorySync  *HistorySync
+	Reaction     *Reaction
 }
 
 // Receipt is a delivery/read acknowledgement for previously sent messages.
@@ -97,6 +99,15 @@ type Message struct {
 	ReplyTo    *MsgRef
 	Reactions  map[string]string // emoji -> reactor JID (last wins)
 	Attachment *Attachment
+}
+
+// Reaction is a reaction added to, or (Emoji == "") cleared from, a message.
+type Reaction struct {
+	ChatJID    string
+	MsgID      string // the message being reacted to
+	ReactorJID string
+	Emoji      string // "" clears the reaction
+	TS         int64
 }
 
 // MsgRef points at a message being replied to or reacted to.
