@@ -1163,8 +1163,7 @@ func (w *Whatsmeow) CheckOnWhatsApp(ctx context.Context, phone string) (string, 
 	return resp[0].JID.String(), true, nil
 }
 
-// SendTyping sends a per-chat composing/paused indicator. Always as plain
-// text media — chatot has no seam today for a "recording" chat presence.
+// SendTyping sends a per-chat composing/paused indicator as plain text media.
 func (w *Whatsmeow) SendTyping(jid string, typing bool) error {
 	to, err := types.ParseJID(jid)
 	if err != nil {
@@ -1176,6 +1175,38 @@ func (w *Whatsmeow) SendTyping(jid string, typing bool) error {
 	}
 	if err := w.wa.SendChatPresence(context.Background(), to, state, types.ChatPresenceMediaText); err != nil {
 		return fmt.Errorf("chatot/client: send chat presence: %w", err)
+	}
+	return nil
+}
+
+// SendRecording sends the "recording a voice note" chat-presence (composing
+// + audio media) when recording is true, else the plain paused state.
+func (w *Whatsmeow) SendRecording(jid string, recording bool) error {
+	to, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+	if !recording {
+		if err := w.wa.SendChatPresence(context.Background(), to, types.ChatPresencePaused, types.ChatPresenceMediaText); err != nil {
+			return fmt.Errorf("chatot/client: send chat presence: %w", err)
+		}
+		return nil
+	}
+	if err := w.wa.SendChatPresence(context.Background(), to, types.ChatPresenceComposing, types.ChatPresenceMediaAudio); err != nil {
+		return fmt.Errorf("chatot/client: send chat presence: %w", err)
+	}
+	return nil
+}
+
+// RejectCall declines an incoming call offer. chatot never places or
+// answers calls (whatsmeow can't); this is the only call action supported.
+func (w *Whatsmeow) RejectCall(ctx context.Context, callJID, callID string) error {
+	from, err := types.ParseJID(callJID)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", callJID, err)
+	}
+	if err := w.wa.RejectCall(ctx, from, callID); err != nil {
+		return fmt.Errorf("chatot/client: reject call: %w", err)
 	}
 	return nil
 }

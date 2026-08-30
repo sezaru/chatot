@@ -824,6 +824,13 @@ func (c *Composer) toggleRecording() {
 	c.recordBtn.AddCSSClass("destructive-action")
 	c.entry.SetSensitive(false)
 	c.attachBtn.SetSensitive(false)
+
+	jid := c.state.jid
+	go func() {
+		if err := c.c.SendRecording(jid, true); err != nil {
+			log.Printf("chatot: send recording presence failed: %v", err)
+		}
+	}()
 }
 
 // stopRecording finalizes the in-flight recording and sends it in the
@@ -835,6 +842,12 @@ func (c *Composer) stopRecording() {
 	c.recorder = nil
 	c.recording = false
 	c.resetRecordButton()
+
+	go func() {
+		if err := c.c.SendRecording(jid, false); err != nil {
+			log.Printf("chatot: send recording presence failed: %v", err)
+		}
+	}()
 
 	if rec == nil {
 		return

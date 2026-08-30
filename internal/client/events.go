@@ -64,6 +64,7 @@ func translate(evt interface{}) *Event {
 			ChatJID: v.Chat.String(),
 			JID:     v.Sender.String(),
 			State:   string(v.State),
+			Media:   string(v.Media),
 		}}
 	case *events.CallOffer:
 		return &Event{Kind: EventCall, Call: &Call{

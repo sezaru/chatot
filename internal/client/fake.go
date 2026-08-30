@@ -844,6 +844,10 @@ func (f *Fake) SendPresence(available bool) error { return nil }
 
 func (f *Fake) SendTyping(jid string, typing bool) error { return nil }
 
+func (f *Fake) SendRecording(jid string, recording bool) error { return nil }
+
+func (f *Fake) RejectCall(ctx context.Context, callJID, callID string) error { return nil }
+
 // DownloadMedia simulates a successful download by writing an empty temp
 // file and pointing the message's Attachment.LocalPath at it, so UI-level
 // tests/dev builds can exercise the tap-to-load -> inline swap without a
