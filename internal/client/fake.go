@@ -30,6 +30,10 @@ type Fake struct {
 	// mutations are reflected in a subsequent GroupInfo.
 	groups     map[string]*GroupInfo
 	nextGroupN int
+	// historySynced tracks chats RequestMoreHistory has already backfilled,
+	// so a chat only grows one extra page of synthetic older history rather
+	// than without bound.
+	historySynced map[string]bool
 }
 
 // fakeOwnJID is the Fake's own user JID. It matches the canned group's owner
@@ -53,7 +57,8 @@ func NewFake() *Fake {
 		labelChats: map[string]map[string]bool{
 			"1": {"1234567890@s.whatsapp.net": true},
 		},
-		groups: make(map[string]*GroupInfo),
+		groups:        make(map[string]*GroupInfo),
+		historySynced: make(map[string]bool),
 	}
 
 	f.chats = []Chat{
@@ -157,6 +162,54 @@ func (f *Fake) MessagesBefore(jid, beforeMsgID string, limit int) ([]Message, er
 	out := make([]Message, end-start)
 	copy(out, msgs[start:end])
 	return out, nil
+}
+
+// RequestMoreHistory simulates the phone's async history-sync reply: the
+// first time it's called for a chat, it synthesizes a handful of messages
+// older than oldestMsgID and publishes EventHistorySync so the conversation
+// view retries MessagesBefore and finds them. Later calls (chat already
+// synced, or an unknown oldestMsgID) are no-ops, matching "no more history".
+func (f *Fake) RequestMoreHistory(ctx context.Context, chatJID, oldestMsgID string, count int) error {
+	f.mu.Lock()
+	if f.historySynced[chatJID] {
+		f.mu.Unlock()
+		return nil
+	}
+	msgs := f.messages[chatJID]
+	idx := -1
+	for i := range msgs {
+		if msgs[i].ID == oldestMsgID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		f.mu.Unlock()
+		return fmt.Errorf("chatot/client: request more history: message %q not found in %q", oldestMsgID, chatJID)
+	}
+	f.historySynced[chatJID] = true
+
+	n := 5
+	if count > 0 && count < n {
+		n = count
+	}
+	base := msgs[idx].TS
+	older := make([]Message, n)
+	for i := 0; i < n; i++ {
+		older[n-1-i] = Message{
+			ID:      fmt.Sprintf("fake-history-%s-%d", chatJID, i),
+			ChatJID: chatJID,
+			FromJID: msgs[idx].FromJID,
+			FromMe:  false,
+			Text:    fmt.Sprintf("(synced older message %d)", i+1),
+			TS:      base - int64(i+1)*60,
+		}
+	}
+	f.messages[chatJID] = append(older, msgs...)
+	f.mu.Unlock()
+
+	f.events.Publish(Event{Kind: EventHistorySync, HistorySync: &HistorySync{ChatJIDs: []string{chatJID}}})
+	return nil
 }
 
 func (f *Fake) Search(query string, limit int) ([]SearchHit, error) {

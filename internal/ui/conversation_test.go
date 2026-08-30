@@ -264,3 +264,27 @@ func TestBubbleVM_StarAffordanceReflectsStarredState(t *testing.T) {
 		t.Errorf("got StarGlyph=%q StarTooltip=%q, want outline star / Star", unstarred.StarGlyph, unstarred.StarTooltip)
 	}
 }
+
+func TestNextHistoryAction(t *testing.T) {
+	tests := []struct {
+		name           string
+		olderCount     int
+		alreadyRequest bool
+		wantRequest    bool
+		wantExhausted  bool
+	}{
+		{"non-empty page keeps paging locally", 5, false, false, false},
+		{"non-empty page even if already requested", 5, true, false, false},
+		{"first empty page requests more history", 0, false, true, false},
+		{"second empty page after a request is exhausted", 0, true, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request, exhausted := nextHistoryAction(tt.olderCount, tt.alreadyRequest)
+			if request != tt.wantRequest || exhausted != tt.wantExhausted {
+				t.Errorf("nextHistoryAction(%d, %v) = (%v, %v), want (%v, %v)",
+					tt.olderCount, tt.alreadyRequest, request, exhausted, tt.wantRequest, tt.wantExhausted)
+			}
+		})
+	}
+}

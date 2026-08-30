@@ -385,3 +385,72 @@ func TestFakeSetBlockedPublishesChatUpdate(t *testing.T) {
 		t.Errorf("got event %+v, want EventChatUpdate for %s", ev, jid)
 	}
 }
+
+func TestFakeRequestMoreHistorySynthesizesAndPublishes(t *testing.T) {
+	f := NewFake()
+	jid := "1234567890@s.whatsapp.net"
+	events := f.Events()
+
+	before, err := f.Messages(jid, 0)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	oldestID := before[0].ID
+
+	if err := f.RequestMoreHistory(context.Background(), jid, oldestID, 5); err != nil {
+		t.Fatalf("RequestMoreHistory: %v", err)
+	}
+
+	ev := <-events
+	if ev.Kind != EventHistorySync || ev.HistorySync == nil {
+		t.Fatalf("got event %+v, want EventHistorySync", ev)
+	}
+	if len(ev.HistorySync.ChatJIDs) != 1 || ev.HistorySync.ChatJIDs[0] != jid {
+		t.Errorf("HistorySync.ChatJIDs = %v, want [%s]", ev.HistorySync.ChatJIDs, jid)
+	}
+
+	older, err := f.MessagesBefore(jid, oldestID, 50)
+	if err != nil {
+		t.Fatalf("MessagesBefore: %v", err)
+	}
+	if len(older) == 0 {
+		t.Fatal("MessagesBefore returned nothing after RequestMoreHistory; expected synthesized older messages")
+	}
+}
+
+func TestFakeRequestMoreHistoryOnlySyncsOnce(t *testing.T) {
+	f := NewFake()
+	jid := "1234567890@s.whatsapp.net"
+
+	before, _ := f.Messages(jid, 0)
+	oldestID := before[0].ID
+	if err := f.RequestMoreHistory(context.Background(), jid, oldestID, 5); err != nil {
+		t.Fatalf("RequestMoreHistory: %v", err)
+	}
+
+	all, err := f.Messages(jid, 0)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	newOldestID := all[0].ID
+
+	// A second request for the (now oldest) synthesized message must be a
+	// no-op: the fake only backfills a chat once.
+	if err := f.RequestMoreHistory(context.Background(), jid, newOldestID, 5); err != nil {
+		t.Fatalf("RequestMoreHistory (2nd): %v", err)
+	}
+	after, err := f.Messages(jid, 0)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	if len(after) != len(all) {
+		t.Errorf("message count changed after 2nd RequestMoreHistory: got %d, want %d", len(after), len(all))
+	}
+}
+
+func TestFakeRequestMoreHistoryUnknownMessageErrors(t *testing.T) {
+	f := NewFake()
+	if err := f.RequestMoreHistory(context.Background(), "1234567890@s.whatsapp.net", "nonexistent", 5); err == nil {
+		t.Error("RequestMoreHistory with unknown oldestMsgID should error")
+	}
+}
