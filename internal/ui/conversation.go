@@ -25,6 +25,7 @@ type bubbleView struct {
 	Reactions        []string
 	MediaChip        string
 	IsMedia          bool
+	Media            mediaView
 }
 
 // bubbleVM derives the display view-model for a single message. prev is the
@@ -61,7 +62,8 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 
 	if m.Attachment != nil {
 		v.IsMedia = true
-		v.MediaChip = mediaChip(*m.Attachment)
+		v.Media = mediaVM(m)
+		v.MediaChip = v.Media.Chip
 	} else {
 		v.Text = m.Text
 	}
@@ -202,7 +204,7 @@ func (cv *ConversationView) Load(jid string) {
 	var prev *client.Message
 	for i := range msgs {
 		vm := bubbleVM(msgs[i], prev, cv.byID, now)
-		cv.list.Append(buildBubble(msgs[i], vm, cv.onReply, cv.onReact))
+		cv.list.Append(buildBubble(msgs[i], vm, cv.c, cv.onReply, cv.onReact))
 		prev = &msgs[i]
 	}
 
@@ -280,7 +282,7 @@ func (cv *ConversationView) appendMessage(msg client.Message) {
 	}
 
 	vm := bubbleVM(msg, prev, cv.byID, time.Now())
-	cv.list.Append(buildBubble(msg, vm, cv.onReply, cv.onReact))
+	cv.list.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact))
 	cv.scrollToBottom()
 }
 
@@ -314,7 +316,7 @@ func removeAllChildren(box *gtk.Box) {
 // buildBubble constructs the GTK widget tree for a single message from its
 // pre-computed view-model, wiring the reply/react affordances (if the
 // callbacks are set) to msg.
-func buildBubble(msg client.Message, vm bubbleView, onReply func(client.Message), onReact func(msg client.Message, emoji string)) *gtk.Box {
+func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply func(client.Message), onReact func(msg client.Message, emoji string)) *gtk.Box {
 	wrapper := gtk.NewBox(gtk.OrientationVertical, 4)
 
 	if vm.ShowDaySeparator {
@@ -348,11 +350,7 @@ func buildBubble(msg client.Message, vm bubbleView, onReply func(client.Message)
 	}
 
 	if vm.IsMedia {
-		media := gtk.NewLabel(vm.MediaChip)
-		media.AddCSSClass("chatot-bubble-media")
-		media.SetXAlign(0)
-		media.SetWrap(true)
-		bubble.Append(media)
+		bubble.Append(buildMediaContent(msg, vm.Media, c))
 	} else {
 		text := gtk.NewLabel(vm.Text)
 		text.AddCSSClass("chatot-bubble-text")

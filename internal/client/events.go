@@ -4,6 +4,7 @@ import (
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
+	"google.golang.org/protobuf/proto"
 )
 
 // translate maps a raw whatsmeow event to an internal Event. It returns nil
@@ -110,26 +111,28 @@ func extractText(m *waProto.Message, msg *Message) {
 		ctx = ext.GetContextInfo()
 	case m.GetImageMessage() != nil:
 		img := m.GetImageMessage()
-		msg.Attachment = &Attachment{Kind: "image", MimeType: img.GetMimetype(), Caption: img.GetCaption()}
+		msg.Attachment = &Attachment{Kind: "image", MimeType: img.GetMimetype(), Caption: img.GetCaption(), ProtoBlob: marshalMedia(img)}
 		ctx = img.GetContextInfo()
 	case m.GetVideoMessage() != nil:
 		vid := m.GetVideoMessage()
-		msg.Attachment = &Attachment{Kind: "video", MimeType: vid.GetMimetype(), Caption: vid.GetCaption()}
+		msg.Attachment = &Attachment{Kind: "video", MimeType: vid.GetMimetype(), Caption: vid.GetCaption(), ProtoBlob: marshalMedia(vid)}
 		ctx = vid.GetContextInfo()
 	case m.GetAudioMessage() != nil:
 		aud := m.GetAudioMessage()
-		msg.Attachment = &Attachment{Kind: "audio", MimeType: aud.GetMimetype()}
+		msg.Attachment = &Attachment{Kind: "audio", MimeType: aud.GetMimetype(), ProtoBlob: marshalMedia(aud)}
 		ctx = aud.GetContextInfo()
 	case m.GetDocumentMessage() != nil:
 		doc := m.GetDocumentMessage()
 		msg.Attachment = &Attachment{
 			Kind: "document", MimeType: doc.GetMimetype(),
 			Filename: doc.GetFileName(), Caption: doc.GetCaption(),
+			ProtoBlob: marshalMedia(doc),
 		}
 		ctx = doc.GetContextInfo()
 	case m.GetStickerMessage() != nil:
-		msg.Attachment = &Attachment{Kind: "sticker", MimeType: m.GetStickerMessage().GetMimetype()}
-		ctx = m.GetStickerMessage().GetContextInfo()
+		sticker := m.GetStickerMessage()
+		msg.Attachment = &Attachment{Kind: "sticker", MimeType: sticker.GetMimetype(), ProtoBlob: marshalMedia(sticker)}
+		ctx = sticker.GetContextInfo()
 	}
 	if ctx == nil {
 		return
@@ -137,4 +140,17 @@ func extractText(m *waProto.Message, msg *Message) {
 	if id := ctx.GetStanzaID(); id != "" {
 		msg.ReplyTo = &MsgRef{ChatJID: msg.ChatJID, MsgID: id}
 	}
+}
+
+// marshalMedia serializes a media sub-message (ImageMessage, VideoMessage,
+// ...) so DownloadMedia can later proto.Unmarshal it back into the concrete
+// type whatsmeow.Download needs. Returns nil on marshal failure — download
+// on that message will then fail with a clear "no descriptor" error rather
+// than a silent corrupt one.
+func marshalMedia(m proto.Message) []byte {
+	b, err := proto.Marshal(m)
+	if err != nil {
+		return nil
+	}
+	return b
 }

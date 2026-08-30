@@ -26,7 +26,7 @@ func storeMediaRow(chatJID, msgID string, a *Attachment) store.MediaRow {
 	return store.MediaRow{
 		ChatJID: chatJID, MsgID: msgID,
 		Kind: a.Kind, Filename: a.Filename, Caption: a.Caption,
-		MimeType: a.MimeType, LocalPath: a.LocalPath,
+		MimeType: a.MimeType, LocalPath: a.LocalPath, ProtoBlob: a.ProtoBlob,
 	}
 }
 

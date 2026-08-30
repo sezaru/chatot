@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -20,8 +21,13 @@ import (
 	wastore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 
+	"chatot/internal/media"
 	"chatot/internal/store"
 )
+
+// maxMediaCacheBytes caps the on-disk attachment cache; DownloadMedia
+// triggers eviction (oldest mtime first) after every successful download.
+const maxMediaCacheBytes = 1 << 30 // 1 GiB
 
 var _ Client = (*Whatsmeow)(nil)
 
@@ -39,6 +45,7 @@ type Whatsmeow struct {
 	device    *wastore.Device
 	store     *store.Store
 	wa        *whatsmeow.Client
+	mediaDir  string
 
 	events  chan Event
 	qrCodes chan string
@@ -90,6 +97,7 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 		device:    device,
 		wa:        wa,
 		store:     msgStore,
+		mediaDir:  filepath.Join(stateDir, "media"),
 		events:    make(chan Event, eventBufferSize),
 		qrCodes:   make(chan string, 8),
 	}
@@ -354,8 +362,118 @@ func (w *Whatsmeow) SendTyping(jid string, typing bool) error {
 	return errors.New("not implemented: SendTyping (F10)")
 }
 
-// DownloadMedia fetches and caches an attachment's bytes to disk.
-// TODO(F7): implement on-demand download + capped cache.
+// DownloadMedia fetches and caches an attachment's bytes to disk, decrypting
+// via whatsmeow using the descriptor stashed at ingest time (see
+// decodeDownloadable). Already-downloaded media (local_path set and the
+// file still present) is returned without hitting the network. On success,
+// triggers cache eviction so the cache stays under maxMediaCacheBytes.
 func (w *Whatsmeow) DownloadMedia(ctx context.Context, msgID string) (string, error) {
-	return "", errors.New("not implemented: DownloadMedia (F7)")
+	row, ok, err := w.store.MediaByMsgID(msgID)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: download media: lookup: %w", err)
+	}
+	if !ok {
+		return "", fmt.Errorf("chatot/client: download media: no media for message %s", msgID)
+	}
+	if row.LocalPath != "" {
+		if _, statErr := os.Stat(row.LocalPath); statErr == nil {
+			return row.LocalPath, nil
+		}
+	}
+
+	downloadable, err := decodeDownloadable(row.Kind, row.ProtoBlob)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: download media: %w", err)
+	}
+	data, err := w.wa.Download(ctx, downloadable)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: download media: %w", err)
+	}
+
+	path, err := w.writeMediaFile(row.ChatJID, row.MsgID, row.MimeType, data)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: download media: write: %w", err)
+	}
+	if err := w.store.SetMediaLocalPath(row.ChatJID, row.MsgID, path); err != nil {
+		w.log.Warnf("chatot/client: set media local path: %v", err)
+	}
+	w.evictMediaCache()
+	return path, nil
+}
+
+// decodeDownloadable reconstructs the concrete waE2E media message proto
+// from its stashed bytes. It must be the concrete type (not a hand-rolled
+// struct satisfying whatsmeow.DownloadableMessage): whatsmeow.Client.Download
+// resolves the media type via protoreflect on the concrete type, so a
+// lookalike struct would fail with ErrUnknownMediaType.
+func decodeDownloadable(kind string, blob []byte) (whatsmeow.DownloadableMessage, error) {
+	if len(blob) == 0 {
+		return nil, fmt.Errorf("no download descriptor stored for kind %q", kind)
+	}
+	var msg proto.Message
+	switch kind {
+	case "image":
+		msg = &waE2E.ImageMessage{}
+	case "video":
+		msg = &waE2E.VideoMessage{}
+	case "audio":
+		msg = &waE2E.AudioMessage{}
+	case "document":
+		msg = &waE2E.DocumentMessage{}
+	case "sticker":
+		msg = &waE2E.StickerMessage{}
+	default:
+		return nil, fmt.Errorf("unsupported media kind %q", kind)
+	}
+	if err := proto.Unmarshal(blob, msg); err != nil {
+		return nil, fmt.Errorf("decode media descriptor: %w", err)
+	}
+	return msg.(whatsmeow.DownloadableMessage), nil
+}
+
+// writeMediaFile writes decrypted attachment bytes under
+// mediaDir/<chatJID>/<msgID><ext>, creating the chat's cache dir as needed.
+func (w *Whatsmeow) writeMediaFile(chatJID, msgID, mimeType string, data []byte) (string, error) {
+	dir := filepath.Join(w.mediaDir, chatJID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, msgID+extForMime(mimeType))
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// evictMediaCache caps the on-disk cache, NULLing local_path for whatever it
+// deletes so the UI re-offers tap-to-load.
+func (w *Whatsmeow) evictMediaCache() {
+	if err := media.Evict(w.mediaDir, maxMediaCacheBytes, w.store.NullMediaLocalPathByPath); err != nil {
+		w.log.Warnf("chatot/client: media cache eviction: %v", err)
+	}
+}
+
+// extForMime maps the handful of mime types chatot actually sees to a file
+// extension; unrecognized types are left extensionless rather than guessed.
+func extForMime(mimeType string) string {
+	switch strings.SplitN(mimeType, ";", 2)[0] {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	case "image/gif":
+		return ".gif"
+	case "video/mp4":
+		return ".mp4"
+	case "audio/ogg":
+		return ".ogg"
+	case "audio/mpeg":
+		return ".mp3"
+	case "application/pdf":
+		return ".pdf"
+	default:
+		return ""
+	}
 }

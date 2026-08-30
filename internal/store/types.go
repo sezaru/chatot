@@ -101,4 +101,7 @@ type MediaRow struct {
 	Caption   string
 	MimeType  string
 	LocalPath string
+	// ProtoBlob is proto.Marshal of the specific waE2E.*Message (nil until
+	// the caller sets it); empty leaves any existing value untouched.
+	ProtoBlob []byte
 }
