@@ -183,6 +183,32 @@ func TestChatActionLabels(t *testing.T) {
 	}
 }
 
+func TestBlockActionLabel(t *testing.T) {
+	if got := blockActionLabel(false); got != "Block" {
+		t.Errorf("blockActionLabel(false) = %q, want %q", got, "Block")
+	}
+	if got := blockActionLabel(true); got != "Unblock" {
+		t.Errorf("blockActionLabel(true) = %q, want %q", got, "Unblock")
+	}
+}
+
+func TestPrivacySettingsRows(t *testing.T) {
+	got := privacySettingsRows(map[string]string{"Status": "contacts", "Last Seen": "all", "Online": "everyone"})
+	want := []privacySettingRow{
+		{Name: "Last Seen", Value: "all"},
+		{Name: "Online", Value: "everyone"},
+		{Name: "Status", Value: "contacts"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("privacySettingsRows() = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("privacySettingsRows()[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
 func TestShowChatInList(t *testing.T) {
 	cases := []struct {
 		name         string

@@ -22,6 +22,7 @@ type Fake struct {
 	qrCodes  chan string
 	loggedIn bool
 	nextID   int
+	blocked  map[string]bool
 }
 
 // NewFake returns a Fake seeded with canned chats and messages, already
@@ -33,6 +34,7 @@ func NewFake() *Fake {
 		events:   newEventBus(nil),
 		qrCodes:  make(chan string, 1),
 		loggedIn: true,
+		blocked:  make(map[string]bool),
 	}
 
 	f.chats = []Chat{
@@ -441,6 +443,53 @@ func (f *Fake) StarredMessages(limit int) ([]Message, error) {
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+// Blocklist returns the blocked JIDs, sorted for deterministic output.
+func (f *Fake) Blocklist(ctx context.Context) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, 0, len(f.blocked))
+	for jid := range f.blocked {
+		out = append(out, jid)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (f *Fake) SetBlocked(ctx context.Context, jid string, blocked bool) error {
+	f.mu.Lock()
+	if blocked {
+		f.blocked[jid] = true
+	} else {
+		delete(f.blocked, jid)
+	}
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+func (f *Fake) IsBlocked(jid string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.blocked[jid]
+}
+
+// PrivacySettings returns a canned settings map; the fake has no real
+// account to read privacy settings from.
+func (f *Fake) PrivacySettings(ctx context.Context) (map[string]string, error) {
+	return map[string]string{
+		"Group Add":     "all",
+		"Last Seen":     "contacts",
+		"Status":        "contacts",
+		"Profile Photo": "all",
+		"Read Receipts": "all",
+		"Calls":         "all",
+		"Online":        "match_last_seen",
+		"Messages":      "all",
+		"Defense Mode":  "off",
+		"Stickers":      "contacts",
+	}, nil
 }
 
 // CheckOnWhatsApp treats any string of 7-15 digits (optionally "+"-prefixed)
