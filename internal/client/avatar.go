@@ -1,0 +1,104 @@
+package client
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types"
+)
+
+// avatarCacheName derives a filesystem-safe cache filename for jid (whatsmeow
+// JIDs contain '@' and sometimes ':', neither valid-looking in a filename).
+func avatarCacheName(jid string) string {
+	r := strings.NewReplacer("/", "_", "@", "_", ":", "_")
+	return r.Replace(jid) + ".jpg"
+}
+
+// avatarEntry is what's memoized per jid: either a resolved cache path (with
+// the picture ID it was fetched under, for a future ExistingID revalidation)
+// or missing=true, meaning the contact has no picture / it's not visible to
+// us — both are normal, not errors, so callers shouldn't re-fetch on every UI
+// rebuild.
+type avatarEntry struct {
+	id      string
+	path    string
+	missing bool
+}
+
+// Avatar resolves jid's profile picture to a local file path, downloading and
+// disk-caching it on first use. Returns ("", nil) if the contact has no
+// picture (or it's not visible to us) — that's the normal case, not an
+// error. Safe to call from a goroutine; never touches the GTK main loop.
+func (w *Whatsmeow) Avatar(ctx context.Context, jid string) (string, error) {
+	w.avatarMu.Lock()
+	entry, ok := w.avatarMemo[jid]
+	w.avatarMu.Unlock()
+	if ok {
+		return entry.path, nil // path is "" for a memoized "missing" entry too
+	}
+
+	to, err := types.ParseJID(jid)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: avatar: parse jid %q: %w", jid, err)
+	}
+
+	info, err := w.wa.GetProfilePictureInfo(ctx, to, &whatsmeow.GetProfilePictureParams{Preview: true, ExistingID: entry.id})
+	if err != nil {
+		// No picture, privacy-restricted, not authorized, ... all normal.
+		w.memoAvatar(jid, avatarEntry{missing: true})
+		return "", nil
+	}
+	if info == nil {
+		// (nil, nil) means "unchanged from ExistingID". We only ever call with
+		// ExistingID="" (invalidateAvatar drops the whole memo, id included),
+		// so whatsmeow shouldn't return this for us — handled defensively
+		// anyway since "no new data" is a fine answer either way.
+		return "", nil
+	}
+	if info.URL == "" {
+		w.memoAvatar(jid, avatarEntry{missing: true})
+		return "", nil
+	}
+
+	resp, err := http.Get(info.URL)
+	if err != nil {
+		w.memoAvatar(jid, avatarEntry{missing: true})
+		return "", nil
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		w.memoAvatar(jid, avatarEntry{missing: true})
+		return "", nil
+	}
+
+	path := filepath.Join(w.avatarDir, avatarCacheName(jid))
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return "", fmt.Errorf("chatot/client: avatar: write cache file: %w", err)
+	}
+	w.memoAvatar(jid, avatarEntry{id: info.ID, path: path})
+	return path, nil
+}
+
+func (w *Whatsmeow) memoAvatar(jid string, entry avatarEntry) {
+	w.avatarMu.Lock()
+	if w.avatarMemo == nil {
+		w.avatarMemo = make(map[string]avatarEntry)
+	}
+	w.avatarMemo[jid] = entry
+	w.avatarMu.Unlock()
+}
+
+// invalidateAvatar drops jid's memo entry so the next Avatar call re-fetches
+// it; called from handleRaw on *events.Picture.
+func (w *Whatsmeow) invalidateAvatar(jid string) {
+	w.avatarMu.Lock()
+	delete(w.avatarMemo, jid)
+	w.avatarMu.Unlock()
+}

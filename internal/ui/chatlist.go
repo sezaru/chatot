@@ -88,13 +88,14 @@ const searchResultLimit = 30
 type ChatList struct {
 	*gtk.Box
 
-	c          client.Client
-	events     <-chan client.Event
-	list       *gtk.ListBox
-	rowJIDs    []string // row index -> JID, rebuilt alongside the ListBox rows
-	onSelect   func(jid string)
-	typingJIDs map[string]bool // chat JID -> peer currently composing
-	query      string          // current search text; "" shows the normal chat list
+	c           client.Client
+	events      <-chan client.Event
+	list        *gtk.ListBox
+	rowJIDs     []string // row index -> JID, rebuilt alongside the ListBox rows
+	onSelect    func(jid string)
+	typingJIDs  map[string]bool // chat JID -> peer currently composing
+	query       string          // current search text; "" shows the normal chat list
+	avatarCache *avatarCache
 }
 
 // NewChatList builds a ChatList for c and populates it with the current
@@ -112,7 +113,7 @@ func NewChatList(c client.Client) *ChatList {
 	list.SetVExpand(true)
 	root.Append(list)
 
-	cl := &ChatList{Box: root, c: c, events: c.Events(), list: list, typingJIDs: make(map[string]bool)}
+	cl := &ChatList{Box: root, c: c, events: c.Events(), list: list, typingJIDs: make(map[string]bool), avatarCache: newAvatarCache()}
 
 	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
 		idx := row.Index()
@@ -166,7 +167,7 @@ func (cl *ChatList) refreshChats() {
 			vm.Preview = "typing…"
 			vm.Typing = true
 		}
-		cl.list.Append(buildChatRow(vm))
+		cl.list.Append(buildChatRow(cl.c, cl.avatarCache, vm))
 		cl.rowJIDs = append(cl.rowJIDs, vm.JID)
 	}
 }
@@ -220,25 +221,35 @@ func (cl *ChatList) watchEvents() {
 			})
 			continue
 		}
+		if ev.Kind == client.EventAvatar && ev.Avatar != nil {
+			jid := ev.Avatar.JID
+			glib.IdleAdd(func() {
+				cl.avatarCache.invalidate(jid)
+				cl.refresh()
+			})
+			continue
+		}
 		glib.IdleAdd(func() {
 			cl.refresh()
 		})
 	}
 }
 
+// chatRowAvatarSize is the chat-list row avatar's fixed square size in px.
+const chatRowAvatarSize = 36
+
 // buildChatRow constructs the GTK widget tree for a single row from its
-// pre-computed view-model.
-func buildChatRow(vm chatRowView) *gtk.Box {
+// pre-computed view-model. The avatar renders vm.Initial immediately and
+// swaps in the real picture asynchronously via cache/c.Avatar (see
+// buildAvatar).
+func buildChatRow(c client.Client, cache *avatarCache, vm chatRowView) *gtk.Box {
 	row := gtk.NewBox(gtk.OrientationHorizontal, 8)
 	row.SetMarginTop(6)
 	row.SetMarginBottom(6)
 	row.SetMarginStart(8)
 	row.SetMarginEnd(8)
 
-	avatar := gtk.NewLabel(vm.Initial)
-	avatar.AddCSSClass("chatot-avatar")
-	avatar.SetSizeRequest(36, 36)
-	row.Append(avatar)
+	row.Append(buildAvatar(c, cache, vm.JID, vm.Initial, chatRowAvatarSize))
 
 	textCol := gtk.NewBox(gtk.OrientationVertical, 2)
 	textCol.SetHExpand(true)

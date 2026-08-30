@@ -370,3 +370,9 @@ func (f *Fake) DownloadMedia(ctx context.Context, msgID string) (string, error) 
 	}
 	return "", fmt.Errorf("chatot/client: message %q not found for download", msgID)
 }
+
+// Avatar reports no profile picture for every jid — the mockup has no real
+// avatar images to serve.
+func (f *Fake) Avatar(ctx context.Context, jid string) (string, error) {
+	return "", nil
+}

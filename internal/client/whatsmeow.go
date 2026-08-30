@@ -44,12 +44,16 @@ type Whatsmeow struct {
 	store     *store.Store
 	wa        *whatsmeow.Client
 	mediaDir  string
+	avatarDir string
 
 	events  *eventBus
 	qrCodes chan string
 
 	presenceMu         sync.Mutex
 	presenceSubscribed map[string]bool // jid -> SubscribePresence already requested
+
+	avatarMu   sync.Mutex
+	avatarMemo map[string]avatarEntry
 }
 
 // NewWhatsmeow opens (or creates) the whatsmeow auth/session store under
@@ -92,6 +96,11 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 	clientLog := waLog.Stdout("Client", "ERROR", false)
 	wa := whatsmeow.NewClient(device, clientLog)
 
+	avatarDir := filepath.Join(stateDir, "avatars")
+	if err := os.MkdirAll(avatarDir, 0o700); err != nil {
+		return nil, fmt.Errorf("chatot/client: create avatar cache dir: %w", err)
+	}
+
 	w := &Whatsmeow{
 		log:       clientLog,
 		container: container,
@@ -99,6 +108,7 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 		wa:        wa,
 		store:     msgStore,
 		mediaDir:  filepath.Join(stateDir, "media"),
+		avatarDir: avatarDir,
 		events:    newEventBus(clientLog.Warnf),
 		qrCodes:   make(chan string, 8),
 	}
@@ -127,6 +137,14 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 	}
 	if hs, ok := evt.(*events.HistorySync); ok {
 		w.applyHistorySync(hs.Data)
+	}
+	// Avatars aren't stored in sqlite (no ingest path); just drop the memo so
+	// the next Avatar() call re-fetches, and tell the UI to refresh.
+	if p, ok := evt.(*events.Picture); ok {
+		jid := p.JID.String()
+		w.invalidateAvatar(jid)
+		w.pushEvent(Event{Kind: EventAvatar, Avatar: &Avatar{JID: jid}})
+		return
 	}
 	if _, ok := evt.(*events.Connected); ok {
 		// whatsmeow only delivers other users' presence after we've sent our

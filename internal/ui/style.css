@@ -13,6 +13,10 @@
 	font-weight: bold;
 }
 
+.chatot-avatar-img {
+	border-radius: 999px;
+}
+
 .chatot-chat-name {
 	font-weight: bold;
 }

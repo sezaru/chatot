@@ -22,6 +22,7 @@ const (
 	EventReaction
 	EventPollVote
 	EventRevoke
+	EventAvatar
 )
 
 // Event is a normalized notification pushed on Client.Events(). Only the
@@ -38,6 +39,7 @@ type Event struct {
 	Reaction     *Reaction
 	PollVote     *PollVote
 	Revoke       *Revoke
+	Avatar       *Avatar
 }
 
 // Receipt is a delivery/read acknowledgement for previously sent messages.
@@ -197,6 +199,12 @@ type Revoke struct {
 	TS      int64
 }
 
+// Avatar signals that jid's profile picture changed (or was removed); any
+// path previously returned by Client.Avatar for it should be re-resolved.
+type Avatar struct {
+	JID string
+}
+
 // MsgRef points at a message being replied to or reacted to.
 type MsgRef struct {
 	ChatJID string
@@ -269,4 +277,8 @@ type Client interface {
 
 	// media
 	DownloadMedia(ctx context.Context, msgID string) (localPath string, err error)
+	// Avatar resolves jid's profile picture to a local cached file path,
+	// fetching it on first use. Returns ("", nil) if there's no picture (or
+	// it's not visible to us) — that's normal, not an error.
+	Avatar(ctx context.Context, jid string) (localPath string, err error)
 }
