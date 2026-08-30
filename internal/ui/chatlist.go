@@ -180,6 +180,14 @@ func NewChatList(c client.Client) *ChatList {
 	newChatBtn.SetTooltipText("New chat")
 	searchRow.Append(newChatBtn)
 
+	newGroupBtn := gtk.NewButtonFromIconName("system-users-symbolic")
+	newGroupBtn.SetTooltipText("New group")
+	searchRow.Append(newGroupBtn)
+
+	joinGroupBtn := gtk.NewButtonFromIconName("insert-link-symbolic")
+	joinGroupBtn.SetTooltipText("Join group via link")
+	searchRow.Append(joinGroupBtn)
+
 	archiveToggle := gtk.NewToggleButton()
 	archiveToggle.SetIconName("mail-archive-symbolic")
 	archiveToggle.SetTooltipText("Show archived chats")
@@ -228,6 +236,14 @@ func NewChatList(c client.Client) *ChatList {
 
 	newChatBtn.ConnectClicked(func() {
 		cl.showNewChatDialog()
+	})
+
+	newGroupBtn.ConnectClicked(func() {
+		cl.showNewGroupDialog()
+	})
+
+	joinGroupBtn.ConnectClicked(func() {
+		cl.showJoinGroupDialog()
 	})
 
 	archiveToggle.ConnectToggled(func() {
@@ -735,6 +751,128 @@ func (cl *ChatList) showNewChatDialog() {
 
 	dialog.SetChild(box)
 	dialog.SetDefaultWidget(startBtn)
+	dialog.Present()
+}
+
+// showNewGroupDialog opens a modal to create a group: a name entry plus a
+// comma-separated participant list. On success it opens the new group's chat
+// through the same onSelect seam a chat-row activation uses.
+func (cl *ChatList) showNewGroupDialog() {
+	dialog := gtk.NewWindow()
+	dialog.SetTitle("New group")
+	if cl.window != nil {
+		dialog.SetTransientFor(cl.window)
+	}
+	dialog.SetModal(true)
+
+	box := gtk.NewBox(gtk.OrientationVertical, 8)
+	box.SetMarginTop(12)
+	box.SetMarginBottom(12)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
+
+	nameEntry := gtk.NewEntry()
+	nameEntry.SetPlaceholderText("Group name (max 25 chars)")
+	box.Append(nameEntry)
+
+	partsEntry := gtk.NewEntry()
+	partsEntry.SetPlaceholderText("Participants: +1555…, +1666… (comma-separated)")
+	box.Append(partsEntry)
+
+	status := gtk.NewLabel("")
+	status.SetXAlign(0)
+	box.Append(status)
+
+	createBtn := gtk.NewButtonWithLabel("Create")
+	createBtn.AddCSSClass("suggested-action")
+	box.Append(createBtn)
+
+	createBtn.ConnectClicked(func() {
+		name := strings.TrimSpace(nameEntry.Text())
+		if name == "" {
+			status.SetText("Enter a group name")
+			return
+		}
+		parts := parseParticipantList(partsEntry.Text())
+		createBtn.SetSensitive(false)
+		status.SetText("Creating…")
+		go func() {
+			jid, err := cl.c.CreateGroup(context.Background(), name, parts)
+			glib.IdleAdd(func() {
+				createBtn.SetSensitive(true)
+				if err != nil {
+					status.SetText("Couldn't create group, try again")
+					return
+				}
+				dialog.Close()
+				if cl.onSelect != nil {
+					cl.onSelect(jid)
+				}
+			})
+		}()
+	})
+
+	dialog.SetChild(box)
+	dialog.SetDefaultWidget(createBtn)
+	dialog.Present()
+}
+
+// showJoinGroupDialog opens a modal to join a group by pasting an invite link
+// or bare code, then opens the joined group's chat via onSelect.
+func (cl *ChatList) showJoinGroupDialog() {
+	dialog := gtk.NewWindow()
+	dialog.SetTitle("Join group")
+	if cl.window != nil {
+		dialog.SetTransientFor(cl.window)
+	}
+	dialog.SetModal(true)
+
+	box := gtk.NewBox(gtk.OrientationVertical, 8)
+	box.SetMarginTop(12)
+	box.SetMarginBottom(12)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
+
+	entry := gtk.NewEntry()
+	entry.SetPlaceholderText("chat.whatsapp.com/… or invite code")
+	box.Append(entry)
+
+	status := gtk.NewLabel("")
+	status.SetXAlign(0)
+	box.Append(status)
+
+	joinBtn := gtk.NewButtonWithLabel("Join")
+	joinBtn.AddCSSClass("suggested-action")
+	box.Append(joinBtn)
+
+	join := func() {
+		code := strings.TrimSpace(entry.Text())
+		if code == "" {
+			status.SetText("Paste an invite link or code")
+			return
+		}
+		joinBtn.SetSensitive(false)
+		status.SetText("Joining…")
+		go func() {
+			jid, err := cl.c.JoinGroupWithLink(context.Background(), code)
+			glib.IdleAdd(func() {
+				joinBtn.SetSensitive(true)
+				if err != nil {
+					status.SetText("Couldn't join, check the link")
+					return
+				}
+				dialog.Close()
+				if cl.onSelect != nil {
+					cl.onSelect(jid)
+				}
+			})
+		}()
+	}
+	joinBtn.ConnectClicked(join)
+	entry.ConnectActivate(join)
+
+	dialog.SetChild(box)
+	dialog.SetDefaultWidget(joinBtn)
 	dialog.Present()
 }
 
