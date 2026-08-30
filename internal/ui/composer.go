@@ -369,7 +369,7 @@ func NewComposer(c client.Client) *Composer {
 	entryRow.Append(recordBtn)
 
 	sendBtn := gtk.NewButtonWithLabel("Send")
-	sendBtn.AddCSSClass("suggested-action")
+	sendBtn.AddCSSClass("chatot-send")
 	entryRow.Append(sendBtn)
 
 	root.Append(entryRow)
