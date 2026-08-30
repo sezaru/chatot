@@ -40,18 +40,23 @@ func (s *Store) MessageByID(chatJID, msgID string) (m Message, ok bool, err erro
 	return m, true, nil
 }
 
+// messageSelect is the shared column list + joins for a page of messages;
+// callers append their own WHERE/ORDER/LIMIT. Kept identical across Messages
+// and MessagesBefore so both pages scan the same shape (see scanMessages).
+const messageSelect = `
+	SELECT
+		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
+		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, '')
+	FROM messages m
+	LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id`
+
 // Messages returns a chat's most recent messages (up to limit), oldest
 // first, with reply context, reactions and media populated.
 func (s *Store) Messages(jid string, limit int) ([]Message, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.db.Query(`
-		SELECT
-			m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
-			COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, '')
-		FROM messages m
-		LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id
+	rows, err := s.db.Query(messageSelect+`
 		WHERE m.chat_jid = ?
 		ORDER BY m.ts DESC, m.rowid DESC
 		LIMIT ?
@@ -59,6 +64,40 @@ func (s *Store) Messages(jid string, limit int) ([]Message, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.pageFromRows(jid, rows)
+}
+
+// MessagesBefore returns up to limit messages strictly older than beforeMsgID
+// in jid (oldest first, same enrichment as Messages) — the older-page fetch
+// the conversation view issues as the reader scrolls up. Returns nil (no
+// error) if beforeMsgID isn't in the store. The (ts, rowid) cursor breaks
+// same-second ties so no message is skipped or repeated across pages.
+func (s *Store) MessagesBefore(jid, beforeMsgID string, limit int) ([]Message, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var ts, rowid int64
+	err := s.db.QueryRow(`SELECT ts, rowid FROM messages WHERE chat_jid = ? AND msg_id = ?`, jid, beforeMsgID).Scan(&ts, &rowid)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(messageSelect+`
+		WHERE m.chat_jid = ? AND (m.ts < ? OR (m.ts = ? AND m.rowid < ?))
+		ORDER BY m.ts DESC, m.rowid DESC
+		LIMIT ?
+	`, jid, ts, ts, rowid, limit)
+	if err != nil {
+		return nil, err
+	}
+	return s.pageFromRows(jid, rows)
+}
+
+// pageFromRows scans a newest-first messageSelect result, reverses it to
+// chronological order, and populates reactions. It closes rows.
+func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 	defer rows.Close()
 
 	var out []Message

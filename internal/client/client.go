@@ -154,6 +154,9 @@ type Client interface {
 	// reads go through the store, but exposed here so the fake can serve them too
 	Chats(limit int) ([]Chat, error)
 	Messages(jid string, limit int) ([]Message, error)
+	// MessagesBefore returns up to limit messages older than beforeMsgID
+	// (oldest first), for the conversation view's scroll-up paging.
+	MessagesBefore(jid, beforeMsgID string, limit int) ([]Message, error)
 	Search(query string, limit int) ([]SearchHit, error)
 
 	// writes

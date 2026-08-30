@@ -95,6 +95,48 @@ func TestMessagesMediaAttachment(t *testing.T) {
 	}
 }
 
+func TestMessagesBeforePagesOlderInChronologicalOrder(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	for i, id := range []string{"m1", "m2", "m3", "m4", "m5"} {
+		must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: id, TS: int64(i + 1)}))
+	}
+
+	// The newest page (limit 2) is [m4 m5]; paging before m4 yields the next
+	// two older, chronological.
+	older, err := s.MessagesBefore("a@s.whatsapp.net", "m4", 2)
+	must(t, err)
+	if len(older) != 2 || older[0].ID != "m2" || older[1].ID != "m3" {
+		t.Fatalf("got %+v, want [m2 m3]", older)
+	}
+}
+
+func TestMessagesBeforeBreaksTiesBySameTimestamp(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	// All same second: the rowid cursor must still page without skips/dupes.
+	for _, id := range []string{"m1", "m2", "m3"} {
+		must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: id, TS: 100}))
+	}
+	older, err := s.MessagesBefore("a@s.whatsapp.net", "m3", 10)
+	must(t, err)
+	if len(older) != 2 || older[0].ID != "m1" || older[1].ID != "m2" {
+		t.Fatalf("got %+v, want [m1 m2]", older)
+	}
+}
+
+func TestMessagesBeforeUnknownCursorReturnsNothing(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", TS: 1}))
+
+	older, err := s.MessagesBefore("a@s.whatsapp.net", "nope", 10)
+	must(t, err)
+	if len(older) != 0 {
+		t.Fatalf("got %+v, want none for unknown cursor", older)
+	}
+}
+
 func TestMessagesRespectsLimit(t *testing.T) {
 	s := newTestStore(t)
 	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))

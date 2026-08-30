@@ -245,14 +245,20 @@ func buildChatRow(vm chatRowView) *gtk.Box {
 
 	nameLabel := gtk.NewLabel(vm.Name)
 	nameLabel.SetXAlign(0)
+	nameLabel.SetEllipsize(pango.EllipsizeEnd)
+	nameLabel.SetMaxWidthChars(1)
+	nameLabel.SetHExpand(true)
 	nameLabel.AddCSSClass("chatot-chat-name")
 	textCol.Append(nameLabel)
 
+	// Single line, ellipsized. MaxWidthChars(1) keeps the label's natural
+	// width tiny so a long message can't stretch the row wider than the
+	// sidebar; HExpand lets it fill whatever width the sidebar does give.
 	previewLabel := gtk.NewLabel(vm.Preview)
 	previewLabel.SetXAlign(0)
-	previewLabel.SetWrap(true)
-	previewLabel.SetLines(2)
 	previewLabel.SetEllipsize(pango.EllipsizeEnd)
+	previewLabel.SetMaxWidthChars(1)
+	previewLabel.SetHExpand(true)
 	previewLabel.AddCSSClass("chatot-chat-preview")
 	if vm.Typing {
 		previewLabel.AddCSSClass("chatot-chat-typing")

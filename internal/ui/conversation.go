@@ -122,6 +122,15 @@ type ConversationView struct {
 	msgs []client.Message
 	byID map[string]client.Message
 
+	// Pagination: Load fetches only the newest conversationPageSize messages;
+	// scrolling near the top prepends older pages until the store runs dry.
+	// oldestID is the cursor (the oldest currently-rendered message); hasMore
+	// is cleared once a short page comes back; loadingOlder guards against
+	// re-entrant fetches while one is in flight / while the anchor is restored.
+	oldestID     string
+	hasMore      bool
+	loadingOlder bool
+
 	// presence is the UI's own view of contact/chat presence, built from
 	// EventPresence/EventChatPresence on Events() — chosen over growing the
 	// Client interface with a Presence(jid) getter, since ConversationView
@@ -152,7 +161,13 @@ func (cv *ConversationView) Messages() []client.Message { return cv.msgs }
 // CurrentJID returns the chat currently loaded, "" if none.
 func (cv *ConversationView) CurrentJID() string { return cv.jid }
 
-const conversationLimit = 200
+// conversationPageSize is how many messages Load fetches up front and each
+// scroll-up page adds — small enough that opening a huge chat is instant.
+const conversationPageSize = 40
+
+// olderLoadThreshold is how close to the top (in px) the reader must scroll
+// before the next older page is fetched.
+const olderLoadThreshold = 300
 
 // NewConversationView builds an empty ConversationView backed by c and
 // subscribes to c.Events() for live append.
@@ -195,6 +210,11 @@ func NewConversationView(c client.Client) *ConversationView {
 	scroller := gtk.NewScrolledWindow()
 	scroller.SetVExpand(true)
 	scroller.SetHExpand(true)
+	// Keep the scroller's own height request minimal so a tall thread scrolls
+	// internally instead of growing the pane and pushing the composer (a
+	// sibling below this view) off the bottom of the window.
+	scroller.SetPropagateNaturalHeight(false)
+	scroller.SetMinContentHeight(0)
 	scroller.SetChild(list)
 	scroller.SetVisible(false)
 
@@ -213,27 +233,48 @@ func NewConversationView(c client.Client) *ConversationView {
 		presence:      make(map[string]PresenceState),
 	}
 
+	scroller.VAdjustment().ConnectValueChanged(cv.onScroll)
+
 	go cv.watchEvents()
 
 	return cv
 }
 
-// Load queries client.Messages for jid and renders the full thread,
-// replacing whatever was shown before. Must run on the GTK main loop.
+// onScroll fetches the next older page when the reader nears the top. Runs on
+// the GTK main loop (fired by the adjustment). loadingOlder debounces the
+// burst of value-changed signals a single scroll gesture emits.
+func (cv *ConversationView) onScroll() {
+	if cv.loadingOlder || !cv.hasMore || cv.jid == "" {
+		return
+	}
+	if cv.scroller.VAdjustment().Value() <= olderLoadThreshold {
+		cv.loadOlder()
+	}
+}
+
+// Load fetches the newest page of jid's thread and renders it, replacing
+// whatever was shown before; older messages are pulled in on scroll-up (see
+// loadOlder). Must run on the GTK main loop.
 func (cv *ConversationView) Load(jid string) {
 	cv.jid = jid
+	cv.loadingOlder = false
 	cv.refreshHeader()
 
-	msgs, err := cv.c.Messages(jid, conversationLimit)
+	msgs, err := cv.c.Messages(jid, conversationPageSize)
 	if err != nil {
 		msgs = nil
 	}
 	cv.msgs = msgs
 	cv.byID = indexByID(msgs)
-
-	removeAllChildren(cv.list)
+	cv.hasMore = len(msgs) == conversationPageSize
+	if len(msgs) > 0 {
+		cv.oldestID = msgs[0].ID
+	} else {
+		cv.oldestID = ""
+	}
 
 	if len(msgs) == 0 {
+		removeAllChildren(cv.list)
 		cv.empty.SetLabel("No messages yet")
 		cv.empty.SetVisible(true)
 		cv.scroller.SetVisible(false)
@@ -242,16 +283,53 @@ func (cv *ConversationView) Load(jid string) {
 
 	cv.empty.SetVisible(false)
 	cv.scroller.SetVisible(true)
+	cv.rebuildList()
+	cv.scrollToBottom()
+}
 
+// rebuildList re-renders every bubble from cv.msgs (chronological). Used by
+// the initial Load and by loadOlder after an older page is prepended. Must
+// run on the GTK main loop.
+func (cv *ConversationView) rebuildList() {
+	removeAllChildren(cv.list)
 	now := time.Now()
 	var prev *client.Message
-	for i := range msgs {
-		vm := bubbleVM(msgs[i], prev, cv.byID, now)
-		cv.list.Append(buildBubble(msgs[i], vm, cv.c, cv.onReply, cv.onReact))
-		prev = &msgs[i]
+	for i := range cv.msgs {
+		vm := bubbleVM(cv.msgs[i], prev, cv.byID, now)
+		cv.list.Append(buildBubble(cv.msgs[i], vm, cv.c, cv.onReply, cv.onReact))
+		prev = &cv.msgs[i]
+	}
+}
+
+// loadOlder prepends the next older page, preserving the reader's position by
+// re-anchoring the scroll to the same content after the relayout. Must run on
+// the GTK main loop.
+func (cv *ConversationView) loadOlder() {
+	cv.loadingOlder = true
+
+	older, err := cv.c.MessagesBefore(cv.jid, cv.oldestID, conversationPageSize)
+	if err != nil || len(older) == 0 {
+		cv.hasMore = false
+		cv.loadingOlder = false
+		return
 	}
 
-	cv.scrollToBottom()
+	adj := cv.scroller.VAdjustment()
+	prevUpper, prevValue := adj.Upper(), adj.Value()
+
+	cv.msgs = append(older, cv.msgs...)
+	cv.oldestID = cv.msgs[0].ID
+	cv.byID = indexByID(cv.msgs)
+	cv.hasMore = len(older) == conversationPageSize
+	cv.rebuildList()
+
+	// After the prepended rows lay out, the content grew by (newUpper -
+	// prevUpper); shift the viewport down by that much so the message that was
+	// at the top stays put instead of the view jumping to the new top.
+	glib.IdleAdd(func() {
+		adj.SetValue(adj.Upper() - prevUpper + prevValue)
+		cv.loadingOlder = false
+	})
 }
 
 // watchEvents listens for client events and, for the currently-loaded chat,
