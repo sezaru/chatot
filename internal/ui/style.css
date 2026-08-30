@@ -1,0 +1,8 @@
+/* chatot custom look; grows as chatlist/conversation panes land. */
+
+.chatot-sidebar {
+}
+
+.chatot-placeholder {
+	opacity: 0.6;
+}
