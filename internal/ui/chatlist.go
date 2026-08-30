@@ -157,11 +157,13 @@ type ChatList struct {
 	postStatusBar *gtk.Box            // "Post status" bar, visible only in status mode
 	followBar     *gtk.Box            // "Follow channel" bar, visible only in channels mode
 	newsletters   []client.Newsletter // channels backing the sidebar in channels mode
-	labelFilter   *gtk.DropDown
-	// filterLabelIDs maps the label-filter dropdown's row index to a label id;
-	// index 0 is "All" (empty id). Rebuilt with the dropdown from c.Labels().
-	filterLabelIDs []string
-	selectedLabel  string // label id the chat list is filtered to; "" = All
+
+	chipRow  *gtk.Box   // fixed + inline-label filter chips, under the search entry
+	filter   chatFilter // the active chip; see chatFilter/chatMatchesFilter
+	search   *gtk.SearchEntry
+	starredT *gtk.ToggleButton
+	statusT  *gtk.ToggleButton
+	channelT *gtk.ToggleButton
 }
 
 // SetWindow supplies the parent window the new-chat dialog needs; call once
@@ -213,15 +215,15 @@ func NewChatList(c client.Client) *ChatList {
 	channelsToggle.SetTooltipText("Channels")
 	searchRow.Append(channelsToggle)
 
-	labelFilter := gtk.NewDropDownFromStrings([]string{"All"})
-	labelFilter.SetTooltipText("Filter by label")
-	searchRow.Append(labelFilter)
-
 	privacyBtn := gtk.NewButtonFromIconName("preferences-system-privacy-symbolic")
 	privacyBtn.SetTooltipText("Privacy settings")
 	searchRow.Append(privacyBtn)
 
 	root.Append(searchRow)
+
+	chipRow := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	chipRow.AddCSSClass("chatot-chip-row")
+	root.Append(chipRow)
 
 	postStatusBar := gtk.NewBox(gtk.OrientationHorizontal, 0)
 	postStatusBtn := gtk.NewButtonWithLabel("➕ Post status")
@@ -244,7 +246,12 @@ func NewChatList(c client.Client) *ChatList {
 	list.SetVExpand(true)
 	root.Append(list)
 
-	cl := &ChatList{Box: root, c: c, events: c.Events(), list: list, composingJIDs: make(map[string]string), avatarCache: newAvatarCache(), labelFilter: labelFilter, postStatusBar: postStatusBar, followBar: followBar}
+	cl := &ChatList{
+		Box: root, c: c, events: c.Events(), list: list,
+		composingJIDs: make(map[string]string), avatarCache: newAvatarCache(),
+		chipRow: chipRow, postStatusBar: postStatusBar, followBar: followBar,
+		search: search, starredT: starredToggle, statusT: statusToggle, channelT: channelsToggle,
+	}
 
 	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
 		idx := row.Index()
@@ -262,6 +269,9 @@ func NewChatList(c client.Client) *ChatList {
 
 	search.ConnectSearchChanged(func() {
 		cl.query = strings.TrimSpace(search.Text())
+		if cl.query != "" {
+			cl.filter = chatFilter{}
+		}
 		if cl.query != "" && cl.showStarred {
 			cl.showStarred = false
 			starredToggle.SetActive(false)
@@ -294,6 +304,9 @@ func NewChatList(c client.Client) *ChatList {
 
 	starredToggle.ConnectToggled(func() {
 		cl.showStarred = starredToggle.Active()
+		if cl.showStarred {
+			cl.filter = chatFilter{}
+		}
 		if cl.showStarred && cl.query != "" {
 			cl.query = ""
 			search.SetText("")
@@ -311,6 +324,7 @@ func NewChatList(c client.Client) *ChatList {
 		cl.showStatus = statusToggle.Active()
 		cl.postStatusBar.SetVisible(cl.showStatus)
 		if cl.showStatus {
+			cl.filter = chatFilter{}
 			if cl.query != "" {
 				cl.query = ""
 				search.SetText("")
@@ -330,6 +344,7 @@ func NewChatList(c client.Client) *ChatList {
 		cl.showChannels = channelsToggle.Active()
 		cl.followBar.SetVisible(cl.showChannels)
 		if cl.showChannels {
+			cl.filter = chatFilter{}
 			if cl.query != "" {
 				cl.query = ""
 				search.SetText("")
@@ -357,17 +372,6 @@ func NewChatList(c client.Client) *ChatList {
 		showPrivacyDialog(cl.window, cl.c)
 	})
 
-	labelFilter.Connect("notify::selected", func() {
-		idx := int(labelFilter.Selected())
-		if idx >= 0 && idx < len(cl.filterLabelIDs) {
-			cl.selectedLabel = cl.filterLabelIDs[idx]
-		} else {
-			cl.selectedLabel = ""
-		}
-		cl.refresh()
-	})
-
-	cl.rebuildLabelFilter()
 	cl.refresh()
 	go cl.watchEvents()
 
@@ -383,6 +387,7 @@ func (cl *ChatList) OnChatSelected(f func(jid string)) {
 // StarredMessages (starred mode), Search (query set) or Chats (none of the
 // above). Must run on the GTK main loop.
 func (cl *ChatList) refresh() {
+	cl.updateChipRow()
 	switch {
 	case cl.showChannels:
 		cl.refreshChannels()
@@ -411,7 +416,7 @@ func (cl *ChatList) refreshChats() {
 		if !showChatInList(chat, cl.showArchived) {
 			continue
 		}
-		if !chatHasLabel(cl.c, chat.JID, cl.selectedLabel) {
+		if !chatVisible(cl.c, chat, cl.filter) {
 			continue
 		}
 		vm := chatRowVM(chat, now)
@@ -726,7 +731,6 @@ func (cl *ChatList) watchEvents() {
 		}
 		if ev.Kind == client.EventLabelUpdate {
 			glib.IdleAdd(func() {
-				cl.rebuildLabelFilter()
 				cl.refresh()
 			})
 			continue
@@ -849,11 +853,10 @@ func showChatContextMenu(row *gtk.Box, c client.Client, chat client.Chat, window
 	addAction(labels.Unread, func(ctx context.Context) error {
 		return c.MarkChatUnread(ctx, chat.JID, chat.UnreadCount == 0)
 	})
-	labelsBtn := gtk.NewButtonWithLabel("Labels…")
+	labelsBtn := gtk.NewButtonWithLabel("Labels ▸")
 	labelsBtn.AddCSSClass("flat")
 	labelsBtn.ConnectClicked(func() {
-		pop.Popdown()
-		showLabelsDialog(window, c, chat)
+		showLabelsSubmenu(labelsBtn, c, chat)
 	})
 	box.Append(labelsBtn)
 
