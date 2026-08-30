@@ -29,3 +29,11 @@ func TestQRPNGEmptyPayloadErrors(t *testing.T) {
 		t.Errorf("expected nil bytes on error, got %d bytes", len(png))
 	}
 }
+
+func TestFormatPairCode(t *testing.T) {
+	got := formatPairCode("ABCD-1234")
+	want := "On your phone, enter this code: ABCD-1234"
+	if got != want {
+		t.Errorf("formatPairCode = %q, want %q", got, want)
+	}
+}

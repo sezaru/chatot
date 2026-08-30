@@ -133,6 +133,13 @@ func (f *Fake) Logout(ctx context.Context) error {
 	return nil
 }
 
+func (f *Fake) PairPhone(ctx context.Context, phone string) (string, error) {
+	if _, ok := normalizePairingPhone(phone); !ok {
+		return "", fmt.Errorf("chatot/client: invalid phone number %q", phone)
+	}
+	return "ABCD-1234", nil
+}
+
 func (f *Fake) Events() <-chan Event { return f.events.Subscribe() }
 
 // PushEvent lets tests/UI-dev inject an event onto the Events() stream,
