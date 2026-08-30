@@ -158,6 +158,12 @@ window {
 	opacity: 0.6;
 }
 
+.chatot-forwarded {
+	font-style: italic;
+	font-size: 0.8em;
+	opacity: 0.6;
+}
+
 /* Stickers and emoji-only text render bare: no background, no padding. */
 .chatot-bubble-bare {
 	background-color: transparent;

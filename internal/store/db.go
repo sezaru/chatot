@@ -89,6 +89,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
 	}
+	if err := migrateAddColumn(db, "messages", "forwarded", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
+	}
 	if err := backfillFTS(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: fts backfill: %w", err)

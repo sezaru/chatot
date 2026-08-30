@@ -204,6 +204,32 @@ func TestUpsertMessageEditedIsSticky(t *testing.T) {
 	}
 }
 
+func TestUpsertMessageForwardedRoundTrips(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "fyi", TS: 1, Forwarded: true}))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if len(msgs) != 1 || !msgs[0].Forwarded {
+		t.Fatalf("got %+v, want the forwarded flag to round-trip", msgs)
+	}
+}
+
+func TestUpsertMessageForwardedIsSticky(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "fyi", TS: 1, Forwarded: true}))
+	// A later non-forwarded re-upsert (e.g. a history redelivery) must not clear it.
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "fyi", TS: 1, Forwarded: false}))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if !msgs[0].Forwarded {
+		t.Fatal("forwarded flag was cleared by a non-forwarded re-upsert; want sticky")
+	}
+}
+
 func TestMarkMessageDeletedInsertsStubForUnseenMessage(t *testing.T) {
 	s := newTestStore(t)
 	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))

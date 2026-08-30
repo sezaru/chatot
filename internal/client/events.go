@@ -238,6 +238,7 @@ func extractText(m *waProto.Message, msg *Message) {
 	if id := ctx.GetStanzaID(); id != "" {
 		msg.ReplyTo = &MsgRef{ChatJID: msg.ChatJID, MsgID: id}
 	}
+	msg.Forwarded = ctx.GetIsForwarded()
 }
 
 // marshalMedia serializes a media sub-message (ImageMessage, VideoMessage,
