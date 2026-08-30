@@ -10,10 +10,13 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
-	"go.mau.fi/whatsmeow/store"
+	wastore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+
+	"chatot/internal/store"
 )
 
 var _ Client = (*Whatsmeow)(nil)
@@ -29,7 +32,8 @@ const eventBufferSize = 1024
 type Whatsmeow struct {
 	log       waLog.Logger
 	container *sqlstore.Container
-	device    *store.Device
+	device    *wastore.Device
+	store     *store.Store
 	wa        *whatsmeow.Client
 
 	events  chan Event
@@ -68,6 +72,11 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 		}
 	}
 
+	msgStore, err := store.Open(filepath.Join(stateDir, "chatot.db"))
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: open message store: %w", err)
+	}
+
 	clientLog := waLog.Stdout("Client", "ERROR", false)
 	wa := whatsmeow.NewClient(device, clientLog)
 
@@ -76,6 +85,7 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 		container: container,
 		device:    device,
 		wa:        wa,
+		store:     msgStore,
 		events:    make(chan Event, eventBufferSize),
 		qrCodes:   make(chan string, 8),
 	}
@@ -95,10 +105,14 @@ func defaultStateDir() (string, error) {
 }
 
 func (w *Whatsmeow) handleRaw(evt interface{}) {
+	if hs, ok := evt.(*events.HistorySync); ok {
+		w.applyHistorySync(hs.Data)
+	}
 	e := translate(evt)
 	if e == nil {
 		return
 	}
+	w.ingestEvent(*e)
 	w.pushEvent(*e)
 }
 
@@ -162,15 +176,29 @@ func (w *Whatsmeow) Logout(ctx context.Context) error {
 func (w *Whatsmeow) Events() <-chan Event { return w.events }
 
 // Chats reads the chat list from the local store.
-// TODO(F3): back this with the sqlite message/chat store.
 func (w *Whatsmeow) Chats(limit int) ([]Chat, error) {
-	return nil, errors.New("not implemented: Chats (F3)")
+	rows, err := w.store.Chats(limit)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: chats: %w", err)
+	}
+	out := make([]Chat, len(rows))
+	for i, c := range rows {
+		out[i] = chatFromStore(c)
+	}
+	return out, nil
 }
 
 // Messages reads a conversation's messages from the local store.
-// TODO(F3): back this with the sqlite message/chat store.
 func (w *Whatsmeow) Messages(jid string, limit int) ([]Message, error) {
-	return nil, errors.New("not implemented: Messages (F3)")
+	rows, err := w.store.Messages(jid, limit)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: messages: %w", err)
+	}
+	out := make([]Message, len(rows))
+	for i, m := range rows {
+		out[i] = messageFromStore(m)
+	}
+	return out, nil
 }
 
 // Search runs an fts5 query over the local store.

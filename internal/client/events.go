@@ -12,6 +12,9 @@ import (
 func translate(evt interface{}) *Event {
 	switch v := evt.(type) {
 	case *events.Message:
+		if r := v.Message.GetReactionMessage(); r != nil {
+			return translateReaction(v, r)
+		}
 		return translateMessage(v)
 	case *events.Receipt:
 		read := v.Type == types.ReceiptTypeRead || v.Type == types.ReceiptTypeReadSelf
@@ -77,9 +80,22 @@ func translateMessage(v *events.Message) *Event {
 	return &Event{Kind: EventMessage, Message: &msg}
 }
 
-// extractText fills in Text and ReplyTo from the leaf proto message. It
-// covers plain and quoted text; media/location/poll extraction is F3's job
-// once the store needs to render those message kinds.
+// translateReaction maps a reaction update (delivered as an events.Message
+// whose payload is a ReactionMessage, not a separate whatsmeow event type)
+// to an internal Reaction. An empty emoji means the reaction was cleared.
+func translateReaction(v *events.Message, r *waProto.ReactionMessage) *Event {
+	return &Event{Kind: EventReaction, Reaction: &Reaction{
+		ChatJID:    v.Info.Chat.String(),
+		MsgID:      r.GetKey().GetID(),
+		ReactorJID: v.Info.Sender.String(),
+		Emoji:      r.GetText(),
+		TS:         v.Info.Timestamp.Unix(),
+	}}
+}
+
+// extractText fills in Text, ReplyTo and Attachment from the leaf proto
+// message. It covers plain/quoted text and the common media kinds; location/
+// poll extraction is left for whichever later feature renders those.
 func extractText(m *waProto.Message, msg *Message) {
 	if m == nil {
 		return
@@ -92,6 +108,28 @@ func extractText(m *waProto.Message, msg *Message) {
 		ext := m.GetExtendedTextMessage()
 		msg.Text = ext.GetText()
 		ctx = ext.GetContextInfo()
+	case m.GetImageMessage() != nil:
+		img := m.GetImageMessage()
+		msg.Attachment = &Attachment{Kind: "image", MimeType: img.GetMimetype(), Caption: img.GetCaption()}
+		ctx = img.GetContextInfo()
+	case m.GetVideoMessage() != nil:
+		vid := m.GetVideoMessage()
+		msg.Attachment = &Attachment{Kind: "video", MimeType: vid.GetMimetype(), Caption: vid.GetCaption()}
+		ctx = vid.GetContextInfo()
+	case m.GetAudioMessage() != nil:
+		aud := m.GetAudioMessage()
+		msg.Attachment = &Attachment{Kind: "audio", MimeType: aud.GetMimetype()}
+		ctx = aud.GetContextInfo()
+	case m.GetDocumentMessage() != nil:
+		doc := m.GetDocumentMessage()
+		msg.Attachment = &Attachment{
+			Kind: "document", MimeType: doc.GetMimetype(),
+			Filename: doc.GetFileName(), Caption: doc.GetCaption(),
+		}
+		ctx = doc.GetContextInfo()
+	case m.GetStickerMessage() != nil:
+		msg.Attachment = &Attachment{Kind: "sticker", MimeType: m.GetStickerMessage().GetMimetype()}
+		ctx = m.GetStickerMessage().GetContextInfo()
 	}
 	if ctx == nil {
 		return

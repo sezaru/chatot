@@ -5,6 +5,7 @@ import (
 	"time"
 
 	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -97,6 +98,179 @@ func TestTranslateMessageExtendedTextWithReply(t *testing.T) {
 	}
 	if e.Message.ReplyTo.ChatJID != chat.String() {
 		t.Errorf("ReplyTo.ChatJID = %q, want %q", e.Message.ReplyTo.ChatJID, chat.String())
+	}
+}
+
+func TestTranslateReaction(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	reactor := mustJID(t, "1234567890@s.whatsapp.net")
+	ts := time.Unix(1700000500, 0)
+
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: reactor, IsFromMe: false},
+			ID:            "REACT1",
+			Timestamp:     ts,
+		},
+		Message: &waProto.Message{
+			ReactionMessage: &waE2E.ReactionMessage{
+				Key:  &waCommon.MessageKey{ID: proto.String("target-msg")},
+				Text: proto.String("😂"),
+			},
+		},
+	}
+
+	e := translate(evt)
+	if e == nil || e.Kind != EventReaction {
+		t.Fatalf("expected EventReaction, got %+v", e)
+	}
+	if e.Reaction == nil {
+		t.Fatal("Reaction field is nil")
+	}
+	if e.Reaction.MsgID != "target-msg" {
+		t.Errorf("MsgID = %q, want target-msg", e.Reaction.MsgID)
+	}
+	if e.Reaction.Emoji != "😂" {
+		t.Errorf("Emoji = %q, want 😂", e.Reaction.Emoji)
+	}
+	if e.Reaction.ReactorJID != reactor.String() {
+		t.Errorf("ReactorJID = %q, want %q", e.Reaction.ReactorJID, reactor.String())
+	}
+	if e.Reaction.ChatJID != chat.String() {
+		t.Errorf("ChatJID = %q, want %q", e.Reaction.ChatJID, chat.String())
+	}
+	if e.Reaction.TS != ts.Unix() {
+		t.Errorf("TS = %d, want %d", e.Reaction.TS, ts.Unix())
+	}
+}
+
+func TestTranslateReactionClear(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+			ID:            "REACT2",
+		},
+		Message: &waProto.Message{
+			ReactionMessage: &waE2E.ReactionMessage{
+				Key:  &waCommon.MessageKey{ID: proto.String("target-msg")},
+				Text: proto.String(""),
+			},
+		},
+	}
+
+	e := translate(evt)
+	if e == nil || e.Kind != EventReaction {
+		t.Fatalf("expected EventReaction, got %+v", e)
+	}
+	if e.Reaction.Emoji != "" {
+		t.Errorf("Emoji = %q, want empty (clear)", e.Reaction.Emoji)
+	}
+	if e.Reaction.MsgID != "target-msg" {
+		t.Errorf("MsgID = %q, want target-msg", e.Reaction.MsgID)
+	}
+}
+
+func TestTranslateMediaMessages(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+
+	cases := []struct {
+		name     string
+		msg      *waProto.Message
+		wantKind string
+		wantMime string
+		wantCap  string
+		wantFile string
+	}{
+		{
+			name: "image",
+			msg: &waProto.Message{ImageMessage: &waE2E.ImageMessage{
+				Mimetype: proto.String("image/jpeg"), Caption: proto.String("a sunset"),
+			}},
+			wantKind: "image", wantMime: "image/jpeg", wantCap: "a sunset",
+		},
+		{
+			name: "video",
+			msg: &waProto.Message{VideoMessage: &waE2E.VideoMessage{
+				Mimetype: proto.String("video/mp4"), Caption: proto.String("clip"),
+			}},
+			wantKind: "video", wantMime: "video/mp4", wantCap: "clip",
+		},
+		{
+			name: "audio",
+			msg: &waProto.Message{AudioMessage: &waE2E.AudioMessage{
+				Mimetype: proto.String("audio/ogg"),
+			}},
+			wantKind: "audio", wantMime: "audio/ogg",
+		},
+		{
+			name: "document",
+			msg: &waProto.Message{DocumentMessage: &waE2E.DocumentMessage{
+				Mimetype: proto.String("application/pdf"),
+				FileName: proto.String("invoice.pdf"), Caption: proto.String("the bill"),
+			}},
+			wantKind: "document", wantMime: "application/pdf", wantFile: "invoice.pdf", wantCap: "the bill",
+		},
+		{
+			name: "sticker",
+			msg: &waProto.Message{StickerMessage: &waE2E.StickerMessage{
+				Mimetype: proto.String("image/webp"),
+			}},
+			wantKind: "sticker", wantMime: "image/webp",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			evt := &events.Message{
+				Info: types.MessageInfo{
+					MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+					ID:            "M-" + tc.name,
+				},
+				Message: tc.msg,
+			}
+			e := translate(evt)
+			if e == nil || e.Kind != EventMessage || e.Message == nil {
+				t.Fatalf("expected a Message event, got %+v", e)
+			}
+			a := e.Message.Attachment
+			if a == nil {
+				t.Fatal("Attachment is nil, want populated")
+			}
+			if a.Kind != tc.wantKind {
+				t.Errorf("Kind = %q, want %q", a.Kind, tc.wantKind)
+			}
+			if a.MimeType != tc.wantMime {
+				t.Errorf("MimeType = %q, want %q", a.MimeType, tc.wantMime)
+			}
+			if a.Caption != tc.wantCap {
+				t.Errorf("Caption = %q, want %q", a.Caption, tc.wantCap)
+			}
+			if a.Filename != tc.wantFile {
+				t.Errorf("Filename = %q, want %q", a.Filename, tc.wantFile)
+			}
+		})
+	}
+}
+
+func TestTranslateMediaWithReplyContext(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+			ID:            "M-reply",
+		},
+		Message: &waProto.Message{ImageMessage: &waE2E.ImageMessage{
+			Mimetype:    proto.String("image/png"),
+			ContextInfo: &waE2E.ContextInfo{StanzaID: proto.String("quoted-id")},
+		}},
+	}
+	e := translate(evt)
+	if e == nil || e.Message == nil || e.Message.ReplyTo == nil {
+		t.Fatalf("expected a Message with ReplyTo, got %+v", e)
+	}
+	if e.Message.ReplyTo.MsgID != "quoted-id" {
+		t.Errorf("ReplyTo.MsgID = %q, want quoted-id", e.Message.ReplyTo.MsgID)
 	}
 }
 

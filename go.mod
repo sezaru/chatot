@@ -7,6 +7,7 @@ require (
 	github.com/diamondburned/gotk4/pkg v0.4.1
 	github.com/mattn/go-sqlite3 v1.14.50
 	go.mau.fi/whatsmeow v0.0.0-20260806224404-e277b766ab33
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
@@ -28,5 +29,4 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 )
