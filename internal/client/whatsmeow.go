@@ -419,10 +419,51 @@ func buildMediaMessage(kind, mimeType string, m Attachment, resp *whatsmeow.Uplo
 	}
 }
 
-// SendVoice uploads and sends a voice note.
-// TODO(F9): implement voice notes.
+// voiceMimetype is what WhatsApp expects for a push-to-talk voice note; a
+// bare "audio/ogg" renders as a regular file attachment instead of a
+// playable voice bubble.
+const voiceMimetype = "audio/ogg; codecs=opus"
+
+// SendVoice uploads oggOpus and sends it as a PTT voice note (no reply
+// support — voice notes aren't quoted in practice). Optimistic echo mirrors
+// SendMedia's audio path but skips pushEvent to avoid a double render.
 func (w *Whatsmeow) SendVoice(ctx context.Context, jid string, oggOpus []byte, dur int) (string, error) {
-	return "", errors.New("not implemented: SendVoice (F9)")
+	to, err := types.ParseJID(jid)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+	if dur < 0 {
+		dur = 0
+	}
+
+	resp, err := w.wa.Upload(ctx, oggOpus, whatsmeow.MediaAudio)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: send voice: upload: %w", err)
+	}
+
+	aud := &waE2E.AudioMessage{
+		URL: &resp.URL, DirectPath: &resp.DirectPath, MediaKey: resp.MediaKey,
+		FileEncSHA256: resp.FileEncSHA256, FileSHA256: resp.FileSHA256, FileLength: &resp.FileLength,
+		Mimetype: proto.String(voiceMimetype), PTT: proto.Bool(true), Seconds: proto.Uint32(uint32(dur)),
+	}
+
+	id := w.wa.GenerateMessageID()
+	if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{AudioMessage: aud}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		return "", fmt.Errorf("chatot/client: send voice: %w", err)
+	}
+
+	localPath, cacheErr := w.writeMediaFile(jid, id, voiceMimetype, oggOpus)
+	if cacheErr != nil {
+		w.log.Warnf("chatot/client: cache outbound voice note failed: %v", cacheErr)
+	}
+	out := Message{
+		ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(),
+		Attachment: &Attachment{Kind: "audio", MimeType: voiceMimetype, LocalPath: localPath, ProtoBlob: marshalMedia(aud)},
+	}
+	if err := w.ingestMessage(&out); err != nil {
+		w.log.Warnf("chatot/client: optimistic upsert of sent voice note failed: %v", err)
+	}
+	return id, nil
 }
 
 // React sets ("" clears) a reaction on a message. sender in BuildReaction

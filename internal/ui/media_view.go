@@ -42,21 +42,22 @@ func mediaVM(m client.Message) mediaView {
 }
 
 // inlineable reports whether kind renders as an embedded widget once
-// cached. Documents and audio (voice playback is F9) are always a chip.
+// cached: image/video/sticker as a Picture/Video, audio as playback
+// controls. Documents stay a chip.
 func inlineable(kind string) bool {
 	switch kind {
-	case "image", "video", "sticker":
+	case "image", "video", "sticker", "audio":
 		return true
 	default:
 		return false
 	}
 }
 
-// buildMediaContent renders a message's attachment: an inline gtk.Picture/
-// gtk.Video if it's a cached image/video/sticker, otherwise a chip. An
-// uncached chip downloads on click (goroutine -> glib.IdleAdd back to the
-// main loop) and then either swaps itself for the inline widget
-// (image/video/sticker) or flips to an "open" affordance (document/audio).
+// buildMediaContent renders a message's attachment: an inline widget
+// (Picture/Video, or MediaControls for audio) if it's cached, otherwise a
+// chip. An uncached chip downloads on click (goroutine -> glib.IdleAdd back
+// to the main loop) and then either swaps itself for the inline widget or
+// flips to an "open" affordance (document).
 func buildMediaContent(msg client.Message, mv mediaView, c client.Client) gtk.Widgetter {
 	slot := gtk.NewBox(gtk.OrientationVertical, 0)
 
@@ -82,10 +83,18 @@ func chipLabel(mv mediaView) string {
 }
 
 func inlineMediaWidget(mv mediaView) gtk.Widgetter {
-	if mv.Kind == "video" {
+	switch mv.Kind {
+	case "video":
 		v := gtk.NewVideoForFilename(mv.LocalPath)
 		v.SetSizeRequest(280, 200)
 		return v
+	case "audio":
+		// gtk.MediaControls plays via its bound MediaStream but never
+		// autoplays on its own, so no explicit Play()/Pause() call is needed.
+		stream := gtk.NewMediaFileForFilename(mv.LocalPath)
+		controls := gtk.NewMediaControls(stream)
+		controls.SetSizeRequest(240, -1)
+		return controls
 	}
 	p := gtk.NewPictureForFilename(mv.LocalPath)
 	p.SetCanShrink(true)

@@ -63,12 +63,12 @@ func TestMediaVM_LocalPathExists(t *testing.T) {
 }
 
 func TestInlineable(t *testing.T) {
-	for _, kind := range []string{"image", "video", "sticker"} {
+	for _, kind := range []string{"image", "video", "sticker", "audio"} {
 		if !inlineable(kind) {
 			t.Errorf("inlineable(%q) = false, want true", kind)
 		}
 	}
-	for _, kind := range []string{"document", "audio", ""} {
+	for _, kind := range []string{"document", ""} {
 		if inlineable(kind) {
 			t.Errorf("inlineable(%q) = true, want false", kind)
 		}
