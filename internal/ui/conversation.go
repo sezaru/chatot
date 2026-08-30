@@ -29,6 +29,8 @@ type bubbleView struct {
 	Media            mediaView
 	IsLocation       bool
 	Location         locationView
+	IsContact        bool
+	Contact          contactView
 }
 
 // bubbleVM derives the display view-model for a single message. prev is the
@@ -67,6 +69,9 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 	case m.Location != nil:
 		v.IsLocation = true
 		v.Location = locationVM(m)
+	case m.Contact != nil:
+		v.IsContact = true
+		v.Contact = contactVM(m)
 	case m.Attachment != nil:
 		v.IsMedia = true
 		v.Media = mediaVM(m)
@@ -570,6 +575,8 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 
 	if vm.IsLocation {
 		bubble.Append(buildLocationContent(vm.Location))
+	} else if vm.IsContact {
+		bubble.Append(buildContactContent(vm.Contact))
 	} else if vm.IsMedia {
 		bubble.Append(buildMediaContent(msg, vm.Media, c))
 	} else {
