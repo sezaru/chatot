@@ -7,7 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/core/gioutil"
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
@@ -58,6 +61,25 @@ func starAffordanceVM(starred bool) (glyph, tooltip string) {
 		return "★", "Unstar"
 	}
 	return "☆", "Star"
+}
+
+// starMenuLabel is the bubble's "⋯" menu star-toggle label for the message's
+// current starred state.
+func starMenuLabel(starred bool) string {
+	if starred {
+		return "Unstar"
+	}
+	return "Star"
+}
+
+// undoClipboardValue is what the copy-with-undo toast's Undo button restores
+// the clipboard to: the stashed pre-copy text if the async read of it landed
+// in time, otherwise "" (best-effort clear — there's nothing to restore).
+func undoClipboardValue(stashed string, stashOK bool) string {
+	if stashOK {
+		return stashed
+	}
+	return ""
 }
 
 // tombstoneText is what a revoked message renders as, regardless of its
@@ -232,12 +254,15 @@ type ConversationView struct {
 	// online/last-seen line is expected to cover.
 	presence map[string]PresenceState
 
-	onReply  func(client.Message)
-	onReact  func(msg client.Message, emoji string)
-	onVote   func(msg client.Message, options []string)
-	onEdit   func(client.Message)
-	onDelete func(client.Message)
-	onStar   func(client.Message)
+	onReply   func(client.Message)
+	onReact   func(msg client.Message, emoji string)
+	onVote    func(msg client.Message, options []string)
+	onEdit    func(client.Message)
+	onDelete  func(client.Message)
+	onStar    func(client.Message)
+	onForward func(client.Message)
+
+	toastOverlay *adw.ToastOverlay
 }
 
 // OnReplyRequested registers f to be called when the user picks the reply
@@ -269,9 +294,17 @@ func (cv *ConversationView) OnDeleteRequested(f func(client.Message)) { cv.onDel
 // star toggle, on any message (own or theirs).
 func (cv *ConversationView) OnStarRequested(f func(client.Message)) { cv.onStar = f }
 
+// OnForwardRequested registers f to be called when the user picks Forward
+// from a bubble's "⋯" menu; msg is the message to forward.
+func (cv *ConversationView) OnForwardRequested(f func(client.Message)) { cv.onForward = f }
+
 // SetWindow supplies the parent window the group-info dialog needs; call
 // once after NewConversationView.
 func (cv *ConversationView) SetWindow(w *gtk.Window) { cv.window = w }
+
+// SetToastOverlay supplies the overlay the copy-with-undo toast is shown on;
+// call once after NewConversationView.
+func (cv *ConversationView) SetToastOverlay(overlay *adw.ToastOverlay) { cv.toastOverlay = overlay }
 
 // Messages returns the currently-loaded thread, for mark-read on open.
 func (cv *ConversationView) Messages() []client.Message { return cv.msgs }
@@ -443,7 +476,7 @@ func (cv *ConversationView) bindRow(item *gtk.ListItem) {
 		prev = &cv.msgs[pos-1]
 	}
 	vm := bubbleVM(msg, prev, cv.byID, time.Now())
-	box.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact, cv.onVote, cv.onEdit, cv.onDelete, cv.onStar))
+	box.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact, cv.onVote, cv.onEdit, cv.onDelete, cv.onStar, cv.onForward, cv.toastOverlay))
 }
 
 // onScroll fetches the next older page when the reader nears the top. Runs on
@@ -787,7 +820,7 @@ func removeAllChildren(box *gtk.Box) {
 // buildBubble constructs the GTK widget tree for a single message from its
 // pre-computed view-model, wiring the reply/react affordances (if the
 // callbacks are set) to msg.
-func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply func(client.Message), onReact func(msg client.Message, emoji string), onVote func(msg client.Message, options []string), onEdit func(client.Message), onDelete func(client.Message), onStar func(client.Message)) *gtk.Box {
+func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply func(client.Message), onReact func(msg client.Message, emoji string), onVote func(msg client.Message, options []string), onEdit func(client.Message), onDelete func(client.Message), onStar func(client.Message), onForward func(client.Message), toastOverlay *adw.ToastOverlay) *gtk.Box {
 	wrapper := gtk.NewBox(gtk.OrientationVertical, 4)
 
 	if vm.ShowDaySeparator {
@@ -885,8 +918,8 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 	// a deleted bubble gets no affordances at all (nothing left to act on).
 	canEdit := !vm.Deleted && msg.FromMe && !vm.IsMedia && !vm.IsLocation && !vm.IsContact && !vm.IsPoll
 	canDelete := !vm.Deleted && msg.FromMe
-	if !vm.Deleted && (onReply != nil || onReact != nil || (canEdit && onEdit != nil) || (canDelete && onDelete != nil) || onStar != nil) {
-		bubble.Append(buildBubbleActions(msg, vm, onReply, onReact, onEdit, onDelete, onStar, canEdit, canDelete))
+	if !vm.Deleted && (onReply != nil || onReact != nil || (canEdit && onEdit != nil) || (canDelete && onDelete != nil) || onStar != nil || onForward != nil) {
+		bubble.Append(buildBubbleActions(msg, vm, onReply, onReact, onEdit, onDelete, onStar, onForward, toastOverlay, canEdit, canDelete))
 	}
 
 	row.Append(bubble)
@@ -895,19 +928,57 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 	return wrapper
 }
 
-// buildBubbleActions builds the small reply/react/edit/delete/star affordance
-// row shown on non-deleted bubbles. Star applies to any message, own or
-// theirs, unlike edit/delete which are own-message only.
-func buildBubbleActions(msg client.Message, vm bubbleView, onReply func(client.Message), onReact func(msg client.Message, emoji string), onEdit func(client.Message), onDelete func(client.Message), onStar func(client.Message), canEdit, canDelete bool) *gtk.Box {
+// openEmojiChooser pops a native emoji picker parented to parent, routing
+// the chosen emoji to onReact for msg. Shared by the reaction quick-row's
+// "+" button and the "⋯" menu's "React…" item so there's one codepath.
+func openEmojiChooser(parent gtk.Widgetter, msg client.Message, onReact func(msg client.Message, emoji string)) {
+	chooser := gtk.NewEmojiChooser()
+	chooser.SetParent(parent)
+	chooser.ConnectClosed(func() { chooser.Unparent() })
+	chooser.ConnectEmojiPicked(func(text string) {
+		onReact(msg, text)
+	})
+	chooser.Popup()
+}
+
+// copyTextWithUndo copies text to the clipboard and, if overlay is set,
+// shows a toast offering to undo it. It stashes the clipboard's current
+// contents via an async read started before the overwrite; if that read
+// hasn't landed by the time Undo is clicked, Undo just clears the clipboard
+// instead of restoring (see undoClipboardValue).
+func copyTextWithUndo(overlay *adw.ToastOverlay, text string) {
+	clipboard := gdk.DisplayGetDefault().Clipboard()
+
+	var stashed string
+	var stashOK bool
+	clipboard.ReadTextAsync(context.Background(), func(res gio.AsyncResulter) {
+		if prev, err := clipboard.ReadTextFinish(res); err == nil {
+			stashed, stashOK = prev, true
+		}
+	})
+
+	clipboard.SetText(text)
+
+	if overlay == nil {
+		return
+	}
+	toast := adw.NewToast("Message copied to clipboard")
+	toast.SetButtonLabel("Undo")
+	toast.SetTimeout(4)
+	toast.ConnectButtonClicked(func() {
+		clipboard.SetText(undoClipboardValue(stashed, stashOK))
+	})
+	overlay.AddToast(toast)
+}
+
+// buildBubbleActions builds the small affordance row shown on non-deleted
+// bubbles: the reaction quick-row and edit stay inline; reply, forward, copy,
+// react (as a menu entry too) and star/delete live behind the "⋯" menu. Star
+// applies to any message, own or theirs, unlike edit/delete which are
+// own-message only.
+func buildBubbleActions(msg client.Message, vm bubbleView, onReply func(client.Message), onReact func(msg client.Message, emoji string), onEdit func(client.Message), onDelete func(client.Message), onStar func(client.Message), onForward func(client.Message), toastOverlay *adw.ToastOverlay, canEdit, canDelete bool) *gtk.Box {
 	actions := gtk.NewBox(gtk.OrientationHorizontal, 2)
 	actions.AddCSSClass("chatot-bubble-actions")
-
-	if onReply != nil {
-		replyBtn := gtk.NewButtonWithLabel("↩")
-		replyBtn.AddCSSClass("flat")
-		replyBtn.ConnectClicked(func() { onReply(msg) })
-		actions.Append(replyBtn)
-	}
 
 	if canEdit && onEdit != nil {
 		editBtn := gtk.NewButtonWithLabel("✎")
@@ -936,13 +1007,7 @@ func buildBubbleActions(msg client.Message, vm bubbleView, onReply func(client.M
 		moreBtn.AddCSSClass("flat")
 		moreBtn.ConnectClicked(func() {
 			popover.Popdown()
-			chooser := gtk.NewEmojiChooser()
-			chooser.SetParent(moreBtn)
-			chooser.ConnectClosed(func() { chooser.Unparent() })
-			chooser.ConnectEmojiPicked(func(text string) {
-				onReact(msg, text)
-			})
-			chooser.Popup()
+			openEmojiChooser(moreBtn, msg, onReact)
 		})
 		picker.Append(moreBtn)
 
@@ -952,19 +1017,52 @@ func buildBubbleActions(msg client.Message, vm bubbleView, onReply func(client.M
 		actions.Append(menuBtn)
 	}
 
-	if canDelete && onDelete != nil {
-		deleteBtn := gtk.NewButtonWithLabel("🗑")
-		deleteBtn.AddCSSClass("flat")
-		deleteBtn.ConnectClicked(func() { onDelete(msg) })
-		actions.Append(deleteBtn)
-	}
+	if onReply != nil || onForward != nil || onReact != nil || onStar != nil || (canDelete && onDelete != nil) {
+		moreMenuBtn := gtk.NewButtonWithLabel("⋯")
+		moreMenuBtn.AddCSSClass("flat")
 
-	if onStar != nil {
-		starBtn := gtk.NewButtonWithLabel(vm.StarGlyph)
-		starBtn.SetTooltipText(vm.StarTooltip)
-		starBtn.AddCSSClass("flat")
-		starBtn.ConnectClicked(func() { onStar(msg) })
-		actions.Append(starBtn)
+		popover := gtk.NewPopover()
+		menu := gtk.NewBox(gtk.OrientationVertical, 0)
+
+		addItem := func(label string, destructive bool, onClick func()) {
+			btn := gtk.NewButtonWithLabel(label)
+			btn.AddCSSClass("flat")
+			if destructive {
+				btn.AddCSSClass("destructive-action")
+			}
+			btn.ConnectClicked(func() {
+				popover.Popdown()
+				onClick()
+			})
+			menu.Append(btn)
+		}
+
+		if onReply != nil {
+			addItem("Reply", false, func() { onReply(msg) })
+		}
+		if onForward != nil {
+			addItem("Forward", false, func() { onForward(msg) })
+		}
+		if msg.Text != "" {
+			addItem("Copy text", false, func() { copyTextWithUndo(toastOverlay, msg.Text) })
+		}
+		if onReact != nil {
+			addItem("React…", false, func() { openEmojiChooser(moreMenuBtn, msg, onReact) })
+		}
+		if onStar != nil {
+			addItem(starMenuLabel(msg.Starred), false, func() { onStar(msg) })
+		}
+		if canDelete && onDelete != nil {
+			addItem("Delete for me", true, func() { onDelete(msg) })
+		}
+
+		popover.SetChild(menu)
+		popover.ConnectClosed(func() { popover.Unparent() })
+		moreMenuBtn.ConnectClicked(func() {
+			popover.SetParent(moreMenuBtn)
+			popover.Popup()
+		})
+		actions.Append(moreMenuBtn)
 	}
 
 	return actions
