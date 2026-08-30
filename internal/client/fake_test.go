@@ -122,6 +122,67 @@ func TestFakeSendContactAppendsAndReturnsID(t *testing.T) {
 	}
 }
 
+func TestFakeForwardMessageText(t *testing.T) {
+	f := NewFake()
+	fromJID := "1234567890@s.whatsapp.net"
+	toJID := "1112223333@s.whatsapp.net"
+
+	msgs, err := f.Messages(fromJID, 0)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	src := msgs[0]
+
+	id, err := f.ForwardMessage(context.Background(), src, toJID)
+	if err != nil {
+		t.Fatalf("ForwardMessage: %v", err)
+	}
+	if id == "" {
+		t.Fatal("expected a non-empty message ID")
+	}
+
+	out, err := f.Messages(toJID, 0)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	last := out[len(out)-1]
+	if last.ID != id || !last.FromMe || !last.Forwarded {
+		t.Fatalf("last message = %+v, want a forwarded outbound message", last)
+	}
+	if last.Text != src.Text {
+		t.Errorf("Text = %q, want %q", last.Text, src.Text)
+	}
+	if last.ChatJID != toJID {
+		t.Errorf("ChatJID = %q, want %q", last.ChatJID, toJID)
+	}
+}
+
+func TestFakeForwardMessageMedia(t *testing.T) {
+	f := NewFake()
+	toJID := "1234567890@s.whatsapp.net"
+	src := Message{
+		ID: "src", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net",
+		Attachment: &Attachment{Kind: "image", Caption: "trip photo"},
+	}
+
+	id, err := f.ForwardMessage(context.Background(), src, toJID)
+	if err != nil {
+		t.Fatalf("ForwardMessage: %v", err)
+	}
+
+	out, err := f.Messages(toJID, 0)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	last := out[len(out)-1]
+	if last.ID != id || !last.Forwarded || last.Attachment == nil {
+		t.Fatalf("last message = %+v, want a forwarded media message", last)
+	}
+	if last.Attachment.Kind != "image" || last.Attachment.Caption != "trip photo" {
+		t.Errorf("Attachment = %+v, want it to mirror the source", last.Attachment)
+	}
+}
+
 func TestFakeSendStickerAppendsAndReturnsID(t *testing.T) {
 	f := NewFake()
 	jid := "1234567890@s.whatsapp.net"

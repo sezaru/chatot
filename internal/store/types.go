@@ -51,6 +51,8 @@ type Message struct {
 	Status int
 	// Starred is true once the message has been starred via app-state.
 	Starred bool
+	// Forwarded is true once the message carried WhatsApp's forwarded flag.
+	Forwarded bool
 }
 
 // PollVoteRow is a single voter's selection of one poll option, identified by
@@ -115,6 +117,7 @@ type MessageRow struct {
 	Payload      string // opaque JSON body for a rich kind, "" otherwise
 	Edited       bool   // true for a MESSAGE_EDIT upsert; sticky in the store
 	Deleted      bool   // true for a REVOKE upsert; sticky in the store
+	Forwarded    bool   // true for a forwarded upsert; sticky in the store
 	// Status is unused by UpsertMessage (delivery/read state is only ever
 	// advanced via SetMessagesStatus, so a re-upsert can never regress it);
 	// kept here so callers building a full row have the field available.

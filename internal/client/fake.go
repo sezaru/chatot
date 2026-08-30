@@ -86,7 +86,7 @@ func NewFake() *Fake {
 	f.messages["1234567890@s.whatsapp.net"] = []Message{
 		{ID: "m1", ChatJID: "1234567890@s.whatsapp.net", FromJID: "1234567890@s.whatsapp.net", FromMe: false, Text: "Hey, are we still on for tomorrow?", TS: now - 120},
 		{ID: "m2", ChatJID: "1234567890@s.whatsapp.net", FromJID: "me", FromMe: true, Text: "Yep!", TS: now - 90, Status: MessageStatusRead},
-		{ID: "m3", ChatJID: "1234567890@s.whatsapp.net", FromJID: "1234567890@s.whatsapp.net", FromMe: false, Text: "See you tomorrow!", TS: now - 60},
+		{ID: "m3", ChatJID: "1234567890@s.whatsapp.net", FromJID: "1234567890@s.whatsapp.net", FromMe: false, Text: "See you tomorrow!", TS: now - 60, Forwarded: true},
 	}
 	f.messages["1112223333@s.whatsapp.net"] = []Message{
 		{ID: "m4", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, Text: "Bug found in the relay", TS: now - 3600},
@@ -338,6 +338,44 @@ func (f *Fake) SendContact(ctx context.Context, jid string, contact Contact, rep
 		if f.chats[i].JID == jid {
 			f.chats[i].Preview = "👤 " + contact.DisplayName
 			f.chats[i].LastMessageTS = msg.TS
+			break
+		}
+	}
+	return id, nil
+}
+
+// ForwardMessage appends a copy of msg's content to toJID, marked Forwarded.
+// Content is prioritized attachment > location > contact > poll > text,
+// mirroring the single body a real message ever carries.
+func (f *Fake) ForwardMessage(ctx context.Context, msg Message, toJID string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id := f.nextMsgID()
+	out := Message{ID: id, ChatJID: toJID, FromJID: "me", FromMe: true, TS: time.Now().Unix(), Text: msg.Text, Forwarded: true}
+	preview := msg.Text
+	switch {
+	case msg.Attachment != nil:
+		a := *msg.Attachment
+		out.Attachment = &a
+		preview = "📎 " + a.Kind
+	case msg.Location != nil:
+		l := *msg.Location
+		out.Location = &l
+		preview = "📍 Location"
+	case msg.Contact != nil:
+		c := *msg.Contact
+		out.Contact = &c
+		preview = "👤 " + c.DisplayName
+	case msg.Poll != nil:
+		p := *msg.Poll
+		out.Poll = &p
+		preview = "📊 " + p.Name
+	}
+	f.messages[toJID] = append(f.messages[toJID], out)
+	for i := range f.chats {
+		if f.chats[i].JID == toJID {
+			f.chats[i].Preview = preview
+			f.chats[i].LastMessageTS = out.TS
 			break
 		}
 	}

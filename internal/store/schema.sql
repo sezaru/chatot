@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS messages (
     -- UpsertMessage's ON CONFLICT SET (see SetMessageStarred) so a
     -- re-delivery of the original message can't unstar it.
     starred INTEGER NOT NULL DEFAULT 0,
+    -- 1 for a message whose ContextInfo.IsForwarded was set on the wire (or,
+    -- for an outbound forward, set optimistically); sticky like edited.
+    forwarded INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat_jid, msg_id)
 );
 

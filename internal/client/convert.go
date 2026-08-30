@@ -50,14 +50,15 @@ func hashPollOption(name string) []byte {
 
 func storeMessageRow(m *Message) store.MessageRow {
 	row := store.MessageRow{
-		ChatJID: m.ChatJID,
-		MsgID:   m.ID,
-		FromJID: m.FromJID,
-		FromMe:  m.FromMe,
-		Text:    m.Text,
-		TS:      m.TS,
-		Edited:  m.Edited,
-		Deleted: m.Deleted,
+		ChatJID:   m.ChatJID,
+		MsgID:     m.ID,
+		FromJID:   m.FromJID,
+		FromMe:    m.FromMe,
+		Text:      m.Text,
+		TS:        m.TS,
+		Edited:    m.Edited,
+		Deleted:   m.Deleted,
+		Forwarded: m.Forwarded,
 	}
 	if m.ReplyTo != nil {
 		row.ReplyToMsgID = m.ReplyTo.MsgID
@@ -128,7 +129,7 @@ func messageFromStore(m store.Message, selfJID string) Message {
 	out := Message{
 		ID: m.ID, ChatJID: m.ChatJID, FromJID: m.FromJID, FromMe: m.FromMe,
 		Text: m.Text, TS: m.TS, Reactions: m.Reactions, Edited: m.Edited, Deleted: m.Deleted,
-		Status: m.Status, Starred: m.Starred,
+		Status: m.Status, Starred: m.Starred, Forwarded: m.Forwarded,
 	}
 	if m.ReplyToMsgID != "" {
 		out.ReplyTo = &MsgRef{ChatJID: m.ChatJID, MsgID: m.ReplyToMsgID}

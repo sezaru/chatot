@@ -41,6 +41,9 @@ type bubbleView struct {
 	Edited           bool
 	EditedMarker     string
 	Deleted          bool
+	// Forwarded marks a message that carried WhatsApp's forwarded flag; drives
+	// the "↩ Forwarded" label above the bubble content.
+	Forwarded bool
 	// TickText is the own-message delivery/read indicator ("✓"/"✓✓"), set
 	// only when FromMe; TickRead marks it should render in the accent color
 	// (status == read) rather than the plain dim tick.
@@ -107,6 +110,8 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 		v.Text = tombstoneText
 		return v
 	}
+
+	v.Forwarded = m.Forwarded
 
 	if m.ReplyTo != nil {
 		v.HasQuote = true
@@ -853,6 +858,13 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		} else {
 			bubble.AddCSSClass("chatot-bubble-in")
 		}
+	}
+
+	if vm.Forwarded {
+		fwd := gtk.NewLabel("↩ Forwarded")
+		fwd.AddCSSClass("chatot-forwarded")
+		fwd.SetXAlign(0)
+		bubble.Append(fwd)
 	}
 
 	if vm.HasQuote {

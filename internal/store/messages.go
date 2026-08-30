@@ -9,8 +9,8 @@ import (
 // leaves any existing reply link untouched.
 func (s *Store) UpsertMessage(row MessageRow) error {
 	_, err := s.db.Exec(`
-		INSERT INTO messages(chat_jid, msg_id, from_jid, from_me, text, ts, reply_to_msg_id, kind, payload, edited, deleted)
-		VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), ?, ?)
+		INSERT INTO messages(chat_jid, msg_id, from_jid, from_me, text, ts, reply_to_msg_id, kind, payload, edited, deleted, forwarded)
+		VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), ?, ?, ?)
 		ON CONFLICT(chat_jid, msg_id) DO UPDATE SET
 			from_jid = excluded.from_jid,
 			from_me = excluded.from_me,
@@ -20,8 +20,9 @@ func (s *Store) UpsertMessage(row MessageRow) error {
 			kind = excluded.kind,
 			payload = excluded.payload,
 			edited = messages.edited OR excluded.edited,
-			deleted = messages.deleted OR excluded.deleted
-	`, row.ChatJID, row.MsgID, row.FromJID, boolToInt(row.FromMe), row.Text, row.TS, row.ReplyToMsgID, row.Kind, row.Payload, boolToInt(row.Edited), boolToInt(row.Deleted))
+			deleted = messages.deleted OR excluded.deleted,
+			forwarded = messages.forwarded OR excluded.forwarded
+	`, row.ChatJID, row.MsgID, row.FromJID, boolToInt(row.FromMe), row.Text, row.TS, row.ReplyToMsgID, row.Kind, row.Payload, boolToInt(row.Edited), boolToInt(row.Deleted), boolToInt(row.Forwarded))
 	return err
 }
 
@@ -123,7 +124,7 @@ func (s *Store) Statuses(limit int) ([]Message, error) {
 const messageSelect = `
 	SELECT
 		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
-		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status, m.starred,
+		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status, m.starred, m.forwarded,
 		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, COALESCE(md.is_gif, 0)
 	FROM messages m
 	LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id`
@@ -181,13 +182,13 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 	var out []Message
 	for rows.Next() {
 		var m Message
-		var fromMe, edited, deleted, starred int
+		var fromMe, edited, deleted, starred, forwarded int
 		var mediaKind, mediaFilename, mediaCaption, mediaMime, mediaLocal string
 		var mediaThumb []byte
 		var mediaIsGif int
 		if err := rows.Scan(
 			&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID,
-			&m.Kind, &m.Payload, &edited, &deleted, &m.Status, &starred,
+			&m.Kind, &m.Payload, &edited, &deleted, &m.Status, &starred, &forwarded,
 			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb, &mediaIsGif,
 		); err != nil {
 			return nil, err
@@ -197,6 +198,7 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 		m.Edited = edited != 0
 		m.Deleted = deleted != 0
 		m.Starred = starred != 0
+		m.Forwarded = forwarded != 0
 		if mediaKind != "" {
 			m.Attachment = &Attachment{
 				Kind: mediaKind, Filename: mediaFilename, Caption: mediaCaption,

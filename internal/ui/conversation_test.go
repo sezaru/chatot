@@ -170,6 +170,25 @@ func TestBubbleVM_EditedMarker(t *testing.T) {
 	}
 }
 
+func TestBubbleVM_ForwardedMarker(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+
+	out := bubbleVM(client.Message{ID: "1", Text: "fyi", TS: now.Unix(), Forwarded: true}, nil, map[string]client.Message{}, now)
+	if !out.Forwarded {
+		t.Error("expected Forwarded=true on the view-model")
+	}
+
+	plain := bubbleVM(client.Message{ID: "2", Text: "hi", TS: now.Unix()}, nil, map[string]client.Message{}, now)
+	if plain.Forwarded {
+		t.Error("expected Forwarded=false on a non-forwarded message")
+	}
+
+	deleted := bubbleVM(client.Message{ID: "3", Text: "gone", TS: now.Unix(), Forwarded: true, Deleted: true}, nil, map[string]client.Message{}, now)
+	if deleted.Forwarded {
+		t.Error("a deleted message must not show the forwarded marker")
+	}
+}
+
 func TestBubbleVM_DeletedRendersTombstone(t *testing.T) {
 	now := mustParse(t, "2026-08-30 12:00:00")
 

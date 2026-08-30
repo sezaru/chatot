@@ -641,6 +641,158 @@ func (w *Whatsmeow) SendContact(ctx context.Context, jid string, contact Contact
 	return id, nil
 }
 
+// forwardContextInfo marks an outbound message as forwarded on the wire,
+// the way WhatsApp itself does: IsForwarded plus a non-zero ForwardingScore
+// (real clients bump this per hop; chatot always forwards from the original,
+// so 1 is always correct here).
+func forwardContextInfo() *waE2E.ContextInfo {
+	return &waE2E.ContextInfo{IsForwarded: proto.Bool(true), ForwardingScore: proto.Uint32(1)}
+}
+
+// ForwardMessage re-sends msg's content to toJID with the real wire-level
+// forwarded flag set for every content type (text, location, contact,
+// media). Media is re-uploaded from its locally cached file; if not yet
+// cached, it's downloaded first — a failed download fails just that target,
+// it doesn't fall back to a silent no-op.
+func (w *Whatsmeow) ForwardMessage(ctx context.Context, msg Message, toJID string) (string, error) {
+	to, err := types.ParseJID(toJID)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: parse jid %q: %w", toJID, err)
+	}
+
+	switch {
+	case msg.Location != nil:
+		locMsg := &waE2E.LocationMessage{
+			DegreesLatitude:  proto.Float64(msg.Location.Latitude),
+			DegreesLongitude: proto.Float64(msg.Location.Longitude),
+			ContextInfo:      forwardContextInfo(),
+		}
+		if msg.Location.Name != "" {
+			locMsg.Name = proto.String(msg.Location.Name)
+		}
+		if msg.Location.Address != "" {
+			locMsg.Address = proto.String(msg.Location.Address)
+		}
+		id := w.wa.GenerateMessageID()
+		if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{LocationMessage: locMsg}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+			return "", fmt.Errorf("chatot/client: forward location: %w", err)
+		}
+		sent := *msg.Location
+		sent.IsLive = false
+		out := Message{ID: id, ChatJID: toJID, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(), Location: &sent, Forwarded: true}
+		if err := w.ingestMessage(&out); err != nil {
+			w.log.Warnf("chatot/client: optimistic upsert of forwarded location failed: %v", err)
+		}
+		return id, nil
+
+	case msg.Contact != nil:
+		contactMsg := &waE2E.ContactMessage{
+			DisplayName: proto.String(msg.Contact.DisplayName),
+			Vcard:       proto.String(buildVCard(*msg.Contact)),
+			ContextInfo: forwardContextInfo(),
+		}
+		id := w.wa.GenerateMessageID()
+		if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{ContactMessage: contactMsg}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+			return "", fmt.Errorf("chatot/client: forward contact: %w", err)
+		}
+		sent := *msg.Contact
+		out := Message{ID: id, ChatJID: toJID, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(), Contact: &sent, Forwarded: true}
+		if err := w.ingestMessage(&out); err != nil {
+			w.log.Warnf("chatot/client: optimistic upsert of forwarded contact failed: %v", err)
+		}
+		return id, nil
+
+	case msg.Attachment != nil:
+		return w.forwardMedia(ctx, msg, to, toJID)
+
+	default:
+		waMsg := &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+			Text:        proto.String(msg.Text),
+			ContextInfo: forwardContextInfo(),
+		}}
+		id := w.wa.GenerateMessageID()
+		if _, err := w.wa.SendMessage(ctx, to, waMsg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+			return "", fmt.Errorf("chatot/client: forward text: %w", err)
+		}
+		out := Message{ID: id, ChatJID: toJID, FromJID: w.ownJID(), FromMe: true, Text: msg.Text, TS: time.Now().Unix(), Forwarded: true}
+		if err := w.ingestMessage(&out); err != nil {
+			w.log.Warnf("chatot/client: optimistic upsert of forwarded text failed: %v", err)
+		}
+		return id, nil
+	}
+}
+
+// forwardMedia re-uploads and re-sends msg's attachment to to/toJID. If the
+// attachment has no cached local copy (e.g. never viewed), it's downloaded
+// first via DownloadMedia; a download failure fails the forward for this
+// target rather than silently skipping it. Stickers get their own branch
+// since buildMediaMessage only covers image/video/audio/document.
+func (w *Whatsmeow) forwardMedia(ctx context.Context, msg Message, to types.JID, toJID string) (string, error) {
+	att := *msg.Attachment
+	localPath := att.LocalPath
+	if localPath == "" {
+		path, err := w.DownloadMedia(ctx, msg.ID)
+		if err != nil {
+			return "", fmt.Errorf("chatot/client: forward media: download original: %w", err)
+		}
+		localPath = path
+	}
+	data, err := os.ReadFile(localPath)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: forward media: read file: %w", err)
+	}
+
+	mimeType := att.MimeType
+	if mimeType == "" {
+		mimeType = http.DetectContentType(data)
+	}
+
+	id := w.wa.GenerateMessageID()
+	var waMsg *waE2E.Message
+	var mediaProto proto.Message
+
+	if att.Kind == "sticker" {
+		resp, err := w.wa.Upload(ctx, data, whatsmeow.MediaImage)
+		if err != nil {
+			return "", fmt.Errorf("chatot/client: forward sticker: upload: %w", err)
+		}
+		sticker := &waE2E.StickerMessage{
+			URL: &resp.URL, DirectPath: &resp.DirectPath, MediaKey: resp.MediaKey,
+			FileEncSHA256: resp.FileEncSHA256, FileSHA256: resp.FileSHA256, FileLength: &resp.FileLength,
+			Mimetype: proto.String(mimeType), ContextInfo: forwardContextInfo(),
+		}
+		waMsg, mediaProto = &waE2E.Message{StickerMessage: sticker}, sticker
+	} else {
+		kind, mediaType := detectAttachmentKind(mimeType, att.Filename)
+		resp, err := w.wa.Upload(ctx, data, mediaType)
+		if err != nil {
+			return "", fmt.Errorf("chatot/client: forward media: upload: %w", err)
+		}
+		waMsg, mediaProto = buildMediaMessage(kind, mimeType, att, &resp, forwardContextInfo())
+		att.Kind = kind
+	}
+
+	if _, err := w.wa.SendMessage(ctx, to, waMsg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		return "", fmt.Errorf("chatot/client: forward media: %w", err)
+	}
+
+	cachedPath, cacheErr := w.writeMediaFile(toJID, id, mimeType, data)
+	if cacheErr != nil {
+		w.log.Warnf("chatot/client: cache forwarded media failed: %v", cacheErr)
+	}
+	out := Message{
+		ID: id, ChatJID: toJID, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(), Forwarded: true,
+		Attachment: &Attachment{
+			Kind: att.Kind, Filename: attachmentFilename(att), MimeType: mimeType,
+			LocalPath: cachedPath, Caption: att.Caption, ProtoBlob: marshalMedia(mediaProto),
+		},
+	}
+	if err := w.ingestMessage(&out); err != nil {
+		w.log.Warnf("chatot/client: optimistic upsert of forwarded media failed: %v", err)
+	}
+	return id, nil
+}
+
 // CreatePoll sends a poll-creation message and optimistically upserts it into
 // the local store (like SendText), so it renders immediately with zero votes.
 func (w *Whatsmeow) CreatePoll(ctx context.Context, jid, name string, options []string, selectable int) (string, error) {

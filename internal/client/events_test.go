@@ -104,6 +104,48 @@ func TestTranslateMessageExtendedTextWithReply(t *testing.T) {
 	}
 }
 
+func TestTranslateMessageForwardedFlag(t *testing.T) {
+	chat := mustJID(t, "1112223333@s.whatsapp.net")
+
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+			ID:            "XYZ790",
+		},
+		Message: &waProto.Message{
+			ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+				Text: proto.String("look at this"),
+				ContextInfo: &waE2E.ContextInfo{
+					IsForwarded: proto.Bool(true),
+				},
+			},
+		},
+	}
+
+	e := translate(evt)
+	if e == nil || e.Message == nil {
+		t.Fatal("expected a Message event")
+	}
+	if !e.Message.Forwarded {
+		t.Error("expected Forwarded=true when ContextInfo.IsForwarded is set")
+	}
+
+	notForwarded := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+			ID:            "XYZ791",
+		},
+		Message: &waProto.Message{Conversation: proto.String("plain")},
+	}
+	e2 := translate(notForwarded)
+	if e2 == nil || e2.Message == nil {
+		t.Fatal("expected a Message event")
+	}
+	if e2.Message.Forwarded {
+		t.Error("expected Forwarded=false for a plain message with no ContextInfo")
+	}
+}
+
 func TestTranslateReaction(t *testing.T) {
 	chat := mustJID(t, "1234567890@s.whatsapp.net")
 	reactor := mustJID(t, "1234567890@s.whatsapp.net")
