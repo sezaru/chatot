@@ -231,6 +231,57 @@ func TestChatsRespectsLimit(t *testing.T) {
 	}
 }
 
+func TestSetChatPinnedMutedArchivedPersist(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
+
+	must(t, s.SetChatPinned("a@s.whatsapp.net", true))
+	must(t, s.SetChatMuted("a@s.whatsapp.net", true))
+	must(t, s.SetChatArchived("a@s.whatsapp.net", true))
+
+	chats := mustChats(t, s)
+	if !chats[0].Pinned || !chats[0].Muted || !chats[0].Archived {
+		t.Fatalf("got %+v, want pinned/muted/archived all true", chats[0])
+	}
+
+	must(t, s.SetChatPinned("a@s.whatsapp.net", false))
+	must(t, s.SetChatMuted("a@s.whatsapp.net", false))
+	must(t, s.SetChatArchived("a@s.whatsapp.net", false))
+
+	chats = mustChats(t, s)
+	if chats[0].Pinned || chats[0].Muted || chats[0].Archived {
+		t.Fatalf("got %+v, want pinned/muted/archived all false", chats[0])
+	}
+}
+
+func TestSetChatUnreadSetsAndClears(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
+
+	must(t, s.SetChatUnread("a@s.whatsapp.net", true))
+	chats := mustChats(t, s)
+	if chats[0].UnreadCount < 1 {
+		t.Fatalf("got unread_count %d, want >= 1", chats[0].UnreadCount)
+	}
+
+	must(t, s.SetChatUnread("a@s.whatsapp.net", false))
+	chats = mustChats(t, s)
+	if chats[0].UnreadCount != 0 {
+		t.Fatalf("got unread_count %d, want 0", chats[0].UnreadCount)
+	}
+}
+
+func TestSetChatUnreadDoesNotClobberExistingCount(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A", UnreadCount: 5}))
+
+	must(t, s.SetChatUnread("a@s.whatsapp.net", true))
+	chats := mustChats(t, s)
+	if chats[0].UnreadCount != 5 {
+		t.Fatalf("got unread_count %d, want unchanged 5", chats[0].UnreadCount)
+	}
+}
+
 func mustChats(t *testing.T, s *Store) []Chat {
 	t.Helper()
 	chats, err := s.Chats(50)

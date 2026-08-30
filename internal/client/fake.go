@@ -343,6 +343,69 @@ func (f *Fake) MarkRead(ctx context.Context, jid string, msgIDs []string) error 
 	return nil
 }
 
+func (f *Fake) PinChat(ctx context.Context, jid string, pin bool) error {
+	f.mu.Lock()
+	found := f.updateChat(jid, func(c *Chat) { c.Pinned = pin })
+	f.mu.Unlock()
+	if !found {
+		return fmt.Errorf("chatot/client: chat %q not found", jid)
+	}
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+func (f *Fake) MuteChat(ctx context.Context, jid string, mute bool) error {
+	f.mu.Lock()
+	found := f.updateChat(jid, func(c *Chat) { c.Muted = mute })
+	f.mu.Unlock()
+	if !found {
+		return fmt.Errorf("chatot/client: chat %q not found", jid)
+	}
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+func (f *Fake) ArchiveChat(ctx context.Context, jid string, archive bool) error {
+	f.mu.Lock()
+	found := f.updateChat(jid, func(c *Chat) { c.Archived = archive })
+	f.mu.Unlock()
+	if !found {
+		return fmt.Errorf("chatot/client: chat %q not found", jid)
+	}
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+func (f *Fake) MarkChatUnread(ctx context.Context, jid string, unread bool) error {
+	f.mu.Lock()
+	found := f.updateChat(jid, func(c *Chat) {
+		if unread {
+			if c.UnreadCount < 1 {
+				c.UnreadCount = 1
+			}
+		} else {
+			c.UnreadCount = 0
+		}
+	})
+	f.mu.Unlock()
+	if !found {
+		return fmt.Errorf("chatot/client: chat %q not found", jid)
+	}
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+// updateChat applies fn to the chat matching jid; callers hold f.mu.
+func (f *Fake) updateChat(jid string, fn func(*Chat)) bool {
+	for i := range f.chats {
+		if f.chats[i].JID == jid {
+			fn(&f.chats[i])
+			return true
+		}
+	}
+	return false
+}
+
 // CheckOnWhatsApp treats any string of 7-15 digits (optionally "+"-prefixed)
 // as registered, deriving a synthetic jid from its digits; anything else is
 // reported as not on WhatsApp.

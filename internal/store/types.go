@@ -16,6 +16,7 @@ type Chat struct {
 	LastMessageTS int64
 	Pinned        bool
 	Muted         bool
+	Archived      bool
 	IsGroup       bool
 }
 

@@ -155,3 +155,52 @@ func TestNormalizePhone(t *testing.T) {
 		})
 	}
 }
+
+func TestChatActionLabels(t *testing.T) {
+	cases := []struct {
+		name string
+		chat client.Chat
+		want chatActionLabelsView
+	}{
+		{
+			"unpinned/unmuted/unarchived/read",
+			client.Chat{},
+			chatActionLabelsView{Pin: "Pin", Mute: "Mute", Archive: "Archive", Unread: "Mark as unread"},
+		},
+		{
+			"pinned/muted/archived/unread",
+			client.Chat{Pinned: true, Muted: true, Archived: true, UnreadCount: 3},
+			chatActionLabelsView{Pin: "Unpin", Mute: "Unmute", Archive: "Unarchive", Unread: "Mark as read"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := chatActionLabels(tc.chat)
+			if got != tc.want {
+				t.Errorf("chatActionLabels(%+v) = %+v, want %+v", tc.chat, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestShowChatInList(t *testing.T) {
+	cases := []struct {
+		name         string
+		archived     bool
+		showArchived bool
+		want         bool
+	}{
+		{"normal chat, normal view", false, false, true},
+		{"normal chat, archived view", false, true, false},
+		{"archived chat, normal view", true, false, false},
+		{"archived chat, archived view", true, true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := showChatInList(client.Chat{Archived: tc.archived}, tc.showArchived)
+			if got != tc.want {
+				t.Errorf("showChatInList(archived=%v, showArchived=%v) = %v, want %v", tc.archived, tc.showArchived, got, tc.want)
+			}
+		})
+	}
+}

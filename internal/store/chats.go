@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"sort"
 	"strings"
 )
@@ -48,6 +49,46 @@ func (s *Store) MarkChatRead(jid string) error {
 	return err
 }
 
+// SetChatPinned sets a chat's pinned flag.
+func (s *Store) SetChatPinned(jid string, pinned bool) error {
+	_, err := s.db.Exec(`UPDATE chats SET pinned = ? WHERE jid = ?`, boolToInt(pinned), jid)
+	return err
+}
+
+// SetChatMuted sets a chat's muted flag.
+func (s *Store) SetChatMuted(jid string, muted bool) error {
+	_, err := s.db.Exec(`UPDATE chats SET muted = ? WHERE jid = ?`, boolToInt(muted), jid)
+	return err
+}
+
+// SetChatArchived sets a chat's archived flag.
+func (s *Store) SetChatArchived(jid string, archived bool) error {
+	_, err := s.db.Exec(`UPDATE chats SET archived = ? WHERE jid = ?`, boolToInt(archived), jid)
+	return err
+}
+
+// ChatLastMessageTS returns a chat's last_message_ts (0 if the chat has no
+// row yet), for building app-state patches that require it.
+func (s *Store) ChatLastMessageTS(jid string) (int64, error) {
+	var ts int64
+	err := s.db.QueryRow(`SELECT last_message_ts FROM chats WHERE jid = ?`, jid).Scan(&ts)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return ts, err
+}
+
+// SetChatUnread marks a chat unread (unread_count raised to at least 1,
+// existing higher counts left untouched) or read (unread_count cleared to 0,
+// same as MarkChatRead).
+func (s *Store) SetChatUnread(jid string, unread bool) error {
+	if !unread {
+		return s.MarkChatRead(jid)
+	}
+	_, err := s.db.Exec(`UPDATE chats SET unread_count = MAX(unread_count, 1) WHERE jid = ?`, jid)
+	return err
+}
+
 // Chats returns the chat list: name-resolved, ordered, preview-populated,
 // and filtered to DMs plus non-parent/non-linked groups. See the design doc
 // ("Store: name resolution / ordering / preview") for the reference rules.
@@ -57,7 +98,7 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 	}
 	rows, err := s.db.Query(`
 		SELECT
-			c.jid, c.is_group, COALESCE(c.name, ''), c.pinned, c.muted, c.unread_count, c.last_message_ts,
+			c.jid, c.is_group, COALESCE(c.name, ''), c.pinned, c.muted, c.archived, c.unread_count, c.last_message_ts,
 			COALESCE(g.name, ''), COALESCE(g.is_parent, 0), COALESCE(g.linked_parent_jid, ''),
 			COALESCE(ct.business_name, ''), COALESCE(ct.full_name, ''), COALESCE(ct.push_name, ''), COALESCE(ct.system_name, ''),
 			COALESCE(lm.from_me, 0), COALESCE(lm.text, ''), COALESCE(lm.kind, ''),
@@ -85,12 +126,12 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 	var out []Chat
 	for rows.Next() {
 		var c Chat
-		var isGroup, pinned, muted, groupIsParent, fromMe int
+		var isGroup, pinned, muted, archived, groupIsParent, fromMe int
 		var chatName, groupName, groupLinkedParent string
 		var business, full, push, system string
 		var lastText, lastKind, mediaKind, mediaCaption, mediaFilename string
 		if err := rows.Scan(
-			&c.JID, &isGroup, &chatName, &pinned, &muted, &c.UnreadCount, &c.LastMessageTS,
+			&c.JID, &isGroup, &chatName, &pinned, &muted, &archived, &c.UnreadCount, &c.LastMessageTS,
 			&groupName, &groupIsParent, &groupLinkedParent,
 			&business, &full, &push, &system,
 			&fromMe, &lastText, &lastKind,
@@ -101,6 +142,7 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		c.IsGroup = isGroup != 0
 		c.Pinned = pinned != 0
 		c.Muted = muted != 0
+		c.Archived = archived != 0
 		c.Name = resolveChatName(chatName, groupName, business, full, push, system, c.JID)
 		c.Preview = buildPreview(fromMe != 0, lastKind, lastText, mediaKind, mediaCaption, mediaFilename)
 		out = append(out, c)
