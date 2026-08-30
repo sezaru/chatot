@@ -141,22 +141,23 @@ const searchResultLimit = 30
 type ChatList struct {
 	*gtk.Box
 
-	c             client.Client
-	events        <-chan client.Event
-	list          *gtk.ListBox
-	rowJIDs       []string // row index -> JID, rebuilt alongside the ListBox rows
-	onSelect      func(jid string)
-	composingJIDs map[string]string // chat JID -> "typing" or "recording" for a peer currently composing
-	query         string            // current search text; "" shows the normal chat list
-	avatarCache   *avatarCache
-	window        *gtk.Window         // parent for the new-chat dialog; set via SetWindow
-	showArchived  bool                // toggled by the "Archived" button; see showChatInList
-	showStarred   bool                // toggled by the "Starred" button; overrides search/archived
-	showStatus    bool                // toggled by the "Status" button; overrides search/starred
-	showChannels  bool                // toggled by the "Channels" button; overrides the others
-	postStatusBar *gtk.Box            // "Post status" bar, visible only in status mode
-	followBar     *gtk.Box            // "Follow channel" bar, visible only in channels mode
-	newsletters   []client.Newsletter // channels backing the sidebar in channels mode
+	c              client.Client
+	events         <-chan client.Event
+	list           *gtk.ListBox
+	rowJIDs        []string // row index -> JID, rebuilt alongside the ListBox rows
+	onSelect       func(jid string)
+	composingJIDs  map[string]string // chat JID -> "typing" or "recording" for a peer currently composing
+	query          string            // current search text; "" shows the normal chat list
+	avatarCache    *avatarCache
+	window         *gtk.Window         // parent for the new-chat dialog; set via SetWindow
+	onNewCommunity func()              // "New community" from the ＋ menu; STUBBED until F48
+	showArchived   bool                // toggled by the "Archived" button; see showChatInList
+	showStarred    bool                // toggled by the "Starred" button; overrides search/archived
+	showStatus     bool                // toggled by the "Status" button; overrides search/starred
+	showChannels   bool                // toggled by the "Channels" button; overrides the others
+	postStatusBar  *gtk.Box            // "Post status" bar, visible only in status mode
+	followBar      *gtk.Box            // "Follow channel" bar, visible only in channels mode
+	newsletters    []client.Newsletter // channels backing the sidebar in channels mode
 
 	chipRow  *gtk.Box   // fixed + inline-label filter chips, under the search entry
 	filter   chatFilter // the active chip; see chatFilter/chatMatchesFilter
@@ -183,17 +184,28 @@ func NewChatList(c client.Client) *ChatList {
 	search.SetHExpand(true)
 	searchRow.Append(search)
 
-	newChatBtn := gtk.NewButtonFromIconName("list-add-symbolic")
-	newChatBtn.SetTooltipText("New chat")
-	searchRow.Append(newChatBtn)
+	plusBtn := gtk.NewMenuButton()
+	plusBtn.SetIconName("list-add-symbolic")
+	plusBtn.SetTooltipText("New chat, group, community, or invite")
+	searchRow.Append(plusBtn)
 
-	newGroupBtn := gtk.NewButtonFromIconName("system-users-symbolic")
-	newGroupBtn.SetTooltipText("New group")
-	searchRow.Append(newGroupBtn)
+	plusMenu := gtk.NewBox(gtk.OrientationVertical, 0)
+	newChatItem := gtk.NewButtonWithLabel("New chat")
+	newChatItem.AddCSSClass("flat")
+	plusMenu.Append(newChatItem)
+	newGroupItem := gtk.NewButtonWithLabel("New group")
+	newGroupItem.AddCSSClass("flat")
+	plusMenu.Append(newGroupItem)
+	newCommunityItem := gtk.NewButtonWithLabel("New community")
+	newCommunityItem.AddCSSClass("flat")
+	plusMenu.Append(newCommunityItem)
+	joinInviteItem := gtk.NewButtonWithLabel("Join with invite link")
+	joinInviteItem.AddCSSClass("flat")
+	plusMenu.Append(joinInviteItem)
 
-	joinGroupBtn := gtk.NewButtonFromIconName("insert-link-symbolic")
-	joinGroupBtn.SetTooltipText("Join group via link")
-	searchRow.Append(joinGroupBtn)
+	plusPopover := gtk.NewPopover()
+	plusPopover.SetChild(plusMenu)
+	plusBtn.SetPopover(plusPopover)
 
 	archiveToggle := gtk.NewToggleButton()
 	archiveToggle.SetIconName("mail-archive-symbolic")
@@ -285,15 +297,25 @@ func NewChatList(c client.Client) *ChatList {
 		cl.refresh()
 	})
 
-	newChatBtn.ConnectClicked(func() {
+	newChatItem.ConnectClicked(func() {
+		plusPopover.Popdown()
 		cl.showNewChatDialog()
 	})
 
-	newGroupBtn.ConnectClicked(func() {
+	newGroupItem.ConnectClicked(func() {
+		plusPopover.Popdown()
 		cl.showNewGroupDialog()
 	})
 
-	joinGroupBtn.ConnectClicked(func() {
+	newCommunityItem.ConnectClicked(func() {
+		plusPopover.Popdown()
+		if cl.onNewCommunity != nil {
+			cl.onNewCommunity()
+		}
+	})
+
+	joinInviteItem.ConnectClicked(func() {
+		plusPopover.Popdown()
 		cl.showJoinGroupDialog()
 	})
 
@@ -382,6 +404,10 @@ func NewChatList(c client.Client) *ChatList {
 func (cl *ChatList) OnChatSelected(f func(jid string)) {
 	cl.onSelect = f
 }
+
+// OnNewCommunityRequested registers f to be called when the user picks "New
+// community" from the ＋ menu; STUBBED until F48 implements communities.
+func (cl *ChatList) OnNewCommunityRequested(f func()) { cl.onNewCommunity = f }
 
 // OpenGlobalSearch switches the sidebar into search mode with query
 // pre-filled, clearing any active starred/status/channels filter — the
@@ -983,10 +1009,27 @@ func normalizePhone(input string) (string, bool) {
 	return s, true
 }
 
-// showNewChatDialog opens a small modal to compose a new chat: a phone-number
-// entry validated by normalizePhone, then checked against WhatsApp via
-// c.CheckOnWhatsApp before opening the conversation through the same
-// onSelect seam a chat-list row activation uses.
+// newChatContacts filters chats to 1:1 (non-group) contacts and sorts them
+// case-insensitively by name, for the new-chat view's CONTACTS list.
+func newChatContacts(chats []client.Chat) []client.Chat {
+	out := make([]client.Chat, 0, len(chats))
+	for _, c := range chats {
+		if !c.IsGroup {
+			out = append(out, c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	return out
+}
+
+// showNewChatDialog opens the "New chat" view: a phone-number entry at top
+// that live-checks WhatsApp membership via c.CheckOnWhatsApp as the user
+// types (validated by normalizePhone) and surfaces an "On WhatsApp · start a
+// chat" row with a Message button, plus a CONTACTS list of known 1:1 chats
+// below. Both paths open the conversation through the same onSelect seam a
+// chat-list row activation uses.
 func (cl *ChatList) showNewChatDialog() {
 	dialog := gtk.NewWindow()
 	dialog.SetTitle("New chat")
@@ -994,6 +1037,7 @@ func (cl *ChatList) showNewChatDialog() {
 		dialog.SetTransientFor(cl.window)
 	}
 	dialog.SetModal(true)
+	dialog.SetDefaultSize(360, 480)
 
 	box := gtk.NewBox(gtk.OrientationVertical, 8)
 	box.SetMarginTop(12)
@@ -1010,43 +1054,108 @@ func (cl *ChatList) showNewChatDialog() {
 	status.AddCSSClass("chatot-newchat-status")
 	box.Append(status)
 
-	startBtn := gtk.NewButtonWithLabel("Start")
-	startBtn.AddCSSClass("suggested-action")
-	box.Append(startBtn)
+	resultRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	resultRow.SetVisible(false)
+	resultLabel := gtk.NewLabel("On WhatsApp · start a chat")
+	resultLabel.SetXAlign(0)
+	resultLabel.SetHExpand(true)
+	resultRow.Append(resultLabel)
+	messageBtn := gtk.NewButtonWithLabel("Message")
+	messageBtn.AddCSSClass("suggested-action")
+	resultRow.Append(messageBtn)
+	box.Append(resultRow)
 
-	startChat := func() {
-		phone, ok := normalizePhone(entry.Text())
-		if !ok {
-			status.SetText("Enter a valid phone number, e.g. +15551234567")
+	var resultJID string
+	openResult := func() {
+		if resultJID == "" {
 			return
 		}
-		startBtn.SetSensitive(false)
-		status.SetText("Checking…")
+		dialog.Close()
+		if cl.onSelect != nil {
+			cl.onSelect(resultJID)
+		}
+	}
+	messageBtn.ConnectClicked(openResult)
+	entry.ConnectActivate(openResult)
 
+	// generation guards against a stale CheckOnWhatsApp response landing
+	// after the user has kept typing past it.
+	generation := 0
+	entry.ConnectChanged(func() {
+		resultRow.SetVisible(false)
+		resultJID = ""
+		generation++ // any edit invalidates an in-flight check, even editing to an invalid number
+		phone, ok := normalizePhone(entry.Text())
+		if !ok {
+			status.SetText("")
+			return
+		}
+		status.SetText("Checking…")
+		gen := generation
 		go func() {
 			jid, onWhatsApp, err := cl.c.CheckOnWhatsApp(context.Background(), phone)
 			glib.IdleAdd(func() {
-				startBtn.SetSensitive(true)
+				if gen != generation {
+					return
+				}
 				switch {
 				case err != nil:
 					status.SetText("Couldn't check that number, try again")
 				case !onWhatsApp:
 					status.SetText("This number isn't on WhatsApp")
 				default:
-					dialog.Close()
-					if cl.onSelect != nil {
-						cl.onSelect(jid)
-					}
+					status.SetText("")
+					resultJID = jid
+					resultRow.SetVisible(true)
 				}
 			})
 		}()
+	})
+
+	box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
+
+	contactsLabel := gtk.NewLabel("CONTACTS")
+	contactsLabel.SetXAlign(0)
+	contactsLabel.AddCSSClass("chatot-newchat-contacts-label")
+	box.Append(contactsLabel)
+
+	contacts := newChatContacts(chatsOrEmpty(cl.c))
+
+	contactsList := gtk.NewListBox()
+	contactsList.AddCSSClass("navigation-sidebar")
+	now := time.Now()
+	for _, ct := range contacts {
+		contactsList.Append(buildChatRow(cl.c, cl.avatarCache, chatRowVM(ct, now)))
 	}
-	startBtn.ConnectClicked(startChat)
-	entry.ConnectActivate(startChat)
+	contactsList.ConnectRowActivated(func(row *gtk.ListBoxRow) {
+		idx := row.Index()
+		if idx < 0 || idx >= len(contacts) {
+			return
+		}
+		dialog.Close()
+		if cl.onSelect != nil {
+			cl.onSelect(contacts[idx].JID)
+		}
+	})
+
+	scroller := gtk.NewScrolledWindow()
+	scroller.SetChild(contactsList)
+	scroller.SetVExpand(true)
+	box.Append(scroller)
 
 	dialog.SetChild(box)
-	dialog.SetDefaultWidget(startBtn)
 	dialog.Present()
+	entry.GrabFocus()
+}
+
+// chatsOrEmpty returns c.Chats(0), or nil if it errors, so callers that only
+// need a best-effort list don't have to handle the error themselves.
+func chatsOrEmpty(c client.Client) []client.Chat {
+	chats, err := c.Chats(0)
+	if err != nil {
+		return nil
+	}
+	return chats
 }
 
 // showNewGroupDialog opens a modal to create a group: a name entry plus a
