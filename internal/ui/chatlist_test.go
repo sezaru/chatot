@@ -67,6 +67,45 @@ func TestChatRowVM(t *testing.T) {
 	})
 }
 
+func TestSearchHitVM(t *testing.T) {
+	now := time.Date(2026, 8, 30, 15, 0, 0, 0, time.UTC)
+
+	t.Run("basic fields pass through", func(t *testing.T) {
+		vm := searchHitVM(client.SearchHit{
+			ChatJID:  "j1",
+			ChatName: "Ada Lovelace",
+			Snippet:  "let's grab [pizza] tonight",
+			TS:       now.Add(-time.Hour).Unix(),
+		}, now)
+
+		if vm.ChatJID != "j1" {
+			t.Errorf("ChatJID = %q, want j1", vm.ChatJID)
+		}
+		if vm.ChatName != "Ada Lovelace" {
+			t.Errorf("ChatName = %q, want passthrough", vm.ChatName)
+		}
+		if vm.Snippet != "let's grab [pizza] tonight" {
+			t.Errorf("Snippet = %q, want passthrough", vm.Snippet)
+		}
+		if vm.Initial != "A" {
+			t.Errorf("Initial = %q, want A", vm.Initial)
+		}
+		if vm.TimeText != "14:00" {
+			t.Errorf("TimeText = %q, want 14:00", vm.TimeText)
+		}
+	})
+
+	t.Run("empty chat name falls back to JID", func(t *testing.T) {
+		vm := searchHitVM(client.SearchHit{ChatJID: "1234567890@s.whatsapp.net"}, now)
+		if vm.ChatName != "1234567890@s.whatsapp.net" {
+			t.Errorf("ChatName = %q, want the JID fallback", vm.ChatName)
+		}
+		if vm.Initial == "" {
+			t.Error("Initial should not be empty even with no name")
+		}
+	})
+}
+
 func TestFormatChatTime(t *testing.T) {
 	now := time.Date(2026, 8, 30, 15, 0, 0, 0, time.UTC) // a Sunday
 

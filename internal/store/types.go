@@ -40,6 +40,16 @@ type Attachment struct {
 	Caption   string
 }
 
+// SearchHit is a single Search result: either a message match (MsgID set,
+// Snippet an excerpt) or a chat-name match (MsgID "", Snippet == ChatName).
+type SearchHit struct {
+	ChatJID  string
+	MsgID    string
+	ChatName string
+	Snippet  string
+	TS       int64
+}
+
 // ChatRow is the upsert seam for the chats table.
 type ChatRow struct {
 	JID           string

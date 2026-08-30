@@ -130,12 +130,14 @@ type Attachment struct {
 	ProtoBlob []byte
 }
 
-// SearchHit is a single fts5 match over the local store.
+// SearchHit is a single fts5 match over the local store. MsgID is "" for a
+// chat-name match (Snippet then holds the chat name, not a message excerpt).
 type SearchHit struct {
-	ChatJID string
-	MsgID   string
-	Snippet string
-	TS      int64
+	ChatJID  string
+	MsgID    string
+	ChatName string
+	Snippet  string
+	TS       int64
 }
 
 // Client is the seam the UI depends on. One real implementation

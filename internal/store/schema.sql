@@ -36,6 +36,29 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_chat_ts ON messages(chat_jid, ts);
 
+-- External-content fts5 index over message text: messages has no INTEGER
+-- PRIMARY KEY, so sqlite's implicit rowid (stable, unique per row) is used
+-- as content_rowid. Kept in sync by triggers below; db.go backfills rows
+-- written before this table existed.
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    text,
+    content='messages',
+    content_rowid='rowid'
+);
+
+CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+    INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+    INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+END;
+
 CREATE TABLE IF NOT EXISTS reactions (
     chat_jid TEXT NOT NULL,
     msg_id TEXT NOT NULL,
