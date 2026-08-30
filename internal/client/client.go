@@ -315,6 +315,9 @@ type Client interface {
 	LoggedIn() bool
 	Logout(ctx context.Context) error
 	Events() <-chan Event
+	// PairPhone requests a phone-number pairing code as an alternative to
+	// scanning the QR; call while connected-but-unpaired, same as QR pairing.
+	PairPhone(ctx context.Context, phone string) (code string, err error)
 
 	// reads go through the store, but exposed here so the fake can serve them too
 	Chats(limit int) ([]Chat, error)

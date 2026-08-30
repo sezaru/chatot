@@ -187,6 +187,18 @@ func activate(app *adw.Application, c client.Client) {
 		}
 	}()
 
+	// Alternative to QR: pair with a phone-number code, entered on the phone.
+	linking.OnPhonePairRequested(func(phone string) {
+		go func() {
+			code, err := c.PairPhone(context.Background(), phone)
+			if err != nil {
+				glib.IdleAdd(func() { linking.SetPairError(err.Error()) })
+				return
+			}
+			glib.IdleAdd(func() { linking.SetPairCode(code) })
+		}()
+	})
+
 	// Watch login state to flip the stack between the pairing screen and the
 	// main UI. This is its own fan-out subscription — the chat list,
 	// conversation and notifier each have their own (see the eventBus).

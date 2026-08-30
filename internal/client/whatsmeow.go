@@ -265,6 +265,12 @@ func (w *Whatsmeow) applyChatUpdate(jid string, mutate func(jid string) error) {
 // QR codes onto QRCodes(); pairing completion arrives as an EventPairSuccess
 // on Events() once whatsmeow's own handler processes events.PairSuccess.
 func (w *Whatsmeow) Start(ctx context.Context) error {
+	if proxy := os.Getenv("CHATOT_PROXY"); proxy != "" {
+		if err := w.wa.SetProxyAddress(proxy); err != nil {
+			w.log.Warnf("failed to set proxy %q: %v", proxy, err)
+		}
+	}
+
 	if w.wa.Store.ID == nil {
 		qrChan, err := w.wa.GetQRChannel(ctx)
 		if err != nil {
