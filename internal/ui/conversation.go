@@ -914,6 +914,21 @@ func buildBubbleActions(msg client.Message, vm bubbleView, onReply func(client.M
 			})
 			picker.Append(emojiBtn)
 		}
+
+		moreBtn := gtk.NewButtonWithLabel("+")
+		moreBtn.AddCSSClass("flat")
+		moreBtn.ConnectClicked(func() {
+			popover.Popdown()
+			chooser := gtk.NewEmojiChooser()
+			chooser.SetParent(moreBtn)
+			chooser.ConnectClosed(func() { chooser.Unparent() })
+			chooser.ConnectEmojiPicked(func(text string) {
+				onReact(msg, text)
+			})
+			chooser.Popup()
+		})
+		picker.Append(moreBtn)
+
 		popover.SetChild(picker)
 		popover.SetParent(menuBtn)
 		menuBtn.ConnectClicked(func() { popover.Popup() })
