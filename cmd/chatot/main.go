@@ -134,6 +134,7 @@ func activate(app *adw.Application, c client.Client) {
 	win.SetDefaultSize(1000, 700)
 	win.SetContent(stack)
 	composer.SetWindow(&win.Window)
+	chatList.SetWindow(&win.Window)
 
 	// "is-active" tracks OS-level window focus; report available/unavailable
 	// so contacts see accurate presence rather than a permanent "online".

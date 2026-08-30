@@ -822,6 +822,18 @@ func (w *Whatsmeow) SendPresence(available bool) error {
 	return nil
 }
 
+// CheckOnWhatsApp queries whatsmeow's usync for a single phone number.
+func (w *Whatsmeow) CheckOnWhatsApp(ctx context.Context, phone string) (string, bool, error) {
+	resp, err := w.wa.IsOnWhatsApp(ctx, []string{phone})
+	if err != nil {
+		return "", false, fmt.Errorf("chatot/client: is on whatsapp: %w", err)
+	}
+	if len(resp) == 0 || !resp[0].IsIn {
+		return "", false, nil
+	}
+	return resp[0].JID.String(), true, nil
+}
+
 // SendTyping sends a per-chat composing/paused indicator. Always as plain
 // text media — chatot has no seam today for a "recording" chat presence.
 func (w *Whatsmeow) SendTyping(jid string, typing bool) error {
