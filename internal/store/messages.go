@@ -1,6 +1,9 @@
 package store
 
-import "strings"
+import (
+	"database/sql"
+	"strings"
+)
 
 // UpsertMessage inserts or updates a message row. An empty ReplyToMsgID
 // leaves any existing reply link untouched.
@@ -16,6 +19,25 @@ func (s *Store) UpsertMessage(row MessageRow) error {
 			reply_to_msg_id = COALESCE(excluded.reply_to_msg_id, messages.reply_to_msg_id)
 	`, row.ChatJID, row.MsgID, row.FromJID, boolToInt(row.FromMe), row.Text, row.TS, row.ReplyToMsgID)
 	return err
+}
+
+// MessageByID looks up a single message by chat+id, without reactions/media
+// (callers needing those should use Messages). ok is false if not found.
+func (s *Store) MessageByID(chatJID, msgID string) (m Message, ok bool, err error) {
+	row := s.db.QueryRow(`
+		SELECT msg_id, from_jid, from_me, COALESCE(text, ''), ts
+		FROM messages WHERE chat_jid = ? AND msg_id = ?
+	`, chatJID, msgID)
+	var fromMe int
+	if err := row.Scan(&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS); err != nil {
+		if err == sql.ErrNoRows {
+			return Message{}, false, nil
+		}
+		return Message{}, false, err
+	}
+	m.ChatJID = chatJID
+	m.FromMe = fromMe != 0
+	return m, true, nil
 }
 
 // Messages returns a chat's most recent messages (up to limit), oldest

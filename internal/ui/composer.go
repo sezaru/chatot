@@ -1,0 +1,242 @@
+package ui
+
+import (
+	"context"
+	"log"
+	"strings"
+	"time"
+
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+
+	"chatot/internal/client"
+)
+
+// reactEmojis is the fixed quick-react set offered on every bubble.
+var reactEmojis = []string{"👍", "❤️", "😂", "😮", "😢", "🙏"}
+
+// SendReadReceipts gates MarkRead calls on chat open. Default false: chatot
+// reads privately (whatsapp never learns a chat was opened here) until a
+// user-facing setting exists.
+var SendReadReceipts = false
+
+// sendAction is what composeState.Submit resolves a submission to: the
+// send it wants performed, if any.
+type sendAction struct {
+	JID     string
+	Text    string
+	ReplyTo *client.MsgRef
+}
+
+// composeState is the composer's pure state machine, kept free of GTK so it
+// can be unit-tested directly. Composer builds the widget on top of it.
+type composeState struct {
+	jid     string
+	replyTo *client.Message
+}
+
+// SetChat switches the active chat, clearing any pending reply (replying
+// across a chat switch would attach the wrong context).
+func (s *composeState) SetChat(jid string) {
+	s.jid = jid
+	s.replyTo = nil
+}
+
+// StartReply arms reply mode, quoting msg on the next Submit.
+func (s *composeState) StartReply(msg client.Message) {
+	m := msg
+	s.replyTo = &m
+}
+
+// CancelReply clears reply mode without sending.
+func (s *composeState) CancelReply() {
+	s.replyTo = nil
+}
+
+// ReplyTarget returns the message being replied to, if any.
+func (s *composeState) ReplyTarget() (client.Message, bool) {
+	if s.replyTo == nil {
+		return client.Message{}, false
+	}
+	return *s.replyTo, true
+}
+
+// Submit resolves a send attempt for text. It fails (ok=false) if there's no
+// active chat or the text is blank/whitespace-only; nothing is cleared in
+// that case. On success it returns the action to perform and clears any
+// pending reply, so the caller's next Submit starts fresh.
+func (s *composeState) Submit(text string) (sendAction, bool) {
+	text = strings.TrimSpace(text)
+	if text == "" || s.jid == "" {
+		return sendAction{}, false
+	}
+	action := sendAction{JID: s.jid, Text: text}
+	if s.replyTo != nil {
+		action.ReplyTo = &client.MsgRef{ChatJID: s.replyTo.ChatJID, MsgID: s.replyTo.ID}
+	}
+	s.replyTo = nil
+	return action, true
+}
+
+// unreadMessageIDs returns the IDs of the most recent `count` inbound
+// (non-FromMe) messages in msgs (oldest-first, as ConversationView.Load
+// returns them) — the best-effort set to mark read given only Chat's
+// UnreadCount, since messages carry no per-row read flag.
+func unreadMessageIDs(msgs []client.Message, count int) []string {
+	if count <= 0 {
+		return nil
+	}
+	var ids []string
+	for i := len(msgs) - 1; i >= 0 && len(ids) < count; i-- {
+		if !msgs[i].FromMe {
+			ids = append(ids, msgs[i].ID)
+		}
+	}
+	return ids
+}
+
+// MarkReadOnOpen sends read receipts for a just-opened chat, gated on
+// SendReadReceipts. Runs the network call synchronously; callers invoke it
+// from a goroutine to keep the GTK main loop unblocked.
+func MarkReadOnOpen(ctx context.Context, c client.Client, jid string, msgs []client.Message, unreadCount int) {
+	if !SendReadReceipts {
+		return
+	}
+	ids := unreadMessageIDs(msgs, unreadCount)
+	if len(ids) == 0 {
+		return
+	}
+	if err := c.MarkRead(ctx, jid, ids); err != nil {
+		log.Printf("chatot: mark read failed: %v", err)
+	}
+}
+
+// Composer is the bottom bar: a reply-quote strip (shown only in reply
+// mode), a text entry and a send button, backed by composeState.
+type Composer struct {
+	*gtk.Box
+
+	c     client.Client
+	state composeState
+
+	quoteBar   *gtk.Box
+	quoteLabel *gtk.Label
+	entry      *gtk.Entry
+
+	onSent func(client.Message)
+}
+
+// NewComposer builds an empty, disabled-until-SetChat Composer backed by c.
+func NewComposer(c client.Client) *Composer {
+	root := gtk.NewBox(gtk.OrientationVertical, 0)
+	root.AddCSSClass("chatot-composer")
+
+	quoteBar := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	quoteBar.AddCSSClass("chatot-composer-quote")
+	quoteBar.SetVisible(false)
+
+	quoteLabel := gtk.NewLabel("")
+	quoteLabel.SetXAlign(0)
+	quoteLabel.SetHExpand(true)
+	quoteLabel.SetWrap(true)
+	quoteBar.Append(quoteLabel)
+
+	cancelQuote := gtk.NewButtonWithLabel("×")
+	cancelQuote.AddCSSClass("flat")
+	quoteBar.Append(cancelQuote)
+
+	root.Append(quoteBar)
+
+	entryRow := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	entryRow.SetMarginTop(6)
+	entryRow.SetMarginBottom(6)
+	entryRow.SetMarginStart(8)
+	entryRow.SetMarginEnd(8)
+
+	entry := gtk.NewEntry()
+	entry.SetHExpand(true)
+	entry.SetPlaceholderText("Message")
+	entryRow.Append(entry)
+
+	sendBtn := gtk.NewButtonWithLabel("Send")
+	sendBtn.AddCSSClass("suggested-action")
+	entryRow.Append(sendBtn)
+
+	root.Append(entryRow)
+
+	comp := &Composer{
+		Box:        root,
+		c:          c,
+		quoteBar:   quoteBar,
+		quoteLabel: quoteLabel,
+		entry:      entry,
+	}
+
+	entry.ConnectActivate(comp.submit)
+	sendBtn.ConnectClicked(comp.submit)
+	cancelQuote.ConnectClicked(func() {
+		comp.state.CancelReply()
+		comp.refreshQuoteBar()
+	})
+
+	return comp
+}
+
+// OnSent registers f to be called (on the GTK main loop) with the optimistic
+// outbound message right after a successful send.
+func (c *Composer) OnSent(f func(client.Message)) { c.onSent = f }
+
+// SetChat switches the composer to jid, clearing any pending reply.
+func (c *Composer) SetChat(jid string) {
+	c.state.SetChat(jid)
+	c.refreshQuoteBar()
+}
+
+// StartReply arms reply mode for msg; called from the conversation view's
+// per-bubble reply affordance.
+func (c *Composer) StartReply(msg client.Message) {
+	c.state.StartReply(msg)
+	c.refreshQuoteBar()
+}
+
+func (c *Composer) refreshQuoteBar() {
+	target, ok := c.state.ReplyTarget()
+	if !ok {
+		c.quoteBar.SetVisible(false)
+		return
+	}
+	text := target.Text
+	if text == "" {
+		text = "[media]"
+	}
+	c.quoteLabel.SetLabel(text)
+	c.quoteBar.SetVisible(true)
+}
+
+// submit resolves the current entry text against composeState and, if
+// valid, clears the entry/reply-mode immediately and sends in the
+// background. Must run on the GTK main loop (entry.Text() isn't thread-safe).
+func (c *Composer) submit() {
+	action, ok := c.state.Submit(c.entry.Text())
+	if !ok {
+		return
+	}
+	c.entry.SetText("")
+	c.refreshQuoteBar()
+
+	go func() {
+		id, err := c.c.SendText(context.Background(), action.JID, action.Text, action.ReplyTo)
+		if err != nil {
+			log.Printf("chatot: send failed: %v", err)
+			return
+		}
+		if c.onSent == nil {
+			return
+		}
+		msg := client.Message{
+			ID: id, ChatJID: action.JID, FromMe: true,
+			Text: action.Text, TS: time.Now().Unix(), ReplyTo: action.ReplyTo,
+		}
+		glib.IdleAdd(func() { c.onSent(msg) })
+	}()
+}

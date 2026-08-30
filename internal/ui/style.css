@@ -78,3 +78,17 @@
 .chatot-bubble-reactions {
 	font-size: 0.9em;
 }
+
+.chatot-bubble-actions {
+	opacity: 0.6;
+}
+
+.chatot-composer {
+	border-top: 1px solid alpha(currentColor, 0.15);
+}
+
+.chatot-composer-quote {
+	padding: 4px 10px;
+	background-color: alpha(currentColor, 0.06);
+	border-left: 2px solid @accent_bg_color;
+}

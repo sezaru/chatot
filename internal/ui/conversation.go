@@ -115,7 +115,23 @@ type ConversationView struct {
 
 	msgs []client.Message
 	byID map[string]client.Message
+
+	onReply func(client.Message)
+	onReact func(msg client.Message, emoji string)
 }
+
+// OnReplyRequested registers f to be called when the user picks the reply
+// affordance on a bubble; the composer wires this to StartReply.
+func (cv *ConversationView) OnReplyRequested(f func(client.Message)) { cv.onReply = f }
+
+// OnReactRequested registers f to be called when the user picks an emoji
+// from a bubble's react affordance; msg carries the ChatJID needed to send.
+func (cv *ConversationView) OnReactRequested(f func(msg client.Message, emoji string)) {
+	cv.onReact = f
+}
+
+// Messages returns the currently-loaded thread, for mark-read on open.
+func (cv *ConversationView) Messages() []client.Message { return cv.msgs }
 
 const conversationLimit = 200
 
@@ -186,7 +202,7 @@ func (cv *ConversationView) Load(jid string) {
 	var prev *client.Message
 	for i := range msgs {
 		vm := bubbleVM(msgs[i], prev, cv.byID, now)
-		cv.list.Append(buildBubble(vm))
+		cv.list.Append(buildBubble(msgs[i], vm, cv.onReply, cv.onReact))
 		prev = &msgs[i]
 	}
 
@@ -226,6 +242,27 @@ func (cv *ConversationView) watchEvents() {
 	}
 }
 
+// AppendSentMessage appends an optimistic echo of a just-sent message if
+// it belongs to the currently-open chat. Must run on the GTK main loop
+// (the composer calls it from within a glib.IdleAdd).
+func (cv *ConversationView) AppendSentMessage(msg client.Message) {
+	if msg.ChatJID != cv.jid {
+		return
+	}
+	cv.appendMessage(msg)
+}
+
+// ApplyOwnReaction re-renders the thread so a just-sent own reaction shows
+// immediately, if chatJID is the currently-open chat. It reloads from the
+// store (idempotent), so a later echo EventReaction for the same reaction
+// re-runs the same reload harmlessly. Must run on the GTK main loop.
+func (cv *ConversationView) ApplyOwnReaction(chatJID string) {
+	if chatJID != cv.jid {
+		return
+	}
+	cv.Load(cv.jid)
+}
+
 // appendMessage adds msg to the end of the currently-loaded thread without
 // reloading the whole list. Must run on the GTK main loop.
 func (cv *ConversationView) appendMessage(msg client.Message) {
@@ -243,7 +280,7 @@ func (cv *ConversationView) appendMessage(msg client.Message) {
 	}
 
 	vm := bubbleVM(msg, prev, cv.byID, time.Now())
-	cv.list.Append(buildBubble(vm))
+	cv.list.Append(buildBubble(msg, vm, cv.onReply, cv.onReact))
 	cv.scrollToBottom()
 }
 
@@ -275,8 +312,9 @@ func removeAllChildren(box *gtk.Box) {
 }
 
 // buildBubble constructs the GTK widget tree for a single message from its
-// pre-computed view-model.
-func buildBubble(vm bubbleView) *gtk.Box {
+// pre-computed view-model, wiring the reply/react affordances (if the
+// callbacks are set) to msg.
+func buildBubble(msg client.Message, vm bubbleView, onReply func(client.Message), onReact func(msg client.Message, emoji string)) *gtk.Box {
 	wrapper := gtk.NewBox(gtk.OrientationVertical, 4)
 
 	if vm.ShowDaySeparator {
@@ -338,8 +376,49 @@ func buildBubble(vm bubbleView) *gtk.Box {
 		bubble.Append(reactions)
 	}
 
+	if onReply != nil || onReact != nil {
+		bubble.Append(buildBubbleActions(msg, onReply, onReact))
+	}
+
 	row.Append(bubble)
 	wrapper.Append(row)
 
 	return wrapper
+}
+
+// buildBubbleActions builds the small reply/react affordance row shown on
+// every bubble.
+func buildBubbleActions(msg client.Message, onReply func(client.Message), onReact func(msg client.Message, emoji string)) *gtk.Box {
+	actions := gtk.NewBox(gtk.OrientationHorizontal, 2)
+	actions.AddCSSClass("chatot-bubble-actions")
+
+	if onReply != nil {
+		replyBtn := gtk.NewButtonWithLabel("↩")
+		replyBtn.AddCSSClass("flat")
+		replyBtn.ConnectClicked(func() { onReply(msg) })
+		actions.Append(replyBtn)
+	}
+
+	if onReact != nil {
+		menuBtn := gtk.NewButtonWithLabel("🙂+")
+		menuBtn.AddCSSClass("flat")
+
+		popover := gtk.NewPopover()
+		picker := gtk.NewBox(gtk.OrientationHorizontal, 4)
+		for _, emoji := range reactEmojis {
+			emojiBtn := gtk.NewButtonWithLabel(emoji)
+			emojiBtn.AddCSSClass("flat")
+			emojiBtn.ConnectClicked(func() {
+				onReact(msg, emoji)
+				popover.Popdown()
+			})
+			picker.Append(emojiBtn)
+		}
+		popover.SetChild(picker)
+		popover.SetParent(menuBtn)
+		menuBtn.ConnectClicked(func() { popover.Popup() })
+		actions.Append(menuBtn)
+	}
+
+	return actions
 }
