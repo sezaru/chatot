@@ -134,5 +134,7 @@ CREATE TABLE IF NOT EXISTS media (
     -- carried this attachment; unmarshalled back on download to reconstruct
     -- the whatsmeow.DownloadableMessage client.Download needs to decrypt it.
     proto_blob BLOB,
+    -- small embedded JPEG/PNG preview, shown instantly before local_path is set.
+    thumbnail BLOB,
     PRIMARY KEY (chat_jid, msg_id)
 );

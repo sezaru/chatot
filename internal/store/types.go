@@ -75,6 +75,8 @@ type Attachment struct {
 	MimeType  string
 	LocalPath string
 	Caption   string
+	// Thumbnail is the small embedded preview shown before LocalPath is set.
+	Thumbnail []byte
 }
 
 // SearchHit is a single Search result: either a message match (MsgID set,
@@ -170,4 +172,7 @@ type MediaRow struct {
 	// ProtoBlob is proto.Marshal of the specific waE2E.*Message (nil until
 	// the caller sets it); empty leaves any existing value untouched.
 	ProtoBlob []byte
+	// Thumbnail is the small embedded JPEG/PNG preview; nil leaves any
+	// existing value untouched.
+	Thumbnail []byte
 }

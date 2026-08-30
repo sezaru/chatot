@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -15,17 +16,21 @@ import (
 // attachment, computed from a client.Message so it's unit-testable without
 // a display.
 type mediaView struct {
-	IsMedia   bool
-	Kind      string
-	Chip      string
-	HasLocal  bool
-	LocalPath string
+	IsMedia      bool
+	Kind         string
+	Chip         string
+	HasLocal     bool
+	LocalPath    string
+	HasThumbnail bool
+	Thumbnail    []byte
 }
 
 // mediaVM derives the media view-model for m. HasLocal requires both a
 // stored local_path and the file actually existing on disk — a cache
 // eviction (internal/media.Evict) NULLs local_path, but a stale in-memory
-// copy or a manual deletion shouldn't be trusted either.
+// copy or a manual deletion shouldn't be trusted either. HasThumbnail only
+// applies once the full media isn't already cached: a downloaded attachment
+// always renders in full, never the low-res preview.
 func mediaVM(m client.Message) mediaView {
 	if m.Attachment == nil {
 		return mediaView{}
@@ -37,6 +42,10 @@ func mediaVM(m client.Message) mediaView {
 			v.HasLocal = true
 			v.LocalPath = a.LocalPath
 		}
+	}
+	if !v.HasLocal && len(a.Thumbnail) > 0 {
+		v.HasThumbnail = true
+		v.Thumbnail = a.Thumbnail
 	}
 	return v
 }
@@ -66,6 +75,13 @@ func buildMediaContent(msg client.Message, mv mediaView, c client.Client) gtk.Wi
 		return slot
 	}
 
+	if mv.HasThumbnail {
+		if texture, err := gdk.NewTextureFromBytes(glib.NewBytesWithGo(mv.Thumbnail)); err == nil {
+			slot.Append(buildThumbnailContent(texture, msg, mv, c, slot))
+			return slot
+		}
+	}
+
 	state := mv
 	btn := gtk.NewButtonWithLabel(chipLabel(state))
 	btn.AddCSSClass("flat")
@@ -73,6 +89,60 @@ func buildMediaContent(msg client.Message, mv mediaView, c client.Client) gtk.Wi
 	btn.ConnectClicked(func() { onMediaChipClicked(&state, msg, c, slot, btn) })
 	slot.Append(btn)
 	return slot
+}
+
+// buildThumbnailContent renders the embedded low-res preview as a Picture
+// with a small "tap to load" button overlaid, so the message reads
+// instantly instead of showing a bare chip while the full media downloads.
+func buildThumbnailContent(texture *gdk.Texture, msg client.Message, mv mediaView, c client.Client, slot *gtk.Box) gtk.Widgetter {
+	pic := gtk.NewPictureForPaintable(texture)
+	pic.SetCanShrink(true)
+	pic.SetContentFit(gtk.ContentFitCover)
+	pic.SetSizeRequest(280, 200)
+
+	overlay := gtk.NewOverlay()
+	overlay.SetChild(pic)
+
+	btn := gtk.NewButtonWithLabel("⬇ tap to load")
+	btn.AddCSSClass("flat")
+	btn.AddCSSClass("chatot-bubble-media")
+	btn.SetHAlign(gtk.AlignCenter)
+	btn.SetVAlign(gtk.AlignCenter)
+	overlay.AddOverlay(btn)
+
+	state := mv
+	btn.ConnectClicked(func() { onThumbnailClicked(&state, msg, c, slot, overlay, btn) })
+	return overlay
+}
+
+// onThumbnailClicked downloads the full attachment and swaps the thumbnail
+// overlay for the inline widget (or, for non-inlineable kinds like
+// documents, a normal downloaded chip that opens the file on click).
+func onThumbnailClicked(mv *mediaView, msg client.Message, c client.Client, slot *gtk.Box, overlay *gtk.Overlay, btn *gtk.Button) {
+	btn.SetSensitive(false)
+	btn.SetLabel("Loading…")
+	go func() {
+		path, err := c.DownloadMedia(context.Background(), msg.ID)
+		glib.IdleAdd(func() {
+			if err != nil {
+				btn.SetSensitive(true)
+				btn.SetLabel("⬇ tap to load (failed)")
+				return
+			}
+			mv.HasLocal = true
+			mv.LocalPath = path
+			slot.Remove(overlay)
+			if inlineable(mv.Kind) {
+				slot.Append(inlineMediaWidget(*mv))
+				return
+			}
+			openBtn := gtk.NewButtonWithLabel(chipLabel(*mv))
+			openBtn.AddCSSClass("flat")
+			openBtn.AddCSSClass("chatot-bubble-media")
+			openBtn.ConnectClicked(func() { openFile(mv.LocalPath) })
+			slot.Append(openBtn)
+		})
+	}()
 }
 
 func chipLabel(mv mediaView) string {
