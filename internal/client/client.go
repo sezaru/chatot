@@ -103,6 +103,8 @@ type Message struct {
 	// Location is non-nil for a (live) location message. It's the first rich
 	// non-text/media body carried through the store's kind/payload seam.
 	Location *Location
+	// Contact is non-nil for a shared vCard (or vCard array) message.
+	Contact *Contact
 }
 
 // Location is a shared or live-shared geographic point. Name/Address are
@@ -114,6 +116,15 @@ type Location struct {
 	Latitude  float64
 	Longitude float64
 	IsLive    bool
+}
+
+// Contact is a shared vCard. For a ContactsArrayMessage (several people
+// shared at once) DisplayName is the first contact's name and Phones is
+// just that first contact's numbers — multi-contact shares aren't modeled
+// beyond that.
+type Contact struct {
+	DisplayName string
+	Phones      []string
 }
 
 // Reaction is a reaction added to, or (Emoji == "") cleared from, a message.

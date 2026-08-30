@@ -1,6 +1,8 @@
 package client
 
 import (
+	"strings"
+
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -148,6 +150,29 @@ func extractText(m *waProto.Message, msg *Message) {
 			IsLive: true,
 		}
 		ctx = live.GetContextInfo()
+	case m.GetContactMessage() != nil:
+		c := m.GetContactMessage()
+		msg.Contact = &Contact{
+			DisplayName: c.GetDisplayName(),
+			Phones:      parseVCardPhones(c.GetVcard()),
+		}
+		ctx = c.GetContextInfo()
+	case m.GetContactsArrayMessage() != nil:
+		// Several contacts shared at once: only the first person is modeled,
+		// carrying their name and phone numbers.
+		arr := m.GetContactsArrayMessage()
+		if contacts := arr.GetContacts(); len(contacts) > 0 {
+			first := contacts[0]
+			name := first.GetDisplayName()
+			if name == "" {
+				name = arr.GetDisplayName()
+			}
+			msg.Contact = &Contact{
+				DisplayName: name,
+				Phones:      parseVCardPhones(first.GetVcard()),
+			}
+		}
+		ctx = arr.GetContextInfo()
 	}
 	if ctx == nil {
 		return
@@ -168,4 +193,25 @@ func marshalMedia(m proto.Message) []byte {
 		return nil
 	}
 	return b
+}
+
+// parseVCardPhones pulls phone numbers out of a vCard's TEL lines, e.g.
+// "TEL;type=CELL;waid=1234567890:+1 234-567-890". The number is whatever
+// follows the last ':' on the line; lines without one are skipped.
+func parseVCardPhones(vcard string) []string {
+	var phones []string
+	for _, line := range strings.Split(strings.ReplaceAll(vcard, "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "TEL") {
+			continue
+		}
+		idx := strings.LastIndex(line, ":")
+		if idx < 0 || idx == len(line)-1 {
+			continue
+		}
+		if phone := strings.TrimSpace(line[idx+1:]); phone != "" {
+			phones = append(phones, phone)
+		}
+	}
+	return phones
 }

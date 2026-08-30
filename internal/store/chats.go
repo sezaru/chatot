@@ -161,8 +161,11 @@ func phoneFromJID(jid string) (string, bool) {
 // their text; either way a from-me message is prefixed.
 func buildPreview(fromMe bool, msgKind, text, mediaKind, mediaCaption, mediaFilename string) string {
 	body := text
-	if msgKind == "location" {
+	switch msgKind {
+	case "location":
 		body = "📍 Location"
+	case "contact":
+		body = "👤 Contact"
 	}
 	if mediaKind != "" {
 		switch {

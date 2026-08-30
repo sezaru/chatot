@@ -48,6 +48,8 @@ func NewFake() *Fake {
 		{ID: "m4", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, Text: "Bug found in the relay", TS: now - 3600},
 		{ID: "m5", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 3000,
 			Location: &Location{Name: "Bletchley Park", Address: "Sherwood Dr, Bletchley, Milton Keynes", Latitude: 51.9976, Longitude: -0.7406}},
+		{ID: "m6", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2900,
+			Contact: &Contact{DisplayName: "Alan Turing", Phones: []string{"+44 20 7946 0958"}}},
 	}
 
 	return f

@@ -17,6 +17,13 @@ type locationPayload struct {
 	IsLive    bool    `json:"live,omitempty"`
 }
 
+// contactPayload is the JSON shape stored in a message row's opaque payload
+// when Kind == "contact".
+type contactPayload struct {
+	DisplayName string   `json:"name,omitempty"`
+	Phones      []string `json:"phones,omitempty"`
+}
+
 // This file is the sole boundary between package client's value types and
 // package store's: store defines its own plain Chat/Message/Attachment
 // shapes (see internal/store/types.go) so it never needs to import client,
@@ -42,6 +49,14 @@ func storeMessageRow(m *Message) store.MessageRow {
 			Name: m.Location.Name, Address: m.Location.Address,
 			Latitude: m.Location.Latitude, Longitude: m.Location.Longitude,
 			IsLive: m.Location.IsLive,
+		}); err == nil {
+			row.Payload = string(b)
+		}
+	}
+	if m.Contact != nil {
+		row.Kind = "contact"
+		if b, err := json.Marshal(contactPayload{
+			DisplayName: m.Contact.DisplayName, Phones: m.Contact.Phones,
 		}); err == nil {
 			row.Payload = string(b)
 		}
@@ -95,6 +110,11 @@ func messageFromStore(m store.Message) Message {
 				Name: p.Name, Address: p.Address,
 				Latitude: p.Latitude, Longitude: p.Longitude, IsLive: p.IsLive,
 			}
+		}
+	case "contact":
+		var p contactPayload
+		if err := json.Unmarshal([]byte(m.Payload), &p); err == nil {
+			out.Contact = &Contact{DisplayName: p.DisplayName, Phones: p.Phones}
 		}
 	}
 	return out

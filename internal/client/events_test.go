@@ -331,6 +331,116 @@ func TestTranslateLiveLocationMessage(t *testing.T) {
 	}
 }
 
+func TestTranslateContactMessage(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	vcard := "BEGIN:VCARD\nVERSION:3.0\nN:;Alan Turing;;;\nFN:Alan Turing\nTEL;type=CELL;waid=447900000000:+44 7900 000000\nEND:VCARD"
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+			ID:            "CT1",
+		},
+		Message: &waProto.Message{ContactMessage: &waE2E.ContactMessage{
+			DisplayName: proto.String("Alan Turing"),
+			Vcard:       proto.String(vcard),
+			ContextInfo: &waE2E.ContextInfo{StanzaID: proto.String("quoted-id")},
+		}},
+	}
+	e := translate(evt)
+	if e == nil || e.Message == nil || e.Message.Contact == nil {
+		t.Fatalf("expected a Message with Contact, got %+v", e)
+	}
+	c := e.Message.Contact
+	if c.DisplayName != "Alan Turing" {
+		t.Errorf("DisplayName = %q", c.DisplayName)
+	}
+	if len(c.Phones) != 1 || c.Phones[0] != "+44 7900 000000" {
+		t.Errorf("Phones = %v", c.Phones)
+	}
+	if e.Message.ReplyTo == nil || e.Message.ReplyTo.MsgID != "quoted-id" {
+		t.Errorf("ReplyTo = %+v, want quoted-id", e.Message.ReplyTo)
+	}
+}
+
+func TestTranslateContactsArrayMessage(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	vcard := "BEGIN:VCARD\nFN:Grace Hopper\nTEL:+1 555 0100\nEND:VCARD"
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+			ID:            "CT2",
+		},
+		Message: &waProto.Message{ContactsArrayMessage: &waE2E.ContactsArrayMessage{
+			DisplayName: proto.String("2 contacts"),
+			Contacts: []*waE2E.ContactMessage{
+				{DisplayName: proto.String("Grace Hopper"), Vcard: proto.String(vcard)},
+				{DisplayName: proto.String("Ada Lovelace")},
+			},
+		}},
+	}
+	e := translate(evt)
+	if e == nil || e.Message == nil || e.Message.Contact == nil {
+		t.Fatalf("expected a Message with Contact, got %+v", e)
+	}
+	c := e.Message.Contact
+	if c.DisplayName != "Grace Hopper" {
+		t.Errorf("DisplayName = %q, want first contact's name", c.DisplayName)
+	}
+	if len(c.Phones) != 1 || c.Phones[0] != "+1 555 0100" {
+		t.Errorf("Phones = %v", c.Phones)
+	}
+}
+
+func TestParseVCardPhones(t *testing.T) {
+	cases := []struct {
+		name  string
+		vcard string
+		want  []string
+	}{
+		{"single", "BEGIN:VCARD\nTEL;type=CELL:+123\nEND:VCARD", []string{"+123"}},
+		{"multiple", "BEGIN:VCARD\nTEL;type=CELL:+123\nTEL;type=HOME:+456\nEND:VCARD", []string{"+123", "+456"}},
+		{"none", "BEGIN:VCARD\nFN:No Phone\nEND:VCARD", nil},
+		{"empty", "", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseVCardPhones(tc.vcard)
+			if len(got) != len(tc.want) {
+				t.Fatalf("parseVCardPhones(%q) = %v, want %v", tc.vcard, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("phone[%d] = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestContactStoreRoundTrip(t *testing.T) {
+	m := &Message{
+		ID: "CT1", ChatJID: "a@s.whatsapp.net",
+		Contact: &Contact{DisplayName: "Alan Turing", Phones: []string{"+44 7900 000000"}},
+	}
+	row := storeMessageRow(m)
+	if row.Kind != "contact" {
+		t.Fatalf("Kind = %q, want contact", row.Kind)
+	}
+	if row.Payload == "" {
+		t.Fatal("expected a non-empty payload")
+	}
+
+	back := messageFromStore(store.Message{
+		ID: row.MsgID, ChatJID: row.ChatJID, Kind: row.Kind, Payload: row.Payload,
+	})
+	if back.Contact == nil {
+		t.Fatal("expected Contact to decode back")
+	}
+	if back.Contact.DisplayName != "Alan Turing" || len(back.Contact.Phones) != 1 ||
+		back.Contact.Phones[0] != "+44 7900 000000" {
+		t.Errorf("round-trip mismatch: %+v", back.Contact)
+	}
+}
+
 func TestLocationStoreRoundTrip(t *testing.T) {
 	m := &Message{
 		ID: "LOC1", ChatJID: "a@s.whatsapp.net",
