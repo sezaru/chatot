@@ -184,3 +184,44 @@ func TestUpsertMessageEditedIsSticky(t *testing.T) {
 		t.Fatal("edited flag was cleared by a non-edit re-upsert; want sticky")
 	}
 }
+
+func TestMarkMessageDeletedInsertsStubForUnseenMessage(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	// A revoke can arrive before (or without) the original message.
+	must(t, s.MarkMessageDeleted("a@s.whatsapp.net", "m1", 5))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if len(msgs) != 1 || !msgs[0].Deleted {
+		t.Fatalf("got %+v, want one deleted stub row", msgs)
+	}
+}
+
+func TestMarkMessageDeletedMarksExistingRow(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "original", TS: 1}))
+	must(t, s.MarkMessageDeleted("a@s.whatsapp.net", "m1", 5))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if len(msgs) != 1 || !msgs[0].Deleted || msgs[0].Text != "original" {
+		t.Fatalf("got %+v, want the original row marked deleted", msgs)
+	}
+}
+
+func TestUpsertMessageDeletedIsSticky(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "original", TS: 1}))
+	must(t, s.MarkMessageDeleted("a@s.whatsapp.net", "m1", 2))
+	// A later redelivery of the original must not resurrect it.
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "original", TS: 1}))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if !msgs[0].Deleted {
+		t.Fatal("deleted flag was cleared by a later redelivery of the original; want sticky")
+	}
+}

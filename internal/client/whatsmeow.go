@@ -341,6 +341,32 @@ func (w *Whatsmeow) EditMessage(ctx context.Context, chatJID, msgID, newText str
 	return nil
 }
 
+// DeleteMessage revokes ("delete for everyone") an own message via
+// BuildRevoke + SendMessage, then optimistically marks the stored row deleted
+// and pushes an EventRevoke so the open chat re-renders the tombstone. The
+// echo revoke whatsmeow later redelivers applies idempotently.
+func (w *Whatsmeow) DeleteMessage(ctx context.Context, chatJID, msgID string) error {
+	chat, err := types.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", chatJID, err)
+	}
+	own, err := types.ParseJID(w.ownJID())
+	if err != nil {
+		return fmt.Errorf("chatot/client: delete message: not logged in: %w", err)
+	}
+	revoke := w.wa.BuildRevoke(chat, own, msgID)
+	if _, err := w.wa.SendMessage(ctx, chat, revoke); err != nil {
+		return fmt.Errorf("chatot/client: send revoke: %w", err)
+	}
+
+	ts := time.Now().Unix()
+	if err := w.store.MarkMessageDeleted(chatJID, msgID, ts); err != nil {
+		w.log.Warnf("chatot/client: optimistic mark-deleted failed: %v", err)
+	}
+	w.pushEvent(Event{Kind: EventRevoke, Revoke: &Revoke{ChatJID: chatJID, MsgID: msgID, TS: ts}})
+	return nil
+}
+
 // replyContextInfo builds the ContextInfo for a reply, quoting the target
 // message's text and, for group chats, naming its original sender so
 // WhatsApp can resolve the "@X replied" attribution. Best-effort: if the

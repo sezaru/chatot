@@ -20,6 +20,13 @@ func translate(evt interface{}) *Event {
 		if v.Message.GetPollUpdateMessage() != nil {
 			return nil
 		}
+		if pm := v.Message.GetProtocolMessage(); pm != nil && pm.GetType() == waProto.ProtocolMessage_REVOKE {
+			return &Event{Kind: EventRevoke, Revoke: &Revoke{
+				ChatJID: v.Info.Chat.String(),
+				MsgID:   pm.GetKey().GetID(),
+				TS:      v.Info.Timestamp.Unix(),
+			}}
+		}
 		if r := v.Message.GetReactionMessage(); r != nil {
 			return translateReaction(v, r)
 		}

@@ -23,6 +23,8 @@ func (w *Whatsmeow) ingestEvent(e Event) {
 		err = w.ingestReceipt(e.Receipt)
 	case EventReaction:
 		err = w.ingestReaction(e.Reaction)
+	case EventRevoke:
+		err = w.ingestRevoke(e.Revoke)
 	}
 	if err != nil {
 		w.log.Warnf("store ingest failed (kind=%d): %v", e.Kind, err)
@@ -63,4 +65,11 @@ func (w *Whatsmeow) ingestReaction(r *Reaction) error {
 		return nil
 	}
 	return w.store.UpsertReaction(storeReactionRow(r))
+}
+
+func (w *Whatsmeow) ingestRevoke(r *Revoke) error {
+	if r == nil {
+		return nil
+	}
+	return w.store.MarkMessageDeleted(r.ChatJID, r.MsgID, r.TS)
 }

@@ -80,6 +80,13 @@ func activate(app *adw.Application, c client.Client) {
 	})
 	conversation.OnReplyRequested(composer.StartReply)
 	conversation.OnEditRequested(composer.StartEdit)
+	conversation.OnDeleteRequested(func(msg client.Message) {
+		go func() {
+			if err := c.DeleteMessage(context.Background(), msg.ChatJID, msg.ID); err != nil {
+				log.Printf("chatot: delete message failed: %v", err)
+			}
+		}()
+	})
 	conversation.OnReactRequested(func(msg client.Message, emoji string) {
 		go func() {
 			if err := c.React(context.Background(), msg.ChatJID, msg.ID, emoji); err != nil {

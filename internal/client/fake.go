@@ -291,6 +291,22 @@ func (f *Fake) EditMessage(ctx context.Context, chatJID, msgID, newText string) 
 	return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, chatJID)
 }
 
+func (f *Fake) DeleteMessage(ctx context.Context, chatJID, msgID string) error {
+	f.mu.Lock()
+	msgs := f.messages[chatJID]
+	for i := range msgs {
+		if msgs[i].ID == msgID {
+			msgs[i].Deleted = true
+			echo := msgs[i]
+			f.mu.Unlock()
+			f.events.Publish(Event{Kind: EventRevoke, Revoke: &Revoke{ChatJID: chatJID, MsgID: msgID, TS: echo.TS}})
+			return nil
+		}
+	}
+	f.mu.Unlock()
+	return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, chatJID)
+}
+
 func (f *Fake) React(ctx context.Context, jid, msgID, emoji string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

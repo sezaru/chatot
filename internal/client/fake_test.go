@@ -221,3 +221,45 @@ func TestFakeEditMessageNotFound(t *testing.T) {
 		t.Error("expected error editing a non-existent message")
 	}
 }
+
+func TestFakeDeleteMessage(t *testing.T) {
+	f := NewFake()
+	sub := f.Events()
+
+	if err := f.DeleteMessage(context.Background(), "1234567890@s.whatsapp.net", "m2"); err != nil {
+		t.Fatalf("DeleteMessage: %v", err)
+	}
+
+	select {
+	case ev := <-sub:
+		if ev.Kind != EventRevoke || ev.Revoke == nil {
+			t.Fatalf("got kind=%v revoke=%v, want an EventRevoke", ev.Kind, ev.Revoke)
+		}
+		if ev.Revoke.MsgID != "m2" {
+			t.Errorf("Revoke.MsgID = %q, want m2", ev.Revoke.MsgID)
+		}
+	default:
+		t.Fatal("DeleteMessage did not publish an event")
+	}
+
+	msgs, err := f.Messages("1234567890@s.whatsapp.net", 0)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	for _, m := range msgs {
+		if m.ID == "m2" {
+			if !m.Deleted {
+				t.Errorf("stored m2 = %+v, want Deleted=true", m)
+			}
+			return
+		}
+	}
+	t.Fatal("m2 not found after delete")
+}
+
+func TestFakeDeleteMessageNotFound(t *testing.T) {
+	f := NewFake()
+	if err := f.DeleteMessage(context.Background(), "1234567890@s.whatsapp.net", "nope"); err == nil {
+		t.Error("expected error deleting a non-existent message")
+	}
+}

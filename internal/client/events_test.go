@@ -683,3 +683,42 @@ func TestTranslateMessageHistoryEdit(t *testing.T) {
 		t.Errorf("got ID=%q Text=%q, want original id + edited text", e.Message.ID, e.Message.Text)
 	}
 }
+
+func TestTranslateRevoke(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	sender := mustJID(t, "1234567890@s.whatsapp.net")
+
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: sender},
+			ID:            "REVOKE-STANZA-ID",
+			Timestamp:     time.Unix(1700000200, 0),
+		},
+		Message: &waProto.Message{ProtocolMessage: &waE2E.ProtocolMessage{
+			Key:  &waCommon.MessageKey{ID: proto.String("REVOKED-ID")},
+			Type: waE2E.ProtocolMessage_REVOKE.Enum(),
+		}},
+	}
+
+	e := translate(evt)
+	if e == nil {
+		t.Fatal("translate returned nil for a revoke")
+	}
+	if e.Kind != EventRevoke {
+		t.Fatalf("Kind = %v, want EventRevoke", e.Kind)
+	}
+	if e.Revoke == nil {
+		t.Fatal("Revoke is nil")
+	}
+	if e.Revoke.MsgID != "REVOKED-ID" {
+		t.Errorf("MsgID = %q, want the id from the ProtocolMessage key, not the revoke's own stanza id", e.Revoke.MsgID)
+	}
+	if e.Revoke.ChatJID != chat.String() {
+		t.Errorf("ChatJID = %q, want %q", e.Revoke.ChatJID, chat.String())
+	}
+	// A REVOKE must never fall through to translateMessage/extractText: that
+	// would produce a blank EventMessage instead of an EventRevoke.
+	if e.Message != nil {
+		t.Error("Message is non-nil; a revoke must not also be routed as a message")
+	}
+}

@@ -145,3 +145,15 @@ func TestIngestReactionStored(t *testing.T) {
 		t.Errorf("got reactions %+v, want 👍 from friend", msgs[0].Reactions)
 	}
 }
+
+func TestIngestRevokeMarksMessageDeleted(t *testing.T) {
+	w := newIngestFixture(t)
+	must(t, w.ingestMessage(&Message{ChatJID: "1234567890@s.whatsapp.net", ID: "m1", Text: "oops", TS: 10}))
+	must(t, w.ingestRevoke(&Revoke{ChatJID: "1234567890@s.whatsapp.net", MsgID: "m1", TS: 11}))
+
+	msgs, err := w.store.Messages("1234567890@s.whatsapp.net", 50)
+	must(t, err)
+	if len(msgs) != 1 || !msgs[0].Deleted {
+		t.Fatalf("got %+v, want the message marked deleted", msgs)
+	}
+}

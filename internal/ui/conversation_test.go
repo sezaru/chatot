@@ -169,3 +169,40 @@ func TestBubbleVM_EditedMarker(t *testing.T) {
 		t.Error("expected no edited marker on an unedited message")
 	}
 }
+
+func TestBubbleVM_DeletedRendersTombstone(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+
+	out := bubbleVM(client.Message{ID: "1", Text: "the original text", Deleted: true, TS: now.Unix()}, nil, nil, now)
+	if !out.Deleted {
+		t.Error("expected Deleted=true on the view-model")
+	}
+	if out.Text != tombstoneText {
+		t.Errorf("Text = %q, want the tombstone text", out.Text)
+	}
+	if out.IsMedia || out.IsLocation || out.IsContact || out.IsPoll {
+		t.Error("a deleted message must not render as any rich kind")
+	}
+	if len(out.Reactions) != 0 {
+		t.Error("a deleted message must not show its reactions")
+	}
+}
+
+// TestBubbleVM_DeletedTakesPrecedenceOverMedia proves the Deleted branch in
+// bubbleVM is checked before the media/location/contact/poll switch, since a
+// revoke can arrive for a message of any original kind.
+func TestBubbleVM_DeletedTakesPrecedenceOverMedia(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+
+	m := client.Message{
+		ID: "1", TS: now.Unix(), Deleted: true,
+		Attachment: &client.Attachment{Kind: "image", Caption: "beach"},
+	}
+	out := bubbleVM(m, nil, nil, now)
+	if out.IsMedia {
+		t.Error("expected IsMedia=false; deleted must take precedence over media")
+	}
+	if out.Text != tombstoneText {
+		t.Errorf("Text = %q, want the tombstone text even though the message carried media", out.Text)
+	}
+}
