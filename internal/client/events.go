@@ -77,14 +77,34 @@ func translate(evt interface{}) *Event {
 }
 
 func translateMessage(v *events.Message) *Event {
+	// A message edit arrives either as a MESSAGE_EDIT ProtocolMessage (live
+	// path) or, on the history path, already unwrapped with only Info.Edit set.
+	// Derive the original message id + edited content explicitly: the live
+	// path leaves Info.ID as the edit's own id, so never trust it as the
+	// original — read it from the ProtocolMessage key when present.
+	content := v.Message
+	id := v.Info.ID
+	pm := v.Message.GetProtocolMessage()
+	edited := v.Info.Edit == types.EditAttributeMessageEdit ||
+		(pm != nil && pm.GetType() == waProto.ProtocolMessage_MESSAGE_EDIT)
+	if edited && pm != nil {
+		if k := pm.GetKey(); k.GetID() != "" {
+			id = k.GetID()
+		}
+		if em := pm.GetEditedMessage(); em != nil {
+			content = em
+		}
+	}
+
 	msg := Message{
-		ID:      v.Info.ID,
+		ID:      id,
 		ChatJID: v.Info.Chat.String(),
 		FromJID: v.Info.Sender.String(),
 		FromMe:  v.Info.IsFromMe,
 		TS:      v.Info.Timestamp.Unix(),
+		Edited:  edited,
 	}
-	extractText(v.Message, &msg)
+	extractText(content, &msg)
 	return &Event{Kind: EventMessage, Message: &msg}
 }
 

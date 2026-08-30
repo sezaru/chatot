@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS messages (
     -- JSON that only package client understands. The store never parses it.
     kind TEXT NOT NULL DEFAULT '',
     payload TEXT,
+    -- 1 once a MESSAGE_EDIT for this id has been applied; sticky (a later
+    -- non-edit re-upsert of the same row never clears it, see UpsertMessage).
+    edited INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat_jid, msg_id)
 );
 

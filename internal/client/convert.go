@@ -56,6 +56,7 @@ func storeMessageRow(m *Message) store.MessageRow {
 		FromMe:  m.FromMe,
 		Text:    m.Text,
 		TS:      m.TS,
+		Edited:  m.Edited,
 	}
 	if m.ReplyTo != nil {
 		row.ReplyToMsgID = m.ReplyTo.MsgID
@@ -124,7 +125,7 @@ func chatFromStore(c store.Chat) Chat {
 func messageFromStore(m store.Message, selfJID string) Message {
 	out := Message{
 		ID: m.ID, ChatJID: m.ChatJID, FromJID: m.FromJID, FromMe: m.FromMe,
-		Text: m.Text, TS: m.TS, Reactions: m.Reactions,
+		Text: m.Text, TS: m.TS, Reactions: m.Reactions, Edited: m.Edited,
 	}
 	if m.ReplyToMsgID != "" {
 		out.ReplyTo = &MsgRef{ChatJID: m.ChatJID, MsgID: m.ReplyToMsgID}

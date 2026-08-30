@@ -319,6 +319,28 @@ func (w *Whatsmeow) SendText(ctx context.Context, jid, text string, replyTo *Msg
 	return id, nil
 }
 
+// EditMessage edits an own text message (WhatsApp's ~15-min window) via
+// BuildEdit + SendMessage, then optimistically rewrites the stored row (text
+// + edited flag) and pushes an EventMessage so the open chat re-renders. The
+// echo edit whatsmeow later redelivers upserts the same row idempotently.
+func (w *Whatsmeow) EditMessage(ctx context.Context, chatJID, msgID, newText string) error {
+	chat, err := types.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", chatJID, err)
+	}
+	edited := w.wa.BuildEdit(chat, msgID, &waE2E.Message{Conversation: proto.String(newText)})
+	if _, err := w.wa.SendMessage(ctx, chat, edited); err != nil {
+		return fmt.Errorf("chatot/client: send edit: %w", err)
+	}
+
+	out := Message{ID: msgID, ChatJID: chatJID, FromJID: w.ownJID(), FromMe: true, Text: newText, TS: time.Now().Unix(), Edited: true}
+	if err := w.ingestMessage(&out); err != nil {
+		w.log.Warnf("chatot/client: optimistic upsert of edited message failed: %v", err)
+	}
+	w.pushEvent(Event{Kind: EventMessage, Message: &out})
+	return nil
+}
+
 // replyContextInfo builds the ContextInfo for a reply, quoting the target
 // message's text and, for group chats, naming its original sender so
 // WhatsApp can resolve the "@X replied" attribution. Best-effort: if the

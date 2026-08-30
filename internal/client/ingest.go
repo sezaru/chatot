@@ -35,7 +35,7 @@ func (w *Whatsmeow) ingestMessage(m *Message) error {
 	}
 	isGroup := strings.HasSuffix(m.ChatJID, "@g.us")
 	unreadDelta := 0
-	if !m.FromMe {
+	if !m.FromMe && !m.Edited {
 		unreadDelta = 1
 	}
 	if err := w.store.BumpChatActivity(m.ChatJID, isGroup, m.TS, unreadDelta); err != nil {

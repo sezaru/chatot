@@ -9,8 +9,8 @@ import (
 // leaves any existing reply link untouched.
 func (s *Store) UpsertMessage(row MessageRow) error {
 	_, err := s.db.Exec(`
-		INSERT INTO messages(chat_jid, msg_id, from_jid, from_me, text, ts, reply_to_msg_id, kind, payload)
-		VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''))
+		INSERT INTO messages(chat_jid, msg_id, from_jid, from_me, text, ts, reply_to_msg_id, kind, payload, edited)
+		VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), ?)
 		ON CONFLICT(chat_jid, msg_id) DO UPDATE SET
 			from_jid = excluded.from_jid,
 			from_me = excluded.from_me,
@@ -18,8 +18,9 @@ func (s *Store) UpsertMessage(row MessageRow) error {
 			ts = excluded.ts,
 			reply_to_msg_id = COALESCE(excluded.reply_to_msg_id, messages.reply_to_msg_id),
 			kind = excluded.kind,
-			payload = excluded.payload
-	`, row.ChatJID, row.MsgID, row.FromJID, boolToInt(row.FromMe), row.Text, row.TS, row.ReplyToMsgID, row.Kind, row.Payload)
+			payload = excluded.payload,
+			edited = messages.edited OR excluded.edited
+	`, row.ChatJID, row.MsgID, row.FromJID, boolToInt(row.FromMe), row.Text, row.TS, row.ReplyToMsgID, row.Kind, row.Payload, boolToInt(row.Edited))
 	return err
 }
 
@@ -48,7 +49,7 @@ func (s *Store) MessageByID(chatJID, msgID string) (m Message, ok bool, err erro
 const messageSelect = `
 	SELECT
 		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
-		m.kind, COALESCE(m.payload, ''),
+		m.kind, COALESCE(m.payload, ''), m.edited,
 		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, '')
 	FROM messages m
 	LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id`
@@ -106,17 +107,18 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 	var out []Message
 	for rows.Next() {
 		var m Message
-		var fromMe int
+		var fromMe, edited int
 		var mediaKind, mediaFilename, mediaCaption, mediaMime, mediaLocal string
 		if err := rows.Scan(
 			&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID,
-			&m.Kind, &m.Payload,
+			&m.Kind, &m.Payload, &edited,
 			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal,
 		); err != nil {
 			return nil, err
 		}
 		m.ChatJID = jid
 		m.FromMe = fromMe != 0
+		m.Edited = edited != 0
 		if mediaKind != "" {
 			m.Attachment = &Attachment{
 				Kind: mediaKind, Filename: mediaFilename, Caption: mediaCaption,

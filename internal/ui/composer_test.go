@@ -323,3 +323,63 @@ func TestComposeStateSubmitPollNoChat(t *testing.T) {
 		t.Error("expected SubmitPoll to fail with no active chat")
 	}
 }
+
+func TestComposeStateEditFlow(t *testing.T) {
+	var s composeState
+	s.SetChat("a@s.whatsapp.net")
+
+	if _, ok := s.EditTarget(); ok {
+		t.Fatal("expected no edit target before StartEdit")
+	}
+
+	s.StartEdit(client.Message{ID: "m1", Text: "before"})
+	target, ok := s.EditTarget()
+	if !ok || target.MsgID != "m1" || target.Text != "before" {
+		t.Fatalf("EditTarget = %+v, %v; want the armed message", target, ok)
+	}
+
+	action, ok := s.SubmitEdit("  after  ")
+	if !ok {
+		t.Fatal("expected SubmitEdit to succeed")
+	}
+	if action.JID != "a@s.whatsapp.net" || action.MsgID != "m1" || action.Text != "after" {
+		t.Errorf("action = %+v, want jid/m1/after (trimmed)", action)
+	}
+	if _, ok := s.EditTarget(); ok {
+		t.Error("expected edit mode cleared after a successful SubmitEdit")
+	}
+}
+
+func TestComposeStateEditCancelAndGuards(t *testing.T) {
+	var s composeState
+	s.SetChat("a@s.whatsapp.net")
+
+	if _, ok := s.SubmitEdit("x"); ok {
+		t.Error("expected SubmitEdit to fail when not in edit mode")
+	}
+
+	s.StartEdit(client.Message{ID: "m1", Text: "before"})
+	if _, ok := s.SubmitEdit("   "); ok {
+		t.Error("expected SubmitEdit to fail on blank text")
+	}
+	s.CancelEdit()
+	if _, ok := s.EditTarget(); ok {
+		t.Error("expected CancelEdit to clear edit mode")
+	}
+}
+
+func TestComposeStateEditAndReplyMutuallyExclusive(t *testing.T) {
+	var s composeState
+	s.SetChat("a@s.whatsapp.net")
+
+	s.StartReply(client.Message{ID: "r1", ChatJID: "a@s.whatsapp.net", Text: "quoted"})
+	s.StartEdit(client.Message{ID: "m1", Text: "before"})
+	if _, ok := s.ReplyTarget(); ok {
+		t.Error("StartEdit should clear a pending reply")
+	}
+
+	s.StartReply(client.Message{ID: "r2", ChatJID: "a@s.whatsapp.net", Text: "quoted2"})
+	if _, ok := s.EditTarget(); ok {
+		t.Error("StartReply should clear a pending edit")
+	}
+}

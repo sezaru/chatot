@@ -179,3 +179,45 @@ func TestFakePushEventDeliversOnEvents(t *testing.T) {
 		t.Fatal("expected an event on Events()")
 	}
 }
+
+func TestFakeEditMessage(t *testing.T) {
+	f := NewFake()
+	sub := f.Events()
+
+	if err := f.EditMessage(context.Background(), "1234567890@s.whatsapp.net", "m2", "Yep, definitely!"); err != nil {
+		t.Fatalf("EditMessage: %v", err)
+	}
+
+	select {
+	case ev := <-sub:
+		if ev.Kind != EventMessage || ev.Message == nil {
+			t.Fatalf("got kind=%v msg=%v, want an EventMessage", ev.Kind, ev.Message)
+		}
+		if !ev.Message.Edited || ev.Message.ID != "m2" || ev.Message.Text != "Yep, definitely!" {
+			t.Errorf("event msg = %+v, want edited m2 with new text", ev.Message)
+		}
+	default:
+		t.Fatal("EditMessage did not publish an event")
+	}
+
+	msgs, err := f.Messages("1234567890@s.whatsapp.net", 0)
+	if err != nil {
+		t.Fatalf("Messages: %v", err)
+	}
+	for _, m := range msgs {
+		if m.ID == "m2" {
+			if m.Text != "Yep, definitely!" || !m.Edited {
+				t.Errorf("stored m2 = %+v, want edited text + flag", m)
+			}
+			return
+		}
+	}
+	t.Fatal("m2 not found after edit")
+}
+
+func TestFakeEditMessageNotFound(t *testing.T) {
+	f := NewFake()
+	if err := f.EditMessage(context.Background(), "1234567890@s.whatsapp.net", "nope", "x"); err == nil {
+		t.Error("expected error editing a non-existent message")
+	}
+}
