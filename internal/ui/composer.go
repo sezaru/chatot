@@ -12,6 +12,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
+	"chatot/internal/audio"
 	"chatot/internal/client"
 )
 
@@ -151,6 +152,10 @@ type Composer struct {
 	quoteLabel *gtk.Label
 	entry      *gtk.Entry
 	attachBtn  *gtk.Button
+	recordBtn  *gtk.Button
+
+	recorder  *audio.Recorder // non-nil only while a recording is in progress
+	recording bool
 
 	onSent func(client.Message)
 }
@@ -192,6 +197,11 @@ func NewComposer(c client.Client) *Composer {
 	entry.SetPlaceholderText("Message")
 	entryRow.Append(entry)
 
+	recordBtn := gtk.NewButtonWithLabel("🎤")
+	recordBtn.AddCSSClass("flat")
+	recordBtn.SetSensitive(false)
+	entryRow.Append(recordBtn)
+
 	sendBtn := gtk.NewButtonWithLabel("Send")
 	sendBtn.AddCSSClass("suggested-action")
 	entryRow.Append(sendBtn)
@@ -205,11 +215,13 @@ func NewComposer(c client.Client) *Composer {
 		quoteLabel: quoteLabel,
 		entry:      entry,
 		attachBtn:  attachBtn,
+		recordBtn:  recordBtn,
 	}
 
 	entry.ConnectActivate(comp.submit)
 	sendBtn.ConnectClicked(comp.submit)
 	attachBtn.ConnectClicked(comp.pickAttachment)
+	recordBtn.ConnectClicked(comp.toggleRecording)
 	cancelQuote.ConnectClicked(func() {
 		comp.state.CancelReply()
 		comp.refreshQuoteBar()
@@ -231,6 +243,7 @@ func (c *Composer) OnSent(f func(client.Message)) { c.onSent = f }
 func (c *Composer) SetChat(jid string) {
 	c.state.SetChat(jid)
 	c.attachBtn.SetSensitive(jid != "")
+	c.recordBtn.SetSensitive(jid != "" && !c.recording)
 	c.refreshQuoteBar()
 }
 
@@ -336,6 +349,87 @@ func (c *Composer) sendMedia(path string) {
 			c.onSent(msg)
 		})
 	}()
+}
+
+// toggleRecording starts a voice-note recording on the first click and
+// stops+sends it on the second. Guards against a stray click while there's
+// no active chat (recordBtn is disabled then, but SetChat/click can race)
+// or while a recording is already in flight.
+func (c *Composer) toggleRecording() {
+	if c.recording {
+		c.stopRecording()
+		return
+	}
+	if c.state.jid == "" || c.recorder != nil {
+		return
+	}
+
+	rec := &audio.Recorder{}
+	if err := rec.Start(); err != nil {
+		log.Printf("chatot: start recording failed: %v", err)
+		return
+	}
+	c.recorder = rec
+	c.recording = true
+	c.recordBtn.SetLabel("⏹")
+	c.recordBtn.AddCSSClass("destructive-action")
+	c.entry.SetSensitive(false)
+	c.attachBtn.SetSensitive(false)
+}
+
+// stopRecording finalizes the in-flight recording and sends it in the
+// background, mirroring submit/sendMedia's goroutine + IdleAdd pattern. Any
+// failure (stop or send) resets the button without crashing.
+func (c *Composer) stopRecording() {
+	rec := c.recorder
+	jid := c.state.jid
+	c.recorder = nil
+	c.recording = false
+	c.resetRecordButton()
+
+	if rec == nil {
+		return
+	}
+
+	oggBytes, dur, err := rec.Stop()
+	if err != nil {
+		log.Printf("chatot: stop recording failed: %v", err)
+		return
+	}
+
+	go func() {
+		id, err := c.c.SendVoice(context.Background(), jid, oggBytes, dur)
+		// SendVoice already cached the ogg + set local_path; DownloadMedia
+		// returns that cached path without a network hit, so the just-sent
+		// note renders inline (MediaControls) instead of a tap-to-load chip.
+		var localPath string
+		if err == nil {
+			localPath, _ = c.c.DownloadMedia(context.Background(), id)
+		}
+		glib.IdleAdd(func() {
+			if err != nil {
+				log.Printf("chatot: send voice failed: %v", err)
+				return
+			}
+			if c.onSent == nil {
+				return
+			}
+			c.onSent(client.Message{
+				ID: id, ChatJID: jid, FromMe: true, TS: time.Now().Unix(),
+				Attachment: &client.Attachment{Kind: "audio", MimeType: "audio/ogg; codecs=opus", LocalPath: localPath},
+			})
+		})
+	}()
+}
+
+// resetRecordButton restores the mic button to its idle appearance and
+// re-enables the entry/attach controls it disabled while recording.
+func (c *Composer) resetRecordButton() {
+	c.recordBtn.SetLabel("🎤")
+	c.recordBtn.RemoveCSSClass("destructive-action")
+	c.recordBtn.SetSensitive(c.state.jid != "")
+	c.entry.SetSensitive(true)
+	c.attachBtn.SetSensitive(c.state.jid != "")
 }
 
 // guessAttachmentKind best-effort classifies path by extension, for the
