@@ -330,3 +330,58 @@ func TestFakeStarMessageNotFound(t *testing.T) {
 		t.Error("expected error starring a non-existent message")
 	}
 }
+
+// TestFakeBlockUnblockCachedSet exercises the cached blocked-set semantics
+// the whatsmeow client shares in spirit: block adds, unblock removes,
+// IsBlocked reflects it synchronously, and Blocklist lists exactly the
+// blocked JIDs.
+func TestFakeBlockUnblockCachedSet(t *testing.T) {
+	f := NewFake()
+	jid := "1234567890@s.whatsapp.net"
+
+	if f.IsBlocked(jid) {
+		t.Fatal("jid should not start blocked")
+	}
+
+	if err := f.SetBlocked(context.Background(), jid, true); err != nil {
+		t.Fatalf("SetBlocked(block): %v", err)
+	}
+	if !f.IsBlocked(jid) {
+		t.Error("IsBlocked should be true after blocking")
+	}
+	list, err := f.Blocklist(context.Background())
+	if err != nil {
+		t.Fatalf("Blocklist: %v", err)
+	}
+	if len(list) != 1 || list[0] != jid {
+		t.Errorf("Blocklist() = %v, want [%s]", list, jid)
+	}
+
+	if err := f.SetBlocked(context.Background(), jid, false); err != nil {
+		t.Fatalf("SetBlocked(unblock): %v", err)
+	}
+	if f.IsBlocked(jid) {
+		t.Error("IsBlocked should be false after unblocking")
+	}
+	list, err = f.Blocklist(context.Background())
+	if err != nil {
+		t.Fatalf("Blocklist: %v", err)
+	}
+	if len(list) != 0 {
+		t.Errorf("Blocklist() = %v, want empty after unblock", list)
+	}
+}
+
+func TestFakeSetBlockedPublishesChatUpdate(t *testing.T) {
+	f := NewFake()
+	events := f.Events()
+	jid := "1234567890@s.whatsapp.net"
+
+	if err := f.SetBlocked(context.Background(), jid, true); err != nil {
+		t.Fatalf("SetBlocked: %v", err)
+	}
+	ev := <-events
+	if ev.Kind != EventChatUpdate || ev.ChatUpdate == nil || ev.ChatUpdate.JID != jid {
+		t.Errorf("got event %+v, want EventChatUpdate for %s", ev, jid)
+	}
+}

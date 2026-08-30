@@ -306,6 +306,18 @@ type Client interface {
 	// first, for the starred-messages sidebar view.
 	StarredMessages(limit int) ([]Message, error)
 
+	// Blocklist returns the JIDs currently blocked.
+	Blocklist(ctx context.Context) ([]string, error)
+	// SetBlocked blocks or unblocks jid; the result is reflected in the
+	// cached set IsBlocked reads and pushed as an EventChatUpdate.
+	SetBlocked(ctx context.Context, jid string, blocked bool) error
+	// IsBlocked is a cheap synchronous check against the locally cached
+	// blocked set (no network call).
+	IsBlocked(jid string) bool
+	// PrivacySettings returns the account's privacy settings as a
+	// display-friendly name -> value map. Read-only.
+	PrivacySettings(ctx context.Context) (map[string]string, error)
+
 	// media
 	DownloadMedia(ctx context.Context, msgID string) (localPath string, err error)
 	// Avatar resolves jid's profile picture to a local cached file path,

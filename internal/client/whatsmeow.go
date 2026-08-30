@@ -55,6 +55,9 @@ type Whatsmeow struct {
 
 	avatarMu   sync.Mutex
 	avatarMemo map[string]avatarEntry
+
+	blockMu sync.Mutex
+	blocked map[string]bool // jid -> blocked, warmed on connect and kept live by SetBlocked + inbound events
 }
 
 // NewWhatsmeow opens (or creates) the whatsmeow auth/session store under
@@ -112,6 +115,7 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 		avatarDir: avatarDir,
 		events:    newEventBus(clientLog.Warnf),
 		qrCodes:   make(chan string, 8),
+		blocked:   make(map[string]bool),
 	}
 	wa.AddEventHandler(w.handleRaw)
 	return w, nil
@@ -184,6 +188,12 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 		w.pushEvent(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: jid, MsgID: st.MessageID}})
 		return
 	}
+	// Blocklist changes: either a full list (Action == "modify", re-fetch) or
+	// a batch of individual Changes applied to the cached set in place.
+	if bl, ok := evt.(*events.Blocklist); ok {
+		w.applyBlocklistEvent(bl)
+		return
+	}
 	if _, ok := evt.(*events.Connected); ok {
 		// whatsmeow only delivers other users' presence after we've sent our
 		// own at least once; do it on every (re)connect rather than tracking
@@ -191,6 +201,13 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 		go func() {
 			if err := w.SendPresence(true); err != nil {
 				w.log.Warnf("chatot/client: send initial presence: %v", err)
+			}
+		}()
+		// Warm the blocked-set cache so IsBlocked is meaningful before the
+		// first explicit Blocklist() call.
+		go func() {
+			if _, err := w.Blocklist(context.Background()); err != nil {
+				w.log.Warnf("chatot/client: warm blocklist cache: %v", err)
 			}
 		}()
 	}
@@ -996,6 +1013,98 @@ func (w *Whatsmeow) StarredMessages(limit int) ([]Message, error) {
 		out[i] = messageFromStore(m, selfJID)
 	}
 	return out, nil
+}
+
+// applyBlocklistEvent updates the cached blocked set from an inbound
+// *events.Blocklist. A "modify" action carries no Changes and means the
+// whole list must be re-fetched; anything else is a batch of individual
+// block/unblock Changes applied in place. Either way it ends by pushing an
+// EventChatUpdate so the chat list (and any open block-state UI) refreshes.
+func (w *Whatsmeow) applyBlocklistEvent(bl *events.Blocklist) {
+	if bl.Action == events.BlocklistActionModify {
+		go func() {
+			if _, err := w.Blocklist(context.Background()); err != nil {
+				w.log.Warnf("chatot/client: refresh blocklist: %v", err)
+			}
+			w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{}})
+		}()
+		return
+	}
+	w.blockMu.Lock()
+	for _, ch := range bl.Changes {
+		jid := ch.JID.String()
+		if ch.Action == events.BlocklistChangeActionBlock {
+			w.blocked[jid] = true
+		} else {
+			delete(w.blocked, jid)
+		}
+	}
+	w.blockMu.Unlock()
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{}})
+}
+
+// setBlockedCache replaces the cached blocked set wholesale from a
+// types.Blocklist snapshot (returned by GetBlocklist/UpdateBlocklist).
+func (w *Whatsmeow) setBlockedCache(list *types.Blocklist) {
+	if list == nil {
+		return
+	}
+	set := make(map[string]bool, len(list.JIDs))
+	for _, j := range list.JIDs {
+		set[j.String()] = true
+	}
+	w.blockMu.Lock()
+	w.blocked = set
+	w.blockMu.Unlock()
+}
+
+// Blocklist fetches the full blocked-JID list and refreshes the local cache
+// IsBlocked reads.
+func (w *Whatsmeow) Blocklist(ctx context.Context) ([]string, error) {
+	list, err := w.wa.GetBlocklist(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: get blocklist: %w", err)
+	}
+	w.setBlockedCache(list)
+	out := make([]string, len(list.JIDs))
+	for i, j := range list.JIDs {
+		out[i] = j.String()
+	}
+	return out, nil
+}
+
+// SetBlocked blocks or unblocks jid, refreshing the cached set from the
+// server's authoritative response and notifying the UI to refresh.
+func (w *Whatsmeow) SetBlocked(ctx context.Context, jid string, blocked bool) error {
+	target, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+	action := events.BlocklistChangeActionUnblock
+	if blocked {
+		action = events.BlocklistChangeActionBlock
+	}
+	list, err := w.wa.UpdateBlocklist(ctx, target, action)
+	if err != nil {
+		return fmt.Errorf("chatot/client: update blocklist: %w", err)
+	}
+	w.setBlockedCache(list)
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+// IsBlocked is a cheap synchronous read of the cached blocked set, warmed on
+// connect and kept live by SetBlocked and inbound Blocklist events.
+func (w *Whatsmeow) IsBlocked(jid string) bool {
+	w.blockMu.Lock()
+	defer w.blockMu.Unlock()
+	return w.blocked[jid]
+}
+
+// PrivacySettings reads the account's privacy settings; read-only, no
+// setter is offered.
+func (w *Whatsmeow) PrivacySettings(ctx context.Context) (map[string]string, error) {
+	return privacySettingsToMap(w.wa.GetPrivacySettings(ctx)), nil
 }
 
 // SendPresence sets the account's overall online/offline state. Also the

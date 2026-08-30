@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +31,7 @@ type chatRowView struct {
 	Typing     bool // set by ChatList.refresh from live presence, not chatRowVM
 	Pinned     bool
 	Muted      bool
+	Blocked    bool // set by ChatList.refreshChats via c.IsBlocked, not chatRowVM (pure)
 }
 
 // chatRowVM derives the display view-model for a single chat row. now is
@@ -92,6 +94,15 @@ func chatActionLabels(c client.Chat) chatActionLabelsView {
 		v.Unread = "Mark as read"
 	}
 	return v
+}
+
+// blockActionLabel is the pure label for the context menu's block/unblock
+// entry, reflecting the contact's current blocked state.
+func blockActionLabel(blocked bool) string {
+	if blocked {
+		return "Unblock"
+	}
+	return "Block"
 }
 
 // showChatInList is the archived-filter predicate: with the toggle off, only
@@ -174,6 +185,10 @@ func NewChatList(c client.Client) *ChatList {
 	starredToggle.SetTooltipText("Starred messages")
 	searchRow.Append(starredToggle)
 
+	privacyBtn := gtk.NewButtonFromIconName("preferences-system-privacy-symbolic")
+	privacyBtn.SetTooltipText("Privacy settings")
+	searchRow.Append(privacyBtn)
+
 	root.Append(searchRow)
 
 	list := gtk.NewListBox()
@@ -220,6 +235,10 @@ func NewChatList(c client.Client) *ChatList {
 		cl.refresh()
 	})
 
+	privacyBtn.ConnectClicked(func() {
+		showPrivacyDialog(cl.window, cl.c)
+	})
+
 	cl.refresh()
 	go cl.watchEvents()
 
@@ -263,6 +282,7 @@ func (cl *ChatList) refreshChats() {
 			vm.Preview = "typing…"
 			vm.Typing = true
 		}
+		vm.Blocked = cl.c.IsBlocked(chat.JID)
 		row := buildChatRow(cl.c, cl.avatarCache, vm)
 		attachChatContextMenu(row, cl.c, chat)
 		cl.list.Append(row)
@@ -414,6 +434,9 @@ func buildChatRow(c client.Client, cache *avatarCache, vm chatRowView) *gtk.Box 
 	if vm.Muted {
 		name = "🔇 " + name
 	}
+	if vm.Blocked {
+		name = "🚫 " + name
+	}
 	nameLabel := gtk.NewLabel(name)
 	nameLabel.SetXAlign(0)
 	nameLabel.SetEllipsize(pango.EllipsizeEnd)
@@ -497,6 +520,13 @@ func showChatContextMenu(row *gtk.Box, c client.Client, chat client.Chat, x, y f
 	addAction(labels.Unread, func(ctx context.Context) error {
 		return c.MarkChatUnread(ctx, chat.JID, chat.UnreadCount == 0)
 	})
+	// Blocking is per-contact; groups have no meaningful block target.
+	if !chat.IsGroup {
+		blocked := c.IsBlocked(chat.JID)
+		addAction(blockActionLabel(blocked), func(ctx context.Context) error {
+			return c.SetBlocked(ctx, chat.JID, !blocked)
+		})
+	}
 
 	rect := gdk.NewRectangle(int(x), int(y), 1, 1)
 	pop.SetChild(box)
@@ -668,4 +698,61 @@ func (cl *ChatList) showNewChatDialog() {
 	dialog.SetChild(box)
 	dialog.SetDefaultWidget(startBtn)
 	dialog.Present()
+}
+
+// showPrivacyDialog opens a read-only modal listing the account's privacy
+// settings, fetched via c.PrivacySettings in a goroutine.
+func showPrivacyDialog(parent *gtk.Window, c client.Client) {
+	dialog := gtk.NewWindow()
+	dialog.SetTitle("Privacy")
+	if parent != nil {
+		dialog.SetTransientFor(parent)
+	}
+	dialog.SetModal(true)
+
+	box := gtk.NewBox(gtk.OrientationVertical, 4)
+	box.SetMarginTop(12)
+	box.SetMarginBottom(12)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
+
+	status := gtk.NewLabel("Loading…")
+	status.SetXAlign(0)
+	box.Append(status)
+
+	dialog.SetChild(box)
+	dialog.Present()
+
+	go func() {
+		settings, err := c.PrivacySettings(context.Background())
+		glib.IdleAdd(func() {
+			box.Remove(status)
+			if err != nil {
+				box.Append(gtk.NewLabel("Couldn't load privacy settings"))
+				return
+			}
+			for _, row := range privacySettingsRows(settings) {
+				line := gtk.NewLabel(row.Name + ": " + row.Value)
+				line.SetXAlign(0)
+				box.Append(line)
+			}
+		})
+	}()
+}
+
+// privacySettingRow is one name/value line in the privacy dialog.
+type privacySettingRow struct {
+	Name  string
+	Value string
+}
+
+// privacySettingsRows sorts a privacy-settings map into a deterministic
+// display order.
+func privacySettingsRows(settings map[string]string) []privacySettingRow {
+	rows := make([]privacySettingRow, 0, len(settings))
+	for name, value := range settings {
+		rows = append(rows, privacySettingRow{Name: name, Value: value})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
+	return rows
 }
