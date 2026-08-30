@@ -1,6 +1,21 @@
 package client
 
-import "chatot/internal/store"
+import (
+	"encoding/json"
+
+	"chatot/internal/store"
+)
+
+// locationPayload is the JSON shape stored in a message row's opaque payload
+// when Kind == "location". Only package client marshals/unmarshals it; the
+// store persists the string verbatim.
+type locationPayload struct {
+	Name      string  `json:"name,omitempty"`
+	Address   string  `json:"address,omitempty"`
+	Latitude  float64 `json:"lat"`
+	Longitude float64 `json:"long"`
+	IsLive    bool    `json:"live,omitempty"`
+}
 
 // This file is the sole boundary between package client's value types and
 // package store's: store defines its own plain Chat/Message/Attachment
@@ -18,6 +33,18 @@ func storeMessageRow(m *Message) store.MessageRow {
 	}
 	if m.ReplyTo != nil {
 		row.ReplyToMsgID = m.ReplyTo.MsgID
+	}
+	// Rich kinds serialize their typed body into the opaque payload. Adding a
+	// future kind (contact, poll) is another case here + in messageFromStore.
+	if m.Location != nil {
+		row.Kind = "location"
+		if b, err := json.Marshal(locationPayload{
+			Name: m.Location.Name, Address: m.Location.Address,
+			Latitude: m.Location.Latitude, Longitude: m.Location.Longitude,
+			IsLive: m.Location.IsLive,
+		}); err == nil {
+			row.Payload = string(b)
+		}
 	}
 	return row
 }
@@ -58,6 +85,16 @@ func messageFromStore(m store.Message) Message {
 			Kind: m.Attachment.Kind, Filename: m.Attachment.Filename,
 			MimeType: m.Attachment.MimeType, LocalPath: m.Attachment.LocalPath,
 			Caption: m.Attachment.Caption,
+		}
+	}
+	switch m.Kind {
+	case "location":
+		var p locationPayload
+		if err := json.Unmarshal([]byte(m.Payload), &p); err == nil {
+			out.Location = &Location{
+				Name: p.Name, Address: p.Address,
+				Latitude: p.Latitude, Longitude: p.Longitude, IsLive: p.IsLive,
+			}
 		}
 	}
 	return out

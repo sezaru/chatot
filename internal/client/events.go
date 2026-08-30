@@ -94,9 +94,9 @@ func translateReaction(v *events.Message, r *waProto.ReactionMessage) *Event {
 	}}
 }
 
-// extractText fills in Text, ReplyTo and Attachment from the leaf proto
-// message. It covers plain/quoted text and the common media kinds; location/
-// poll extraction is left for whichever later feature renders those.
+// extractText fills in Text, ReplyTo, Attachment and Location from the leaf
+// proto message. It covers plain/quoted text, the common media kinds and
+// (live) locations; other rich kinds (poll, contact) are left for later.
 func extractText(m *waProto.Message, msg *Message) {
 	if m == nil {
 		return
@@ -133,6 +133,21 @@ func extractText(m *waProto.Message, msg *Message) {
 		sticker := m.GetStickerMessage()
 		msg.Attachment = &Attachment{Kind: "sticker", MimeType: sticker.GetMimetype(), ProtoBlob: marshalMedia(sticker)}
 		ctx = sticker.GetContextInfo()
+	case m.GetLocationMessage() != nil:
+		loc := m.GetLocationMessage()
+		msg.Location = &Location{
+			Name: loc.GetName(), Address: loc.GetAddress(),
+			Latitude: loc.GetDegreesLatitude(), Longitude: loc.GetDegreesLongitude(),
+		}
+		ctx = loc.GetContextInfo()
+	case m.GetLiveLocationMessage() != nil:
+		// Live locations carry no name/address on the wire, only coordinates.
+		live := m.GetLiveLocationMessage()
+		msg.Location = &Location{
+			Latitude: live.GetDegreesLatitude(), Longitude: live.GetDegreesLongitude(),
+			IsLive: true,
+		}
+		ctx = live.GetContextInfo()
 	}
 	if ctx == nil {
 		return

@@ -403,6 +403,43 @@ func (w *Whatsmeow) SendMedia(ctx context.Context, jid string, m Attachment, rep
 	return id, nil
 }
 
+// SendLocation sends a static location pin. Live-location sharing isn't sent
+// from chatot (only received), so IsLive is ignored here. Optimistic echo
+// mirrors SendText.
+func (w *Whatsmeow) SendLocation(ctx context.Context, jid string, loc Location, replyTo *MsgRef) (string, error) {
+	to, err := types.ParseJID(jid)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+
+	locMsg := &waE2E.LocationMessage{
+		DegreesLatitude:  proto.Float64(loc.Latitude),
+		DegreesLongitude: proto.Float64(loc.Longitude),
+	}
+	if loc.Name != "" {
+		locMsg.Name = proto.String(loc.Name)
+	}
+	if loc.Address != "" {
+		locMsg.Address = proto.String(loc.Address)
+	}
+	if replyTo != nil {
+		locMsg.ContextInfo = w.replyContextInfo(jid, *replyTo)
+	}
+
+	id := w.wa.GenerateMessageID()
+	if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{LocationMessage: locMsg}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		return "", fmt.Errorf("chatot/client: send location: %w", err)
+	}
+
+	sent := loc
+	sent.IsLive = false
+	out := Message{ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(), ReplyTo: replyTo, Location: &sent}
+	if err := w.ingestMessage(&out); err != nil {
+		w.log.Warnf("chatot/client: optimistic upsert of sent location failed: %v", err)
+	}
+	return id, nil
+}
+
 // detectAttachmentKind maps a mime type to chatot's media kind and
 // whatsmeow's upload MediaType. If mimeType is empty or the generic sniffed
 // fallback, it tries the filename extension before giving up. Anything that

@@ -222,3 +222,56 @@ func TestMarkReadOnOpenSendsWhenEnabled(t *testing.T) {
 		}
 	}
 }
+
+func TestParseLocationValid(t *testing.T) {
+	loc, ok := parseLocation("  Home  ", "  1 Main St ", " 51.5 ", " -0.12 ")
+	if !ok {
+		t.Fatal("expected parseLocation to succeed on valid coords")
+	}
+	if loc.Name != "Home" || loc.Address != "1 Main St" {
+		t.Errorf("got name=%q addr=%q, want trimmed", loc.Name, loc.Address)
+	}
+	if loc.Latitude != 51.5 || loc.Longitude != -0.12 {
+		t.Errorf("got lat=%v long=%v", loc.Latitude, loc.Longitude)
+	}
+}
+
+func TestParseLocationRejectsBadInput(t *testing.T) {
+	cases := [][2]string{
+		{"", "0"},      // empty lat
+		{"abc", "0"},   // non-numeric lat
+		{"0", "xyz"},   // non-numeric long
+		{"91", "0"},    // lat out of range
+		{"0", "181"},   // long out of range
+		{"-90.1", "0"}, // lat just out of range
+	}
+	for _, c := range cases {
+		if _, ok := parseLocation("", "", c[0], c[1]); ok {
+			t.Errorf("parseLocation(%q,%q) succeeded, want rejection", c[0], c[1])
+		}
+	}
+}
+
+func TestComposeStateSubmitLocationNoChat(t *testing.T) {
+	var s composeState
+	if _, ok := s.SubmitLocation("", "", "1", "2"); ok {
+		t.Error("expected SubmitLocation to fail with no active chat")
+	}
+}
+
+func TestComposeStateSubmitLocationClearsReply(t *testing.T) {
+	var s composeState
+	s.SetChat("a@s.whatsapp.net")
+	s.StartReply(client.Message{ID: "m1", ChatJID: "a@s.whatsapp.net"})
+
+	action, ok := s.SubmitLocation("Home", "", "51.5", "-0.12")
+	if !ok {
+		t.Fatal("expected SubmitLocation to succeed")
+	}
+	if action.ReplyTo == nil || action.ReplyTo.MsgID != "m1" {
+		t.Errorf("ReplyTo = %+v, want m1", action.ReplyTo)
+	}
+	if _, replying := s.ReplyTarget(); replying {
+		t.Error("expected reply to be cleared after SubmitLocation")
+	}
+}

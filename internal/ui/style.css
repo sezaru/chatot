@@ -70,6 +70,15 @@
 	opacity: 0.85;
 }
 
+.chatot-location-title {
+	font-weight: bold;
+}
+
+.chatot-location-coords {
+	opacity: 0.6;
+	font-size: 0.85em;
+}
+
 .chatot-bubble-time {
 	opacity: 0.6;
 	font-size: 0.7em;

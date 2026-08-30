@@ -5,6 +5,7 @@ import (
 	"log"
 	"mime"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,6 +90,50 @@ func (s *composeState) SubmitMedia(path, caption string) (mediaAction, bool) {
 	return action, true
 }
 
+// locationAction is what a location-dialog submission resolves to.
+type locationAction struct {
+	JID     string
+	Loc     client.Location
+	ReplyTo *client.MsgRef
+}
+
+// SubmitLocation resolves a location send from the dialog's raw entry strings.
+// Fails (ok=false) with no active chat or invalid coordinates; on success it
+// clears any pending reply like the other sends.
+func (s *composeState) SubmitLocation(name, address, lat, long string) (locationAction, bool) {
+	if s.jid == "" {
+		return locationAction{}, false
+	}
+	loc, ok := parseLocation(name, address, lat, long)
+	if !ok {
+		return locationAction{}, false
+	}
+	action := locationAction{JID: s.jid, Loc: loc}
+	if s.replyTo != nil {
+		action.ReplyTo = &client.MsgRef{ChatJID: s.replyTo.ChatJID, MsgID: s.replyTo.ID}
+	}
+	s.replyTo = nil
+	return action, true
+}
+
+// parseLocation validates the dialog's raw lat/long strings into a
+// client.Location, rejecting non-numeric or out-of-range coordinates. Name
+// and address are trimmed free text.
+func parseLocation(name, address, lat, long string) (client.Location, bool) {
+	latF, err := strconv.ParseFloat(strings.TrimSpace(lat), 64)
+	if err != nil || latF < -90 || latF > 90 {
+		return client.Location{}, false
+	}
+	longF, err := strconv.ParseFloat(strings.TrimSpace(long), 64)
+	if err != nil || longF < -180 || longF > 180 {
+		return client.Location{}, false
+	}
+	return client.Location{
+		Name: strings.TrimSpace(name), Address: strings.TrimSpace(address),
+		Latitude: latF, Longitude: longF,
+	}, true
+}
+
 // Submit resolves a send attempt for text. It fails (ok=false) if there's no
 // active chat or the text is blank/whitespace-only; nothing is cleared in
 // that case. On success it returns the action to perform and clears any
@@ -148,11 +193,12 @@ type Composer struct {
 	state  composeState
 	window *gtk.Window // parent for gtk.FileDialog; set via SetWindow
 
-	quoteBar   *gtk.Box
-	quoteLabel *gtk.Label
-	entry      *gtk.Entry
-	attachBtn  *gtk.Button
-	recordBtn  *gtk.Button
+	quoteBar    *gtk.Box
+	quoteLabel  *gtk.Label
+	entry       *gtk.Entry
+	attachBtn   *gtk.Button
+	locationBtn *gtk.Button
+	recordBtn   *gtk.Button
 
 	recorder  *audio.Recorder // non-nil only while a recording is in progress
 	recording bool
@@ -194,6 +240,11 @@ func NewComposer(c client.Client) *Composer {
 	attachBtn.SetSensitive(false)
 	entryRow.Append(attachBtn)
 
+	locationBtn := gtk.NewButtonWithLabel("📍")
+	locationBtn.AddCSSClass("flat")
+	locationBtn.SetSensitive(false)
+	entryRow.Append(locationBtn)
+
 	entry := gtk.NewEntry()
 	entry.SetHExpand(true)
 	entry.SetPlaceholderText("Message")
@@ -211,20 +262,22 @@ func NewComposer(c client.Client) *Composer {
 	root.Append(entryRow)
 
 	comp := &Composer{
-		Box:        root,
-		c:          c,
-		quoteBar:   quoteBar,
-		quoteLabel: quoteLabel,
-		entry:      entry,
-		attachBtn:  attachBtn,
-		recordBtn:  recordBtn,
-		typing:     newTypingModel(typingDebounce),
+		Box:         root,
+		c:           c,
+		quoteBar:    quoteBar,
+		quoteLabel:  quoteLabel,
+		entry:       entry,
+		attachBtn:   attachBtn,
+		locationBtn: locationBtn,
+		recordBtn:   recordBtn,
+		typing:      newTypingModel(typingDebounce),
 	}
 
 	entry.ConnectActivate(comp.submit)
 	entry.ConnectChanged(comp.onEntryChanged)
 	sendBtn.ConnectClicked(comp.submit)
 	attachBtn.ConnectClicked(comp.pickAttachment)
+	locationBtn.ConnectClicked(comp.pickLocation)
 	recordBtn.ConnectClicked(comp.toggleRecording)
 	cancelQuote.ConnectClicked(func() {
 		comp.state.CancelReply()
@@ -307,6 +360,7 @@ func (c *Composer) SetChat(jid string) {
 		c.sendTypingAsync(prevJID, false)
 	}
 	c.attachBtn.SetSensitive(jid != "")
+	c.locationBtn.SetSensitive(jid != "")
 	c.recordBtn.SetSensitive(jid != "" && !c.recording)
 	c.refreshQuoteBar()
 }
@@ -413,6 +467,84 @@ func (c *Composer) sendMedia(path string) {
 			c.onSent(msg)
 		})
 	}()
+}
+
+// pickLocation opens a small modal with name/latitude/longitude entries and,
+// on send, hands the parsed coordinates to sendLocation. No-ops if there's no
+// active chat or no window set yet.
+func (c *Composer) pickLocation() {
+	if !c.locationBtn.Sensitive() || c.window == nil {
+		return
+	}
+
+	dialog := gtk.NewWindow()
+	dialog.SetTitle("Send location")
+	dialog.SetTransientFor(c.window)
+	dialog.SetModal(true)
+
+	grid := gtk.NewGrid()
+	grid.SetRowSpacing(6)
+	grid.SetColumnSpacing(8)
+	grid.SetMarginTop(12)
+	grid.SetMarginBottom(12)
+	grid.SetMarginStart(12)
+	grid.SetMarginEnd(12)
+
+	nameEntry := gtk.NewEntry()
+	nameEntry.SetPlaceholderText("Name (optional)")
+	latEntry := gtk.NewEntry()
+	latEntry.SetPlaceholderText("Latitude")
+	longEntry := gtk.NewEntry()
+	longEntry.SetPlaceholderText("Longitude")
+
+	grid.Attach(gtk.NewLabel("Name"), 0, 0, 1, 1)
+	grid.Attach(nameEntry, 1, 0, 1, 1)
+	grid.Attach(gtk.NewLabel("Latitude"), 0, 1, 1, 1)
+	grid.Attach(latEntry, 1, 1, 1, 1)
+	grid.Attach(gtk.NewLabel("Longitude"), 0, 2, 1, 1)
+	grid.Attach(longEntry, 1, 2, 1, 1)
+
+	sendBtn := gtk.NewButtonWithLabel("Send")
+	sendBtn.AddCSSClass("suggested-action")
+	sendBtn.ConnectClicked(func() {
+		if c.sendLocation(nameEntry.Text(), "", latEntry.Text(), longEntry.Text()) {
+			dialog.Close()
+		}
+	})
+	grid.Attach(sendBtn, 1, 3, 1, 1)
+
+	dialog.SetChild(grid)
+	dialog.SetDefaultWidget(sendBtn)
+	dialog.Present()
+}
+
+// sendLocation resolves the dialog's raw entries against composeState and
+// sends the location in the background (mirroring submit's flow). Returns
+// false — leaving the dialog open — if the coordinates don't parse.
+func (c *Composer) sendLocation(name, address, lat, long string) bool {
+	action, ok := c.state.SubmitLocation(name, address, lat, long)
+	if !ok {
+		return false
+	}
+	c.refreshQuoteBar()
+
+	go func() {
+		id, err := c.c.SendLocation(context.Background(), action.JID, action.Loc, action.ReplyTo)
+		if err != nil {
+			log.Printf("chatot: send location failed: %v", err)
+			return
+		}
+		if c.onSent == nil {
+			return
+		}
+		loc := action.Loc
+		msg := client.Message{
+			ID: id, ChatJID: action.JID, FromMe: true, TS: time.Now().Unix(),
+			ReplyTo: action.ReplyTo, Location: &loc,
+		}
+		glib.IdleAdd(func() { c.onSent(msg) })
+	}()
+	return true
 }
 
 // toggleRecording starts a voice-note recording on the first click and

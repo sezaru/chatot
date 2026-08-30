@@ -46,6 +46,8 @@ func NewFake() *Fake {
 	}
 	f.messages["1112223333@s.whatsapp.net"] = []Message{
 		{ID: "m4", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, Text: "Bug found in the relay", TS: now - 3600},
+		{ID: "m5", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 3000,
+			Location: &Location{Name: "Bletchley Park", Address: "Sherwood Dr, Bletchley, Milton Keynes", Latitude: 51.9976, Longitude: -0.7406}},
 	}
 
 	return f
@@ -185,6 +187,24 @@ func (f *Fake) SendMedia(ctx context.Context, jid string, m Attachment, replyTo 
 	defer f.mu.Unlock()
 	id := f.nextMsgID()
 	f.appendOutbound(jid, Message{ID: id, ChatJID: jid, FromJID: "me", FromMe: true, Text: m.Caption, TS: time.Now().Unix(), ReplyTo: replyTo, Attachment: &m})
+	return id, nil
+}
+
+func (f *Fake) SendLocation(ctx context.Context, jid string, loc Location, replyTo *MsgRef) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id := f.nextMsgID()
+	l := loc
+	l.IsLive = false
+	msg := Message{ID: id, ChatJID: jid, FromJID: "me", FromMe: true, TS: time.Now().Unix(), ReplyTo: replyTo, Location: &l}
+	f.messages[jid] = append(f.messages[jid], msg)
+	for i := range f.chats {
+		if f.chats[i].JID == jid {
+			f.chats[i].Preview = "📍 Location"
+			f.chats[i].LastMessageTS = msg.TS
+			break
+		}
+	}
 	return id, nil
 }
 

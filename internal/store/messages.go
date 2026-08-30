@@ -9,15 +9,17 @@ import (
 // leaves any existing reply link untouched.
 func (s *Store) UpsertMessage(row MessageRow) error {
 	_, err := s.db.Exec(`
-		INSERT INTO messages(chat_jid, msg_id, from_jid, from_me, text, ts, reply_to_msg_id)
-		VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''))
+		INSERT INTO messages(chat_jid, msg_id, from_jid, from_me, text, ts, reply_to_msg_id, kind, payload)
+		VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''))
 		ON CONFLICT(chat_jid, msg_id) DO UPDATE SET
 			from_jid = excluded.from_jid,
 			from_me = excluded.from_me,
 			text = excluded.text,
 			ts = excluded.ts,
-			reply_to_msg_id = COALESCE(excluded.reply_to_msg_id, messages.reply_to_msg_id)
-	`, row.ChatJID, row.MsgID, row.FromJID, boolToInt(row.FromMe), row.Text, row.TS, row.ReplyToMsgID)
+			reply_to_msg_id = COALESCE(excluded.reply_to_msg_id, messages.reply_to_msg_id),
+			kind = excluded.kind,
+			payload = excluded.payload
+	`, row.ChatJID, row.MsgID, row.FromJID, boolToInt(row.FromMe), row.Text, row.TS, row.ReplyToMsgID, row.Kind, row.Payload)
 	return err
 }
 
@@ -46,6 +48,7 @@ func (s *Store) MessageByID(chatJID, msgID string) (m Message, ok bool, err erro
 const messageSelect = `
 	SELECT
 		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
+		m.kind, COALESCE(m.payload, ''),
 		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, '')
 	FROM messages m
 	LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id`
@@ -107,6 +110,7 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 		var mediaKind, mediaFilename, mediaCaption, mediaMime, mediaLocal string
 		if err := rows.Scan(
 			&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID,
+			&m.Kind, &m.Payload,
 			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal,
 		); err != nil {
 			return nil, err

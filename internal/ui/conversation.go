@@ -27,6 +27,8 @@ type bubbleView struct {
 	MediaChip        string
 	IsMedia          bool
 	Media            mediaView
+	IsLocation       bool
+	Location         locationView
 }
 
 // bubbleVM derives the display view-model for a single message. prev is the
@@ -61,11 +63,15 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 	}
 	sort.Strings(v.Reactions)
 
-	if m.Attachment != nil {
+	switch {
+	case m.Location != nil:
+		v.IsLocation = true
+		v.Location = locationVM(m)
+	case m.Attachment != nil:
 		v.IsMedia = true
 		v.Media = mediaVM(m)
 		v.MediaChip = v.Media.Chip
-	} else {
+	default:
 		v.Text = m.Text
 	}
 
@@ -562,7 +568,9 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		bubble.Append(quote)
 	}
 
-	if vm.IsMedia {
+	if vm.IsLocation {
+		bubble.Append(buildLocationContent(vm.Location))
+	} else if vm.IsMedia {
 		bubble.Append(buildMediaContent(msg, vm.Media, c))
 	} else {
 		text := gtk.NewLabel(vm.Text)

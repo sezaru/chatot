@@ -31,6 +31,11 @@ CREATE TABLE IF NOT EXISTS messages (
     text TEXT,
     ts INTEGER NOT NULL DEFAULT 0,
     reply_to_msg_id TEXT,
+    -- kind='' is a plain text/media message; a non-empty kind (e.g.
+    -- 'location') marks a rich message whose body lives in payload as opaque
+    -- JSON that only package client understands. The store never parses it.
+    kind TEXT NOT NULL DEFAULT '',
+    payload TEXT,
     PRIMARY KEY (chat_jid, msg_id)
 );
 

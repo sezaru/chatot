@@ -30,6 +30,11 @@ type Message struct {
 	ReplyToMsgID string
 	Reactions    map[string]string // emoji -> reactor JID (last wins)
 	Attachment   *Attachment
+	// Kind is "" for a plain text/media message or a rich-kind tag (e.g.
+	// "location"); Payload is the opaque JSON body only package client
+	// decodes. The store persists and returns them without interpreting them.
+	Kind    string
+	Payload string
 }
 
 // Attachment describes a message's media, as resolved from the media table.
@@ -71,6 +76,8 @@ type MessageRow struct {
 	Text         string
 	TS           int64
 	ReplyToMsgID string // "" leaves any existing reply link untouched
+	Kind         string // "" plain message; "location" etc. for a rich kind
+	Payload      string // opaque JSON body for a rich kind, "" otherwise
 }
 
 // ContactRow is the upsert seam for the contacts table. Empty fields leave
