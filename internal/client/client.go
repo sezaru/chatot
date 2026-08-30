@@ -256,13 +256,14 @@ type GroupParticipant struct {
 	IsSuperAdmin bool
 }
 
-// GroupInfo is a group's metadata and membership, read-only (mutating a
-// group is out of scope here).
+// GroupInfo is a group's metadata and membership.
 type GroupInfo struct {
 	JID          string
 	Name         string
 	Topic        string
 	OwnerJID     string
+	Announce     bool // only admins may send
+	Locked       bool // only admins may edit group info
 	Participants []GroupParticipant
 }
 
@@ -363,6 +364,32 @@ type Client interface {
 
 	// GroupInfo fetches a group's current name/topic/membership. Read-only.
 	GroupInfo(ctx context.Context, jid string) (*GroupInfo, error)
+	// OwnJID returns this device's own user JID ("" if not logged in), so the
+	// UI can decide whether the current user is a group admin/owner.
+	OwnJID() string
+	// CreateGroup creates a group named name with the given participant JIDs
+	// (self is added implicitly); the new group is persisted as a chat and its
+	// JID returned.
+	CreateGroup(ctx context.Context, name string, participantJIDs []string) (jid string, err error)
+	// LeaveGroup leaves jid; a refresh event is pushed so the UI updates.
+	LeaveGroup(ctx context.Context, jid string) error
+	// UpdateGroupParticipants adds/removes/promotes/demotes participants.
+	// action is one of "add", "remove", "promote", "demote"; anything else is
+	// an error. The group is re-fetched and a refresh event pushed on success.
+	UpdateGroupParticipants(ctx context.Context, jid string, participantJIDs []string, action string) error
+	// SetGroupName renames jid.
+	SetGroupName(ctx context.Context, jid, name string) error
+	// SetGroupTopic sets jid's topic/description.
+	SetGroupTopic(ctx context.Context, jid, topic string) error
+	// SetGroupAnnounce toggles announce mode (true = only admins can send).
+	SetGroupAnnounce(ctx context.Context, jid string, announce bool) error
+	// SetGroupLocked toggles locked mode (true = only admins can edit info).
+	SetGroupLocked(ctx context.Context, jid string, locked bool) error
+	// GroupInviteLink returns jid's invite link, resetting it first if reset.
+	GroupInviteLink(ctx context.Context, jid string, reset bool) (string, error)
+	// JoinGroupWithLink joins via an invite link or bare code and returns the
+	// joined group's JID, persisting it as a chat.
+	JoinGroupWithLink(ctx context.Context, code string) (jid string, err error)
 
 	// media
 	DownloadMedia(ctx context.Context, msgID string) (localPath string, err error)

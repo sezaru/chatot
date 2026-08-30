@@ -26,7 +26,15 @@ type Fake struct {
 	labels   []Label
 	// labelChats maps a labelID to the set of chat JIDs it's associated with.
 	labelChats map[string]map[string]bool
+	// groups holds mutable in-memory group state keyed by JID, so F27's
+	// mutations are reflected in a subsequent GroupInfo.
+	groups     map[string]*GroupInfo
+	nextGroupN int
 }
+
+// fakeOwnJID is the Fake's own user JID. It matches the canned group's owner
+// so admin-only controls render during CHATOT_FAKE=1 development.
+const fakeOwnJID = "1234567890@s.whatsapp.net"
 
 // NewFake returns a Fake seeded with canned chats and messages, already
 // logged in (no QR codes will be emitted).
@@ -45,6 +53,7 @@ func NewFake() *Fake {
 		labelChats: map[string]map[string]bool{
 			"1": {"1234567890@s.whatsapp.net": true},
 		},
+		groups: make(map[string]*GroupInfo),
 	}
 
 	f.chats = []Chat{
@@ -502,21 +511,187 @@ func (f *Fake) PrivacySettings(ctx context.Context) (map[string]string, error) {
 	}, nil
 }
 
-// GroupInfo returns a canned group for any @g.us jid; other jids error.
+// GroupInfo returns the stored group for jid, seeding a canned one on first
+// access; non-group jids error. Callers hold no lock.
 func (f *Fake) GroupInfo(ctx context.Context, jid string) (*GroupInfo, error) {
 	if !strings.HasSuffix(jid, "@g.us") {
 		return nil, fmt.Errorf("chatot/client: %s is not a group", jid)
 	}
-	return &GroupInfo{
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return cloneGroupInfo(f.ensureGroupLocked(jid)), nil
+}
+
+// ensureGroupLocked returns the stored group for jid, seeding the canned
+// "Weekend Trip" group on first access. Callers hold f.mu.
+func (f *Fake) ensureGroupLocked(jid string) *GroupInfo {
+	if g, ok := f.groups[jid]; ok {
+		return g
+	}
+	g := &GroupInfo{
 		JID:      jid,
 		Name:     "Weekend Trip",
 		Topic:    "Planning for the cabin trip",
-		OwnerJID: "1234567890@s.whatsapp.net",
+		OwnerJID: fakeOwnJID,
 		Participants: []GroupParticipant{
-			{JID: "1234567890@s.whatsapp.net", IsAdmin: true, IsSuperAdmin: true},
+			{JID: fakeOwnJID, IsAdmin: true, IsSuperAdmin: true},
 			{JID: "1112223333@s.whatsapp.net"},
 		},
-	}, nil
+	}
+	f.groups[jid] = g
+	return g
+}
+
+// cloneGroupInfo returns a deep copy so callers can't mutate stored state.
+func cloneGroupInfo(g *GroupInfo) *GroupInfo {
+	out := *g
+	out.Participants = make([]GroupParticipant, len(g.Participants))
+	copy(out.Participants, g.Participants)
+	return &out
+}
+
+// OwnJID returns the Fake's own user JID.
+func (f *Fake) OwnJID() string { return fakeOwnJID }
+
+func (f *Fake) CreateGroup(ctx context.Context, name string, participantJIDs []string) (string, error) {
+	if !validGroupName(name) {
+		return "", fmt.Errorf("chatot/client: invalid group name %q (1-25 chars)", name)
+	}
+	f.mu.Lock()
+	f.nextGroupN++
+	jid := fmt.Sprintf("fake-group-%d@g.us", f.nextGroupN)
+	parts := []GroupParticipant{{JID: fakeOwnJID, IsAdmin: true, IsSuperAdmin: true}}
+	for _, p := range participantJIDs {
+		parts = append(parts, GroupParticipant{JID: p})
+	}
+	f.groups[jid] = &GroupInfo{JID: jid, Name: name, OwnerJID: fakeOwnJID, Participants: parts}
+	f.chats = append(f.chats, Chat{JID: jid, Name: name, IsGroup: true, LastMessageTS: time.Now().Unix()})
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return jid, nil
+}
+
+func (f *Fake) LeaveGroup(ctx context.Context, jid string) error {
+	f.mu.Lock()
+	delete(f.groups, jid)
+	kept := f.chats[:0]
+	for _, c := range f.chats {
+		if c.JID != jid {
+			kept = append(kept, c)
+		}
+	}
+	f.chats = kept
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+func (f *Fake) UpdateGroupParticipants(ctx context.Context, jid string, participantJIDs []string, action string) error {
+	if _, ok := mapParticipantAction(action); !ok {
+		return fmt.Errorf("chatot/client: unknown participant action %q", action)
+	}
+	f.mu.Lock()
+	g := f.ensureGroupLocked(jid)
+	for _, pj := range participantJIDs {
+		applyParticipantChange(g, pj, action)
+	}
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+// applyParticipantChange mutates g's membership for one participant per the
+// action. Callers hold f.mu.
+func applyParticipantChange(g *GroupInfo, jid, action string) {
+	idx := -1
+	for i := range g.Participants {
+		if g.Participants[i].JID == jid {
+			idx = i
+			break
+		}
+	}
+	switch action {
+	case "add":
+		if idx == -1 {
+			g.Participants = append(g.Participants, GroupParticipant{JID: jid})
+		}
+	case "remove":
+		if idx != -1 {
+			g.Participants = append(g.Participants[:idx], g.Participants[idx+1:]...)
+		}
+	case "promote":
+		if idx != -1 {
+			g.Participants[idx].IsAdmin = true
+		}
+	case "demote":
+		if idx != -1 {
+			g.Participants[idx].IsAdmin = false
+			g.Participants[idx].IsSuperAdmin = false
+		}
+	}
+}
+
+func (f *Fake) SetGroupName(ctx context.Context, jid, name string) error {
+	f.mu.Lock()
+	g := f.ensureGroupLocked(jid)
+	g.Name = name
+	f.updateChat(jid, func(c *Chat) { c.Name = name })
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+func (f *Fake) SetGroupTopic(ctx context.Context, jid, topic string) error {
+	f.mu.Lock()
+	f.ensureGroupLocked(jid).Topic = topic
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+func (f *Fake) SetGroupAnnounce(ctx context.Context, jid string, announce bool) error {
+	f.mu.Lock()
+	f.ensureGroupLocked(jid).Announce = announce
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+func (f *Fake) SetGroupLocked(ctx context.Context, jid string, locked bool) error {
+	f.mu.Lock()
+	f.ensureGroupLocked(jid).Locked = locked
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+func (f *Fake) GroupInviteLink(ctx context.Context, jid string, reset bool) (string, error) {
+	code := "FAKEINVITECODE01234"
+	if reset {
+		code = "RESETINVITECODE5678"
+	}
+	return "https://chat.whatsapp.com/" + code, nil
+}
+
+func (f *Fake) JoinGroupWithLink(ctx context.Context, code string) (string, error) {
+	c := parseInviteCode(code)
+	jid := "joined-" + c + "@g.us"
+	f.mu.Lock()
+	if _, ok := f.groups[jid]; !ok {
+		f.groups[jid] = &GroupInfo{
+			JID:      jid,
+			Name:     "Joined Group",
+			OwnerJID: "1112223333@s.whatsapp.net",
+			Participants: []GroupParticipant{
+				{JID: "1112223333@s.whatsapp.net", IsAdmin: true, IsSuperAdmin: true},
+				{JID: fakeOwnJID},
+			},
+		}
+		f.chats = append(f.chats, Chat{JID: jid, Name: "Joined Group", IsGroup: true, LastMessageTS: time.Now().Unix()})
+	}
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return jid, nil
 }
 
 // Labels returns the non-deleted labels.
