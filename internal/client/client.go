@@ -20,6 +20,7 @@ const (
 	EventPairSuccess
 	EventLoggedOut
 	EventReaction
+	EventPollVote
 )
 
 // Event is a normalized notification pushed on Client.Events(). Only the
@@ -34,6 +35,7 @@ type Event struct {
 	Connection   *Connection
 	HistorySync  *HistorySync
 	Reaction     *Reaction
+	PollVote     *PollVote
 }
 
 // Receipt is a delivery/read acknowledgement for previously sent messages.
@@ -105,6 +107,35 @@ type Message struct {
 	Location *Location
 	// Contact is non-nil for a shared vCard (or vCard array) message.
 	Contact *Contact
+	// Poll is non-nil for a poll-creation message; its options carry live vote
+	// counts tallied from decrypted poll-update (vote) events.
+	Poll *Poll
+}
+
+// Poll is a poll-creation message with its immutable definition (Name,
+// option names, SelectableCount) plus the per-option tally computed from
+// stored votes. SelectableCount is how many options a voter may pick (1 for
+// single-choice; >1 or 0 means multi-select).
+type Poll struct {
+	Name            string
+	Options         []PollOption
+	SelectableCount int
+}
+
+// PollOption is one poll choice. Count is how many distinct voters selected
+// it; Voted is whether the local user selected it (drives the UI highlight).
+type PollOption struct {
+	Name  string
+	Count int
+	Voted bool
+}
+
+// PollVote signals that a poll's tally changed (a vote arrived or we cast
+// one); the UI reloads the chat to refresh counts. It carries no per-vote
+// detail — the recomputed tally is read back from the store.
+type PollVote struct {
+	ChatJID   string
+	PollMsgID string
 }
 
 // Location is a shared or live-shared geographic point. Name/Address are
@@ -189,6 +220,12 @@ type Client interface {
 	SendMedia(ctx context.Context, jid string, m Attachment, replyTo *MsgRef) (string, error)
 	SendLocation(ctx context.Context, jid string, loc Location, replyTo *MsgRef) (string, error)
 	SendVoice(ctx context.Context, jid string, oggOpus []byte, dur int) (string, error)
+	// CreatePoll sends a poll with the given question and options; selectable
+	// is how many options a voter may pick (1 = single-choice).
+	CreatePoll(ctx context.Context, jid, name string, options []string, selectable int) (string, error)
+	// VotePoll casts (or replaces) the local user's vote on pollMsgID with the
+	// named options.
+	VotePoll(ctx context.Context, chatJID, pollMsgID string, options []string) error
 	React(ctx context.Context, jid, msgID, emoji string) error // "" clears
 	MarkRead(ctx context.Context, jid string, msgIDs []string) error
 	SendPresence(available bool) error

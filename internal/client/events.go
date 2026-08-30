@@ -15,6 +15,11 @@ import (
 func translate(evt interface{}) *Event {
 	switch v := evt.(type) {
 	case *events.Message:
+		// Poll votes are decrypted + tallied out-of-band in whatsmeow.go's
+		// handleRaw; the pure translate returns nil so nothing double-handles.
+		if v.Message.GetPollUpdateMessage() != nil {
+			return nil
+		}
 		if r := v.Message.GetReactionMessage(); r != nil {
 			return translateReaction(v, r)
 		}
@@ -96,9 +101,9 @@ func translateReaction(v *events.Message, r *waProto.ReactionMessage) *Event {
 	}}
 }
 
-// extractText fills in Text, ReplyTo, Attachment and Location from the leaf
-// proto message. It covers plain/quoted text, the common media kinds and
-// (live) locations; other rich kinds (poll, contact) are left for later.
+// extractText fills in Text, ReplyTo, Attachment and the rich-kind fields
+// (Location, Contact, Poll) from the leaf proto message, covering plain/quoted
+// text, the common media kinds, (live) locations, contacts and poll creation.
 func extractText(m *waProto.Message, msg *Message) {
 	if m == nil {
 		return
@@ -173,6 +178,19 @@ func extractText(m *waProto.Message, msg *Message) {
 			}
 		}
 		ctx = arr.GetContextInfo()
+	case m.GetPollCreationMessage() != nil:
+		poll := m.GetPollCreationMessage()
+		opts := poll.GetOptions()
+		options := make([]PollOption, len(opts))
+		for i, o := range opts {
+			options[i] = PollOption{Name: o.GetOptionName()}
+		}
+		msg.Poll = &Poll{
+			Name:            poll.GetName(),
+			Options:         options,
+			SelectableCount: int(poll.GetSelectableOptionsCount()),
+		}
+		ctx = poll.GetContextInfo()
 	}
 	if ctx == nil {
 		return

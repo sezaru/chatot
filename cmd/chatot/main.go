@@ -88,6 +88,13 @@ func activate(app *adw.Application, c client.Client) {
 			glib.IdleAdd(func() { conversation.ApplyOwnReaction(msg.ChatJID) })
 		}()
 	})
+	conversation.OnVoteRequested(func(msg client.Message, options []string) {
+		go func() {
+			if err := c.VotePoll(context.Background(), msg.ChatJID, msg.ID, options); err != nil {
+				log.Printf("chatot: vote poll failed: %v", err)
+			}
+		}()
+	})
 
 	// openChat is the single "show this chat" path: the chat-list click and
 	// the notification's click-to-open action both funnel through it.

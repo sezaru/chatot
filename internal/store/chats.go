@@ -166,6 +166,8 @@ func buildPreview(fromMe bool, msgKind, text, mediaKind, mediaCaption, mediaFile
 		body = "📍 Location"
 	case "contact":
 		body = "👤 Contact"
+	case "poll":
+		body = "📊 Poll"
 	}
 	if mediaKind != "" {
 		switch {

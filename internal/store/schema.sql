@@ -73,6 +73,18 @@ CREATE TABLE IF NOT EXISTS reactions (
     PRIMARY KEY (chat_jid, msg_id, reactor_jid)
 );
 
+-- poll_votes holds decrypted poll votes: one row per (voter, selected
+-- option). option_hash is the SHA-256 of the option name (WhatsApp transmits
+-- votes as hashes); the store persists the raw bytes without interpreting
+-- them. A voter picking N options makes N rows; re-voting replaces the set.
+CREATE TABLE IF NOT EXISTS poll_votes (
+    chat_jid TEXT NOT NULL,
+    poll_msg_id TEXT NOT NULL,
+    voter_jid TEXT NOT NULL,
+    option_hash BLOB NOT NULL,
+    PRIMARY KEY (chat_jid, poll_msg_id, voter_jid, option_hash)
+);
+
 CREATE TABLE IF NOT EXISTS media (
     chat_jid TEXT NOT NULL,
     msg_id TEXT NOT NULL,
