@@ -431,7 +431,7 @@ func TestContactStoreRoundTrip(t *testing.T) {
 
 	back := messageFromStore(store.Message{
 		ID: row.MsgID, ChatJID: row.ChatJID, Kind: row.Kind, Payload: row.Payload,
-	})
+	}, "")
 	if back.Contact == nil {
 		t.Fatal("expected Contact to decode back")
 	}
@@ -456,7 +456,7 @@ func TestLocationStoreRoundTrip(t *testing.T) {
 
 	back := messageFromStore(store.Message{
 		ID: row.MsgID, ChatJID: row.ChatJID, Kind: row.Kind, Payload: row.Payload,
-	})
+	}, "")
 	if back.Location == nil {
 		t.Fatal("expected Location to decode back")
 	}
@@ -545,5 +545,81 @@ func TestTranslateQRIsSkipped(t *testing.T) {
 	// must not also surface them as an Event to avoid double delivery.
 	if e := translate(&events.QR{Codes: []string{"code1"}}); e != nil {
 		t.Fatalf("expected nil for QR event, got %+v", e)
+	}
+}
+
+func TestTranslatePollCreationMessage(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+			ID:            "POLL1",
+		},
+		Message: &waProto.Message{PollCreationMessage: &waE2E.PollCreationMessage{
+			Name: proto.String("Lunch?"),
+			Options: []*waE2E.PollCreationMessage_Option{
+				{OptionName: proto.String("Pizza")},
+				{OptionName: proto.String("Sushi")},
+			},
+			SelectableOptionsCount: proto.Uint32(1),
+		}},
+	}
+	e := translate(evt)
+	if e == nil || e.Message == nil || e.Message.Poll == nil {
+		t.Fatalf("expected a Message with Poll, got %+v", e)
+	}
+	p := e.Message.Poll
+	if p.Name != "Lunch?" || p.SelectableCount != 1 || len(p.Options) != 2 {
+		t.Fatalf("unexpected poll %+v", p)
+	}
+	if p.Options[0].Name != "Pizza" || p.Options[1].Name != "Sushi" {
+		t.Fatalf("unexpected options %+v", p.Options)
+	}
+}
+
+func TestTranslatePollUpdateReturnsNil(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	evt := &events.Message{
+		Info:    types.MessageInfo{MessageSource: types.MessageSource{Chat: chat, Sender: chat}, ID: "V1"},
+		Message: &waProto.Message{PollUpdateMessage: &waE2E.PollUpdateMessage{}},
+	}
+	if e := translate(evt); e != nil {
+		t.Fatalf("poll-update message should translate to nil, got %+v", e)
+	}
+}
+
+func TestPollStoreRoundTripTallies(t *testing.T) {
+	m := &Message{
+		ID: "POLL1", ChatJID: "a@s.whatsapp.net",
+		Poll: &Poll{Name: "Lunch?", SelectableCount: 1, Options: []PollOption{{Name: "Pizza"}, {Name: "Sushi"}}},
+	}
+	row := storeMessageRow(m)
+	if row.Kind != "poll" || row.Payload == "" {
+		t.Fatalf("expected poll kind + payload, got kind=%q payload=%q", row.Kind, row.Payload)
+	}
+
+	self := "me@s.whatsapp.net"
+	back := messageFromStore(store.Message{
+		ID: row.MsgID, ChatJID: row.ChatJID, Kind: row.Kind, Payload: row.Payload,
+		PollVotes: []store.PollVoteRow{
+			{VoterJID: "friend@s.whatsapp.net", OptionHash: hashPollOption("Pizza")},
+			{VoterJID: self, OptionHash: hashPollOption("Pizza")},
+			{VoterJID: "other@s.whatsapp.net", OptionHash: hashPollOption("Sushi")},
+		},
+	}, self)
+	if back.Poll == nil {
+		t.Fatal("expected Poll to decode back")
+	}
+	if back.Poll.Name != "Lunch?" || back.Poll.SelectableCount != 1 {
+		t.Fatalf("poll definition mismatch: %+v", back.Poll)
+	}
+	if back.Poll.Options[0].Count != 2 || back.Poll.Options[1].Count != 1 {
+		t.Fatalf("tally mismatch: %+v", back.Poll.Options)
+	}
+	if !back.Poll.Options[0].Voted {
+		t.Fatal("expected Pizza to be marked Voted (self voted for it)")
+	}
+	if back.Poll.Options[1].Voted {
+		t.Fatal("Sushi should not be marked Voted for self")
 	}
 }

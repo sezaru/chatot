@@ -275,3 +275,51 @@ func TestComposeStateSubmitLocationClearsReply(t *testing.T) {
 		t.Error("expected reply to be cleared after SubmitLocation")
 	}
 }
+
+func TestParsePollFormValid(t *testing.T) {
+	name, opts, sel, ok := parsePollForm("  Lunch?  ", []string{" Pizza ", "", "Sushi", "  "}, 1)
+	if !ok {
+		t.Fatal("expected valid poll form")
+	}
+	if name != "Lunch?" {
+		t.Errorf("name = %q, want Lunch?", name)
+	}
+	if len(opts) != 2 || opts[0] != "Pizza" || opts[1] != "Sushi" {
+		t.Errorf("opts = %v, want [Pizza Sushi]", opts)
+	}
+	if sel != 1 {
+		t.Errorf("sel = %d, want 1", sel)
+	}
+}
+
+func TestParsePollFormRejectsBlankQuestion(t *testing.T) {
+	if _, _, _, ok := parsePollForm("   ", []string{"a", "b"}, 1); ok {
+		t.Error("expected blank question to be rejected")
+	}
+}
+
+func TestParsePollFormRejectsTooFewOptions(t *testing.T) {
+	if _, _, _, ok := parsePollForm("Q", []string{"only", " "}, 1); ok {
+		t.Error("expected <2 options to be rejected")
+	}
+}
+
+func TestParsePollFormClampsSelectable(t *testing.T) {
+	_, opts, sel, ok := parsePollForm("Q", []string{"a", "b", "c"}, 9)
+	if !ok {
+		t.Fatal("expected valid form")
+	}
+	if sel != len(opts) {
+		t.Errorf("sel = %d, want %d (clamped to option count)", sel, len(opts))
+	}
+	if _, _, sel, _ = parsePollForm("Q", []string{"a", "b"}, 0); sel != 1 {
+		t.Errorf("sel = %d, want 1 (clamped up from 0)", sel)
+	}
+}
+
+func TestComposeStateSubmitPollNoChat(t *testing.T) {
+	var s composeState
+	if _, ok := s.SubmitPoll("Q", []string{"a", "b"}, 1); ok {
+		t.Error("expected SubmitPoll to fail with no active chat")
+	}
+}

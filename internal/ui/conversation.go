@@ -31,6 +31,8 @@ type bubbleView struct {
 	Location         locationView
 	IsContact        bool
 	Contact          contactView
+	IsPoll           bool
+	Poll             pollView
 }
 
 // bubbleVM derives the display view-model for a single message. prev is the
@@ -72,6 +74,9 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 	case m.Contact != nil:
 		v.IsContact = true
 		v.Contact = contactVM(m)
+	case m.Poll != nil:
+		v.IsPoll = true
+		v.Poll = pollVM(m)
 	case m.Attachment != nil:
 		v.IsMedia = true
 		v.Media = mediaVM(m)
@@ -160,6 +165,7 @@ type ConversationView struct {
 
 	onReply func(client.Message)
 	onReact func(msg client.Message, emoji string)
+	onVote  func(msg client.Message, options []string)
 }
 
 // OnReplyRequested registers f to be called when the user picks the reply
@@ -170,6 +176,12 @@ func (cv *ConversationView) OnReplyRequested(f func(client.Message)) { cv.onRepl
 // from a bubble's react affordance; msg carries the ChatJID needed to send.
 func (cv *ConversationView) OnReactRequested(f func(msg client.Message, emoji string)) {
 	cv.onReact = f
+}
+
+// OnVoteRequested registers f to be called when the user clicks a poll option;
+// options is the set the user selected (currently always one).
+func (cv *ConversationView) OnVoteRequested(f func(msg client.Message, options []string)) {
+	cv.onVote = f
 }
 
 // Messages returns the currently-loaded thread, for mark-read on open.
@@ -300,7 +312,7 @@ func (cv *ConversationView) bindRow(item *gtk.ListItem) {
 		prev = &cv.msgs[pos-1]
 	}
 	vm := bubbleVM(msg, prev, cv.byID, time.Now())
-	box.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact))
+	box.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact, cv.onVote))
 }
 
 // onScroll fetches the next older page when the reader nears the top. Runs on
@@ -404,6 +416,17 @@ func (cv *ConversationView) watchEvents() {
 				continue
 			}
 			chatJID := ev.Reaction.ChatJID
+			glib.IdleAdd(func() {
+				if chatJID != cv.jid {
+					return
+				}
+				cv.Load(cv.jid)
+			})
+		case client.EventPollVote:
+			if ev.PollVote == nil {
+				continue
+			}
+			chatJID := ev.PollVote.ChatJID
 			glib.IdleAdd(func() {
 				if chatJID != cv.jid {
 					return
@@ -540,7 +563,7 @@ func removeAllChildren(box *gtk.Box) {
 // buildBubble constructs the GTK widget tree for a single message from its
 // pre-computed view-model, wiring the reply/react affordances (if the
 // callbacks are set) to msg.
-func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply func(client.Message), onReact func(msg client.Message, emoji string)) *gtk.Box {
+func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply func(client.Message), onReact func(msg client.Message, emoji string), onVote func(msg client.Message, options []string)) *gtk.Box {
 	wrapper := gtk.NewBox(gtk.OrientationVertical, 4)
 
 	if vm.ShowDaySeparator {
@@ -577,6 +600,8 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		bubble.Append(buildLocationContent(vm.Location))
 	} else if vm.IsContact {
 		bubble.Append(buildContactContent(vm.Contact))
+	} else if vm.IsPoll {
+		bubble.Append(buildPollContent(msg, vm.Poll, onVote))
 	} else if vm.IsMedia {
 		bubble.Append(buildMediaContent(msg, vm.Media, c))
 	} else {

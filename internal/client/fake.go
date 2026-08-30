@@ -50,6 +50,12 @@ func NewFake() *Fake {
 			Location: &Location{Name: "Bletchley Park", Address: "Sherwood Dr, Bletchley, Milton Keynes", Latitude: 51.9976, Longitude: -0.7406}},
 		{ID: "m6", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2900,
 			Contact: &Contact{DisplayName: "Alan Turing", Phones: []string{"+44 20 7946 0958"}}},
+		{ID: "m7", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2800,
+			Poll: &Poll{Name: "Lunch tomorrow?", SelectableCount: 1, Options: []PollOption{
+				{Name: "Pizza", Count: 1},
+				{Name: "Sushi"},
+				{Name: "Salad"},
+			}}},
 	}
 
 	return f
@@ -217,6 +223,55 @@ func (f *Fake) SendVoice(ctx context.Context, jid string, oggOpus []byte, dur in
 	att := Attachment{Kind: "audio", MimeType: "audio/ogg", Data: oggOpus}
 	f.appendOutbound(jid, Message{ID: id, ChatJID: jid, FromJID: "me", FromMe: true, TS: time.Now().Unix(), Attachment: &att})
 	return id, nil
+}
+
+func (f *Fake) CreatePoll(ctx context.Context, jid, name string, options []string, selectable int) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id := f.nextMsgID()
+	opts := make([]PollOption, len(options))
+	for i, o := range options {
+		opts[i] = PollOption{Name: o}
+	}
+	msg := Message{ID: id, ChatJID: jid, FromJID: "me", FromMe: true, TS: time.Now().Unix(),
+		Poll: &Poll{Name: name, Options: opts, SelectableCount: selectable}}
+	f.messages[jid] = append(f.messages[jid], msg)
+	for i := range f.chats {
+		if f.chats[i].JID == jid {
+			f.chats[i].Preview = "📊 Poll"
+			f.chats[i].LastMessageTS = msg.TS
+			break
+		}
+	}
+	return id, nil
+}
+
+func (f *Fake) VotePoll(ctx context.Context, chatJID, pollMsgID string, options []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	chosen := make(map[string]bool, len(options))
+	for _, o := range options {
+		chosen[o] = true
+	}
+	for _, msgs := range f.messages {
+		for i := range msgs {
+			if msgs[i].ID != pollMsgID || msgs[i].Poll == nil {
+				continue
+			}
+			for j := range msgs[i].Poll.Options {
+				opt := &msgs[i].Poll.Options[j]
+				want := chosen[opt.Name]
+				if want && !opt.Voted {
+					opt.Count++
+				} else if !want && opt.Voted {
+					opt.Count--
+				}
+				opt.Voted = want
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("chatot/client: poll %q not found in chat %q", pollMsgID, chatJID)
 }
 
 func (f *Fake) React(ctx context.Context, jid, msgID, emoji string) error {

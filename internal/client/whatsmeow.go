@@ -118,6 +118,13 @@ func defaultStateDir() (string, error) {
 }
 
 func (w *Whatsmeow) handleRaw(evt interface{}) {
+	// Poll votes arrive as an events.Message wrapping a PollUpdateMessage;
+	// decrypt + tally them here (like applyHistorySync's early branch) and
+	// return, so they're never ingested as a blank text message.
+	if v, ok := evt.(*events.Message); ok && v.Message.GetPollUpdateMessage() != nil {
+		w.handlePollVote(v)
+		return
+	}
 	if hs, ok := evt.(*events.HistorySync); ok {
 		w.applyHistorySync(hs.Data)
 	}
@@ -219,7 +226,7 @@ func (w *Whatsmeow) Messages(jid string, limit int) ([]Message, error) {
 	}
 	out := make([]Message, len(rows))
 	for i, m := range rows {
-		out[i] = messageFromStore(m)
+		out[i] = messageFromStore(m, w.ownJID())
 	}
 	return out, nil
 }
@@ -233,7 +240,7 @@ func (w *Whatsmeow) MessagesBefore(jid, beforeMsgID string, limit int) ([]Messag
 	}
 	out := make([]Message, len(rows))
 	for i, m := range rows {
-		out[i] = messageFromStore(m)
+		out[i] = messageFromStore(m, w.ownJID())
 	}
 	return out, nil
 }
@@ -438,6 +445,115 @@ func (w *Whatsmeow) SendLocation(ctx context.Context, jid string, loc Location, 
 		w.log.Warnf("chatot/client: optimistic upsert of sent location failed: %v", err)
 	}
 	return id, nil
+}
+
+// CreatePoll sends a poll-creation message and optimistically upserts it into
+// the local store (like SendText), so it renders immediately with zero votes.
+func (w *Whatsmeow) CreatePoll(ctx context.Context, jid, name string, options []string, selectable int) (string, error) {
+	to, err := types.ParseJID(jid)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+
+	waMsg := w.wa.BuildPollCreation(name, options, selectable)
+	id := w.wa.GenerateMessageID()
+	if _, err := w.wa.SendMessage(ctx, to, waMsg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		return "", fmt.Errorf("chatot/client: create poll: %w", err)
+	}
+
+	opts := make([]PollOption, len(options))
+	for i, o := range options {
+		opts[i] = PollOption{Name: o}
+	}
+	out := Message{
+		ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(),
+		Poll: &Poll{Name: name, Options: opts, SelectableCount: selectable},
+	}
+	if err := w.ingestMessage(&out); err != nil {
+		w.log.Warnf("chatot/client: optimistic upsert of created poll failed: %v", err)
+	}
+	return id, nil
+}
+
+// VotePoll casts the local user's vote on pollMsgID. It reconstructs the poll
+// message's MessageInfo (which BuildPollVote needs to derive the shared secret
+// keying the encrypted vote) from the stored poll row, sends the vote, then
+// optimistically records it locally and emits an EventPollVote so the tally
+// updates without waiting for a server echo.
+func (w *Whatsmeow) VotePoll(ctx context.Context, chatJID, pollMsgID string, options []string) error {
+	chat, err := types.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", chatJID, err)
+	}
+	target, ok, err := w.store.MessageByID(chatJID, pollMsgID)
+	if err != nil {
+		return fmt.Errorf("chatot/client: vote poll: lookup: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("chatot/client: vote poll: poll %s not found", pollMsgID)
+	}
+
+	sender := chat
+	if target.FromMe {
+		if own := w.wa.Store.ID; own != nil {
+			sender = *own
+		}
+	} else if target.FromJID != "" {
+		if parsed, perr := types.ParseJID(target.FromJID); perr == nil {
+			sender = parsed
+		}
+	}
+
+	info := &types.MessageInfo{
+		MessageSource: types.MessageSource{
+			Chat: chat, Sender: sender, IsFromMe: target.FromMe,
+			IsGroup: strings.HasSuffix(chatJID, "@g.us"),
+		},
+		ID: pollMsgID,
+	}
+	voteMsg, err := w.wa.BuildPollVote(ctx, info, options)
+	if err != nil {
+		return fmt.Errorf("chatot/client: vote poll: build: %w", err)
+	}
+	if _, err := w.wa.SendMessage(ctx, chat, voteMsg); err != nil {
+		return fmt.Errorf("chatot/client: vote poll: send: %w", err)
+	}
+
+	hashes := make([][]byte, len(options))
+	for i, o := range options {
+		hashes[i] = hashPollOption(o)
+	}
+	if err := w.store.SetPollVotes(chatJID, pollMsgID, w.ownJID(), hashes); err != nil {
+		w.log.Warnf("chatot/client: optimistic upsert of own vote failed: %v", err)
+	}
+	w.pushEvent(Event{Kind: EventPollVote, PollVote: &PollVote{ChatJID: chatJID, PollMsgID: pollMsgID}})
+	return nil
+}
+
+// handlePollVote decrypts an incoming poll vote, replaces the voter's stored
+// selections, and emits an EventPollVote so the open chat refreshes its tally.
+// DecryptPollVote relies on whatsmeow having stored the poll creation's
+// message secret; if the poll was never seen by this device the decrypt fails
+// and the vote is dropped (logged).
+func (w *Whatsmeow) handlePollVote(v *events.Message) {
+	ctx := context.Background()
+	vote, err := w.wa.DecryptPollVote(ctx, v)
+	if err != nil {
+		w.log.Warnf("chatot/client: decrypt poll vote: %v", err)
+		return
+	}
+	key := v.Message.GetPollUpdateMessage().GetPollCreationMessageKey()
+	pollMsgID := key.GetID()
+	chatJID := key.GetRemoteJID()
+	if chatJID == "" {
+		chatJID = v.Info.Chat.String()
+	}
+	voter := v.Info.Sender.String()
+	if err := w.store.SetPollVotes(chatJID, pollMsgID, voter, vote.GetSelectedOptions()); err != nil {
+		w.log.Warnf("chatot/client: store poll vote: %v", err)
+		return
+	}
+	w.pushEvent(Event{Kind: EventPollVote, PollVote: &PollVote{ChatJID: chatJID, PollMsgID: pollMsgID}})
 }
 
 // detectAttachmentKind maps a mime type to chatot's media kind and

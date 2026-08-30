@@ -1,6 +1,8 @@
 package client
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 
 	"chatot/internal/store"
@@ -22,6 +24,23 @@ type locationPayload struct {
 type contactPayload struct {
 	DisplayName string   `json:"name,omitempty"`
 	Phones      []string `json:"phones,omitempty"`
+}
+
+// pollPayload is the JSON shape stored when Kind == "poll": the immutable poll
+// definition only. Vote counts are NOT stored here — they change with every
+// vote and are tallied from poll_votes at read time (see messageFromStore).
+type pollPayload struct {
+	Name       string   `json:"name"`
+	Options    []string `json:"options"`
+	Selectable int      `json:"selectable,omitempty"`
+}
+
+// hashPollOption returns the SHA-256 of an option name, the form WhatsApp
+// transmits votes in and poll_votes stores. Vote tallying matches these
+// against the poll's option names.
+func hashPollOption(name string) []byte {
+	sum := sha256.Sum256([]byte(name))
+	return sum[:]
 }
 
 // This file is the sole boundary between package client's value types and
@@ -61,6 +80,18 @@ func storeMessageRow(m *Message) store.MessageRow {
 			row.Payload = string(b)
 		}
 	}
+	if m.Poll != nil {
+		row.Kind = "poll"
+		names := make([]string, len(m.Poll.Options))
+		for i, o := range m.Poll.Options {
+			names[i] = o.Name
+		}
+		if b, err := json.Marshal(pollPayload{
+			Name: m.Poll.Name, Options: names, Selectable: m.Poll.SelectableCount,
+		}); err == nil {
+			row.Payload = string(b)
+		}
+	}
 	return row
 }
 
@@ -87,7 +118,10 @@ func chatFromStore(c store.Chat) Chat {
 	}
 }
 
-func messageFromStore(m store.Message) Message {
+// messageFromStore maps a store row to a client.Message. selfJID is this
+// device's own JID (or "" for tests / when logged out), used to mark which
+// poll options the local user voted for.
+func messageFromStore(m store.Message, selfJID string) Message {
 	out := Message{
 		ID: m.ID, ChatJID: m.ChatJID, FromJID: m.FromJID, FromMe: m.FromMe,
 		Text: m.Text, TS: m.TS, Reactions: m.Reactions,
@@ -116,6 +150,34 @@ func messageFromStore(m store.Message) Message {
 		if err := json.Unmarshal([]byte(m.Payload), &p); err == nil {
 			out.Contact = &Contact{DisplayName: p.DisplayName, Phones: p.Phones}
 		}
+	case "poll":
+		var p pollPayload
+		if err := json.Unmarshal([]byte(m.Payload), &p); err == nil {
+			out.Poll = pollFromStore(p, m.PollVotes, selfJID)
+		}
 	}
 	return out
+}
+
+// pollFromStore rebuilds a Poll with live per-option tallies: for each option
+// it hashes the name and counts the votes whose hash matches (Voted marks the
+// options selfJID selected). The store stays hash-agnostic; only here, where
+// the option names are known, do the hashes get resolved back to options.
+func pollFromStore(p pollPayload, votes []store.PollVoteRow, selfJID string) *Poll {
+	poll := &Poll{Name: p.Name, SelectableCount: p.Selectable, Options: make([]PollOption, len(p.Options))}
+	for i, name := range p.Options {
+		hash := hashPollOption(name)
+		opt := PollOption{Name: name}
+		for _, v := range votes {
+			if !bytes.Equal(v.OptionHash, hash) {
+				continue
+			}
+			opt.Count++
+			if selfJID != "" && v.VoterJID == selfJID {
+				opt.Voted = true
+			}
+		}
+		poll.Options[i] = opt
+	}
+	return poll
 }

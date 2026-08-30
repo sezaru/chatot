@@ -134,6 +134,50 @@ func parseLocation(name, address, lat, long string) (client.Location, bool) {
 	}, true
 }
 
+// pollAction is what a poll-dialog submission resolves to.
+type pollAction struct {
+	JID        string
+	Name       string
+	Options    []string
+	Selectable int
+}
+
+// SubmitPoll resolves a poll send from the dialog's raw strings. Fails
+// (ok=false) with no active chat or a form parsePollForm rejects.
+func (s *composeState) SubmitPoll(question string, options []string, selectable int) (pollAction, bool) {
+	if s.jid == "" {
+		return pollAction{}, false
+	}
+	name, opts, sel, ok := parsePollForm(question, options, selectable)
+	if !ok {
+		return pollAction{}, false
+	}
+	return pollAction{JID: s.jid, Name: name, Options: opts, Selectable: sel}, true
+}
+
+// parsePollForm trims the question and options, drops blank options, and
+// requires a non-empty question plus at least two options. selectable is
+// clamped into [1, len(opts)]. ok is false if the form is unusable.
+func parsePollForm(question string, options []string, selectable int) (name string, opts []string, sel int, ok bool) {
+	name = strings.TrimSpace(question)
+	for _, o := range options {
+		if o = strings.TrimSpace(o); o != "" {
+			opts = append(opts, o)
+		}
+	}
+	if name == "" || len(opts) < 2 {
+		return "", nil, 0, false
+	}
+	sel = selectable
+	if sel < 1 {
+		sel = 1
+	}
+	if sel > len(opts) {
+		sel = len(opts)
+	}
+	return name, opts, sel, true
+}
+
 // Submit resolves a send attempt for text. It fails (ok=false) if there's no
 // active chat or the text is blank/whitespace-only; nothing is cleared in
 // that case. On success it returns the action to perform and clears any
@@ -198,6 +242,7 @@ type Composer struct {
 	entry       *gtk.Entry
 	attachBtn   *gtk.Button
 	locationBtn *gtk.Button
+	pollBtn     *gtk.Button
 	recordBtn   *gtk.Button
 
 	recorder  *audio.Recorder // non-nil only while a recording is in progress
@@ -245,6 +290,11 @@ func NewComposer(c client.Client) *Composer {
 	locationBtn.SetSensitive(false)
 	entryRow.Append(locationBtn)
 
+	pollBtn := gtk.NewButtonWithLabel("📊")
+	pollBtn.AddCSSClass("flat")
+	pollBtn.SetSensitive(false)
+	entryRow.Append(pollBtn)
+
 	entry := gtk.NewEntry()
 	entry.SetHExpand(true)
 	entry.SetPlaceholderText("Message")
@@ -269,6 +319,7 @@ func NewComposer(c client.Client) *Composer {
 		entry:       entry,
 		attachBtn:   attachBtn,
 		locationBtn: locationBtn,
+		pollBtn:     pollBtn,
 		recordBtn:   recordBtn,
 		typing:      newTypingModel(typingDebounce),
 	}
@@ -278,6 +329,7 @@ func NewComposer(c client.Client) *Composer {
 	sendBtn.ConnectClicked(comp.submit)
 	attachBtn.ConnectClicked(comp.pickAttachment)
 	locationBtn.ConnectClicked(comp.pickLocation)
+	pollBtn.ConnectClicked(comp.pickPoll)
 	recordBtn.ConnectClicked(comp.toggleRecording)
 	cancelQuote.ConnectClicked(func() {
 		comp.state.CancelReply()
@@ -361,6 +413,7 @@ func (c *Composer) SetChat(jid string) {
 	}
 	c.attachBtn.SetSensitive(jid != "")
 	c.locationBtn.SetSensitive(jid != "")
+	c.pollBtn.SetSensitive(jid != "")
 	c.recordBtn.SetSensitive(jid != "" && !c.recording)
 	c.refreshQuoteBar()
 }
@@ -541,6 +594,94 @@ func (c *Composer) sendLocation(name, address, lat, long string) bool {
 		msg := client.Message{
 			ID: id, ChatJID: action.JID, FromMe: true, TS: time.Now().Unix(),
 			ReplyTo: action.ReplyTo, Location: &loc,
+		}
+		glib.IdleAdd(func() { c.onSent(msg) })
+	}()
+	return true
+}
+
+// pollOptionCount is how many option entries the create-poll dialog offers.
+const pollOptionCount = 4
+
+// pickPoll opens a small modal with a question entry and a few option entries
+// and, on send, hands the parsed form to sendPoll. No-ops if there's no active
+// chat or no window set yet.
+func (c *Composer) pickPoll() {
+	if !c.pollBtn.Sensitive() || c.window == nil {
+		return
+	}
+
+	dialog := gtk.NewWindow()
+	dialog.SetTitle("Create poll")
+	dialog.SetTransientFor(c.window)
+	dialog.SetModal(true)
+
+	grid := gtk.NewGrid()
+	grid.SetRowSpacing(6)
+	grid.SetColumnSpacing(8)
+	grid.SetMarginTop(12)
+	grid.SetMarginBottom(12)
+	grid.SetMarginStart(12)
+	grid.SetMarginEnd(12)
+
+	questionEntry := gtk.NewEntry()
+	questionEntry.SetPlaceholderText("Question")
+	grid.Attach(gtk.NewLabel("Question"), 0, 0, 1, 1)
+	grid.Attach(questionEntry, 1, 0, 1, 1)
+
+	optionEntries := make([]*gtk.Entry, pollOptionCount)
+	for i := range optionEntries {
+		e := gtk.NewEntry()
+		e.SetPlaceholderText("Option")
+		optionEntries[i] = e
+		grid.Attach(gtk.NewLabel("Option"), 0, i+1, 1, 1)
+		grid.Attach(e, 1, i+1, 1, 1)
+	}
+
+	sendBtn := gtk.NewButtonWithLabel("Create")
+	sendBtn.AddCSSClass("suggested-action")
+	sendBtn.ConnectClicked(func() {
+		opts := make([]string, len(optionEntries))
+		for i, e := range optionEntries {
+			opts[i] = e.Text()
+		}
+		if c.sendPoll(questionEntry.Text(), opts) {
+			dialog.Close()
+		}
+	})
+	grid.Attach(sendBtn, 1, pollOptionCount+1, 1, 1)
+
+	dialog.SetChild(grid)
+	dialog.SetDefaultWidget(sendBtn)
+	dialog.Present()
+}
+
+// sendPoll resolves the dialog's raw form against composeState and sends the
+// poll in the background (mirroring submit's flow). Returns false — leaving the
+// dialog open — if the form is unusable (blank question or <2 options). Single-
+// select only from the composer; multi-select is out of scope.
+func (c *Composer) sendPoll(question string, options []string) bool {
+	action, ok := c.state.SubmitPoll(question, options, 1)
+	if !ok {
+		return false
+	}
+
+	go func() {
+		id, err := c.c.CreatePoll(context.Background(), action.JID, action.Name, action.Options, action.Selectable)
+		if err != nil {
+			log.Printf("chatot: create poll failed: %v", err)
+			return
+		}
+		if c.onSent == nil {
+			return
+		}
+		opts := make([]client.PollOption, len(action.Options))
+		for i, o := range action.Options {
+			opts[i] = client.PollOption{Name: o}
+		}
+		msg := client.Message{
+			ID: id, ChatJID: action.JID, FromMe: true, TS: time.Now().Unix(),
+			Poll: &client.Poll{Name: action.Name, Options: opts, SelectableCount: action.Selectable},
 		}
 		glib.IdleAdd(func() { c.onSent(msg) })
 	}()

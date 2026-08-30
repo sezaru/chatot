@@ -147,6 +147,24 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 			out[i].Reactions = r
 		}
 	}
+
+	var pollIDs []string
+	for _, m := range out {
+		if m.Kind == "poll" {
+			pollIDs = append(pollIDs, m.ID)
+		}
+	}
+	if len(pollIDs) > 0 {
+		votes, err := s.pollVotesFor(jid, pollIDs)
+		if err != nil {
+			return nil, err
+		}
+		for i := range out {
+			if v := votes[out[i].ID]; len(v) > 0 {
+				out[i].PollVotes = v
+			}
+		}
+	}
 	return out, nil
 }
 

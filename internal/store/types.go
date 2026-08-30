@@ -35,6 +35,18 @@ type Message struct {
 	// decodes. The store persists and returns them without interpreting them.
 	Kind    string
 	Payload string
+	// PollVotes holds the raw votes cast on a poll message (kind == "poll"):
+	// one row per (voter, selected-option-hash). The store never hashes or
+	// interprets these; package client matches the hashes against the poll's
+	// option names to compute per-option counts.
+	PollVotes []PollVoteRow
+}
+
+// PollVoteRow is a single voter's selection of one poll option, identified by
+// the SHA-256 hash of the option name (WhatsApp transmits votes as hashes).
+type PollVoteRow struct {
+	VoterJID   string
+	OptionHash []byte
 }
 
 // Attachment describes a message's media, as resolved from the media table.
