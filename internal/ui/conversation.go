@@ -167,6 +167,9 @@ type ConversationView struct {
 	jid    string // "" until a chat is loaded
 
 	header        *gtk.Box
+	avatarSlot    *gtk.Box
+	avatarCache   *avatarCache
+	avatarJID     string // jid the avatar widget currently shows, "" until set
 	titleLabel    *gtk.Label
 	subtitleLabel *gtk.Label
 	scroller      *gtk.ScrolledWindow
@@ -253,22 +256,28 @@ func NewConversationView(c client.Client) *ConversationView {
 	root.SetVExpand(true)
 	root.SetHExpand(true)
 
-	header := gtk.NewBox(gtk.OrientationVertical, 0)
+	header := gtk.NewBox(gtk.OrientationHorizontal, 10)
 	header.AddCSSClass("chatot-conv-header")
 	header.SetMarginTop(6)
 	header.SetMarginBottom(6)
 	header.SetMarginStart(10)
 	header.SetMarginEnd(10)
 
+	avatarSlot := gtk.NewBox(gtk.OrientationVertical, 0)
+	header.Append(avatarSlot)
+
+	textCol := gtk.NewBox(gtk.OrientationVertical, 0)
+	header.Append(textCol)
+
 	titleLabel := gtk.NewLabel("")
 	titleLabel.SetXAlign(0)
 	titleLabel.AddCSSClass("chatot-conv-title")
-	header.Append(titleLabel)
+	textCol.Append(titleLabel)
 
 	subtitleLabel := gtk.NewLabel("")
 	subtitleLabel.SetXAlign(0)
 	subtitleLabel.AddCSSClass("chatot-conv-subtitle")
-	header.Append(subtitleLabel)
+	textCol.Append(subtitleLabel)
 
 	header.SetVisible(false)
 	root.Append(header)
@@ -291,6 +300,8 @@ func NewConversationView(c client.Client) *ConversationView {
 		c:             c,
 		events:        c.Events(),
 		header:        header,
+		avatarSlot:    avatarSlot,
+		avatarCache:   newAvatarCache(),
 		titleLabel:    titleLabel,
 		subtitleLabel: subtitleLabel,
 		scroller:      scroller,
@@ -539,20 +550,46 @@ func (cv *ConversationView) watchEvents() {
 					cv.refreshHeader()
 				}
 			})
+		case client.EventAvatar:
+			if ev.Avatar == nil {
+				continue
+			}
+			jid := ev.Avatar.JID
+			glib.IdleAdd(func() {
+				cv.avatarCache.invalidate(jid)
+				if jid == cv.jid {
+					cv.avatarJID = "" // force refreshHeader to rebuild the avatar widget
+					cv.refreshHeader()
+				}
+			})
 		}
 	}
 }
 
-// refreshHeader repaints the title/subtitle for the currently-open chat
-// (hides the whole header if none is open). Must run on the GTK main loop.
+// conversationAvatarSize is the conversation header avatar's fixed square
+// size in px — bigger than the chat-list row's since there's just the one.
+const conversationAvatarSize = 40
+
+// refreshHeader repaints the title/subtitle/avatar for the currently-open
+// chat (hides the whole header if none is open). Must run on the GTK main
+// loop. The avatar widget is only rebuilt when the open jid changes (tracked
+// via avatarJID), so a presence-driven refreshHeader doesn't restart the
+// async fetch or cause flicker on every presence update.
 func (cv *ConversationView) refreshHeader() {
 	if cv.jid == "" {
 		cv.header.SetVisible(false)
 		return
 	}
-	cv.titleLabel.SetLabel(cv.chatName(cv.jid))
+	name := cv.chatName(cv.jid)
+	cv.titleLabel.SetLabel(name)
 	cv.subtitleLabel.SetLabel(presenceSubtitle(cv.presence[cv.jid], time.Now()))
 	cv.header.SetVisible(true)
+
+	if cv.avatarJID != cv.jid {
+		cv.avatarJID = cv.jid
+		removeAllChildren(cv.avatarSlot)
+		cv.avatarSlot.Append(buildAvatar(cv.c, cv.avatarCache, cv.jid, initialFor(name), conversationAvatarSize))
+	}
 }
 
 // chatName looks up jid's display name from the chat list, falling back to
