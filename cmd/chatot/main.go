@@ -158,6 +158,20 @@ func activate(app *adw.Application, c client.Client) {
 	})
 	app.AddAction(openChatAction)
 
+	rejectCallAction := gio.NewSimpleAction("reject-call", glib.NewVariantType("s"))
+	rejectCallAction.ConnectActivate(func(param *glib.Variant) {
+		chatJID, callID, ok := ui.DecodeCallActionParam(param.String())
+		if !ok {
+			return
+		}
+		go func() {
+			if err := c.RejectCall(context.Background(), chatJID, callID); err != nil {
+				log.Printf("chatot: reject call failed: %v", err)
+			}
+		}()
+	})
+	app.AddAction(rejectCallAction)
+
 	ui.NewNotifier(c, &app.Application.Application, func() (bool, string) {
 		return win.IsActive(), conversation.CurrentJID()
 	})

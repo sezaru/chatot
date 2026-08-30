@@ -17,6 +17,8 @@ func TestPresenceSubtitle(t *testing.T) {
 		{"online", PresenceState{Online: true}, "online"},
 		{"typing beats online", PresenceState{Online: true, Typing: true}, "typing…"},
 		{"typing beats last seen", PresenceState{Typing: true, LastSeen: now.Add(-time.Hour)}, "typing…"},
+		{"recording beats typing", PresenceState{Typing: true, Recording: true}, "recording audio…"},
+		{"recording beats online", PresenceState{Online: true, Recording: true}, "recording audio…"},
 		{"last seen just now", PresenceState{LastSeen: now.Add(-30 * time.Second)}, "last seen just now"},
 		{"last seen minutes", PresenceState{LastSeen: now.Add(-5 * time.Minute)}, "last seen 5m ago"},
 		{"last seen hours", PresenceState{LastSeen: now.Add(-3 * time.Hour)}, "last seen 3h ago"},
@@ -28,6 +30,30 @@ func TestPresenceSubtitle(t *testing.T) {
 			got := presenceSubtitle(tc.state, now)
 			if got != tc.want {
 				t.Errorf("presenceSubtitle(%+v) = %q, want %q", tc.state, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestChatPresenceTypingRecording(t *testing.T) {
+	cases := []struct {
+		name          string
+		state, media  string
+		wantTyping    bool
+		wantRecording bool
+	}{
+		{"composing text", "composing", "text", true, false},
+		{"composing empty media", "composing", "", true, false},
+		{"composing audio", "composing", "audio", false, true},
+		{"paused", "paused", "", false, false},
+		{"paused audio media ignored", "paused", "audio", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			typing, recording := chatPresenceTypingRecording(tc.state, tc.media)
+			if typing != tc.wantTyping || recording != tc.wantRecording {
+				t.Errorf("chatPresenceTypingRecording(%q, %q) = (%v, %v), want (%v, %v)",
+					tc.state, tc.media, typing, recording, tc.wantTyping, tc.wantRecording)
 			}
 		})
 	}

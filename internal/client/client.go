@@ -77,11 +77,14 @@ type Presence struct {
 	LastSeen int64 // unix seconds, 0 if unknown
 }
 
-// ChatPresence is a per-chat composing/paused/recording indicator.
+// ChatPresence is a per-chat composing/paused/recording indicator. Media
+// distinguishes a voice-note recording ("audio") from plain typing ("text"
+// or "") when State is "composing".
 type ChatPresence struct {
 	ChatJID string
 	JID     string
-	State   string // "composing", "paused", "recording"
+	State   string // "composing", "paused"
+	Media   string // "audio" for a recording composing state, "text"/"" otherwise
 }
 
 // Call is an incoming/ongoing call notification.
@@ -330,6 +333,10 @@ type Client interface {
 	CheckOnWhatsApp(ctx context.Context, phone string) (jid string, onWhatsApp bool, err error)
 	SendPresence(available bool) error
 	SendTyping(jid string, typing bool) error
+	// SendRecording sends the "recording a voice note" chat-presence
+	// (composing + audio media) when recording is true, else the plain
+	// paused state.
+	SendRecording(jid string, recording bool) error
 	// PinChat, MuteChat, ArchiveChat and MarkChatUnread write chat-organization
 	// app-state; reflected optimistically in the store and via an
 	// EventChatUpdate.
@@ -343,6 +350,10 @@ type Client interface {
 	// StarredMessages returns starred messages across every chat, newest
 	// first, for the starred-messages sidebar view.
 	StarredMessages(limit int) ([]Message, error)
+	// RejectCall declines an incoming call offer identified by callID from
+	// callJID. chatot never places or answers calls (whatsmeow can't); this
+	// is the only call action supported.
+	RejectCall(ctx context.Context, callJID, callID string) error
 
 	// Blocklist returns the JIDs currently blocked.
 	Blocklist(ctx context.Context) ([]string, error)

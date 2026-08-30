@@ -231,6 +231,18 @@ func TestShowChatInList(t *testing.T) {
 	}
 }
 
+func TestComposingPreviewText(t *testing.T) {
+	if got := composingPreviewText("recording"); got != "recording audio…" {
+		t.Errorf("composingPreviewText(recording) = %q, want recording audio…", got)
+	}
+	if got := composingPreviewText("typing"); got != "typing…" {
+		t.Errorf("composingPreviewText(typing) = %q, want typing…", got)
+	}
+	if got := composingPreviewText(""); got != "typing…" {
+		t.Errorf("composingPreviewText(\"\") = %q, want typing… fallback", got)
+	}
+}
+
 func TestStarredSnippet(t *testing.T) {
 	cases := []struct {
 		name string

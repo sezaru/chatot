@@ -632,7 +632,7 @@ func (cv *ConversationView) watchEvents() {
 			cp := *ev.ChatPresence
 			glib.IdleAdd(func() {
 				state := cv.presence[cp.ChatJID]
-				state.Typing = cp.State == "composing"
+				state.Typing, state.Recording = chatPresenceTypingRecording(cp.State, cp.Media)
 				cv.presence[cp.ChatJID] = state
 				if cp.ChatJID == cv.jid {
 					cv.refreshHeader()

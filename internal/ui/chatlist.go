@@ -141,18 +141,18 @@ const searchResultLimit = 30
 type ChatList struct {
 	*gtk.Box
 
-	c            client.Client
-	events       <-chan client.Event
-	list         *gtk.ListBox
-	rowJIDs      []string // row index -> JID, rebuilt alongside the ListBox rows
-	onSelect     func(jid string)
-	typingJIDs   map[string]bool // chat JID -> peer currently composing
-	query        string          // current search text; "" shows the normal chat list
-	avatarCache  *avatarCache
-	window       *gtk.Window // parent for the new-chat dialog; set via SetWindow
-	showArchived bool        // toggled by the "Archived" button; see showChatInList
-	showStarred  bool        // toggled by the "Starred" button; overrides search/archived
-	labelFilter  *gtk.DropDown
+	c             client.Client
+	events        <-chan client.Event
+	list          *gtk.ListBox
+	rowJIDs       []string // row index -> JID, rebuilt alongside the ListBox rows
+	onSelect      func(jid string)
+	composingJIDs map[string]string // chat JID -> "typing" or "recording" for a peer currently composing
+	query         string            // current search text; "" shows the normal chat list
+	avatarCache   *avatarCache
+	window        *gtk.Window // parent for the new-chat dialog; set via SetWindow
+	showArchived  bool        // toggled by the "Archived" button; see showChatInList
+	showStarred   bool        // toggled by the "Starred" button; overrides search/archived
+	labelFilter   *gtk.DropDown
 	// filterLabelIDs maps the label-filter dropdown's row index to a label id;
 	// index 0 is "All" (empty id). Rebuilt with the dropdown from c.Labels().
 	filterLabelIDs []string
@@ -213,7 +213,7 @@ func NewChatList(c client.Client) *ChatList {
 	list.SetVExpand(true)
 	root.Append(list)
 
-	cl := &ChatList{Box: root, c: c, events: c.Events(), list: list, typingJIDs: make(map[string]bool), avatarCache: newAvatarCache(), labelFilter: labelFilter}
+	cl := &ChatList{Box: root, c: c, events: c.Events(), list: list, composingJIDs: make(map[string]string), avatarCache: newAvatarCache(), labelFilter: labelFilter}
 
 	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
 		idx := row.Index()
@@ -317,8 +317,8 @@ func (cl *ChatList) refreshChats() {
 			continue
 		}
 		vm := chatRowVM(chat, now)
-		if cl.typingJIDs[chat.JID] {
-			vm.Preview = "typing…"
+		if kind, ok := cl.composingJIDs[chat.JID]; ok {
+			vm.Preview = composingPreviewText(kind)
 			vm.Typing = true
 		}
 		vm.Blocked = cl.c.IsBlocked(chat.JID)
@@ -391,6 +391,16 @@ func (cl *ChatList) refreshStarred() {
 	}
 }
 
+// composingPreviewText renders the chat-list preview override for a peer
+// currently composing: kind is "recording" for a voice-note recording, else
+// plain typing.
+func composingPreviewText(kind string) string {
+	if kind == "recording" {
+		return "recording audio…"
+	}
+	return "typing…"
+}
+
 // starredSnippet renders a starred message's preview line, falling back to a
 // kind label for non-text bodies like the chat-list preview does.
 func starredSnippet(m client.Message) string {
@@ -414,20 +424,25 @@ func starredSnippet(m client.Message) string {
 // GTK main loop via glib.IdleAdd. Runs on its own goroutine for the
 // lifetime of the process; the fake/whatsmeow Events() channel is never
 // explicitly closed today, so this goroutine simply exits if it is.
-// EventChatPresence updates typingJIDs (composing sets it, anything else
-// clears it) instead of falling through to the generic full refresh, since
-// it needs the event's JID+state before rebuilding rows. EventChatUpdate
-// (pin/mute/archive/unread changes) needs no special handling: it falls
-// through to the generic refresh below like most other event kinds.
+// EventChatPresence updates composingJIDs (composing sets "typing" or
+// "recording", anything else clears it) instead of falling through to the
+// generic full refresh, since it needs the event's JID+state before
+// rebuilding rows. EventChatUpdate (pin/mute/archive/unread changes) needs no
+// special handling: it falls through to the generic refresh below like most
+// other event kinds.
 func (cl *ChatList) watchEvents() {
 	for ev := range cl.events {
 		if ev.Kind == client.EventChatPresence && ev.ChatPresence != nil {
-			jid, typing := ev.ChatPresence.ChatJID, ev.ChatPresence.State == "composing"
+			jid := ev.ChatPresence.ChatJID
+			typing, recording := chatPresenceTypingRecording(ev.ChatPresence.State, ev.ChatPresence.Media)
 			glib.IdleAdd(func() {
-				if typing {
-					cl.typingJIDs[jid] = true
-				} else {
-					delete(cl.typingJIDs, jid)
+				switch {
+				case recording:
+					cl.composingJIDs[jid] = "recording"
+				case typing:
+					cl.composingJIDs[jid] = "typing"
+				default:
+					delete(cl.composingJIDs, jid)
 				}
 				cl.refresh()
 			})

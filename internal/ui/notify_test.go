@@ -93,3 +93,27 @@ func TestCallNotificationText(t *testing.T) {
 		t.Fatalf("got title=%q body=%q", title, body)
 	}
 }
+
+func TestCallActionParamRoundTrip(t *testing.T) {
+	cases := []struct{ chatJID, callID string }{
+		{"1234567890@s.whatsapp.net", "ABCDEF123"},
+		{"", ""},
+		{"jid-with-no-call-id", ""},
+	}
+	for _, tc := range cases {
+		param := encodeCallActionParam(tc.chatJID, tc.callID)
+		chatJID, callID, ok := DecodeCallActionParam(param)
+		if !ok {
+			t.Fatalf("decode(%q) ok=false, want true", param)
+		}
+		if chatJID != tc.chatJID || callID != tc.callID {
+			t.Fatalf("round trip %q,%q -> %q -> %q,%q", tc.chatJID, tc.callID, param, chatJID, callID)
+		}
+	}
+}
+
+func TestDecodeCallActionParamMalformed(t *testing.T) {
+	if _, _, ok := DecodeCallActionParam("no-separator-here"); ok {
+		t.Fatal("expected ok=false for a param missing the separator")
+	}
+}

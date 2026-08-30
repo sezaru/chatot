@@ -1,11 +1,32 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 
 	"chatot/internal/client"
 )
+
+// callActionSep joins chatJID and callID in the "app.reject-call" notification
+// action's string parameter. 0x1f (unit separator) can't appear in a JID or a
+// whatsmeow call ID, so it's a safe, unambiguous delimiter.
+const callActionSep = "\x1f"
+
+// encodeCallActionParam packs chatJID and callID into the single string
+// parameter a GAction can carry as a notification-button target.
+func encodeCallActionParam(chatJID, callID string) string {
+	return chatJID + callActionSep + callID
+}
+
+// DecodeCallActionParam reverses encodeCallActionParam, unpacking the
+// "app.reject-call" notification action's string parameter. ok is false if
+// param isn't well-formed (missing separator).
+func DecodeCallActionParam(param string) (chatJID, callID string, ok bool) {
+	chatJID, callID, ok = strings.Cut(param, callActionSep)
+	return
+}
 
 // NotificationsEnabled globally gates desktop notifications. Default true;
 // no settings UI yet (mirrors ui.SendReadReceipts).
@@ -149,6 +170,7 @@ func (n *Notifier) handleCall(call client.Call) {
 		notif.SetBody(body)
 		notif.SetPriority(gio.NotificationPriorityUrgent)
 		notif.SetDefaultActionAndTarget("app.open-chat", glib.NewVariantString(call.ChatJID))
+		notif.AddButtonWithTarget("Decline", "app.reject-call", glib.NewVariantString(encodeCallActionParam(call.ChatJID, call.CallID)))
 		n.app.SendNotification("chatot-call-"+call.ChatJID, notif)
 	})
 }
