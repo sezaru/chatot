@@ -27,6 +27,10 @@ const (
 	// unread) changed, possibly from another device via app-state; the chat
 	// list should refresh.
 	EventChatUpdate
+	// EventLabelUpdate signals the set of labels or a chat's label
+	// associations changed (possibly from another device); the label filter
+	// and chat list should refresh.
+	EventLabelUpdate
 )
 
 // Event is a normalized notification pushed on Client.Events(). Only the
@@ -218,6 +222,13 @@ type ChatUpdate struct {
 	JID string
 }
 
+// Label is a WhatsApp Business label used to organize chats.
+type Label struct {
+	ID    string
+	Name  string
+	Color int
+}
+
 // MsgRef points at a message being replied to or reacted to.
 type MsgRef struct {
 	ChatJID string
@@ -317,6 +328,21 @@ type Client interface {
 	// PrivacySettings returns the account's privacy settings as a
 	// display-friendly name -> value map. Read-only.
 	PrivacySettings(ctx context.Context) (map[string]string, error)
+
+	// Labels returns the non-deleted WhatsApp Business labels.
+	Labels() ([]Label, error)
+	// CreateLabel creates a new label with the given name/color, allocating
+	// the next unused numeric id; returns the new id.
+	CreateLabel(ctx context.Context, name string, color int) (id string, err error)
+	// EditLabel renames/recolors an existing label.
+	EditLabel(ctx context.Context, id, name string, color int) error
+	// DeleteLabel marks a label deleted (removing it from Labels).
+	DeleteLabel(ctx context.Context, id string) error
+	// SetChatLabeled associates/disassociates chatJID with labelID via
+	// app-state; reflected optimistically and via an EventLabelUpdate.
+	SetChatLabeled(ctx context.Context, labelID, chatJID string, labeled bool) error
+	// LabelsForChat returns the ids of labels currently on chatJID.
+	LabelsForChat(chatJID string) ([]string, error)
 
 	// media
 	DownloadMedia(ctx context.Context, msgID string) (localPath string, err error)

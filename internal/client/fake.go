@@ -23,6 +23,9 @@ type Fake struct {
 	loggedIn bool
 	nextID   int
 	blocked  map[string]bool
+	labels   []Label
+	// labelChats maps a labelID to the set of chat JIDs it's associated with.
+	labelChats map[string]map[string]bool
 }
 
 // NewFake returns a Fake seeded with canned chats and messages, already
@@ -35,6 +38,13 @@ func NewFake() *Fake {
 		qrCodes:  make(chan string, 1),
 		loggedIn: true,
 		blocked:  make(map[string]bool),
+		labels: []Label{
+			{ID: "1", Name: "Work", Color: 0},
+			{ID: "2", Name: "Family", Color: 5},
+		},
+		labelChats: map[string]map[string]bool{
+			"1": {"1234567890@s.whatsapp.net": true},
+		},
 	}
 
 	f.chats = []Chat{
@@ -490,6 +500,83 @@ func (f *Fake) PrivacySettings(ctx context.Context) (map[string]string, error) {
 		"Defense Mode":  "off",
 		"Stickers":      "contacts",
 	}, nil
+}
+
+// Labels returns the non-deleted labels.
+func (f *Fake) Labels() ([]Label, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]Label, len(f.labels))
+	copy(out, f.labels)
+	return out, nil
+}
+
+func (f *Fake) CreateLabel(ctx context.Context, name string, color int) (string, error) {
+	f.mu.Lock()
+	ids := make([]string, len(f.labels))
+	for i, l := range f.labels {
+		ids[i] = l.ID
+	}
+	id := nextLabelID(ids)
+	f.labels = append(f.labels, Label{ID: id, Name: name, Color: color})
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventLabelUpdate})
+	return id, nil
+}
+
+func (f *Fake) EditLabel(ctx context.Context, id, name string, color int) error {
+	f.mu.Lock()
+	for i := range f.labels {
+		if f.labels[i].ID == id {
+			f.labels[i].Name = name
+			f.labels[i].Color = color
+		}
+	}
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventLabelUpdate})
+	return nil
+}
+
+func (f *Fake) DeleteLabel(ctx context.Context, id string) error {
+	f.mu.Lock()
+	kept := f.labels[:0]
+	for _, l := range f.labels {
+		if l.ID != id {
+			kept = append(kept, l)
+		}
+	}
+	f.labels = kept
+	delete(f.labelChats, id)
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventLabelUpdate})
+	return nil
+}
+
+func (f *Fake) SetChatLabeled(ctx context.Context, labelID, chatJID string, labeled bool) error {
+	f.mu.Lock()
+	if f.labelChats[labelID] == nil {
+		f.labelChats[labelID] = make(map[string]bool)
+	}
+	if labeled {
+		f.labelChats[labelID][chatJID] = true
+	} else {
+		delete(f.labelChats[labelID], chatJID)
+	}
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventLabelUpdate})
+	return nil
+}
+
+func (f *Fake) LabelsForChat(chatJID string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for _, l := range f.labels {
+		if f.labelChats[l.ID][chatJID] {
+			out = append(out, l.ID)
+		}
+	}
+	return out, nil
 }
 
 // CheckOnWhatsApp treats any string of 7-15 digits (optionally "+"-prefixed)

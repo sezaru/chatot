@@ -60,6 +60,14 @@ type PollVoteRow struct {
 	OptionHash []byte
 }
 
+// Label is a WhatsApp Business label. Deleted labels are never returned by
+// Labels, so a value here is always a live one.
+type Label struct {
+	ID    string
+	Name  string
+	Color int
+}
+
 // Attachment describes a message's media, as resolved from the media table.
 type Attachment struct {
 	Kind      string
