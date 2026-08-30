@@ -36,3 +36,45 @@
 	font-size: 0.75em;
 	font-weight: bold;
 }
+
+.chatot-day-separator {
+	opacity: 0.6;
+	font-size: 0.8em;
+	margin: 6px 0;
+}
+
+.chatot-bubble {
+	border-radius: 12px;
+	padding: 6px 10px;
+	margin: 2px 0;
+}
+
+.chatot-bubble-in {
+	background-color: alpha(currentColor, 0.08);
+}
+
+.chatot-bubble-out {
+	background-color: @accent_bg_color;
+	color: @accent_fg_color;
+}
+
+.chatot-bubble-quote {
+	opacity: 0.65;
+	font-size: 0.85em;
+	border-left: 2px solid alpha(currentColor, 0.4);
+	padding-left: 6px;
+}
+
+.chatot-bubble-media {
+	font-style: italic;
+	opacity: 0.85;
+}
+
+.chatot-bubble-time {
+	opacity: 0.6;
+	font-size: 0.7em;
+}
+
+.chatot-bubble-reactions {
+	font-size: 0.9em;
+}
