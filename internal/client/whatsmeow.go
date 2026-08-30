@@ -363,6 +363,45 @@ func (w *Whatsmeow) MessagesBefore(jid, beforeMsgID string, limit int) ([]Messag
 	return out, nil
 }
 
+// ChatMedia reads jid's image/video attachments from the local store.
+func (w *Whatsmeow) ChatMedia(jid string) ([]MediaItem, error) {
+	rows, err := w.store.ChatMedia(jid)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: chat media: %w", err)
+	}
+	out := make([]MediaItem, len(rows))
+	for i, r := range rows {
+		out[i] = mediaItemFromStore(r)
+	}
+	return out, nil
+}
+
+// ChatDocs reads jid's document attachments from the local store.
+func (w *Whatsmeow) ChatDocs(jid string) ([]DocItem, error) {
+	rows, err := w.store.ChatDocs(jid)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: chat docs: %w", err)
+	}
+	out := make([]DocItem, len(rows))
+	for i, r := range rows {
+		out[i] = docItemFromStore(r)
+	}
+	return out, nil
+}
+
+// ChatLinks reads jid's messages containing a URL from the local store.
+func (w *Whatsmeow) ChatLinks(jid string) ([]LinkItem, error) {
+	rows, err := w.store.ChatLinks(jid)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: chat links: %w", err)
+	}
+	out := make([]LinkItem, len(rows))
+	for i, r := range rows {
+		out[i] = linkItemFromStore(r)
+	}
+	return out, nil
+}
+
 // subscribePresence asks whatsmeow to start pushing presence updates for
 // jid, once per jid for this client's lifetime (SubscribePresence itself is
 // idempotent server-side, but there's no reason to re-request it on every

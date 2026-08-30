@@ -113,11 +113,7 @@ func activate(app *adw.Application, c client.Client) {
 			}
 		}()
 	})
-	// Media/export/clear are STUBBED here; F43 builds the media/links/docs
-	// page and F44 builds export/clear.
-	conversation.OnShowMediaRequested(func(jid string) {
-		log.Printf("chatot: show media for %s (not yet implemented, see F43)", jid)
-	})
+	// Export/clear are STUBBED here; F44 builds them.
 	conversation.OnExportRequested(func(jid string) {
 		log.Printf("chatot: export chat %s (not yet implemented, see F44)", jid)
 	})
@@ -160,6 +156,9 @@ func activate(app *adw.Application, c client.Client) {
 
 	conversation.OnForwardRequested(func(msg client.Message) {
 		ui.ShowForwardDialog(&win.Window, c, msg, toastOverlay)
+	})
+	conversation.OnShowMediaRequested(func(jid string) {
+		ui.ShowMediaPage(&win.Window, c, jid, chatNameFor(c, jid))
 	})
 	conversation.OnSearchAllChatsRequested(func(query string) {
 		split.SetShowContent(false) // reveal the sidebar when the split view is collapsed
@@ -255,10 +254,13 @@ func activate(app *adw.Application, c client.Client) {
 	win.Present()
 	go sendPresence(c, true)
 
-	// Dev/screenshot hook: CHATOT_SHOT_CHAT=<jid> opens that chat on launch so
-	// the conversation pane can be captured non-interactively. No-op unset.
+	// Dev/screenshot hooks: CHATOT_SHOT_CHAT=<jid> opens that chat on launch;
+	// CHATOT_SHOT_MEDIA=1 then opens its Media/Links/Docs page. Both no-op unset.
 	if jid := os.Getenv("CHATOT_SHOT_CHAT"); jid != "" {
 		openChat(jid)
+		if os.Getenv("CHATOT_SHOT_MEDIA") == "1" {
+			ui.ShowMediaPage(&win.Window, c, jid, chatNameFor(c, jid))
+		}
 	}
 }
 
@@ -281,6 +283,22 @@ func markReadOnOpen(c client.Client, jid string, msgs []client.Message) {
 			return
 		}
 	}
+}
+
+// chatNameFor looks up jid's display name from the chat list, for dialogs
+// (the media/links/docs page) that need it but aren't handed it directly.
+// Falls back to jid itself if the chat isn't found.
+func chatNameFor(c client.Client, jid string) string {
+	chats, err := c.Chats(0)
+	if err != nil {
+		return jid
+	}
+	for _, chat := range chats {
+		if chat.JID == jid {
+			return chat.Name
+		}
+	}
+	return jid
 }
 
 func loadCSS() {

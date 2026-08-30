@@ -587,3 +587,61 @@ func TestFakeRequestMoreHistoryUnknownMessageErrors(t *testing.T) {
 		t.Error("RequestMoreHistory with unknown oldestMsgID should error")
 	}
 }
+
+const graceHopperJID = "1112223333@s.whatsapp.net"
+
+func TestFakeChatMediaReturnsImagesAndVideos(t *testing.T) {
+	f := NewFake()
+	media, err := f.ChatMedia(graceHopperJID)
+	if err != nil {
+		t.Fatalf("ChatMedia: %v", err)
+	}
+	if len(media) != 2 {
+		t.Fatalf("got %d media items, want 2 (image m10 + video m8): %+v", len(media), media)
+	}
+	// Newest first.
+	if media[0].MsgID != "m10" || media[0].Kind != "image" {
+		t.Errorf("media[0] = %+v, want image m10", media[0])
+	}
+	if media[1].MsgID != "m8" || media[1].Kind != "video" {
+		t.Errorf("media[1] = %+v, want video m8", media[1])
+	}
+}
+
+func TestFakeChatDocsReturnsDocuments(t *testing.T) {
+	f := NewFake()
+	docs, err := f.ChatDocs(graceHopperJID)
+	if err != nil {
+		t.Fatalf("ChatDocs: %v", err)
+	}
+	if len(docs) != 1 || docs[0].MsgID != "m11" || docs[0].Filename != "lease-2026.pdf" {
+		t.Errorf("ChatDocs = %+v, want one doc m11 lease-2026.pdf", docs)
+	}
+}
+
+func TestFakeChatLinksReturnsURLMessages(t *testing.T) {
+	f := NewFake()
+	links, err := f.ChatLinks(graceHopperJID)
+	if err != nil {
+		t.Fatalf("ChatLinks: %v", err)
+	}
+	if len(links) != 1 || links[0].MsgID != "m12" {
+		t.Fatalf("ChatLinks = %+v, want one link m12", links)
+	}
+	if links[0].URL != "https://stay.example.com/cabin/4412" || links[0].Host != "stay.example.com" {
+		t.Errorf("links[0] = %+v", links[0])
+	}
+}
+
+func TestFakeChatMediaDocsLinksEmptyForUnknownChat(t *testing.T) {
+	f := NewFake()
+	if media, _ := f.ChatMedia("nobody@s.whatsapp.net"); len(media) != 0 {
+		t.Errorf("ChatMedia for unknown chat = %+v, want empty", media)
+	}
+	if docs, _ := f.ChatDocs("nobody@s.whatsapp.net"); len(docs) != 0 {
+		t.Errorf("ChatDocs for unknown chat = %+v, want empty", docs)
+	}
+	if links, _ := f.ChatLinks("nobody@s.whatsapp.net"); len(links) != 0 {
+		t.Errorf("ChatLinks for unknown chat = %+v, want empty", links)
+	}
+}

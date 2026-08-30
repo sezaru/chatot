@@ -114,6 +114,24 @@ func storeReactionRow(r *Reaction) store.ReactionRow {
 	}
 }
 
+func mediaItemFromStore(m store.MediaItem) MediaItem {
+	return MediaItem{
+		MsgID: m.MsgID, Kind: m.Kind, MimeType: m.MimeType,
+		LocalPath: m.LocalPath, Thumbnail: m.Thumbnail, TS: m.TS,
+	}
+}
+
+func docItemFromStore(d store.DocItem) DocItem {
+	return DocItem{
+		MsgID: d.MsgID, Filename: d.Filename, MimeType: d.MimeType,
+		LocalPath: d.LocalPath, TS: d.TS,
+	}
+}
+
+func linkItemFromStore(l store.LinkItem) LinkItem {
+	return LinkItem{MsgID: l.MsgID, URL: l.URL, Host: l.Host, Title: l.Title, TS: l.TS}
+}
+
 func chatFromStore(c store.Chat) Chat {
 	return Chat{
 		JID: c.JID, Name: c.Name, Preview: c.Preview,

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"chatot/internal/store"
 )
 
 var _ Client = (*Fake)(nil)
@@ -116,6 +118,15 @@ func NewFake() *Fake {
 		// the no-bubble sticker render without needing a bundled webp asset.
 		{ID: "m9", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2600,
 			Attachment: &Attachment{Kind: "sticker", MimeType: "image/webp"}},
+		// m10-m12 seed the Media/Links/Docs page (F43): an image (Media tab,
+		// alongside m8's video), a document (Docs tab) and a URL-bearing text
+		// message (Links tab).
+		{ID: "m10", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2500,
+			Attachment: &Attachment{Kind: "image", MimeType: "image/jpeg"}},
+		{ID: "m11", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2400,
+			Attachment: &Attachment{Kind: "document", Filename: "lease-2026.pdf", MimeType: "application/pdf"}},
+		{ID: "m12", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2300,
+			Text: "Cabin listing — 3 bedrooms: https://stay.example.com/cabin/4412"},
 	}
 
 	f.messages[statusBroadcastJID] = []Message{
@@ -693,6 +704,58 @@ func (f *Fake) PostStatus(ctx context.Context, text string) error {
 	f.messages[statusBroadcastJID] = append(f.messages[statusBroadcastJID], msg)
 	f.mu.Unlock()
 	return nil
+}
+
+// ChatMedia returns jid's seeded image/video attachments, newest first.
+func (f *Fake) ChatMedia(jid string) ([]MediaItem, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []MediaItem
+	for _, m := range f.messages[jid] {
+		if m.Attachment == nil || (m.Attachment.Kind != "image" && m.Attachment.Kind != "video") {
+			continue
+		}
+		out = append(out, MediaItem{
+			MsgID: m.ID, Kind: m.Attachment.Kind, MimeType: m.Attachment.MimeType,
+			LocalPath: m.Attachment.LocalPath, Thumbnail: m.Attachment.Thumbnail, TS: m.TS,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TS > out[j].TS })
+	return out, nil
+}
+
+// ChatDocs returns jid's seeded document attachments, newest first.
+func (f *Fake) ChatDocs(jid string) ([]DocItem, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []DocItem
+	for _, m := range f.messages[jid] {
+		if m.Attachment == nil || m.Attachment.Kind != "document" {
+			continue
+		}
+		out = append(out, DocItem{
+			MsgID: m.ID, Filename: m.Attachment.Filename, MimeType: m.Attachment.MimeType,
+			LocalPath: m.Attachment.LocalPath, TS: m.TS,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TS > out[j].TS })
+	return out, nil
+}
+
+// ChatLinks returns jid's seeded messages containing a URL, newest first.
+func (f *Fake) ChatLinks(jid string) ([]LinkItem, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []LinkItem
+	for _, m := range f.messages[jid] {
+		urls := store.ExtractURLs(m.Text)
+		if len(urls) == 0 {
+			continue
+		}
+		out = append(out, LinkItem{MsgID: m.ID, URL: urls[0], Host: store.URLHost(urls[0]), Title: m.Text, TS: m.TS})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TS > out[j].TS })
+	return out, nil
 }
 
 // Newsletters returns the seeded channels, sorted by name for deterministic
