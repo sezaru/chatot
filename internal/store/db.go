@@ -49,7 +49,31 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
 	}
+	if err := backfillFTS(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("chatot/store: fts backfill: %w", err)
+	}
 	return &Store{db: db}, nil
+}
+
+// backfillFTS indexes message rows written before messages_fts (or its
+// sync triggers) existed. CREATE VIRTUAL TABLE/TRIGGER IF NOT EXISTS only
+// take effect for writes made after they're created, so a dev database
+// opened for the first time post-upgrade needs its past rows indexed once.
+// Comparing row counts keeps repeat calls a cheap no-op pair of COUNT(*)s.
+func backfillFTS(db *sql.DB) error {
+	var msgCount, ftsCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM messages`).Scan(&msgCount); err != nil {
+		return err
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM messages_fts`).Scan(&ftsCount); err != nil {
+		return err
+	}
+	if ftsCount >= msgCount {
+		return nil
+	}
+	_, err := db.Exec(`INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')`)
+	return err
 }
 
 // migrateAddColumn adds column to table if it isn't already there. CREATE

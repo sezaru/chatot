@@ -264,10 +264,18 @@ func (w *Whatsmeow) subscribePresence(jid string) {
 	}()
 }
 
-// Search runs an fts5 query over the local store.
-// TODO(F11): implement once the store has an fts5 index.
+// Search runs an fts5 query over the local store's message text plus a
+// chat-name match.
 func (w *Whatsmeow) Search(query string, limit int) ([]SearchHit, error) {
-	return nil, errors.New("not implemented: Search (F11)")
+	rows, err := w.store.Search(query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: search: %w", err)
+	}
+	out := make([]SearchHit, len(rows))
+	for i, r := range rows {
+		out[i] = SearchHit{ChatJID: r.ChatJID, MsgID: r.MsgID, ChatName: r.ChatName, Snippet: r.Snippet, TS: r.TS}
+	}
+	return out, nil
 }
 
 // SendText sends a plain-text (optionally reply) message. On success the

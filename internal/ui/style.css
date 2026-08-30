@@ -111,3 +111,18 @@
 	font-style: italic;
 	color: @accent_bg_color;
 }
+
+.chatot-search-entry {
+	margin: 6px 8px 4px 8px;
+}
+
+.chatot-search-snippet {
+	opacity: 0.7;
+	font-size: 0.9em;
+}
+
+.chatot-search-empty {
+	opacity: 0.6;
+	font-style: italic;
+	margin: 12px;
+}
