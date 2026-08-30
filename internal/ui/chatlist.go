@@ -2,11 +2,13 @@ package ui
 
 import (
 	"context"
+	"log"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
@@ -26,6 +28,8 @@ type chatRowView struct {
 	UnreadText string
 	ShowUnread bool
 	Typing     bool // set by ChatList.refresh from live presence, not chatRowVM
+	Pinned     bool
+	Muted      bool
 }
 
 // chatRowVM derives the display view-model for a single chat row. now is
@@ -48,6 +52,8 @@ func chatRowVM(c client.Chat, now time.Time) chatRowView {
 		Name:     name,
 		Preview:  c.Preview,
 		TimeText: formatChatTime(c.LastMessageTS, now),
+		Pinned:   c.Pinned,
+		Muted:    c.Muted,
 	}
 	if c.UnreadCount > 0 {
 		view.ShowUnread = true
@@ -58,6 +64,40 @@ func chatRowVM(c client.Chat, now time.Time) chatRowView {
 		}
 	}
 	return view
+}
+
+// chatActionLabelsView holds the pure per-chat context-menu label choices,
+// reflecting the chat's current pin/mute/archive/unread state.
+type chatActionLabelsView struct {
+	Pin     string
+	Mute    string
+	Archive string
+	Unread  string
+}
+
+// chatActionLabels derives the context-menu labels for c: each toggles the
+// opposite of its current state (e.g. a pinned chat gets "Unpin").
+func chatActionLabels(c client.Chat) chatActionLabelsView {
+	v := chatActionLabelsView{Pin: "Pin", Mute: "Mute", Archive: "Archive", Unread: "Mark as unread"}
+	if c.Pinned {
+		v.Pin = "Unpin"
+	}
+	if c.Muted {
+		v.Mute = "Unmute"
+	}
+	if c.Archived {
+		v.Archive = "Unarchive"
+	}
+	if c.UnreadCount > 0 {
+		v.Unread = "Mark as read"
+	}
+	return v
+}
+
+// showChatInList is the archived-filter predicate: with the toggle off, only
+// non-archived chats show; with it on, only archived ones do.
+func showChatInList(c client.Chat, showArchived bool) bool {
+	return c.Archived == showArchived
 }
 
 // formatChatTime renders ts (unix seconds) relative to now: "15:04" for
@@ -90,15 +130,16 @@ const searchResultLimit = 30
 type ChatList struct {
 	*gtk.Box
 
-	c           client.Client
-	events      <-chan client.Event
-	list        *gtk.ListBox
-	rowJIDs     []string // row index -> JID, rebuilt alongside the ListBox rows
-	onSelect    func(jid string)
-	typingJIDs  map[string]bool // chat JID -> peer currently composing
-	query       string          // current search text; "" shows the normal chat list
-	avatarCache *avatarCache
-	window      *gtk.Window // parent for the new-chat dialog; set via SetWindow
+	c            client.Client
+	events       <-chan client.Event
+	list         *gtk.ListBox
+	rowJIDs      []string // row index -> JID, rebuilt alongside the ListBox rows
+	onSelect     func(jid string)
+	typingJIDs   map[string]bool // chat JID -> peer currently composing
+	query        string          // current search text; "" shows the normal chat list
+	avatarCache  *avatarCache
+	window       *gtk.Window // parent for the new-chat dialog; set via SetWindow
+	showArchived bool        // toggled by the "Archived" button; see showChatInList
 }
 
 // SetWindow supplies the parent window the new-chat dialog needs; call once
@@ -121,6 +162,11 @@ func NewChatList(c client.Client) *ChatList {
 	newChatBtn := gtk.NewButtonFromIconName("list-add-symbolic")
 	newChatBtn.SetTooltipText("New chat")
 	searchRow.Append(newChatBtn)
+
+	archiveToggle := gtk.NewToggleButton()
+	archiveToggle.SetIconName("mail-archive-symbolic")
+	archiveToggle.SetTooltipText("Show archived chats")
+	searchRow.Append(archiveToggle)
 
 	root.Append(searchRow)
 
@@ -148,6 +194,11 @@ func NewChatList(c client.Client) *ChatList {
 
 	newChatBtn.ConnectClicked(func() {
 		cl.showNewChatDialog()
+	})
+
+	archiveToggle.ConnectToggled(func() {
+		cl.showArchived = archiveToggle.Active()
+		cl.refresh()
 	})
 
 	cl.refresh()
@@ -182,12 +233,17 @@ func (cl *ChatList) refreshChats() {
 	now := time.Now()
 	cl.rowJIDs = make([]string, 0, len(chats))
 	for _, chat := range chats {
+		if !showChatInList(chat, cl.showArchived) {
+			continue
+		}
 		vm := chatRowVM(chat, now)
 		if cl.typingJIDs[chat.JID] {
 			vm.Preview = "typing…"
 			vm.Typing = true
 		}
-		cl.list.Append(buildChatRow(cl.c, cl.avatarCache, vm))
+		row := buildChatRow(cl.c, cl.avatarCache, vm)
+		attachChatContextMenu(row, cl.c, chat)
+		cl.list.Append(row)
 		cl.rowJIDs = append(cl.rowJIDs, vm.JID)
 	}
 }
@@ -226,7 +282,9 @@ func (cl *ChatList) refreshSearch() {
 // explicitly closed today, so this goroutine simply exits if it is.
 // EventChatPresence updates typingJIDs (composing sets it, anything else
 // clears it) instead of falling through to the generic full refresh, since
-// it needs the event's JID+state before rebuilding rows.
+// it needs the event's JID+state before rebuilding rows. EventChatUpdate
+// (pin/mute/archive/unread changes) needs no special handling: it falls
+// through to the generic refresh below like most other event kinds.
 func (cl *ChatList) watchEvents() {
 	for ev := range cl.events {
 		if ev.Kind == client.EventChatPresence && ev.ChatPresence != nil {
@@ -274,7 +332,14 @@ func buildChatRow(c client.Client, cache *avatarCache, vm chatRowView) *gtk.Box 
 	textCol := gtk.NewBox(gtk.OrientationVertical, 2)
 	textCol.SetHExpand(true)
 
-	nameLabel := gtk.NewLabel(vm.Name)
+	name := vm.Name
+	if vm.Pinned {
+		name = "📌 " + name
+	}
+	if vm.Muted {
+		name = "🔇 " + name
+	}
+	nameLabel := gtk.NewLabel(name)
 	nameLabel.SetXAlign(0)
 	nameLabel.SetEllipsize(pango.EllipsizeEnd)
 	nameLabel.SetMaxWidthChars(1)
@@ -314,6 +379,55 @@ func buildChatRow(c client.Client, cache *avatarCache, vm chatRowView) *gtk.Box 
 	row.Append(metaCol)
 
 	return row
+}
+
+// attachChatContextMenu wires a secondary-click (right-click) gesture on row
+// that pops a small menu of Pin/Mute/Archive/Mark-unread actions for chat.
+// Each action calls the matching Client method in a goroutine; the resulting
+// EventChatUpdate (or, for the fake, the equivalent) drives the list refresh
+// via ChatList.watchEvents, so nothing here touches the row directly.
+func attachChatContextMenu(row *gtk.Box, c client.Client, chat client.Chat) {
+	gesture := gtk.NewGestureClick()
+	gesture.SetButton(gdk.BUTTON_SECONDARY)
+	gesture.ConnectPressed(func(nPress int, x, y float64) {
+		showChatContextMenu(row, c, chat, x, y)
+	})
+	row.AddController(gesture)
+}
+
+// showChatContextMenu builds and pops a Popover of action buttons anchored at
+// (x, y) within row.
+func showChatContextMenu(row *gtk.Box, c client.Client, chat client.Chat, x, y float64) {
+	labels := chatActionLabels(chat)
+	pop := gtk.NewPopover()
+	box := gtk.NewBox(gtk.OrientationVertical, 0)
+
+	addAction := func(label string, do func(ctx context.Context) error) {
+		btn := gtk.NewButtonWithLabel(label)
+		btn.AddCSSClass("flat")
+		btn.ConnectClicked(func() {
+			pop.Popdown()
+			go func() {
+				if err := do(context.Background()); err != nil {
+					log.Printf("chatot: chat action %q failed: %v", label, err)
+				}
+			}()
+		})
+		box.Append(btn)
+	}
+
+	addAction(labels.Pin, func(ctx context.Context) error { return c.PinChat(ctx, chat.JID, !chat.Pinned) })
+	addAction(labels.Mute, func(ctx context.Context) error { return c.MuteChat(ctx, chat.JID, !chat.Muted) })
+	addAction(labels.Archive, func(ctx context.Context) error { return c.ArchiveChat(ctx, chat.JID, !chat.Archived) })
+	addAction(labels.Unread, func(ctx context.Context) error {
+		return c.MarkChatUnread(ctx, chat.JID, chat.UnreadCount == 0)
+	})
+
+	rect := gdk.NewRectangle(int(x), int(y), 1, 1)
+	pop.SetChild(box)
+	pop.SetParent(row)
+	pop.SetPointingTo(&rect)
+	pop.Popup()
 }
 
 // searchHitView holds the pure, pre-rendered display fields for one search

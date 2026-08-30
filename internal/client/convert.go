@@ -116,7 +116,7 @@ func chatFromStore(c store.Chat) Chat {
 	return Chat{
 		JID: c.JID, Name: c.Name, Preview: c.Preview,
 		UnreadCount: c.UnreadCount, LastMessageTS: c.LastMessageTS,
-		Pinned: c.Pinned, Muted: c.Muted, IsGroup: c.IsGroup,
+		Pinned: c.Pinned, Muted: c.Muted, Archived: c.Archived, IsGroup: c.IsGroup,
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -146,6 +147,32 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 		w.pushEvent(Event{Kind: EventAvatar, Avatar: &Avatar{JID: jid}})
 		return
 	}
+	// App-state chat-organization events: not messages, so update the store
+	// directly and push a refresh rather than routing through translate.
+	if p, ok := evt.(*events.Pin); ok {
+		w.applyChatUpdate(p.JID.String(), func(jid string) error {
+			return w.store.SetChatPinned(jid, p.Action.GetPinned())
+		})
+		return
+	}
+	if m, ok := evt.(*events.Mute); ok {
+		w.applyChatUpdate(m.JID.String(), func(jid string) error {
+			return w.store.SetChatMuted(jid, m.Action.GetMuted())
+		})
+		return
+	}
+	if a, ok := evt.(*events.Archive); ok {
+		w.applyChatUpdate(a.JID.String(), func(jid string) error {
+			return w.store.SetChatArchived(jid, a.Action.GetArchived())
+		})
+		return
+	}
+	if r, ok := evt.(*events.MarkChatAsRead); ok {
+		w.applyChatUpdate(r.JID.String(), func(jid string) error {
+			return w.store.SetChatUnread(jid, !r.Action.GetRead())
+		})
+		return
+	}
 	if _, ok := evt.(*events.Connected); ok {
 		// whatsmeow only delivers other users' presence after we've sent our
 		// own at least once; do it on every (re)connect rather than tracking
@@ -165,6 +192,16 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 }
 
 func (w *Whatsmeow) pushEvent(e Event) { w.events.Publish(e) }
+
+// applyChatUpdate runs a store mutation for an inbound app-state
+// chat-organization event and pushes an EventChatUpdate so the chat list
+// refreshes, regardless of whether the store write succeeded.
+func (w *Whatsmeow) applyChatUpdate(jid string, mutate func(jid string) error) {
+	if err := mutate(jid); err != nil {
+		w.log.Warnf("chatot/client: apply chat-update app-state: %v", err)
+	}
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+}
 
 // Start connects to WhatsApp. If no device is paired yet, it opens the QR
 // channel *before* connecting (whatsmeow requires this ordering) and fans
@@ -805,6 +842,91 @@ func (w *Whatsmeow) MarkRead(ctx context.Context, jid string, msgIDs []string) e
 		return fmt.Errorf("chatot/client: mark read: %w", err)
 	}
 	return w.store.MarkChatRead(jid)
+}
+
+// PinChat pins/unpins jid via app-state, then optimistically updates the
+// local store and notifies the UI to refresh.
+func (w *Whatsmeow) PinChat(ctx context.Context, jid string, pin bool) error {
+	target, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+	if err := w.wa.SendAppState(ctx, appstate.BuildPin(target, pin)); err != nil {
+		return fmt.Errorf("chatot/client: send pin app-state: %w", err)
+	}
+	if err := w.store.SetChatPinned(jid, pin); err != nil {
+		w.log.Warnf("chatot/client: optimistic pin update failed: %v", err)
+	}
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+// MuteChat mutes/unmutes jid indefinitely via app-state.
+func (w *Whatsmeow) MuteChat(ctx context.Context, jid string, mute bool) error {
+	target, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+	if err := w.wa.SendAppState(ctx, appstate.BuildMute(target, mute, 0)); err != nil {
+		return fmt.Errorf("chatot/client: send mute app-state: %w", err)
+	}
+	if err := w.store.SetChatMuted(jid, mute); err != nil {
+		w.log.Warnf("chatot/client: optimistic mute update failed: %v", err)
+	}
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+// ArchiveChat archives/unarchives jid via app-state, using the chat's last
+// known activity timestamp (the exact last-message key isn't tracked, but
+// whatsmeow/WhatsApp accept a nil one).
+func (w *Whatsmeow) ArchiveChat(ctx context.Context, jid string, archive bool) error {
+	target, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+	ts, err := w.store.ChatLastMessageTS(jid)
+	if err != nil {
+		w.log.Warnf("chatot/client: lookup last message ts for archive: %v", err)
+	}
+	lastMessageTS := time.Now()
+	if ts > 0 {
+		lastMessageTS = time.Unix(ts, 0)
+	}
+	if err := w.wa.SendAppState(ctx, appstate.BuildArchive(target, archive, lastMessageTS, nil)); err != nil {
+		return fmt.Errorf("chatot/client: send archive app-state: %w", err)
+	}
+	if err := w.store.SetChatArchived(jid, archive); err != nil {
+		w.log.Warnf("chatot/client: optimistic archive update failed: %v", err)
+	}
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+// MarkChatUnread marks jid unread (unread=false in the underlying app-state
+// patch marks it read, so an "unread" toggle is BuildMarkChatAsRead(jid,
+// !unread, ...)).
+func (w *Whatsmeow) MarkChatUnread(ctx context.Context, jid string, unread bool) error {
+	target, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+	ts, err := w.store.ChatLastMessageTS(jid)
+	if err != nil {
+		w.log.Warnf("chatot/client: lookup last message ts for mark-unread: %v", err)
+	}
+	lastMessageTS := time.Now()
+	if ts > 0 {
+		lastMessageTS = time.Unix(ts, 0)
+	}
+	if err := w.wa.SendAppState(ctx, appstate.BuildMarkChatAsRead(target, !unread, lastMessageTS, nil)); err != nil {
+		return fmt.Errorf("chatot/client: send mark-unread app-state: %w", err)
+	}
+	if err := w.store.SetChatUnread(jid, unread); err != nil {
+		w.log.Warnf("chatot/client: optimistic unread update failed: %v", err)
+	}
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
 }
 
 // SendPresence sets the account's overall online/offline state. Also the

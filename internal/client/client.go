@@ -23,6 +23,10 @@ const (
 	EventPollVote
 	EventRevoke
 	EventAvatar
+	// EventChatUpdate signals a chat's organization state (pin/mute/archive/
+	// unread) changed, possibly from another device via app-state; the chat
+	// list should refresh.
+	EventChatUpdate
 )
 
 // Event is a normalized notification pushed on Client.Events(). Only the
@@ -40,6 +44,7 @@ type Event struct {
 	PollVote     *PollVote
 	Revoke       *Revoke
 	Avatar       *Avatar
+	ChatUpdate   *ChatUpdate
 }
 
 // Receipt is a delivery/read acknowledgement for previously sent messages.
@@ -104,6 +109,7 @@ type Chat struct {
 	LastMessageTS int64
 	Pinned        bool
 	Muted         bool
+	Archived      bool
 	IsGroup       bool
 }
 
@@ -205,6 +211,11 @@ type Avatar struct {
 	JID string
 }
 
+// ChatUpdate signals that JID's pin/mute/archive/unread state changed.
+type ChatUpdate struct {
+	JID string
+}
+
 // MsgRef points at a message being replied to or reacted to.
 type MsgRef struct {
 	ChatJID string
@@ -279,6 +290,13 @@ type Client interface {
 	CheckOnWhatsApp(ctx context.Context, phone string) (jid string, onWhatsApp bool, err error)
 	SendPresence(available bool) error
 	SendTyping(jid string, typing bool) error
+	// PinChat, MuteChat, ArchiveChat and MarkChatUnread write chat-organization
+	// app-state; reflected optimistically in the store and via an
+	// EventChatUpdate.
+	PinChat(ctx context.Context, jid string, pin bool) error
+	MuteChat(ctx context.Context, jid string, mute bool) error
+	ArchiveChat(ctx context.Context, jid string, archive bool) error
+	MarkChatUnread(ctx context.Context, jid string, unread bool) error
 
 	// media
 	DownloadMedia(ctx context.Context, msgID string) (localPath string, err error)
