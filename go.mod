@@ -6,6 +6,7 @@ require (
 	github.com/diamondburned/gotk4-adwaita/pkg v0.0.0-20260808200908-d4aecaa0ff32
 	github.com/diamondburned/gotk4/pkg v0.4.1
 	github.com/mattn/go-sqlite3 v1.14.50
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	go.mau.fi/whatsmeow v0.0.0-20260806224404-e277b766ab33
 	google.golang.org/protobuf v1.36.12
 )

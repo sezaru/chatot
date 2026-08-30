@@ -166,9 +166,12 @@ func TestFakeLoggedInLifecycle(t *testing.T) {
 
 func TestFakePushEventDeliversOnEvents(t *testing.T) {
 	f := NewFake()
+	// Events() is a fan-out subscription: subscribe before publishing, as the
+	// real UI consumers do from their own goroutines.
+	evs := f.Events()
 	f.PushEvent(Event{Kind: EventConnection, Connection: &Connection{Connected: true}})
 	select {
-	case e := <-f.Events():
+	case e := <-evs:
 		if e.Kind != EventConnection || !e.Connection.Connected {
 			t.Errorf("got unexpected event %+v", e)
 		}
