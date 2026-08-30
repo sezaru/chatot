@@ -124,6 +124,10 @@ type Attachment struct {
 	LocalPath string // "" until downloaded
 	Data      []byte // set on outbound sends before upload
 	Caption   string
+	// ProtoBlob is proto.Marshal of the inbound waE2E.*Message that carried
+	// this attachment (set by extractText), stored so DownloadMedia can
+	// reconstruct a whatsmeow.DownloadableMessage later. Never set outbound.
+	ProtoBlob []byte
 }
 
 // SearchHit is a single fts5 match over the local store.

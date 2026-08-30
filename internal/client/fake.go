@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -199,6 +200,26 @@ func (f *Fake) SendPresence(available bool) error { return nil }
 
 func (f *Fake) SendTyping(jid string, typing bool) error { return nil }
 
+// DownloadMedia simulates a successful download by writing an empty temp
+// file and pointing the message's Attachment.LocalPath at it, so UI-level
+// tests/dev builds can exercise the tap-to-load -> inline swap without a
+// real WhatsApp link.
 func (f *Fake) DownloadMedia(ctx context.Context, msgID string) (string, error) {
-	return "", fmt.Errorf("chatot/client: DownloadMedia not implemented in Fake")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, msgs := range f.messages {
+		for i := range msgs {
+			if msgs[i].ID != msgID || msgs[i].Attachment == nil {
+				continue
+			}
+			tmp, err := os.CreateTemp("", "chatot-fake-media-*")
+			if err != nil {
+				return "", err
+			}
+			_ = tmp.Close()
+			msgs[i].Attachment.LocalPath = tmp.Name()
+			return tmp.Name(), nil
+		}
+	}
+	return "", fmt.Errorf("chatot/client: message %q not found for download", msgID)
 }

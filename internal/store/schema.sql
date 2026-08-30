@@ -53,5 +53,9 @@ CREATE TABLE IF NOT EXISTS media (
     caption TEXT,
     mime_type TEXT,
     local_path TEXT,
+    -- proto.Marshal of the specific waE2E.*Message (ImageMessage etc.) that
+    -- carried this attachment; unmarshalled back on download to reconstruct
+    -- the whatsmeow.DownloadableMessage client.Download needs to decrypt it.
+    proto_blob BLOB,
     PRIMARY KEY (chat_jid, msg_id)
 );

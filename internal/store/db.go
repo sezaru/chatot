@@ -45,7 +45,41 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: apply schema: %w", err)
 	}
+	if err := migrateAddColumn(db, "media", "proto_blob", "BLOB"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
+	}
 	return &Store{db: db}, nil
+}
+
+// migrateAddColumn adds column to table if it isn't already there. CREATE
+// TABLE IF NOT EXISTS in schema.sql only covers fresh databases; existing
+// dev databases need this to pick up new columns.
+func migrateAddColumn(db *sql.DB, table, column, ddlType string) error {
+	rows, err := db.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return rows.Err()
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, ddlType))
+	return err
 }
 
 // Close closes the underlying database handle.
