@@ -27,11 +27,18 @@ func main() {
 	os.Exit(app.Run(os.Args))
 }
 
-func activate(app *adw.Application, _ client.Client) {
+func activate(app *adw.Application, c client.Client) {
 	loadCSS()
 
-	sidebar := adw.NewNavigationPage(placeholderLabel("Chats", "chatot-sidebar"), "Chats")
-	content := adw.NewNavigationPage(placeholderLabel("Select a chat", ""), "Conversation")
+	chatList := ui.NewChatList(c)
+	sidebar := adw.NewNavigationPage(chatList, "Chats")
+
+	contentLabel := placeholderLabel("Select a chat", "")
+	content := adw.NewNavigationPage(contentLabel, "Conversation")
+
+	chatList.OnChatSelected(func(jid string) {
+		contentLabel.SetLabel("Selected: " + jid)
+	})
 
 	split := adw.NewNavigationSplitView()
 	split.SetSidebar(sidebar)
