@@ -60,7 +60,7 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 			c.jid, c.is_group, COALESCE(c.name, ''), c.pinned, c.muted, c.unread_count, c.last_message_ts,
 			COALESCE(g.name, ''), COALESCE(g.is_parent, 0), COALESCE(g.linked_parent_jid, ''),
 			COALESCE(ct.business_name, ''), COALESCE(ct.full_name, ''), COALESCE(ct.push_name, ''), COALESCE(ct.system_name, ''),
-			COALESCE(lm.from_me, 0), COALESCE(lm.text, ''),
+			COALESCE(lm.from_me, 0), COALESCE(lm.text, ''), COALESCE(lm.kind, ''),
 			COALESCE(md.kind, ''), COALESCE(md.caption, ''), COALESCE(md.filename, '')
 		FROM chats c
 		LEFT JOIN groups g ON g.jid = c.jid
@@ -88,12 +88,12 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		var isGroup, pinned, muted, groupIsParent, fromMe int
 		var chatName, groupName, groupLinkedParent string
 		var business, full, push, system string
-		var lastText, mediaKind, mediaCaption, mediaFilename string
+		var lastText, lastKind, mediaKind, mediaCaption, mediaFilename string
 		if err := rows.Scan(
 			&c.JID, &isGroup, &chatName, &pinned, &muted, &c.UnreadCount, &c.LastMessageTS,
 			&groupName, &groupIsParent, &groupLinkedParent,
 			&business, &full, &push, &system,
-			&fromMe, &lastText,
+			&fromMe, &lastText, &lastKind,
 			&mediaKind, &mediaCaption, &mediaFilename,
 		); err != nil {
 			return nil, err
@@ -102,7 +102,7 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		c.Pinned = pinned != 0
 		c.Muted = muted != 0
 		c.Name = resolveChatName(chatName, groupName, business, full, push, system, c.JID)
-		c.Preview = buildPreview(fromMe != 0, lastText, mediaKind, mediaCaption, mediaFilename)
+		c.Preview = buildPreview(fromMe != 0, lastKind, lastText, mediaKind, mediaCaption, mediaFilename)
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -156,10 +156,14 @@ func phoneFromJID(jid string) (string, bool) {
 }
 
 // buildPreview implements the reference preview fix: media messages show
-// their caption, else filename, else a "[kind]" placeholder; text messages
-// show their text; either way a from-me message is prefixed.
-func buildPreview(fromMe bool, text, mediaKind, mediaCaption, mediaFilename string) string {
+// their caption, else filename, else a "[kind]" placeholder; rich messages
+// (msgKind, e.g. "location") show a labelled placeholder; text messages show
+// their text; either way a from-me message is prefixed.
+func buildPreview(fromMe bool, msgKind, text, mediaKind, mediaCaption, mediaFilename string) string {
 	body := text
+	if msgKind == "location" {
+		body = "📍 Location"
+	}
 	if mediaKind != "" {
 		switch {
 		case mediaCaption != "":

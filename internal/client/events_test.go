@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"chatot/internal/store"
+
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -271,6 +273,86 @@ func TestTranslateMediaWithReplyContext(t *testing.T) {
 	}
 	if e.Message.ReplyTo.MsgID != "quoted-id" {
 		t.Errorf("ReplyTo.MsgID = %q, want quoted-id", e.Message.ReplyTo.MsgID)
+	}
+}
+
+func TestTranslateLocationMessage(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+			ID:            "LOC1",
+		},
+		Message: &waProto.Message{LocationMessage: &waE2E.LocationMessage{
+			DegreesLatitude:  proto.Float64(51.9976),
+			DegreesLongitude: proto.Float64(-0.7406),
+			Name:             proto.String("Bletchley Park"),
+			Address:          proto.String("Sherwood Dr"),
+			ContextInfo:      &waE2E.ContextInfo{StanzaID: proto.String("quoted-id")},
+		}},
+	}
+	e := translate(evt)
+	if e == nil || e.Message == nil || e.Message.Location == nil {
+		t.Fatalf("expected a Message with Location, got %+v", e)
+	}
+	loc := e.Message.Location
+	if loc.Name != "Bletchley Park" || loc.Address != "Sherwood Dr" {
+		t.Errorf("name/address = %q/%q", loc.Name, loc.Address)
+	}
+	if loc.Latitude != 51.9976 || loc.Longitude != -0.7406 {
+		t.Errorf("lat/long = %v/%v", loc.Latitude, loc.Longitude)
+	}
+	if loc.IsLive {
+		t.Error("static location should not be IsLive")
+	}
+	if e.Message.ReplyTo == nil || e.Message.ReplyTo.MsgID != "quoted-id" {
+		t.Errorf("ReplyTo = %+v, want quoted-id", e.Message.ReplyTo)
+	}
+}
+
+func TestTranslateLiveLocationMessage(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+			ID:            "LOC2",
+		},
+		Message: &waProto.Message{LiveLocationMessage: &waE2E.LiveLocationMessage{
+			DegreesLatitude:  proto.Float64(1.5),
+			DegreesLongitude: proto.Float64(2.5),
+		}},
+	}
+	e := translate(evt)
+	if e == nil || e.Message == nil || e.Message.Location == nil {
+		t.Fatalf("expected a Message with Location, got %+v", e)
+	}
+	if !e.Message.Location.IsLive {
+		t.Error("expected IsLive=true for a live location")
+	}
+}
+
+func TestLocationStoreRoundTrip(t *testing.T) {
+	m := &Message{
+		ID: "LOC1", ChatJID: "a@s.whatsapp.net",
+		Location: &Location{Name: "Home", Address: "1 Main St", Latitude: 51.5, Longitude: -0.12},
+	}
+	row := storeMessageRow(m)
+	if row.Kind != "location" {
+		t.Fatalf("Kind = %q, want location", row.Kind)
+	}
+	if row.Payload == "" {
+		t.Fatal("expected a non-empty payload")
+	}
+
+	back := messageFromStore(store.Message{
+		ID: row.MsgID, ChatJID: row.ChatJID, Kind: row.Kind, Payload: row.Payload,
+	})
+	if back.Location == nil {
+		t.Fatal("expected Location to decode back")
+	}
+	if back.Location.Name != "Home" || back.Location.Address != "1 Main St" ||
+		back.Location.Latitude != 51.5 || back.Location.Longitude != -0.12 {
+		t.Errorf("round-trip mismatch: %+v", back.Location)
 	}
 }
 

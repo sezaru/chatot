@@ -100,6 +100,20 @@ type Message struct {
 	ReplyTo    *MsgRef
 	Reactions  map[string]string // emoji -> reactor JID (last wins)
 	Attachment *Attachment
+	// Location is non-nil for a (live) location message. It's the first rich
+	// non-text/media body carried through the store's kind/payload seam.
+	Location *Location
+}
+
+// Location is a shared or live-shared geographic point. Name/Address are
+// often empty (a live location carries neither); IsLive marks a continuously
+// updated share rather than a one-off pin.
+type Location struct {
+	Name      string
+	Address   string
+	Latitude  float64
+	Longitude float64
+	IsLive    bool
 }
 
 // Reaction is a reaction added to, or (Emoji == "") cleared from, a message.
@@ -162,6 +176,7 @@ type Client interface {
 	// writes
 	SendText(ctx context.Context, jid, text string, replyTo *MsgRef) (string, error)
 	SendMedia(ctx context.Context, jid string, m Attachment, replyTo *MsgRef) (string, error)
+	SendLocation(ctx context.Context, jid string, loc Location, replyTo *MsgRef) (string, error)
 	SendVoice(ctx context.Context, jid string, oggOpus []byte, dur int) (string, error)
 	React(ctx context.Context, jid, msgID, emoji string) error // "" clears
 	MarkRead(ctx context.Context, jid string, msgIDs []string) error

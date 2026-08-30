@@ -137,6 +137,29 @@ func TestChatsPreviewMediaKindPlaceholder(t *testing.T) {
 	}
 }
 
+func TestChatsPreviewLocation(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", TS: 1, Kind: "location", Payload: `{"lat":1,"long":2}`}))
+
+	chats := mustChats(t, s)
+	if chats[0].Preview != "📍 Location" {
+		t.Fatalf("got %q, want location preview", chats[0].Preview)
+	}
+}
+
+func TestMessagesRoundTripKindPayload(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", TS: 1, Kind: "location", Payload: `{"lat":1.5,"long":2.5}`}))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if len(msgs) != 1 || msgs[0].Kind != "location" || msgs[0].Payload != `{"lat":1.5,"long":2.5}` {
+		t.Fatalf("got %+v, want kind/payload preserved", msgs)
+	}
+}
+
 func TestChatsPreviewTextFromMePrefixed(t *testing.T) {
 	s := newTestStore(t)
 	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
