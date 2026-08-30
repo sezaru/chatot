@@ -255,3 +255,68 @@ func TestSetMessagesStatusIsMonotonic(t *testing.T) {
 		t.Fatalf("got Status = %d, want 2 (read status must stick despite a later delivered receipt)", msgs[0].Status)
 	}
 }
+
+func TestSetMessageStarredPersistsAndClears(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "hi", TS: 1}))
+
+	must(t, s.SetMessageStarred("a@s.whatsapp.net", "m1", true))
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if !msgs[0].Starred {
+		t.Fatal("got Starred = false, want true")
+	}
+
+	must(t, s.SetMessageStarred("a@s.whatsapp.net", "m1", false))
+	msgs, err = s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if msgs[0].Starred {
+		t.Fatal("got Starred = true, want false after unstar")
+	}
+}
+
+func TestUpsertMessageDoesNotClobberStarred(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "hi", TS: 1}))
+	must(t, s.SetMessageStarred("a@s.whatsapp.net", "m1", true))
+
+	// A re-delivery of the same message (e.g. a receipt-driven re-upsert)
+	// must not unstar it.
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "hi", TS: 1}))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if !msgs[0].Starred {
+		t.Fatal("got Starred = false after re-upsert, want it to stick")
+	}
+}
+
+func TestStarredMessagesReturnsOnlyStarredAcrossChatsNewestFirst(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertChat(ChatRow{JID: "b@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "old starred", TS: 1}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m2", Text: "not starred", TS: 2}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "b@s.whatsapp.net", MsgID: "m3", Text: "new starred", TS: 3}))
+	must(t, s.SetMessageStarred("a@s.whatsapp.net", "m1", true))
+	must(t, s.SetMessageStarred("b@s.whatsapp.net", "m3", true))
+
+	starred, err := s.StarredMessages(50)
+	must(t, err)
+	if len(starred) != 2 {
+		t.Fatalf("got %d starred messages, want 2: %+v", len(starred), starred)
+	}
+	if starred[0].ID != "m3" || starred[0].ChatJID != "b@s.whatsapp.net" {
+		t.Fatalf("got starred[0] = %+v, want newest (m3 in chat b) first", starred[0])
+	}
+	if starred[1].ID != "m1" || starred[1].ChatJID != "a@s.whatsapp.net" {
+		t.Fatalf("got starred[1] = %+v, want m1 in chat a", starred[1])
+	}
+	for _, m := range starred {
+		if !m.Starred {
+			t.Fatalf("got Starred = false on returned row %+v, want true", m)
+		}
+	}
+}

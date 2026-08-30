@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -404,6 +405,42 @@ func (f *Fake) updateChat(jid string, fn func(*Chat)) bool {
 		}
 	}
 	return false
+}
+
+// StarMessage sets msgID's starred flag and publishes the same
+// reaction-style reload the real client uses to refresh an open thread.
+func (f *Fake) StarMessage(ctx context.Context, chatJID, msgID string, starred bool) error {
+	f.mu.Lock()
+	msgs := f.messages[chatJID]
+	for i := range msgs {
+		if msgs[i].ID == msgID {
+			msgs[i].Starred = starred
+			f.mu.Unlock()
+			f.events.Publish(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: chatJID, MsgID: msgID}})
+			return nil
+		}
+	}
+	f.mu.Unlock()
+	return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, chatJID)
+}
+
+// StarredMessages scans every chat's messages for starred ones, newest first.
+func (f *Fake) StarredMessages(limit int) ([]Message, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []Message
+	for _, msgs := range f.messages {
+		for _, m := range msgs {
+			if m.Starred {
+				out = append(out, m)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TS > out[j].TS })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 // CheckOnWhatsApp treats any string of 7-15 digits (optionally "+"-prefixed)

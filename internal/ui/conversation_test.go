@@ -238,3 +238,29 @@ func TestBubbleVM_TickOnlyOnFromMe(t *testing.T) {
 		t.Errorf("got TickText=%q, want no tick on an inbound message", in.TickText)
 	}
 }
+
+func TestStarAffordanceVM(t *testing.T) {
+	glyph, tooltip := starAffordanceVM(false)
+	if glyph != "☆" || tooltip != "Star" {
+		t.Errorf("starAffordanceVM(false) = (%q, %q), want (☆, Star)", glyph, tooltip)
+	}
+
+	glyph, tooltip = starAffordanceVM(true)
+	if glyph != "★" || tooltip != "Unstar" {
+		t.Errorf("starAffordanceVM(true) = (%q, %q), want (★, Unstar)", glyph, tooltip)
+	}
+}
+
+func TestBubbleVM_StarAffordanceReflectsStarredState(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+
+	starred := bubbleVM(client.Message{ID: "1", Text: "hi", TS: now.Unix(), Starred: true}, nil, nil, now)
+	if starred.StarGlyph != "★" || starred.StarTooltip != "Unstar" {
+		t.Errorf("got StarGlyph=%q StarTooltip=%q, want filled star / Unstar", starred.StarGlyph, starred.StarTooltip)
+	}
+
+	unstarred := bubbleVM(client.Message{ID: "2", Text: "hey", TS: now.Unix()}, nil, nil, now)
+	if unstarred.StarGlyph != "☆" || unstarred.StarTooltip != "Star" {
+		t.Errorf("got StarGlyph=%q StarTooltip=%q, want outline star / Star", unstarred.StarGlyph, unstarred.StarTooltip)
+	}
+}

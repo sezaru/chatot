@@ -173,6 +173,17 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 		})
 		return
 	}
+	// Star is a per-message app-state event (not per-chat), so it can't reuse
+	// applyChatUpdate: it updates one message row and pushes the same
+	// reaction-style reload React/StarMessage use to refresh an open thread.
+	if st, ok := evt.(*events.Star); ok {
+		jid := st.ChatJID.String()
+		if err := w.store.SetMessageStarred(jid, st.MessageID, st.Action.GetStarred()); err != nil {
+			w.log.Warnf("chatot/client: apply star app-state: %v", err)
+		}
+		w.pushEvent(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: jid, MsgID: st.MessageID}})
+		return
+	}
 	if _, ok := evt.(*events.Connected); ok {
 		// whatsmeow only delivers other users' presence after we've sent our
 		// own at least once; do it on every (re)connect rather than tracking
@@ -927,6 +938,64 @@ func (w *Whatsmeow) MarkChatUnread(ctx context.Context, jid string, unread bool)
 	}
 	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
 	return nil
+}
+
+// StarMessage stars/unstars msgID via app-state. Like React, BuildStar needs
+// the target message's original sender to build its key: for our own
+// message that's our own JID, for a group message the sender within the
+// group, and for a 1:1 peer's message the chat JID itself.
+func (w *Whatsmeow) StarMessage(ctx context.Context, jid, msgID string, starred bool) error {
+	chat, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+
+	target, ok, err := w.store.MessageByID(jid, msgID)
+	if err != nil {
+		return fmt.Errorf("chatot/client: lookup message %s: %w", msgID, err)
+	}
+	if !ok {
+		return fmt.Errorf("chatot/client: message %s not found in chat %s", msgID, jid)
+	}
+
+	var sender types.JID
+	switch {
+	case target.FromMe:
+		if sender, err = types.ParseJID(w.ownJID()); err != nil {
+			return fmt.Errorf("chatot/client: parse own jid: %w", err)
+		}
+	case chat.Server == types.GroupServer:
+		if sender, err = types.ParseJID(target.FromJID); err != nil {
+			return fmt.Errorf("chatot/client: parse sender jid %q: %w", target.FromJID, err)
+		}
+	default:
+		sender = chat
+	}
+
+	patch := appstate.BuildStar(chat, sender, types.MessageID(msgID), target.FromMe, starred)
+	if err := w.wa.SendAppState(ctx, patch); err != nil {
+		return fmt.Errorf("chatot/client: send star app-state: %w", err)
+	}
+
+	if err := w.store.SetMessageStarred(jid, msgID, starred); err != nil {
+		w.log.Warnf("chatot/client: optimistic star update failed: %v", err)
+	}
+	w.pushEvent(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: jid, MsgID: msgID}})
+	return nil
+}
+
+// StarredMessages reads starred messages across every chat from the store.
+func (w *Whatsmeow) StarredMessages(limit int) ([]Message, error) {
+	rows, err := w.store.StarredMessages(limit)
+	if err != nil {
+		return nil, err
+	}
+	selfJID := w.ownJID()
+	out := make([]Message, len(rows))
+	for i, m := range rows {
+		out[i] = messageFromStore(m, selfJID)
+	}
+	return out, nil
 }
 
 // SendPresence sets the account's overall online/offline state. Also the

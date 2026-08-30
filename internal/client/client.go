@@ -141,6 +141,8 @@ type Message struct {
 	// Status is the delivery/read tick state for a FromMe message: see the
 	// MessageStatus* constants. Meaningless (always 0) for inbound messages.
 	Status int
+	// Starred is true once the message has been starred via app-state.
+	Starred bool
 }
 
 // Poll is a poll-creation message with its immutable definition (Name,
@@ -297,6 +299,12 @@ type Client interface {
 	MuteChat(ctx context.Context, jid string, mute bool) error
 	ArchiveChat(ctx context.Context, jid string, archive bool) error
 	MarkChatUnread(ctx context.Context, jid string, unread bool) error
+	// StarMessage stars/unstars msgID via app-state; reflected optimistically
+	// in the store and via a refresh event for the open thread.
+	StarMessage(ctx context.Context, chatJID, msgID string, starred bool) error
+	// StarredMessages returns starred messages across every chat, newest
+	// first, for the starred-messages sidebar view.
+	StarredMessages(limit int) ([]Message, error)
 
 	// media
 	DownloadMedia(ctx context.Context, msgID string) (localPath string, err error)

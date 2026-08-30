@@ -47,6 +47,10 @@ CREATE TABLE IF NOT EXISTS messages (
     -- 2=read. Monotonic (see SetMessagesStatus) so a late delivered receipt
     -- after a read one can't downgrade it. Meaningless for inbound messages.
     status INTEGER NOT NULL DEFAULT 0,
+    -- 1 once the message has been starred via app-state; excluded from
+    -- UpsertMessage's ON CONFLICT SET (see SetMessageStarred) so a
+    -- re-delivery of the original message can't unstar it.
+    starred INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat_jid, msg_id)
 );
 

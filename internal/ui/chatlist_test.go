@@ -204,3 +204,24 @@ func TestShowChatInList(t *testing.T) {
 		})
 	}
 }
+
+func TestStarredSnippet(t *testing.T) {
+	cases := []struct {
+		name string
+		msg  client.Message
+		want string
+	}{
+		{"text", client.Message{Text: "hello there"}, "hello there"},
+		{"media falls back to media chip", client.Message{Attachment: &client.Attachment{Kind: "image", Caption: "trip"}}, "[image] trip"},
+		{"location", client.Message{Location: &client.Location{Name: "Home"}}, "📍 Location"},
+		{"contact", client.Message{Contact: &client.Contact{DisplayName: "Ada"}}, "👤 Contact"},
+		{"poll", client.Message{Poll: &client.Poll{Name: "Lunch?"}}, "📊 Lunch?"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := starredSnippet(tc.msg); got != tc.want {
+				t.Errorf("starredSnippet(%+v) = %q, want %q", tc.msg, got, tc.want)
+			}
+		})
+	}
+}

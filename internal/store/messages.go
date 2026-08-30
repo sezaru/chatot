@@ -57,6 +57,15 @@ func (s *Store) MarkMessageDeleted(chatJID, msgID string, ts int64) error {
 	return err
 }
 
+// SetMessageStarred sets a message's starred flag, leaving every other
+// column untouched.
+func (s *Store) SetMessageStarred(chatJID, msgID string, starred bool) error {
+	_, err := s.db.Exec(`
+		UPDATE messages SET starred = ? WHERE chat_jid = ? AND msg_id = ?
+	`, boolToInt(starred), chatJID, msgID)
+	return err
+}
+
 // MessageByID looks up a single message by chat+id, without reactions/media
 // (callers needing those should use Messages). ok is false if not found.
 func (s *Store) MessageByID(chatJID, msgID string) (m Message, ok bool, err error) {
@@ -82,7 +91,7 @@ func (s *Store) MessageByID(chatJID, msgID string) (m Message, ok bool, err erro
 const messageSelect = `
 	SELECT
 		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
-		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status,
+		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status, m.starred,
 		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, '')
 	FROM messages m
 	LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id`
@@ -140,11 +149,11 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 	var out []Message
 	for rows.Next() {
 		var m Message
-		var fromMe, edited, deleted int
+		var fromMe, edited, deleted, starred int
 		var mediaKind, mediaFilename, mediaCaption, mediaMime, mediaLocal string
 		if err := rows.Scan(
 			&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID,
-			&m.Kind, &m.Payload, &edited, &deleted, &m.Status,
+			&m.Kind, &m.Payload, &edited, &deleted, &m.Status, &starred,
 			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal,
 		); err != nil {
 			return nil, err
@@ -153,6 +162,7 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 		m.FromMe = fromMe != 0
 		m.Edited = edited != 0
 		m.Deleted = deleted != 0
+		m.Starred = starred != 0
 		if mediaKind != "" {
 			m.Attachment = &Attachment{
 				Kind: mediaKind, Filename: mediaFilename, Caption: mediaCaption,
@@ -236,4 +246,96 @@ func (s *Store) reactionsFor(chatJID string, msgIDs []string) (map[string]map[st
 		out[msgID][emoji] = reactor
 	}
 	return out, rows.Err()
+}
+
+// StarredMessages returns starred messages across every chat, newest first,
+// with the same reaction/media/poll enrichment as Messages/MessagesBefore.
+// Unlike pageFromRows (scoped to one chat, so it can stamp ChatJID from its
+// jid argument), each row here carries its own chat_jid; enrichment queries
+// are grouped per chat since reactionsFor/pollVotesFor are chat-scoped.
+func (s *Store) StarredMessages(limit int) ([]Message, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.Query(`
+		SELECT
+			m.chat_jid, m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
+			m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status,
+			COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, '')
+		FROM messages m
+		LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id
+		WHERE m.starred = 1
+		ORDER BY m.ts DESC, m.rowid DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Message
+	for rows.Next() {
+		var m Message
+		var fromMe, edited, deleted int
+		var mediaKind, mediaFilename, mediaCaption, mediaMime, mediaLocal string
+		if err := rows.Scan(
+			&m.ChatJID, &m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID,
+			&m.Kind, &m.Payload, &edited, &deleted, &m.Status,
+			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal,
+		); err != nil {
+			return nil, err
+		}
+		m.FromMe = fromMe != 0
+		m.Edited = edited != 0
+		m.Deleted = deleted != 0
+		m.Starred = true
+		if mediaKind != "" {
+			m.Attachment = &Attachment{
+				Kind: mediaKind, Filename: mediaFilename, Caption: mediaCaption,
+				MimeType: mediaMime, LocalPath: mediaLocal,
+			}
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	byChat := make(map[string][]string)
+	var pollIDsByChat = make(map[string][]string)
+	for _, m := range out {
+		byChat[m.ChatJID] = append(byChat[m.ChatJID], m.ID)
+		if m.Kind == "poll" {
+			pollIDsByChat[m.ChatJID] = append(pollIDsByChat[m.ChatJID], m.ID)
+		}
+	}
+	for chatJID, ids := range byChat {
+		reactions, err := s.reactionsFor(chatJID, ids)
+		if err != nil {
+			return nil, err
+		}
+		for i := range out {
+			if out[i].ChatJID != chatJID {
+				continue
+			}
+			if r := reactions[out[i].ID]; len(r) > 0 {
+				out[i].Reactions = r
+			}
+		}
+	}
+	for chatJID, ids := range pollIDsByChat {
+		votes, err := s.pollVotesFor(chatJID, ids)
+		if err != nil {
+			return nil, err
+		}
+		for i := range out {
+			if out[i].ChatJID != chatJID {
+				continue
+			}
+			if v := votes[out[i].ID]; len(v) > 0 {
+				out[i].PollVotes = v
+			}
+		}
+	}
+	return out, nil
 }
