@@ -3,24 +3,28 @@ package store
 import "database/sql"
 
 // UpsertMedia inserts or updates a message's attachment metadata. Empty
-// string fields and a nil/empty ProtoBlob leave any existing value
+// string fields and a nil/empty ProtoBlob/Thumbnail leave any existing value
 // untouched; Kind always overwrites.
 func (s *Store) UpsertMedia(row MediaRow) error {
-	var blob any
+	var blob, thumb any
 	if len(row.ProtoBlob) > 0 {
 		blob = row.ProtoBlob
 	}
+	if len(row.Thumbnail) > 0 {
+		thumb = row.Thumbnail
+	}
 	_, err := s.db.Exec(`
-		INSERT INTO media(chat_jid, msg_id, kind, filename, caption, mime_type, local_path, proto_blob)
-		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?)
+		INSERT INTO media(chat_jid, msg_id, kind, filename, caption, mime_type, local_path, proto_blob, thumbnail)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?)
 		ON CONFLICT(chat_jid, msg_id) DO UPDATE SET
 			kind = excluded.kind,
 			filename = COALESCE(excluded.filename, media.filename),
 			caption = COALESCE(excluded.caption, media.caption),
 			mime_type = COALESCE(excluded.mime_type, media.mime_type),
 			local_path = COALESCE(excluded.local_path, media.local_path),
-			proto_blob = COALESCE(excluded.proto_blob, media.proto_blob)
-	`, row.ChatJID, row.MsgID, row.Kind, row.Filename, row.Caption, row.MimeType, row.LocalPath, blob)
+			proto_blob = COALESCE(excluded.proto_blob, media.proto_blob),
+			thumbnail = COALESCE(excluded.thumbnail, media.thumbnail)
+	`, row.ChatJID, row.MsgID, row.Kind, row.Filename, row.Caption, row.MimeType, row.LocalPath, blob, thumb)
 	return err
 }
 
@@ -31,19 +35,27 @@ func (s *Store) UpsertMedia(row MediaRow) error {
 func (s *Store) MediaByMsgID(msgID string) (row MediaRow, ok bool, err error) {
 	r := s.db.QueryRow(`
 		SELECT chat_jid, msg_id, kind, COALESCE(filename, ''), COALESCE(caption, ''),
-			COALESCE(mime_type, ''), COALESCE(local_path, ''), proto_blob
+			COALESCE(mime_type, ''), COALESCE(local_path, ''), proto_blob, thumbnail
 		FROM media WHERE msg_id = ? LIMIT 1
 	`, msgID)
-	var blob []byte
+	var blob, thumb []byte
 	if err := r.Scan(&row.ChatJID, &row.MsgID, &row.Kind, &row.Filename, &row.Caption,
-		&row.MimeType, &row.LocalPath, &blob); err != nil {
+		&row.MimeType, &row.LocalPath, &blob, &thumb); err != nil {
 		if err == sql.ErrNoRows {
 			return MediaRow{}, false, nil
 		}
 		return MediaRow{}, false, err
 	}
 	row.ProtoBlob = blob
+	row.Thumbnail = thumb
 	return row, true, nil
+}
+
+// SetMediaProtoBlob overwrites a media row's proto descriptor, used after a
+// successful media-retry decrypt refreshes the direct download path.
+func (s *Store) SetMediaProtoBlob(chatJID, msgID string, blob []byte) error {
+	_, err := s.db.Exec(`UPDATE media SET proto_blob = ? WHERE chat_jid = ? AND msg_id = ?`, blob, chatJID, msgID)
+	return err
 }
 
 // SetMediaLocalPath records where a downloaded attachment was cached to disk.

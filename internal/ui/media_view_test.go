@@ -62,6 +62,56 @@ func TestMediaVM_LocalPathExists(t *testing.T) {
 	}
 }
 
+func TestMediaVM_ThumbnailNotDownloaded(t *testing.T) {
+	m := client.Message{
+		ID:         "1",
+		Attachment: &client.Attachment{Kind: "image", Thumbnail: []byte{0xFF, 0xD8, 0xFF}},
+	}
+	out := mediaVM(m)
+	if !out.HasThumbnail {
+		t.Error("expected HasThumbnail=true when Thumbnail is set and not downloaded")
+	}
+	if out.HasLocal {
+		t.Error("expected HasLocal=false with no local_path")
+	}
+	if string(out.Thumbnail) != string(m.Attachment.Thumbnail) {
+		t.Errorf("Thumbnail = %v, want %v", out.Thumbnail, m.Attachment.Thumbnail)
+	}
+}
+
+func TestMediaVM_ThumbnailButDownloaded(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "chatot-media-*.jpg")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	f.Close()
+
+	m := client.Message{
+		ID: "1",
+		Attachment: &client.Attachment{
+			Kind: "image", LocalPath: f.Name(), Thumbnail: []byte{0xFF, 0xD8, 0xFF},
+		},
+	}
+	out := mediaVM(m)
+	if !out.HasLocal {
+		t.Fatal("expected HasLocal=true when local_path exists on disk")
+	}
+	if out.HasThumbnail {
+		t.Error("expected HasThumbnail=false once the full media is downloaded")
+	}
+}
+
+func TestMediaVM_NoThumbnail(t *testing.T) {
+	m := client.Message{
+		ID:         "1",
+		Attachment: &client.Attachment{Kind: "image"},
+	}
+	out := mediaVM(m)
+	if out.HasThumbnail {
+		t.Error("expected HasThumbnail=false when no thumbnail bytes are set")
+	}
+}
+
 func TestInlineable(t *testing.T) {
 	for _, kind := range []string{"image", "video", "sticker", "audio"} {
 		if !inlineable(kind) {

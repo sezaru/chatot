@@ -17,6 +17,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waMmsRetry"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
@@ -142,6 +143,10 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 	}
 	if hs, ok := evt.(*events.HistorySync); ok {
 		w.applyHistorySync(hs.Data)
+	}
+	if mr, ok := evt.(*events.MediaRetry); ok {
+		w.handleMediaRetry(mr)
+		return
 	}
 	// Avatars aren't stored in sqlite (no ingest path); just drop the memo so
 	// the next Avatar() call re-fetches, and tell the UI to refresh.
@@ -1200,6 +1205,7 @@ func (w *Whatsmeow) DownloadMedia(ctx context.Context, msgID string) (string, er
 	}
 	data, err := w.wa.Download(ctx, downloadable)
 	if err != nil {
+		go w.requestMediaRetry(row, downloadable)
 		return "", fmt.Errorf("chatot/client: download media: %w", err)
 	}
 
@@ -1242,6 +1248,102 @@ func decodeDownloadable(kind string, blob []byte) (whatsmeow.DownloadableMessage
 		return nil, fmt.Errorf("decode media descriptor: %w", err)
 	}
 	return msg.(whatsmeow.DownloadableMessage), nil
+}
+
+// requestMediaRetry asks the sender's device to re-upload media whose direct
+// path expired (the common cause of a DownloadMedia failure on old
+// history). Best-effort: every failure here is logged and swallowed, never
+// surfaced to the caller who's already got the original download error. A
+// successful request's response arrives later as an *events.MediaRetry,
+// decrypted in handleRaw.
+func (w *Whatsmeow) requestMediaRetry(row store.MediaRow, downloadable whatsmeow.DownloadableMessage) {
+	mediaKey := downloadable.GetMediaKey()
+	if len(mediaKey) == 0 {
+		return
+	}
+	msg, ok, err := w.store.MessageByID(row.ChatJID, row.MsgID)
+	if err != nil || !ok {
+		return
+	}
+	chatJID, err := types.ParseJID(row.ChatJID)
+	if err != nil {
+		return
+	}
+	sender := chatJID
+	if !msg.FromMe {
+		if s, err := types.ParseJID(msg.FromJID); err == nil {
+			sender = s
+		}
+	} else if own, err := types.ParseJID(w.ownJID()); err == nil {
+		sender = own
+	}
+	info := &types.MessageInfo{
+		ID: types.MessageID(row.MsgID),
+		MessageSource: types.MessageSource{
+			Chat:     chatJID,
+			Sender:   sender,
+			IsFromMe: msg.FromMe,
+			IsGroup:  chatJID.Server == types.GroupServer,
+		},
+	}
+	if err := w.wa.SendMediaRetryReceipt(context.Background(), info, mediaKey); err != nil {
+		w.log.Warnf("chatot/client: send media retry receipt: %v", err)
+	}
+}
+
+// handleMediaRetry decrypts the phone's response to requestMediaRetry and, on
+// success, patches the stored descriptor's direct path so a subsequent
+// DownloadMedia can fetch the re-uploaded file. Every failure is logged and
+// swallowed: this is a background repair path, not something the UI waits on.
+func (w *Whatsmeow) handleMediaRetry(evt *events.MediaRetry) {
+	row, ok, err := w.store.MediaByMsgID(string(evt.MessageID))
+	if err != nil || !ok {
+		return
+	}
+	downloadable, err := decodeDownloadable(row.Kind, row.ProtoBlob)
+	if err != nil {
+		w.log.Warnf("chatot/client: media retry: decode stored descriptor: %v", err)
+		return
+	}
+	notif, err := whatsmeow.DecryptMediaRetryNotification(evt, downloadable.GetMediaKey())
+	if err != nil {
+		w.log.Warnf("chatot/client: media retry: decrypt notification: %v", err)
+		return
+	}
+	if notif.GetResult() != waMmsRetry.MediaRetryNotification_SUCCESS || notif.GetDirectPath() == "" {
+		w.log.Warnf("chatot/client: media retry unsuccessful for %s (result=%v)", evt.MessageID, notif.GetResult())
+		return
+	}
+	descriptor := downloadable.(proto.Message)
+	setDirectPath(descriptor, notif.GetDirectPath())
+	blob, err := proto.Marshal(descriptor)
+	if err != nil {
+		w.log.Warnf("chatot/client: media retry: re-marshal descriptor: %v", err)
+		return
+	}
+	if err := w.store.SetMediaProtoBlob(row.ChatJID, row.MsgID, blob); err != nil {
+		w.log.Warnf("chatot/client: media retry: update proto blob: %v", err)
+		return
+	}
+	w.pushEvent(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: row.ChatJID, MsgID: row.MsgID}})
+}
+
+// setDirectPath updates the direct-path field of a decoded media descriptor
+// in place, ahead of re-marshaling it back to store: DownloadableMessage
+// doesn't expose a setter, so each concrete waE2E type needs its own case.
+func setDirectPath(m proto.Message, path string) {
+	switch v := m.(type) {
+	case *waE2E.ImageMessage:
+		v.DirectPath = proto.String(path)
+	case *waE2E.VideoMessage:
+		v.DirectPath = proto.String(path)
+	case *waE2E.AudioMessage:
+		v.DirectPath = proto.String(path)
+	case *waE2E.DocumentMessage:
+		v.DirectPath = proto.String(path)
+	case *waE2E.StickerMessage:
+		v.DirectPath = proto.String(path)
+	}
 }
 
 // writeMediaFile writes decrypted attachment bytes under

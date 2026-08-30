@@ -156,11 +156,11 @@ func extractText(m *waProto.Message, msg *Message) {
 		ctx = ext.GetContextInfo()
 	case m.GetImageMessage() != nil:
 		img := m.GetImageMessage()
-		msg.Attachment = &Attachment{Kind: "image", MimeType: img.GetMimetype(), Caption: img.GetCaption(), ProtoBlob: marshalMedia(img)}
+		msg.Attachment = &Attachment{Kind: "image", MimeType: img.GetMimetype(), Caption: img.GetCaption(), ProtoBlob: marshalMedia(img), Thumbnail: img.GetJPEGThumbnail()}
 		ctx = img.GetContextInfo()
 	case m.GetVideoMessage() != nil:
 		vid := m.GetVideoMessage()
-		msg.Attachment = &Attachment{Kind: "video", MimeType: vid.GetMimetype(), Caption: vid.GetCaption(), ProtoBlob: marshalMedia(vid)}
+		msg.Attachment = &Attachment{Kind: "video", MimeType: vid.GetMimetype(), Caption: vid.GetCaption(), ProtoBlob: marshalMedia(vid), Thumbnail: vid.GetJPEGThumbnail()}
 		ctx = vid.GetContextInfo()
 	case m.GetAudioMessage() != nil:
 		aud := m.GetAudioMessage()
@@ -171,12 +171,12 @@ func extractText(m *waProto.Message, msg *Message) {
 		msg.Attachment = &Attachment{
 			Kind: "document", MimeType: doc.GetMimetype(),
 			Filename: doc.GetFileName(), Caption: doc.GetCaption(),
-			ProtoBlob: marshalMedia(doc),
+			ProtoBlob: marshalMedia(doc), Thumbnail: doc.GetJPEGThumbnail(),
 		}
 		ctx = doc.GetContextInfo()
 	case m.GetStickerMessage() != nil:
 		sticker := m.GetStickerMessage()
-		msg.Attachment = &Attachment{Kind: "sticker", MimeType: sticker.GetMimetype(), ProtoBlob: marshalMedia(sticker)}
+		msg.Attachment = &Attachment{Kind: "sticker", MimeType: sticker.GetMimetype(), ProtoBlob: marshalMedia(sticker), Thumbnail: sticker.GetPngThumbnail()}
 		ctx = sticker.GetContextInfo()
 	case m.GetLocationMessage() != nil:
 		loc := m.GetLocationMessage()

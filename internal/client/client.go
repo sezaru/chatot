@@ -247,6 +247,10 @@ type Attachment struct {
 	// this attachment (set by extractText), stored so DownloadMedia can
 	// reconstruct a whatsmeow.DownloadableMessage later. Never set outbound.
 	ProtoBlob []byte
+	// Thumbnail is the small JPEG/PNG preview WhatsApp embeds directly in
+	// the message proto, shown instantly while the full media downloads.
+	// Never set outbound.
+	Thumbnail []byte
 }
 
 // GroupParticipant is one member of a group, as returned by GroupInfo.

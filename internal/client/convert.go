@@ -102,6 +102,7 @@ func storeMediaRow(chatJID, msgID string, a *Attachment) store.MediaRow {
 		ChatJID: chatJID, MsgID: msgID,
 		Kind: a.Kind, Filename: a.Filename, Caption: a.Caption,
 		MimeType: a.MimeType, LocalPath: a.LocalPath, ProtoBlob: a.ProtoBlob,
+		Thumbnail: a.Thumbnail,
 	}
 }
 
@@ -136,7 +137,7 @@ func messageFromStore(m store.Message, selfJID string) Message {
 		out.Attachment = &Attachment{
 			Kind: m.Attachment.Kind, Filename: m.Attachment.Filename,
 			MimeType: m.Attachment.MimeType, LocalPath: m.Attachment.LocalPath,
-			Caption: m.Attachment.Caption,
+			Caption: m.Attachment.Caption, Thumbnail: m.Attachment.Thumbnail,
 		}
 	}
 	switch m.Kind {
