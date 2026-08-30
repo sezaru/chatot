@@ -231,6 +231,34 @@ func TestShowChatInList(t *testing.T) {
 	}
 }
 
+func TestNewChatContacts(t *testing.T) {
+	chats := []client.Chat{
+		{JID: "g1", Name: "Book Club", IsGroup: true},
+		{JID: "c1", Name: "zack"},
+		{JID: "c2", Name: "Ada"},
+		{JID: "g2", Name: "AAA Group", IsGroup: true},
+		{JID: "c3", Name: "bob"},
+	}
+
+	got := newChatContacts(chats)
+
+	if len(got) != 3 {
+		t.Fatalf("newChatContacts() returned %d contacts, want 3 (groups excluded)", len(got))
+	}
+	for _, c := range got {
+		if c.IsGroup {
+			t.Errorf("newChatContacts() included group chat %q", c.Name)
+		}
+	}
+
+	wantOrder := []string{"Ada", "bob", "zack"}
+	for i, want := range wantOrder {
+		if got[i].Name != want {
+			t.Errorf("newChatContacts()[%d].Name = %q, want %q (case-insensitive sort)", i, got[i].Name, want)
+		}
+	}
+}
+
 func TestComposingPreviewText(t *testing.T) {
 	if got := composingPreviewText("recording"); got != "recording audio…" {
 		t.Errorf("composingPreviewText(recording) = %q, want recording audio…", got)

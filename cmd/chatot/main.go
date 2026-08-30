@@ -65,6 +65,10 @@ func activate(app *adw.Application, c client.Client) {
 	chatList := ui.NewChatList(c)
 	sidebar := adw.NewNavigationPage(chatList, "Chats")
 
+	chatList.OnNewCommunityRequested(func() {
+		log.Printf("chatot: new community requested (F48 not yet implemented)")
+	})
+
 	conversation := ui.NewConversationView(c)
 	composer := ui.NewComposer(c)
 
