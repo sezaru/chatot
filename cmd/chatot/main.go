@@ -73,7 +73,10 @@ func activate(app *adw.Application, c client.Client) {
 	contentBox.SetHExpand(true)
 	contentBox.Append(conversation)
 	contentBox.Append(composer)
-	content := adw.NewNavigationPage(contentBox, "Conversation")
+
+	toastOverlay := adw.NewToastOverlay()
+	toastOverlay.SetChild(contentBox)
+	content := adw.NewNavigationPage(toastOverlay, "Conversation")
 
 	composer.OnSent(func(msg client.Message) {
 		conversation.AppendSentMessage(msg)
@@ -110,6 +113,9 @@ func activate(app *adw.Application, c client.Client) {
 			}
 		}()
 	})
+	conversation.OnForwardRequested(func(msg client.Message) {
+		log.Printf("forward requested for message %s (not yet implemented)", msg.ID)
+	})
 
 	// openChat is the single "show this chat" path: the chat-list click and
 	// the notification's click-to-open action both funnel through it.
@@ -143,6 +149,7 @@ func activate(app *adw.Application, c client.Client) {
 	composer.SetWindow(&win.Window)
 	chatList.SetWindow(&win.Window)
 	conversation.SetWindow(&win.Window)
+	conversation.SetToastOverlay(toastOverlay)
 
 	// "is-active" tracks OS-level window focus; report available/unavailable
 	// so contacts see accurate presence rather than a permanent "online".

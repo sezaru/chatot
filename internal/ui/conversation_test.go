@@ -288,3 +288,21 @@ func TestNextHistoryAction(t *testing.T) {
 		})
 	}
 }
+
+func TestStarMenuLabel(t *testing.T) {
+	if got := starMenuLabel(true); got != "Unstar" {
+		t.Errorf("starMenuLabel(true) = %q, want %q", got, "Unstar")
+	}
+	if got := starMenuLabel(false); got != "Star" {
+		t.Errorf("starMenuLabel(false) = %q, want %q", got, "Star")
+	}
+}
+
+func TestUndoClipboardValue(t *testing.T) {
+	if got := undoClipboardValue("previous", true); got != "previous" {
+		t.Errorf("undoClipboardValue(%q, true) = %q, want %q", "previous", got, "previous")
+	}
+	if got := undoClipboardValue("previous", false); got != "" {
+		t.Errorf("undoClipboardValue(%q, false) = %q, want empty", "previous", got)
+	}
+}
