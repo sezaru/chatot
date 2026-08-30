@@ -291,6 +291,7 @@ type Composer struct {
 	attachBtn   *gtk.Button
 	locationBtn *gtk.Button
 	pollBtn     *gtk.Button
+	emojiBtn    *gtk.Button
 	recordBtn   *gtk.Button
 
 	recorder  *audio.Recorder // non-nil only while a recording is in progress
@@ -363,6 +364,10 @@ func NewComposer(c client.Client) *Composer {
 	entry.SetPlaceholderText("Message")
 	entryRow.Append(entry)
 
+	emojiBtn := gtk.NewButtonWithLabel("😀")
+	emojiBtn.AddCSSClass("flat")
+	entryRow.Append(emojiBtn)
+
 	recordBtn := gtk.NewButtonWithLabel("🎤")
 	recordBtn.AddCSSClass("flat")
 	recordBtn.SetSensitive(false)
@@ -384,6 +389,7 @@ func NewComposer(c client.Client) *Composer {
 		attachBtn:   attachBtn,
 		locationBtn: locationBtn,
 		pollBtn:     pollBtn,
+		emojiBtn:    emojiBtn,
 		recordBtn:   recordBtn,
 		typing:      newTypingModel(typingDebounce),
 	}
@@ -394,6 +400,7 @@ func NewComposer(c client.Client) *Composer {
 	attachBtn.ConnectClicked(comp.pickAttachment)
 	locationBtn.ConnectClicked(comp.pickLocation)
 	pollBtn.ConnectClicked(comp.pickPoll)
+	emojiBtn.ConnectClicked(comp.pickEmoji)
 	recordBtn.ConnectClicked(comp.toggleRecording)
 	cancelQuote.ConnectClicked(func() {
 		comp.state.CancelReply()
@@ -577,6 +584,26 @@ func (c *Composer) submitEdit() {
 			log.Printf("chatot: edit message failed: %v", err)
 		}
 	}()
+}
+
+// pickEmoji pops the native emoji chooser anchored to the emoji button;
+// picking inserts the emoji into the entry at the current cursor position.
+func (c *Composer) pickEmoji() {
+	chooser := gtk.NewEmojiChooser()
+	chooser.SetParent(c.emojiBtn)
+	chooser.ConnectClosed(func() { chooser.Unparent() })
+	chooser.ConnectEmojiPicked(func(text string) {
+		insertAtCursor(c.entry, text)
+	})
+	chooser.Popup()
+}
+
+// insertAtCursor inserts text into entry's buffer at the entry's current
+// cursor position and advances the cursor past the inserted text.
+func insertAtCursor(entry *gtk.Entry, text string) {
+	pos := entry.Position()
+	n := entry.Buffer().InsertText(uint(pos), text, -1)
+	entry.SetPosition(pos + int(n))
 }
 
 // pickAttachment opens a file-choose dialog and, on a picked file, hands off

@@ -866,6 +866,7 @@ func showChatContextMenu(row *gtk.Box, c client.Client, chat client.Chat, window
 	rect := gdk.NewRectangle(int(x), int(y), 1, 1)
 	pop.SetChild(box)
 	pop.SetParent(row)
+	pop.ConnectClosed(func() { pop.Unparent() })
 	pop.SetPointingTo(&rect)
 	pop.Popup()
 }
