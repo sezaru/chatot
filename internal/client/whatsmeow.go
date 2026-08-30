@@ -7,11 +7,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
 
 	wastore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -207,10 +211,61 @@ func (w *Whatsmeow) Search(query string, limit int) ([]SearchHit, error) {
 	return nil, errors.New("not implemented: Search (F11)")
 }
 
-// SendText sends a plain-text (optionally reply) message.
-// TODO(F6): implement compose/send.
+// SendText sends a plain-text (optionally reply) message. On success the
+// sent message is upserted into the local store immediately (optimistic
+// echo), rather than waiting for whatsmeow to redeliver it as an event.
 func (w *Whatsmeow) SendText(ctx context.Context, jid, text string, replyTo *MsgRef) (string, error) {
-	return "", errors.New("not implemented: SendText (F6)")
+	to, err := types.ParseJID(jid)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+
+	waMsg := &waE2E.Message{}
+	if replyTo == nil {
+		waMsg.Conversation = proto.String(text)
+	} else {
+		waMsg.ExtendedTextMessage = &waE2E.ExtendedTextMessage{
+			Text:        proto.String(text),
+			ContextInfo: w.replyContextInfo(jid, *replyTo),
+		}
+	}
+
+	id := w.wa.GenerateMessageID()
+	if _, err := w.wa.SendMessage(ctx, to, waMsg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		return "", fmt.Errorf("chatot/client: send text: %w", err)
+	}
+
+	out := Message{ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, Text: text, TS: time.Now().Unix(), ReplyTo: replyTo}
+	if err := w.ingestMessage(&out); err != nil {
+		w.log.Warnf("chatot/client: optimistic upsert of sent message failed: %v", err)
+	}
+	return id, nil
+}
+
+// replyContextInfo builds the ContextInfo for a reply, quoting the target
+// message's text and, for group chats, naming its original sender so
+// WhatsApp can resolve the "@X replied" attribution. Best-effort: if the
+// target isn't in the local store (e.g. store lookup race), it still sends
+// a bare StanzaID reply.
+func (w *Whatsmeow) replyContextInfo(jid string, replyTo MsgRef) *waE2E.ContextInfo {
+	ctx := &waE2E.ContextInfo{StanzaID: proto.String(replyTo.MsgID)}
+	quoted, ok, err := w.store.MessageByID(replyTo.ChatJID, replyTo.MsgID)
+	if err != nil || !ok {
+		return ctx
+	}
+	ctx.QuotedMessage = &waE2E.Message{Conversation: proto.String(quoted.Text)}
+	if !quoted.FromMe && quoted.FromJID != "" {
+		ctx.Participant = proto.String(quoted.FromJID)
+	}
+	return ctx
+}
+
+// ownJID returns this device's own JID as a string, or "" if not logged in.
+func (w *Whatsmeow) ownJID() string {
+	if w.wa.Store.ID == nil {
+		return ""
+	}
+	return w.wa.Store.ID.String()
 }
 
 // SendMedia uploads and sends an attachment.
@@ -225,16 +280,66 @@ func (w *Whatsmeow) SendVoice(ctx context.Context, jid string, oggOpus []byte, d
 	return "", errors.New("not implemented: SendVoice (F9)")
 }
 
-// React sets or clears a reaction on a message.
-// TODO(F6): implement compose/react.
+// React sets ("" clears) a reaction on a message. sender in BuildReaction
+// must be the *target* message's original sender (empty/self for our own
+// messages), not the reactor — whatsmeow needs it to build the message key
+// whatsapp uses to identify which message is being reacted to in a group.
 func (w *Whatsmeow) React(ctx context.Context, jid, msgID, emoji string) error {
-	return errors.New("not implemented: React (F6)")
+	chat, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+
+	var sender types.JID
+	target, ok, lookupErr := w.store.MessageByID(jid, msgID)
+	switch {
+	case lookupErr == nil && ok && !target.FromMe && target.FromJID != "":
+		if sender, err = types.ParseJID(target.FromJID); err != nil {
+			sender = types.EmptyJID
+		}
+	case chat.Server == types.GroupServer && (lookupErr != nil || !ok):
+		// A zero sender makes BuildMessageKey mark the key FromMe=true, which
+		// mis-identifies the target for a group message we didn't author.
+		// Refuse rather than send a corrupt reaction.
+		return fmt.Errorf("chatot/client: react: target message %s not found for group reaction key", msgID)
+	}
+
+	reaction := w.wa.BuildReaction(chat, sender, msgID, emoji)
+	if _, err := w.wa.SendMessage(ctx, chat, reaction); err != nil {
+		return fmt.Errorf("chatot/client: send reaction: %w", err)
+	}
+
+	if err := w.store.UpsertReaction(store.ReactionRow{
+		ChatJID: jid, MsgID: msgID, ReactorJID: w.ownJID(), Emoji: emoji, TS: time.Now().Unix(),
+	}); err != nil {
+		w.log.Warnf("chatot/client: optimistic upsert of sent reaction failed: %v", err)
+	}
+	return nil
 }
 
-// MarkRead sends read receipts for the given messages.
-// TODO(F6): implement compose/mark-read.
+// MarkRead sends a single read receipt covering msgIDs. All of them must
+// share the same original sender (whatsmeow's constraint); for 1:1 chats
+// that's always the chat JID itself, which is what we pass as sender here.
+// Group chats with mixed senders would need one call per sender — not
+// needed yet since the UI only marks read on 1:1/aggregate chat open.
 func (w *Whatsmeow) MarkRead(ctx context.Context, jid string, msgIDs []string) error {
-	return errors.New("not implemented: MarkRead (F6)")
+	if len(msgIDs) == 0 {
+		return nil
+	}
+	chat, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+	sender := chat
+	if chat.Server == types.GroupServer {
+		sender = types.EmptyJID // best-effort: see doc comment above
+	}
+	ids := make([]types.MessageID, len(msgIDs))
+	copy(ids, msgIDs)
+	if err := w.wa.MarkRead(ctx, ids, time.Now(), chat, sender); err != nil {
+		return fmt.Errorf("chatot/client: mark read: %w", err)
+	}
+	return w.store.MarkChatRead(jid)
 }
 
 // SendPresence sets the account's overall online/offline state.

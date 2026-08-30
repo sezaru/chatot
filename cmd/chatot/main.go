@@ -2,11 +2,14 @@
 package main
 
 import (
+	"context"
+	"log"
 	"os"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"chatot/internal/client"
@@ -34,10 +37,33 @@ func activate(app *adw.Application, c client.Client) {
 	sidebar := adw.NewNavigationPage(chatList, "Chats")
 
 	conversation := ui.NewConversationView(c)
-	content := adw.NewNavigationPage(conversation, "Conversation")
+	composer := ui.NewComposer(c)
+
+	contentBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	contentBox.SetVExpand(true)
+	contentBox.SetHExpand(true)
+	contentBox.Append(conversation)
+	contentBox.Append(composer)
+	content := adw.NewNavigationPage(contentBox, "Conversation")
+
+	composer.OnSent(func(msg client.Message) {
+		conversation.AppendSentMessage(msg)
+	})
+	conversation.OnReplyRequested(composer.StartReply)
+	conversation.OnReactRequested(func(msg client.Message, emoji string) {
+		go func() {
+			if err := c.React(context.Background(), msg.ChatJID, msg.ID, emoji); err != nil {
+				log.Printf("chatot: react failed: %v", err)
+				return
+			}
+			glib.IdleAdd(func() { conversation.ApplyOwnReaction(msg.ChatJID) })
+		}()
+	})
 
 	chatList.OnChatSelected(func(jid string) {
 		conversation.Load(jid)
+		composer.SetChat(jid)
+		go markReadOnOpen(c, jid, conversation.Messages())
 	})
 
 	split := adw.NewNavigationSplitView()
@@ -49,6 +75,21 @@ func activate(app *adw.Application, c client.Client) {
 	win.SetDefaultSize(1000, 700)
 	win.SetContent(split)
 	win.Present()
+}
+
+// markReadOnOpen looks up jid's unread count from the chat list and, if
+// ui.SendReadReceipts is enabled, marks the corresponding messages read.
+func markReadOnOpen(c client.Client, jid string, msgs []client.Message) {
+	chats, err := c.Chats(0)
+	if err != nil {
+		return
+	}
+	for _, chat := range chats {
+		if chat.JID == jid {
+			ui.MarkReadOnOpen(context.Background(), c, jid, msgs, chat.UnreadCount)
+			return
+		}
+	}
 }
 
 func loadCSS() {
