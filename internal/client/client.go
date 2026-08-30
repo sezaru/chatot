@@ -285,6 +285,36 @@ type Attachment struct {
 	IsGIF bool
 }
 
+// MediaItem is one image/video attachment in a chat, for the media/links/docs
+// page's Media tab.
+type MediaItem struct {
+	MsgID     string
+	Kind      string // "image" or "video"
+	MimeType  string
+	LocalPath string
+	Thumbnail []byte
+	TS        int64
+}
+
+// DocItem is one document attachment in a chat, for the Docs tab.
+type DocItem struct {
+	MsgID     string
+	Filename  string
+	MimeType  string
+	LocalPath string
+	TS        int64
+}
+
+// LinkItem is a message in a chat whose text contains a URL, for the Links
+// tab: URL is the first URL found in the message, Title its full text.
+type LinkItem struct {
+	MsgID string
+	URL   string
+	Host  string
+	Title string
+	TS    int64
+}
+
 // GroupParticipant is one member of a group, as returned by GroupInfo.
 type GroupParticipant struct {
 	JID          string
@@ -396,6 +426,14 @@ type Client interface {
 	// Statuses returns recent status ("stories") updates, newest first; each
 	// message's FromJID is the poster. Backed by the status@broadcast chat.
 	Statuses(limit int) ([]Message, error)
+	// ChatMedia returns jid's image/video attachments, newest first, for the
+	// media/links/docs page's Media tab.
+	ChatMedia(jid string) ([]MediaItem, error)
+	// ChatDocs returns jid's document attachments, newest first.
+	ChatDocs(jid string) ([]DocItem, error)
+	// ChatLinks returns jid's messages containing a URL, newest first, one
+	// link per message (the first URL found).
+	ChatLinks(jid string) ([]LinkItem, error)
 	// PostStatus posts a text status update to the status broadcast.
 	PostStatus(ctx context.Context, text string) error
 	// RejectCall declines an incoming call offer identified by callID from
