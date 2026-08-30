@@ -153,3 +153,34 @@ func TestMessagesRespectsLimit(t *testing.T) {
 		t.Fatalf("got %+v, want [m2 m3]", msgs)
 	}
 }
+
+func TestUpsertMessageEditUpdatesTextAndFlag(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "original", TS: 1}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "edited", TS: 2, Edited: true}))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want 1 (edit updates in place)", len(msgs))
+	}
+	if msgs[0].Text != "edited" || !msgs[0].Edited {
+		t.Fatalf("got text=%q edited=%v, want edited text + flag", msgs[0].Text, msgs[0].Edited)
+	}
+}
+
+func TestUpsertMessageEditedIsSticky(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "original", TS: 1}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "edited", TS: 2, Edited: true}))
+	// A later non-edit re-upsert (e.g. a history redelivery) must not clear it.
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "edited", TS: 2, Edited: false}))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if !msgs[0].Edited {
+		t.Fatal("edited flag was cleared by a non-edit re-upsert; want sticky")
+	}
+}

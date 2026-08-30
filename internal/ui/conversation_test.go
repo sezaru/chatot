@@ -152,3 +152,20 @@ func TestBubbleVM_TextMessage(t *testing.T) {
 		t.Errorf("Text = %q, want %q", out.Text, "plain text")
 	}
 }
+
+func TestBubbleVM_EditedMarker(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+
+	out := bubbleVM(client.Message{ID: "1", FromMe: true, Text: "typo", TS: now.Unix(), Edited: true}, nil, map[string]client.Message{}, now)
+	if !out.Edited {
+		t.Error("expected Edited=true on the view-model")
+	}
+	if out.EditedMarker == "" {
+		t.Error("expected a non-empty edited marker")
+	}
+
+	plain := bubbleVM(client.Message{ID: "2", FromMe: true, Text: "hi", TS: now.Unix()}, nil, map[string]client.Message{}, now)
+	if plain.Edited || plain.EditedMarker != "" {
+		t.Error("expected no edited marker on an unedited message")
+	}
+}

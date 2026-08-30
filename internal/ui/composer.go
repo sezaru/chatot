@@ -33,24 +33,71 @@ type sendAction struct {
 	ReplyTo *client.MsgRef
 }
 
+// editTarget is the message being edited in the composer's edit mode.
+type editTarget struct {
+	MsgID string
+	Text  string
+}
+
+// editAction is what SubmitEdit resolves to: the outbound edit to perform.
+type editAction struct {
+	JID   string
+	MsgID string
+	Text  string
+}
+
 // composeState is the composer's pure state machine, kept free of GTK so it
 // can be unit-tested directly. Composer builds the widget on top of it.
+// replyTo and editing are mutually exclusive — arming one clears the other.
 type composeState struct {
 	jid     string
 	replyTo *client.Message
+	editing *editTarget
 }
 
-// SetChat switches the active chat, clearing any pending reply (replying
-// across a chat switch would attach the wrong context).
+// SetChat switches the active chat, clearing any pending reply/edit (both
+// carry a target from the previous chat that a switch would misapply).
 func (s *composeState) SetChat(jid string) {
 	s.jid = jid
 	s.replyTo = nil
+	s.editing = nil
 }
 
 // StartReply arms reply mode, quoting msg on the next Submit.
 func (s *composeState) StartReply(msg client.Message) {
 	m := msg
 	s.replyTo = &m
+	s.editing = nil
+}
+
+// StartEdit arms edit mode, replacing msg's text on the next SubmitEdit.
+func (s *composeState) StartEdit(msg client.Message) {
+	s.editing = &editTarget{MsgID: msg.ID, Text: msg.Text}
+	s.replyTo = nil
+}
+
+// CancelEdit clears edit mode without sending.
+func (s *composeState) CancelEdit() { s.editing = nil }
+
+// EditTarget returns the message being edited, if any.
+func (s *composeState) EditTarget() (editTarget, bool) {
+	if s.editing == nil {
+		return editTarget{}, false
+	}
+	return *s.editing, true
+}
+
+// SubmitEdit resolves an edit submission from the current entry text. Fails
+// (ok=false) if not in edit mode, no active chat, or text is blank; on
+// success it clears edit mode.
+func (s *composeState) SubmitEdit(text string) (editAction, bool) {
+	text = strings.TrimSpace(text)
+	if s.editing == nil || s.jid == "" || text == "" {
+		return editAction{}, false
+	}
+	action := editAction{JID: s.jid, MsgID: s.editing.MsgID, Text: text}
+	s.editing = nil
+	return action, true
 }
 
 // CancelReply clears reply mode without sending.
@@ -239,6 +286,7 @@ type Composer struct {
 
 	quoteBar    *gtk.Box
 	quoteLabel  *gtk.Label
+	editBar     *gtk.Box
 	entry       *gtk.Entry
 	attachBtn   *gtk.Button
 	locationBtn *gtk.Button
@@ -273,6 +321,21 @@ func NewComposer(c client.Client) *Composer {
 	quoteBar.Append(cancelQuote)
 
 	root.Append(quoteBar)
+
+	editBar := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	editBar.AddCSSClass("chatot-composer-quote")
+	editBar.SetVisible(false)
+
+	editLabel := gtk.NewLabel("Editing message…")
+	editLabel.SetXAlign(0)
+	editLabel.SetHExpand(true)
+	editBar.Append(editLabel)
+
+	cancelEdit := gtk.NewButtonWithLabel("×")
+	cancelEdit.AddCSSClass("flat")
+	editBar.Append(cancelEdit)
+
+	root.Append(editBar)
 
 	entryRow := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	entryRow.SetMarginTop(6)
@@ -316,6 +379,7 @@ func NewComposer(c client.Client) *Composer {
 		c:           c,
 		quoteBar:    quoteBar,
 		quoteLabel:  quoteLabel,
+		editBar:     editBar,
 		entry:       entry,
 		attachBtn:   attachBtn,
 		locationBtn: locationBtn,
@@ -335,6 +399,7 @@ func NewComposer(c client.Client) *Composer {
 		comp.state.CancelReply()
 		comp.refreshQuoteBar()
 	})
+	cancelEdit.ConnectClicked(comp.cancelEdit)
 
 	// Ticks the typing debounce every second so a burst of keystrokes with
 	// no explicit "stopped typing" signal (send, clear, chat switch) still
@@ -416,6 +481,7 @@ func (c *Composer) SetChat(jid string) {
 	c.pollBtn.SetSensitive(jid != "")
 	c.recordBtn.SetSensitive(jid != "" && !c.recording)
 	c.refreshQuoteBar()
+	c.refreshEditBar()
 }
 
 // StartReply arms reply mode for msg; called from the conversation view's
@@ -423,6 +489,29 @@ func (c *Composer) SetChat(jid string) {
 func (c *Composer) StartReply(msg client.Message) {
 	c.state.StartReply(msg)
 	c.refreshQuoteBar()
+	c.refreshEditBar()
+}
+
+// StartEdit arms edit mode for msg: prefill the entry with its current text so
+// the user amends it in place, and show the editing bar. Called from the
+// conversation view's per-bubble edit affordance.
+func (c *Composer) StartEdit(msg client.Message) {
+	c.state.StartEdit(msg)
+	c.entry.SetText(msg.Text)
+	c.refreshQuoteBar()
+	c.refreshEditBar()
+}
+
+// cancelEdit leaves edit mode, clearing the entry and hiding the editing bar.
+func (c *Composer) cancelEdit() {
+	c.state.CancelEdit()
+	c.entry.SetText("")
+	c.refreshEditBar()
+}
+
+func (c *Composer) refreshEditBar() {
+	_, ok := c.state.EditTarget()
+	c.editBar.SetVisible(ok)
 }
 
 func (c *Composer) refreshQuoteBar() {
@@ -443,6 +532,10 @@ func (c *Composer) refreshQuoteBar() {
 // valid, clears the entry/reply-mode immediately and sends in the
 // background. Must run on the GTK main loop (entry.Text() isn't thread-safe).
 func (c *Composer) submit() {
+	if _, editing := c.state.EditTarget(); editing {
+		c.submitEdit()
+		return
+	}
 	action, ok := c.state.Submit(c.entry.Text())
 	if !ok {
 		return
@@ -464,6 +557,25 @@ func (c *Composer) submit() {
 			Text: action.Text, TS: time.Now().Unix(), ReplyTo: action.ReplyTo,
 		}
 		glib.IdleAdd(func() { c.onSent(msg) })
+	}()
+}
+
+// submitEdit resolves the current entry against edit mode and, if valid,
+// clears edit mode immediately and sends the edit in the background. The
+// EditMessage impl pushes an EventMessage so the open chat re-renders the
+// amended bubble; nothing is appended here.
+func (c *Composer) submitEdit() {
+	action, ok := c.state.SubmitEdit(c.entry.Text())
+	if !ok {
+		return
+	}
+	c.entry.SetText("")
+	c.refreshEditBar()
+
+	go func() {
+		if err := c.c.EditMessage(context.Background(), action.JID, action.MsgID, action.Text); err != nil {
+			log.Printf("chatot: edit message failed: %v", err)
+		}
 	}()
 }
 

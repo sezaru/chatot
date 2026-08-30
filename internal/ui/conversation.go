@@ -33,6 +33,8 @@ type bubbleView struct {
 	Contact          contactView
 	IsPoll           bool
 	Poll             pollView
+	Edited           bool
+	EditedMarker     string
 }
 
 // bubbleVM derives the display view-model for a single message. prev is the
@@ -66,6 +68,11 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 		v.Reactions = append(v.Reactions, emoji)
 	}
 	sort.Strings(v.Reactions)
+
+	if m.Edited {
+		v.Edited = true
+		v.EditedMarker = " · edited"
+	}
 
 	switch {
 	case m.Location != nil:
@@ -166,6 +173,7 @@ type ConversationView struct {
 	onReply func(client.Message)
 	onReact func(msg client.Message, emoji string)
 	onVote  func(msg client.Message, options []string)
+	onEdit  func(client.Message)
 }
 
 // OnReplyRequested registers f to be called when the user picks the reply
@@ -183,6 +191,11 @@ func (cv *ConversationView) OnReactRequested(f func(msg client.Message, emoji st
 func (cv *ConversationView) OnVoteRequested(f func(msg client.Message, options []string)) {
 	cv.onVote = f
 }
+
+// OnEditRequested registers f to be called when the user picks the edit
+// affordance on one of their own text bubbles; the composer wires this to
+// enter edit mode.
+func (cv *ConversationView) OnEditRequested(f func(client.Message)) { cv.onEdit = f }
 
 // Messages returns the currently-loaded thread, for mark-read on open.
 func (cv *ConversationView) Messages() []client.Message { return cv.msgs }
@@ -312,7 +325,7 @@ func (cv *ConversationView) bindRow(item *gtk.ListItem) {
 		prev = &cv.msgs[pos-1]
 	}
 	vm := bubbleVM(msg, prev, cv.byID, time.Now())
-	box.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact, cv.onVote))
+	box.Append(buildBubble(msg, vm, cv.c, cv.onReply, cv.onReact, cv.onVote, cv.onEdit))
 }
 
 // onScroll fetches the next older page when the reader nears the top. Runs on
@@ -407,6 +420,12 @@ func (cv *ConversationView) watchEvents() {
 			msg := *ev.Message
 			glib.IdleAdd(func() {
 				if msg.ChatJID != cv.jid {
+					return
+				}
+				// An edit updates an existing row (keyed to the original id),
+				// so reload the thread rather than append a duplicate bubble.
+				if msg.Edited {
+					cv.Load(cv.jid)
 					return
 				}
 				cv.appendMessage(msg)
@@ -563,7 +582,7 @@ func removeAllChildren(box *gtk.Box) {
 // buildBubble constructs the GTK widget tree for a single message from its
 // pre-computed view-model, wiring the reply/react affordances (if the
 // callbacks are set) to msg.
-func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply func(client.Message), onReact func(msg client.Message, emoji string), onVote func(msg client.Message, options []string)) *gtk.Box {
+func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply func(client.Message), onReact func(msg client.Message, emoji string), onVote func(msg client.Message, options []string), onEdit func(client.Message)) *gtk.Box {
 	wrapper := gtk.NewBox(gtk.OrientationVertical, 4)
 
 	if vm.ShowDaySeparator {
@@ -612,7 +631,7 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		bubble.Append(text)
 	}
 
-	timeLabel := gtk.NewLabel(vm.TimeText)
+	timeLabel := gtk.NewLabel(vm.TimeText + vm.EditedMarker)
 	timeLabel.AddCSSClass("chatot-bubble-time")
 	timeLabel.SetXAlign(1)
 	bubble.Append(timeLabel)
@@ -627,8 +646,10 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		bubble.Append(reactions)
 	}
 
-	if onReply != nil || onReact != nil {
-		bubble.Append(buildBubbleActions(msg, onReply, onReact))
+	// Editing is a text-only, own-message affordance (WhatsApp only edits text).
+	canEdit := msg.FromMe && !vm.IsMedia && !vm.IsLocation && !vm.IsContact && !vm.IsPoll
+	if onReply != nil || onReact != nil || (canEdit && onEdit != nil) {
+		bubble.Append(buildBubbleActions(msg, onReply, onReact, onEdit, canEdit))
 	}
 
 	row.Append(bubble)
@@ -639,7 +660,7 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 
 // buildBubbleActions builds the small reply/react affordance row shown on
 // every bubble.
-func buildBubbleActions(msg client.Message, onReply func(client.Message), onReact func(msg client.Message, emoji string)) *gtk.Box {
+func buildBubbleActions(msg client.Message, onReply func(client.Message), onReact func(msg client.Message, emoji string), onEdit func(client.Message), canEdit bool) *gtk.Box {
 	actions := gtk.NewBox(gtk.OrientationHorizontal, 2)
 	actions.AddCSSClass("chatot-bubble-actions")
 
@@ -648,6 +669,13 @@ func buildBubbleActions(msg client.Message, onReply func(client.Message), onReac
 		replyBtn.AddCSSClass("flat")
 		replyBtn.ConnectClicked(func() { onReply(msg) })
 		actions.Append(replyBtn)
+	}
+
+	if canEdit && onEdit != nil {
+		editBtn := gtk.NewButtonWithLabel("✎")
+		editBtn.AddCSSClass("flat")
+		editBtn.ConnectClicked(func() { onEdit(msg) })
+		actions.Append(editBtn)
 	}
 
 	if onReact != nil {

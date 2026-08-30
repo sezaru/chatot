@@ -79,6 +79,7 @@ func activate(app *adw.Application, c client.Client) {
 		conversation.AppendSentMessage(msg)
 	})
 	conversation.OnReplyRequested(composer.StartReply)
+	conversation.OnEditRequested(composer.StartEdit)
 	conversation.OnReactRequested(func(msg client.Message, emoji string) {
 		go func() {
 			if err := c.React(context.Background(), msg.ChatJID, msg.ID, emoji); err != nil {

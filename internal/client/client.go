@@ -110,6 +110,9 @@ type Message struct {
 	// Poll is non-nil for a poll-creation message; its options carry live vote
 	// counts tallied from decrypted poll-update (vote) events.
 	Poll *Poll
+	// Edited is true once the sender edited this message's text (WhatsApp
+	// allows editing a text message for ~15 min); drives the "edited" marker.
+	Edited bool
 }
 
 // Poll is a poll-creation message with its immutable definition (Name,
@@ -226,6 +229,9 @@ type Client interface {
 	// VotePoll casts (or replaces) the local user's vote on pollMsgID with the
 	// named options.
 	VotePoll(ctx context.Context, chatJID, pollMsgID string, options []string) error
+	// EditMessage replaces an own text message's content (WhatsApp's ~15-min
+	// edit window); reflected optimistically in the store + open chat.
+	EditMessage(ctx context.Context, chatJID, msgID, newText string) error
 	React(ctx context.Context, jid, msgID, emoji string) error // "" clears
 	MarkRead(ctx context.Context, jid string, msgIDs []string) error
 	SendPresence(available bool) error

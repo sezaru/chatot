@@ -623,3 +623,63 @@ func TestPollStoreRoundTripTallies(t *testing.T) {
 		t.Fatal("Sushi should not be marked Voted for self")
 	}
 }
+
+func TestTranslateMessageLiveEdit(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	sender := mustJID(t, "1234567890@s.whatsapp.net")
+
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: sender},
+			ID:            "EDIT-STANZA-ID",
+			Timestamp:     time.Unix(1700000100, 0),
+		},
+		Message: &waProto.Message{ProtocolMessage: &waE2E.ProtocolMessage{
+			Key:           &waCommon.MessageKey{ID: proto.String("ORIGINAL-ID")},
+			Type:          waE2E.ProtocolMessage_MESSAGE_EDIT.Enum(),
+			EditedMessage: &waE2E.Message{Conversation: proto.String("fixed typo")},
+		}},
+	}
+
+	e := translate(evt)
+	if e == nil || e.Message == nil {
+		t.Fatal("translate returned nil for a live edit")
+	}
+	if !e.Message.Edited {
+		t.Error("Edited = false, want true")
+	}
+	if e.Message.ID != "ORIGINAL-ID" {
+		t.Errorf("ID = %q, want the original id from the ProtocolMessage key", e.Message.ID)
+	}
+	if e.Message.Text != "fixed typo" {
+		t.Errorf("Text = %q, want the edited content", e.Message.Text)
+	}
+}
+
+func TestTranslateMessageHistoryEdit(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	sender := mustJID(t, "1234567890@s.whatsapp.net")
+
+	// History path: whatsmeow already rewrote Info.ID to the original and
+	// unwrapped the edited content, leaving only Info.Edit to mark it.
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: sender},
+			ID:            "ORIGINAL-ID",
+			Edit:          types.EditAttributeMessageEdit,
+			Timestamp:     time.Unix(1700000100, 0),
+		},
+		Message: &waProto.Message{Conversation: proto.String("history edited")},
+	}
+
+	e := translate(evt)
+	if e == nil || e.Message == nil {
+		t.Fatal("translate returned nil for a history edit")
+	}
+	if !e.Message.Edited {
+		t.Error("Edited = false, want true")
+	}
+	if e.Message.ID != "ORIGINAL-ID" || e.Message.Text != "history edited" {
+		t.Errorf("got ID=%q Text=%q, want original id + edited text", e.Message.ID, e.Message.Text)
+	}
+}

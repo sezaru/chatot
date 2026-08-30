@@ -274,6 +274,23 @@ func (f *Fake) VotePoll(ctx context.Context, chatJID, pollMsgID string, options 
 	return fmt.Errorf("chatot/client: poll %q not found in chat %q", pollMsgID, chatJID)
 }
 
+func (f *Fake) EditMessage(ctx context.Context, chatJID, msgID, newText string) error {
+	f.mu.Lock()
+	msgs := f.messages[chatJID]
+	for i := range msgs {
+		if msgs[i].ID == msgID {
+			msgs[i].Text = newText
+			msgs[i].Edited = true
+			echo := msgs[i]
+			f.mu.Unlock()
+			f.events.Publish(Event{Kind: EventMessage, Message: &echo})
+			return nil
+		}
+	}
+	f.mu.Unlock()
+	return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, chatJID)
+}
+
 func (f *Fake) React(ctx context.Context, jid, msgID, emoji string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -35,6 +35,8 @@ type Message struct {
 	// decodes. The store persists and returns them without interpreting them.
 	Kind    string
 	Payload string
+	// Edited is true once a MESSAGE_EDIT updated this message's text.
+	Edited bool
 	// PollVotes holds the raw votes cast on a poll message (kind == "poll"):
 	// one row per (voter, selected-option-hash). The store never hashes or
 	// interprets these; package client matches the hashes against the poll's
@@ -90,6 +92,7 @@ type MessageRow struct {
 	ReplyToMsgID string // "" leaves any existing reply link untouched
 	Kind         string // "" plain message; "location" etc. for a rich kind
 	Payload      string // opaque JSON body for a rich kind, "" otherwise
+	Edited       bool   // true for a MESSAGE_EDIT upsert; sticky in the store
 }
 
 // ContactRow is the upsert seam for the contacts table. Empty fields leave
