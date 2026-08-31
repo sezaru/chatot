@@ -208,6 +208,49 @@ func (w *Whatsmeow) JoinGroupWithLink(ctx context.Context, code string) (string,
 	return jid, nil
 }
 
+// CreateCommunity creates a community (a parent group with GroupParent.IsParent
+// set; WhatsApp's server creates the linked announcement group automatically),
+// persists it as a chat, sets its description if given, and returns its JID.
+func (w *Whatsmeow) CreateCommunity(ctx context.Context, name, description string) (string, error) {
+	if !validGroupName(name) {
+		return "", fmt.Errorf("chatot/client: invalid community name %q (1-25 chars)", name)
+	}
+	info, err := w.wa.CreateGroup(ctx, whatsmeow.ReqCreateGroup{
+		Name:        name,
+		GroupParent: types.GroupParent{IsParent: true},
+	})
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: create community: %w", err)
+	}
+	gi := groupInfoFromWhatsmeow(info)
+	w.persistGroupInfo(gi)
+	w.insertGroupChat(gi.JID, gi.Name)
+	if description != "" {
+		if err := w.SetGroupTopic(ctx, gi.JID, description); err != nil {
+			w.log.Warnf("chatot/client: set community description %s: %v", gi.JID, err)
+		}
+	}
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: gi.JID}})
+	return gi.JID, nil
+}
+
+// LinkGroupToCommunity links an existing group as a sub-group of community.
+func (w *Whatsmeow) LinkGroupToCommunity(ctx context.Context, community, group string) error {
+	parent, err := types.ParseJID(community)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse community jid: %w", err)
+	}
+	child, err := types.ParseJID(group)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse group jid: %w", err)
+	}
+	if err := w.wa.LinkGroup(ctx, parent, child); err != nil {
+		return fmt.Errorf("chatot/client: link group to community: %w", err)
+	}
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: community}})
+	return nil
+}
+
 // insertGroupChat ensures a chat row exists for a newly created/joined group
 // so it shows up in the chat list.
 func (w *Whatsmeow) insertGroupChat(jid, name string) {

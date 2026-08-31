@@ -355,3 +355,31 @@ func TestPosterName(t *testing.T) {
 		t.Errorf("non-numeric: got %q, want raw jid", got)
 	}
 }
+
+func TestIsValidInviteInput(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"full https link", "https://chat.whatsapp.com/ABCDEF12345", true},
+		{"scheme-less link", "chat.whatsapp.com/ABCDEF12345", true},
+		{"link with trailing slash", "https://chat.whatsapp.com/ABCDEF12345/", true},
+		{"link with padding whitespace", "  https://chat.whatsapp.com/ABCDEF12345  ", true},
+		{"link missing code", "https://chat.whatsapp.com/", false},
+		{"other whatsapp domain", "https://web.whatsapp.com/send?phone=1", false},
+		{"bare code", "ABCDEF12345", true},
+		{"bare code too short", "AB12", false},
+		{"bare code with slash", "AB/CDEF12345", false},
+		{"bare code with space", "ABCDEF 12345", false},
+		{"empty", "", false},
+		{"whitespace only", "   ", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isValidInviteInput(tc.input); got != tc.want {
+				t.Errorf("isValidInviteInput(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+		})
+	}
+}
