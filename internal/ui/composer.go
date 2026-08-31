@@ -693,20 +693,26 @@ func mediaFilter() *gtk.FileFilter {
 	return f
 }
 
-// newAttachTile builds one icon-over-label tile button for the attach
-// popover, matching the mockup's "+" menu.
-func newAttachTile(iconName, label string, onClick func()) *gtk.Button {
-	box := gtk.NewBox(gtk.OrientationVertical, 4)
+// newAttachTile builds one emoji-over-label tile button for the attach popover,
+// matching the mockup's dark grid variant (2c): a large emoji glyph above a
+// short label — NOT a monochrome symbolic icon.
+func newAttachTile(glyph, label string, onClick func()) *gtk.Button {
+	box := gtk.NewBox(gtk.OrientationVertical, 6)
 	box.SetHAlign(gtk.AlignCenter)
-	img := gtk.NewImageFromIconName(iconName)
-	img.SetPixelSize(32)
-	box.Append(img)
-	box.Append(gtk.NewLabel(label))
+
+	icon := gtk.NewLabel(glyph)
+	icon.AddCSSClass("chatot-attach-glyph")
+	box.Append(icon)
+
+	text := gtk.NewLabel(label)
+	text.AddCSSClass("chatot-attach-label")
+	box.Append(text)
 
 	btn := gtk.NewButton()
 	btn.AddCSSClass("flat")
+	btn.AddCSSClass("chatot-attach-tile")
 	btn.SetChild(box)
-	btn.SetSizeRequest(88, 72)
+	btn.SetSizeRequest(84, 68)
 	btn.ConnectClicked(onClick)
 	return btn
 }
@@ -733,13 +739,13 @@ func newAttachPopover(c *Composer) *gtk.Popover {
 		icon, label string
 		activate    func()
 	}{
-		{"insert-image-symbolic", "Photo or video", func() { c.pickAttachment(mediaFilter()) }},
-		{"camera-photo-symbolic", "Camera", func() { c.comingSoon("Camera") }},
-		{"text-x-generic-symbolic", "Document", func() { c.pickAttachment(nil) }},
-		{"mark-location-symbolic", "Location", c.pickLocation},
-		{"avatar-default-symbolic", "Contact", c.pickContact},
-		{"view-list-symbolic", "Poll", c.pickPoll},
-		{"x-office-calendar-symbolic", "Event", func() { c.comingSoon("Event") }},
+		{"🖼️", "Photo", func() { c.pickAttachment(mediaFilter()) }},
+		{"📷", "Camera", func() { c.comingSoon("Camera") }},
+		{"📄", "Document", func() { c.pickAttachment(nil) }},
+		{"📍", "Location", c.pickLocation},
+		{"👤", "Contact", c.pickContact},
+		{"📊", "Poll", c.pickPoll},
+		{"📅", "Event", func() { c.comingSoon("Event") }},
 	}
 
 	grid := gtk.NewGrid()
