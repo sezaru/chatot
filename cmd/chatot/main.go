@@ -415,6 +415,9 @@ func activate(app *adw.Application, c client.Client) {
 			ui.ShowMediaPage(&win.Window, c, jid, chatNameFor(c, jid))
 		}
 	}
+	if os.Getenv("CHATOT_SHOT_ATTACH") == "1" {
+		glib.TimeoutAdd(900, func() bool { composer.PopAttach(); return false })
+	}
 	if os.Getenv("CHATOT_SHOT_PREFS") == "1" {
 		ui.ShowPreferences(&win.Window, &prefs, func(updated settings.Settings) { prefs = updated })
 	}

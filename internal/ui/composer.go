@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -540,6 +541,9 @@ func (c *Composer) sendTypingAsync(jid string, typing bool) {
 	}()
 }
 
+// PopAttach opens the 📎 attachment popover — a dev/screenshot hook.
+func (c *Composer) PopAttach() { c.attachBtn.Popup() }
+
 // SetWindow supplies the parent window gtk.FileDialog needs; call once
 // before the attach button can be used (main.go does this after the window
 // is constructed).
@@ -707,9 +711,21 @@ func newAttachTile(iconName, label string, onClick func()) *gtk.Button {
 	return btn
 }
 
-// newAttachPopover builds the "+" button's popover: tiles for the
-// attachment sources the mockup groups behind one button. Camera (a future
-// GStreamer-capture feature) and Event (F52) are intentionally omitted.
+// comingSoon surfaces an honest "not built yet" dialog for an attach source
+// the mockup shows but whose backend doesn't exist (Camera, Event), instead of
+// a tile that silently does nothing.
+func (c *Composer) comingSoon(feature string) {
+	dialog := adw.NewAlertDialog(feature+" isn't available yet", "This attachment source is planned but not implemented.")
+	dialog.AddResponse("ok", "OK")
+	dialog.SetDefaultResponse("ok")
+	dialog.Present(c.window)
+}
+
+// newAttachPopover builds the 📎 button's popover: the mockup's exact seven
+// sources (2c) as a 3-column tile grid. Camera and Event have no backend yet,
+// so they surface an honest "coming soon" dialog rather than a dead click.
+// (GIF/Stickers live in the composer's emoji picker per t6, not here; live
+// location is chosen inside the Location flow.)
 func newAttachPopover(c *Composer) *gtk.Popover {
 	popover := gtk.NewPopover()
 
@@ -718,13 +734,12 @@ func newAttachPopover(c *Composer) *gtk.Popover {
 		activate    func()
 	}{
 		{"insert-image-symbolic", "Photo or video", func() { c.pickAttachment(mediaFilter()) }},
+		{"camera-photo-symbolic", "Camera", func() { c.comingSoon("Camera") }},
 		{"text-x-generic-symbolic", "Document", func() { c.pickAttachment(nil) }},
 		{"mark-location-symbolic", "Location", c.pickLocation},
-		{"find-location-symbolic", "Live location", c.pickLiveLocation},
 		{"avatar-default-symbolic", "Contact", c.pickContact},
 		{"view-list-symbolic", "Poll", c.pickPoll},
-		{"image-x-generic-symbolic", "GIF", func() { c.showPicker("gif") }},
-		{"face-smile-symbolic", "Stickers", func() { c.showPicker("stickers") }},
+		{"x-office-calendar-symbolic", "Event", func() { c.comingSoon("Event") }},
 	}
 
 	grid := gtk.NewGrid()
