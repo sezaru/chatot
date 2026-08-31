@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -718,6 +719,89 @@ func (cv *ConversationView) Load(jid string) {
 	cv.scrollToBottom()
 }
 
+// bubbleSig captures the render-affecting, mutable fields of a message —
+// everything a live receipt/reaction/revoke/edit/poll-vote can change — so
+// refreshInPlace can cheaply tell which already-rendered rows actually need
+// re-binding and leave the rest (and the scroll position) alone.
+func bubbleSig(m client.Message) string {
+	var b strings.Builder
+	b.WriteString(m.ID)
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(m.Status))
+	if m.Deleted {
+		b.WriteByte('D')
+	}
+	if m.Edited {
+		b.WriteByte('E')
+	}
+	if m.Starred {
+		b.WriteByte('S')
+	}
+	b.WriteByte('|')
+	b.WriteString(m.Text)
+	if len(m.Reactions) > 0 {
+		emojis := make([]string, 0, len(m.Reactions))
+		for e := range m.Reactions {
+			emojis = append(emojis, e)
+		}
+		sort.Strings(emojis)
+		b.WriteByte('|')
+		for _, e := range emojis {
+			b.WriteString(e)
+		}
+	}
+	if m.Poll != nil {
+		b.WriteByte('|')
+		for _, o := range m.Poll.Options {
+			b.WriteString(o.Name)
+			b.WriteByte(':')
+			b.WriteString(strconv.Itoa(o.Count))
+			if o.Voted {
+				b.WriteByte('*')
+			}
+		}
+	}
+	return b.String()
+}
+
+// refreshInPlace re-renders only the rows whose content actually changed
+// (delivery ticks, reactions, revokes, poll tallies, edits), leaving every
+// other row — and the scroll position — untouched. This replaces the old
+// full cv.Load() reload that fired on every one of those events: Load splices
+// the entire model and jumps to the bottom, which on a busy chat (receipts
+// arrive constantly) rebinds every visible bubble many times a second and
+// reads as heavy flicker/lag. Falls back to a full Load only when the loaded
+// set no longer lines up positionally (a genuine add/remove, or the user has
+// paged history beyond the refetch window). Must run on the GTK main loop.
+func (cv *ConversationView) refreshInPlace() {
+	if cv.jid == "" {
+		return
+	}
+	n := len(cv.msgs)
+	if n < conversationPageSize {
+		n = conversationPageSize
+	}
+	msgs, err := cv.c.Messages(cv.jid, n)
+	if err != nil || len(msgs) != len(cv.msgs) {
+		cv.Load(cv.jid)
+		return
+	}
+	for i := range msgs {
+		if msgs[i].ID != cv.msgs[i].ID {
+			cv.Load(cv.jid)
+			return
+		}
+	}
+	for i := range msgs {
+		if bubbleSig(msgs[i]) == bubbleSig(cv.msgs[i]) {
+			continue
+		}
+		cv.msgs[i] = msgs[i]
+		cv.byID[msgs[i].ID] = msgs[i]
+		cv.model.Splice(i, 1, msgs[i])
+	}
+}
+
 // loadOlder prepends the next older page. GtkListView keeps the viewport
 // anchored on a model splice-at-front only loosely, so we re-scroll to the
 // message that was at the top (now shifted down by len(older)) once the rows
@@ -809,7 +893,7 @@ func (cv *ConversationView) watchEvents() {
 				if chatJID != cv.jid {
 					return
 				}
-				cv.Load(cv.jid)
+				cv.refreshInPlace()
 			})
 		case client.EventReaction:
 			if ev.Reaction == nil {
@@ -820,7 +904,7 @@ func (cv *ConversationView) watchEvents() {
 				if chatJID != cv.jid {
 					return
 				}
-				cv.Load(cv.jid)
+				cv.refreshInPlace()
 			})
 		case client.EventRevoke:
 			if ev.Revoke == nil {
@@ -831,7 +915,7 @@ func (cv *ConversationView) watchEvents() {
 				if chatJID != cv.jid {
 					return
 				}
-				cv.Load(cv.jid)
+				cv.refreshInPlace()
 			})
 		case client.EventPollVote:
 			if ev.PollVote == nil {
@@ -842,7 +926,7 @@ func (cv *ConversationView) watchEvents() {
 				if chatJID != cv.jid {
 					return
 				}
-				cv.Load(cv.jid)
+				cv.refreshInPlace()
 			})
 		case client.EventPresence:
 			if ev.Presence == nil {
@@ -1005,7 +1089,7 @@ func (cv *ConversationView) ApplyOwnReaction(chatJID string) {
 	if chatJID != cv.jid {
 		return
 	}
-	cv.Load(cv.jid)
+	cv.refreshInPlace()
 }
 
 // appendMessage adds msg to the end of the currently-loaded thread. The
@@ -1128,6 +1212,10 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		}
 		text.SetXAlign(0)
 		text.SetWrap(true)
+		// Cap the natural width so a long paragraph wraps into a hugging bubble
+		// (~two-thirds of the pane) instead of stretching edge-to-edge, matching
+		// the mockup's bubble sizing.
+		text.SetMaxWidthChars(48)
 		if !vm.Deleted && searchQuery != "" && len(findMatches(vm.Text, searchQuery)) > 0 {
 			text.SetMarkup(highlightMarkup(vm.Text, searchQuery))
 		} else {
@@ -1170,7 +1258,18 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 	canEdit := !vm.Deleted && msg.FromMe && !vm.IsMedia && !vm.IsLocation && !vm.IsContact && !vm.IsPoll && !vm.IsEvent
 	canDelete := !vm.Deleted && msg.FromMe
 	if !vm.Deleted && (onReply != nil || onReact != nil || (canEdit && onEdit != nil) || (canDelete && onDelete != nil) || onStar != nil || onForward != nil) {
-		bubble.Append(buildBubbleActions(msg, vm, onReply, onReact, onEdit, onDelete, onStar, onForward, toastOverlay, canEdit, canDelete))
+		// Hover-reveal, per the mockup ("put the ⋯ menu on hover"): the action
+		// row is hidden until the pointer enters the bubble's row. Its popovers
+		// are parented to the always-visible bubble (not the buttons inside the
+		// row) so hiding the row on pointer-leave can't dismiss an open menu.
+		actions := buildBubbleActions(bubble, msg, vm, onReply, onReact, onEdit, onDelete, onStar, onForward, toastOverlay, canEdit, canDelete)
+		actions.SetVisible(false)
+		bubble.Append(actions)
+
+		motion := gtk.NewEventControllerMotion()
+		motion.ConnectEnter(func(_, _ float64) { actions.SetVisible(true) })
+		motion.ConnectLeave(func() { actions.SetVisible(false) })
+		row.AddController(motion)
 	}
 
 	row.Append(bubble)
@@ -1227,7 +1326,7 @@ func copyTextWithUndo(overlay *adw.ToastOverlay, text string) {
 // react (as a menu entry too) and star/delete live behind the "⋯" menu. Star
 // applies to any message, own or theirs, unlike edit/delete which are
 // own-message only.
-func buildBubbleActions(msg client.Message, vm bubbleView, onReply func(client.Message), onReact func(msg client.Message, emoji string), onEdit func(client.Message), onDelete func(client.Message), onStar func(client.Message), onForward func(client.Message), toastOverlay *adw.ToastOverlay, canEdit, canDelete bool) *gtk.Box {
+func buildBubbleActions(parent gtk.Widgetter, msg client.Message, vm bubbleView, onReply func(client.Message), onReact func(msg client.Message, emoji string), onEdit func(client.Message), onDelete func(client.Message), onStar func(client.Message), onForward func(client.Message), toastOverlay *adw.ToastOverlay, canEdit, canDelete bool) *gtk.Box {
 	actions := gtk.NewBox(gtk.OrientationHorizontal, 2)
 	actions.AddCSSClass("chatot-bubble-actions")
 
@@ -1257,13 +1356,13 @@ func buildBubbleActions(msg client.Message, vm bubbleView, onReply func(client.M
 		moreBtn := gtk.NewButtonWithLabel("+")
 		moreBtn.AddCSSClass("flat")
 		moreBtn.ConnectClicked(func() {
+			openEmojiChooser(parent, msg, onReact)
 			popover.Popdown()
-			openEmojiChooser(moreBtn, msg, onReact)
 		})
 		picker.Append(moreBtn)
 
 		popover.SetChild(picker)
-		popover.SetParent(menuBtn)
+		popover.SetParent(parent)
 		menuBtn.ConnectClicked(func() { popover.Popup() })
 		actions.Append(menuBtn)
 	}
@@ -1298,7 +1397,7 @@ func buildBubbleActions(msg client.Message, vm bubbleView, onReply func(client.M
 			addItem("Copy text", false, func() { copyTextWithUndo(toastOverlay, msg.Text) })
 		}
 		if onReact != nil {
-			addItem("React…", false, func() { openEmojiChooser(moreMenuBtn, msg, onReact) })
+			addItem("React…", false, func() { openEmojiChooser(parent, msg, onReact) })
 		}
 		if onStar != nil {
 			addItem(starMenuLabel(msg.Starred), false, func() { onStar(msg) })
@@ -1310,7 +1409,7 @@ func buildBubbleActions(msg client.Message, vm bubbleView, onReply func(client.M
 		popover.SetChild(menu)
 		popover.ConnectClosed(func() { popover.Unparent() })
 		moreMenuBtn.ConnectClicked(func() {
-			popover.SetParent(moreMenuBtn)
+			popover.SetParent(parent)
 			popover.Popup()
 		})
 		actions.Append(moreMenuBtn)

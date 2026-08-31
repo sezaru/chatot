@@ -325,3 +325,30 @@ func TestUndoClipboardValue(t *testing.T) {
 		t.Errorf("undoClipboardValue(%q, false) = %q, want empty", "previous", got)
 	}
 }
+
+func TestBubbleSigDetectsLiveChanges(t *testing.T) {
+	base := client.Message{ID: "m1", FromMe: true, Text: "hi", TS: 100, Status: client.MessageStatusDelivered}
+
+	// Same content → identical signature (refreshInPlace skips the row).
+	if bubbleSig(base) != bubbleSig(base) {
+		t.Fatal("bubbleSig not stable for identical messages")
+	}
+
+	// Each live mutation must change the signature so the row re-renders.
+	cases := map[string]func(m client.Message) client.Message{
+		"read receipt": func(m client.Message) client.Message { m.Status = client.MessageStatusRead; return m },
+		"reaction":     func(m client.Message) client.Message { m.Reactions = map[string]string{"👍": "x@s"}; return m },
+		"revoke":       func(m client.Message) client.Message { m.Deleted = true; return m },
+		"edit":         func(m client.Message) client.Message { m.Edited = true; m.Text = "hello"; return m },
+		"star":         func(m client.Message) client.Message { m.Starred = true; return m },
+		"poll tally": func(m client.Message) client.Message {
+			m.Poll = &client.Poll{Options: []client.PollOption{{Name: "A", Count: 2}}}
+			return m
+		},
+	}
+	for name, mut := range cases {
+		if bubbleSig(base) == bubbleSig(mut(base)) {
+			t.Errorf("%s: signature unchanged, row would not refresh", name)
+		}
+	}
+}
