@@ -514,6 +514,11 @@ func (cl *ChatList) PopupAccountSwitcher() {
 
 func (cl *ChatList) OnAddAccountRequested(f func()) { cl.onAddAccount = f }
 
+// RefreshAccounts repaints the header identity from the switcher; call after
+// an account is added or removed so the header reflects the new roster (the
+// switcher popover rebuilds itself on each open).
+func (cl *ChatList) RefreshAccounts() { cl.refreshAccountHeader() }
+
 // OnManageAccountsRequested registers f for the switcher's "Manage accounts…"
 // item; STUBBED until F59 builds the manage-accounts flow.
 func (cl *ChatList) OnManageAccountsRequested(f func()) { cl.onManageAccounts = f }

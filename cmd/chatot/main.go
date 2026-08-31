@@ -50,6 +50,7 @@ func buildClient() client.Client {
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		log.Fatalf("chatot: create state dir: %v", err)
 	}
+	m.SetBaseDir(stateDir)
 	c, err := client.NewWhatsmeow(stateDir)
 	if err != nil {
 		log.Fatalf("chatot: init whatsmeow client: %v", err)
@@ -59,6 +60,11 @@ func buildClient() client.Client {
 		name = jid
 	}
 	m.AddAccount("default", name, c)
+	// Re-create every persisted pairing account (no-op for a fresh, single-
+	// account install, so behavior there is unchanged).
+	if err := m.LoadRoster(); err != nil {
+		log.Printf("chatot: load account roster: %v", err)
+	}
 	return m
 }
 
@@ -90,15 +96,12 @@ func activate(app *adw.Application, c client.Client) {
 
 	// The account manager is the multi-account switcher seam; hand it to the
 	// header's switcher popover without disturbing the client.Client wiring.
-	if am, ok := c.(*client.AccountManager); ok {
+	// The add/manage-account callbacks need the window, so they're wired below
+	// once it exists.
+	am, hasAccounts := c.(*client.AccountManager)
+	if hasAccounts {
 		chatList.SetAccountSwitcher(am)
 	}
-	chatList.OnAddAccountRequested(func() {
-		log.Printf("chatot: add account requested (F59 not yet implemented)")
-	})
-	chatList.OnManageAccountsRequested(func() {
-		log.Printf("chatot: manage accounts requested (F59 not yet implemented)")
-	})
 
 	conversation := ui.NewConversationView(c)
 	composer := ui.NewComposer(c)
@@ -181,6 +184,16 @@ func activate(app *adw.Application, c client.Client) {
 	chatList.SetWindow(&win.Window)
 	conversation.SetWindow(&win.Window)
 	conversation.SetToastOverlay(toastOverlay)
+
+	if hasAccounts {
+		refresh := func() { chatList.RefreshAccounts() }
+		chatList.OnAddAccountRequested(func() {
+			ui.ShowAddAccountDialog(&win.Window, am, refresh)
+		})
+		chatList.OnManageAccountsRequested(func() {
+			ui.ShowManageAccountsDialog(&win.Window, am, refresh)
+		})
+	}
 
 	conversation.OnForwardRequested(func(msg client.Message) {
 		ui.ShowForwardDialog(&win.Window, c, msg, toastOverlay)

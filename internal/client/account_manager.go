@@ -2,7 +2,9 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 )
 
@@ -15,6 +17,26 @@ type Account struct {
 	ID   string
 	Name string
 	c    Client
+	// stop cancels the context this account's client was Started with, so
+	// RemoveAccount can disconnect it without touching the whole app.
+	stop context.CancelFunc
+}
+
+// QRCodes exposes this account's pairing-QR stream so the add-account dialog
+// can render codes for a not-yet-linked account without going through the
+// manager's active-account proxy.
+func (a *Account) QRCodes() <-chan string { return a.c.QRCodes() }
+
+// Events exposes this account's own event stream so the add-account dialog can
+// detect pair success on the new account specifically.
+func (a *Account) Events() <-chan Event { return a.c.Events() }
+
+// LoggedIn reports whether this account's client is paired and connected.
+func (a *Account) LoggedIn() bool { return a.c.LoggedIn() }
+
+// PairPhone requests a phone-number pairing code for this account.
+func (a *Account) PairPhone(ctx context.Context, phone string) (string, error) {
+	return a.c.PairPhone(ctx, phone)
 }
 
 // AccountMeta is the display-facing view of an account (no live Client), for
@@ -55,6 +77,11 @@ type AccountManager struct {
 
 	events  *eventBus
 	qrCodes chan string
+
+	// baseDir is $XDG_STATE_HOME/chatot; pairing accounts get baseDir/accounts/
+	// <id>/ and the roster is baseDir/accounts.json. Empty in fake/test mode,
+	// where AddPairingAccount and roster persistence are disabled.
+	baseDir string
 }
 
 // NewAccountManager returns an empty manager. Register accounts with
@@ -214,11 +241,182 @@ func (m *AccountManager) Start(ctx context.Context) error {
 	copy(accts, m.accounts)
 	m.mu.Unlock()
 	for _, a := range accts {
-		if err := a.c.Start(ctx); err != nil {
+		actx, cancel := context.WithCancel(ctx)
+		m.mu.Lock()
+		a.stop = cancel
+		m.mu.Unlock()
+		if err := a.c.Start(actx); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// SetBaseDir records the manager's base state dir ($XDG_STATE_HOME/chatot),
+// enabling pairing-account creation and roster persistence. Call before
+// LoadRoster.
+func (m *AccountManager) SetBaseDir(dir string) { m.baseDir = dir }
+
+// LoadRoster re-creates every persisted pairing account from
+// baseDir/accounts.json, each backed by NewWhatsmeow(baseDir/accounts/<id>/),
+// and registers it (inactive — the default account, added first, stays
+// active). A missing roster is a no-op, so single-account behavior is
+// unchanged. No-op when no base dir is set (fake/test mode).
+func (m *AccountManager) LoadRoster() error {
+	if m.baseDir == "" {
+		return nil
+	}
+	r, err := loadRoster(filepath.Join(m.baseDir, rosterFile))
+	if err != nil {
+		return err
+	}
+	for _, e := range r.Accounts {
+		c, err := NewWhatsmeow(m.accountDir(e.ID))
+		if err != nil {
+			return fmt.Errorf("chatot/client: restore account %q: %w", e.ID, err)
+		}
+		m.AddAccount(e.ID, e.Label, c)
+	}
+	return nil
+}
+
+// AddPairingAccount creates a brand-new, not-yet-linked account under label:
+// it slugifies label to a unique id, builds a whatsmeow client on a fresh
+// per-account state dir, registers it (inactive) and Starts it so its QR/pair
+// events flow, then persists the roster. The returned *Account exposes its own
+// QRCodes()/Events() so the caller can drive the pairing UI. Fails in fake/test
+// mode (no base dir) rather than pretending to pair.
+func (m *AccountManager) AddPairingAccount(label string) (*Account, error) {
+	if m.baseDir == "" {
+		return nil, errors.New("chatot/client: adding accounts needs a real WhatsApp connection")
+	}
+	id := m.uniqueID(label)
+	c, err := NewWhatsmeow(m.accountDir(id))
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: create account %q: %w", id, err)
+	}
+	m.AddAccount(id, label, c)
+
+	a := m.accountByID(id)
+	ctx, cancel := context.WithCancel(context.Background())
+	m.mu.Lock()
+	a.stop = cancel
+	m.mu.Unlock()
+	if err := c.Start(ctx); err != nil {
+		cancel()
+		return nil, fmt.Errorf("chatot/client: start account %q: %w", id, err)
+	}
+
+	// Best-effort: a failed roster write doesn't undo the live account (it just
+	// won't survive a restart), so don't fail the add over it.
+	_ = m.persistRoster()
+	return a, nil
+}
+
+// RemoveAccount drops id from the roster and disconnects its client. It refuses
+// to remove the last remaining account; removing the active one first switches
+// to another account. The on-disk state dir is left intact (a future "delete
+// data" is a separate, destructive action).
+func (m *AccountManager) RemoveAccount(id string) error {
+	m.mu.Lock()
+	if len(m.accounts) <= 1 {
+		m.mu.Unlock()
+		return errors.New("chatot/client: cannot remove the last account")
+	}
+	found := false
+	var next string
+	for _, a := range m.accounts {
+		if a.ID == id {
+			found = true
+		} else if next == "" {
+			next = a.ID
+		}
+	}
+	active := id == m.activeID
+	m.mu.Unlock()
+	if !found {
+		return fmt.Errorf("chatot/client: unknown account %q", id)
+	}
+
+	if active {
+		if err := m.SetActive(next); err != nil {
+			return err
+		}
+	}
+
+	m.mu.Lock()
+	var removed *Account
+	remaining := make([]*Account, 0, len(m.accounts))
+	for _, a := range m.accounts {
+		if a.ID == id {
+			removed = a
+			continue
+		}
+		remaining = append(remaining, a)
+	}
+	m.accounts = remaining
+	m.mu.Unlock()
+
+	if removed != nil && removed.stop != nil {
+		removed.stop()
+	}
+	return m.persistRoster()
+}
+
+// accountDir is the per-account state dir for a pairing account.
+func (m *AccountManager) accountDir(id string) string {
+	return filepath.Join(m.baseDir, "accounts", id)
+}
+
+// Find returns the registered account with id (or nil) for UI that needs its
+// live QR/pair streams, e.g. the relink flow.
+func (m *AccountManager) Find(id string) *Account { return m.accountByID(id) }
+
+// accountByID returns the registered account with id, or nil.
+func (m *AccountManager) accountByID(id string) *Account {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, a := range m.accounts {
+		if a.ID == id {
+			return a
+		}
+	}
+	return nil
+}
+
+// uniqueID slugifies label and disambiguates against the ids already in use
+// (including "default") by appending -2, -3, ….
+func (m *AccountManager) uniqueID(label string) string {
+	base := slugify(label)
+	m.mu.Lock()
+	taken := make(map[string]bool, len(m.accounts))
+	for _, a := range m.accounts {
+		taken[a.ID] = true
+	}
+	m.mu.Unlock()
+	id := base
+	for n := 2; taken[id]; n++ {
+		id = fmt.Sprintf("%s-%d", base, n)
+	}
+	return id
+}
+
+// persistRoster writes the current pairing accounts (everything but the
+// implicit "default") to baseDir/accounts.json. No-op without a base dir.
+func (m *AccountManager) persistRoster() error {
+	if m.baseDir == "" {
+		return nil
+	}
+	m.mu.Lock()
+	var r roster
+	for _, a := range m.accounts {
+		if a.ID == defaultAccountID {
+			continue
+		}
+		r.Accounts = append(r.Accounts, rosterEntry{ID: a.ID, Label: a.Name})
+	}
+	m.mu.Unlock()
+	return saveRoster(filepath.Join(m.baseDir, rosterFile), r)
 }
 
 func (m *AccountManager) QRCodes() <-chan string { return m.qrCodes }
