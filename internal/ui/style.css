@@ -351,8 +351,36 @@ window {
 	font-size: 0.9em;
 }
 
+/* Hover affordances beside a bubble (mockup 1a showHoverActions): a floating
+   quick-react pill above a row of small icon buttons. */
 .chatot-bubble-actions {
-	opacity: 0.6;
+	margin: 0 6px 2px 6px;
+}
+
+.chatot-react-pill {
+	border-radius: 999px;
+	background-color: @popover_bg_color;
+	box-shadow: 0 4px 14px alpha(black, 0.28);
+	padding: 1px 3px;
+}
+
+.chatot-react-emoji {
+	min-width: 26px;
+	min-height: 26px;
+	padding: 0 2px;
+	border-radius: 999px;
+}
+
+.chatot-bubble-iconbtn {
+	min-width: 26px;
+	min-height: 26px;
+	padding: 0;
+	border-radius: 7px;
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-bubble-iconbtn:hover {
+	background-color: alpha(currentColor, 0.14);
 }
 
 /* Strip GtkListView's default row background/padding so the message bubbles
