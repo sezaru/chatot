@@ -427,6 +427,21 @@ window {
 	background-color: #147a63;
 }
 
+/* Attach popover tiles (mockup 2c dark grid): big emoji over a short label. */
+.chatot-attach-glyph {
+	font-size: 19px;
+}
+
+.chatot-attach-label {
+	font-size: 11.5px;
+	opacity: 0.85;
+}
+
+.chatot-attach-tile {
+	border-radius: 9px;
+	padding: 10px 4px;
+}
+
 .chatot-composer-quote {
 	padding: 4px 10px;
 	background-color: alpha(currentColor, 0.06);
