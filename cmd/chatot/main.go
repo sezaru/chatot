@@ -14,6 +14,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"chatot/internal/client"
+	"chatot/internal/settings"
 	"chatot/internal/ui"
 )
 
@@ -61,6 +62,9 @@ func stateDir() string {
 
 func activate(app *adw.Application, c client.Client) {
 	loadCSS()
+
+	prefs := settings.Load(settings.Dir())
+	applySettings(prefs)
 
 	chatList := ui.NewChatList(c)
 	sidebar := adw.NewNavigationPage(chatList, "Chats")
@@ -196,6 +200,18 @@ func activate(app *adw.Application, c client.Client) {
 	})
 	app.AddAction(rejectCallAction)
 
+	preferencesAction := gio.NewSimpleAction("preferences", nil)
+	preferencesAction.ConnectActivate(func(_ *glib.Variant) {
+		ui.ShowPreferences(&win.Window, &prefs, func(updated settings.Settings) {
+			prefs = updated
+			if err := settings.Save(settings.Dir(), prefs); err != nil {
+				log.Printf("chatot: save settings failed: %v", err)
+			}
+		})
+	})
+	app.AddAction(preferencesAction)
+	app.SetAccelsForAction("app.preferences", []string{"<Ctrl>comma"})
+
 	ui.NewNotifier(c, &app.Application.Application, func() (bool, string) {
 		return win.IsActive(), conversation.CurrentJID()
 	})
@@ -265,6 +281,16 @@ func activate(app *adw.Application, c client.Client) {
 			ui.ShowMediaPage(&win.Window, c, jid, chatNameFor(c, jid))
 		}
 	}
+}
+
+// applySettings pushes a loaded Settings into the live package vars/state
+// the rest of the app actually reads: Composer gates read receipts and
+// typing indicators on ui.SendReadReceipts/ui.SendTypingIndicators, and the
+// AdwStyleManager owns the color scheme.
+func applySettings(s settings.Settings) {
+	ui.SendReadReceipts = s.SendReadReceipts
+	ui.SendTypingIndicators = s.SendTypingIndicators
+	ui.ApplyTheme(s.Theme)
 }
 
 func sendPresence(c client.Client, available bool) {
