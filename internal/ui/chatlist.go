@@ -192,8 +192,12 @@ func NewChatList(c client.Client) *ChatList {
 	// Row 1: account header. The identity (avatar + name + status + chevron) is
 	// a MenuButton whose popover is the account switcher; SetAccountSwitcher
 	// fills in the live per-account data (placeholders show until then).
-	accountRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	accountRow := adw.NewHeaderBar()
 	accountRow.AddCSSClass("chatot-account-row")
+	// Window controls live on the conversation side (right pane); the sidebar
+	// header carries only the account switcher + new-chat/menu buttons.
+	accountRow.SetShowStartTitleButtons(false)
+	accountRow.SetShowEndTitleButtons(false)
 
 	accountAvatar := gtk.NewLabel("S")
 	accountAvatar.AddCSSClass("chatot-avatar")
@@ -225,19 +229,19 @@ func NewChatList(c client.Client) *ChatList {
 	accountBtn.SetHExpand(true)
 	accountBtn.SetChild(accountBtnBox)
 	accountBtn.SetTooltipText("Switch account")
-	accountRow.Append(accountBtn)
+	accountRow.SetTitleWidget(accountBtn)
 
 	plusBtn := gtk.NewMenuButton()
 	plusBtn.SetIconName("list-add-symbolic")
 	plusBtn.AddCSSClass("flat")
 	plusBtn.SetTooltipText("New chat, group, community, or invite")
-	accountRow.Append(plusBtn)
+	accountRow.PackEnd(plusBtn)
 
 	appMenuBtn := gtk.NewMenuButton()
 	appMenuBtn.SetIconName("open-menu-symbolic")
 	appMenuBtn.AddCSSClass("flat")
 	appMenuBtn.SetTooltipText("Menu")
-	accountRow.Append(appMenuBtn)
+	accountRow.PackEnd(appMenuBtn)
 
 	root.Append(accountRow)
 

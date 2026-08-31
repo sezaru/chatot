@@ -219,7 +219,8 @@ type ConversationView struct {
 	events <-chan client.Event
 	jid    string // "" until a chat is loaded
 
-	header        *gtk.Box
+	header        *adw.HeaderBar
+	headerContent *gtk.Box // avatar+title box; hidden (not the whole bar) when no chat is open
 	avatarSlot    *gtk.Box
 	avatarCache   *avatarCache
 	avatarJID     string // jid the avatar widget currently shows, "" until set
@@ -410,18 +411,22 @@ func NewConversationView(c client.Client) *ConversationView {
 	root.SetVExpand(true)
 	root.SetHExpand(true)
 
-	header := gtk.NewBox(gtk.OrientationHorizontal, 10)
+	// The header is a real AdwHeaderBar so the window's min/max/close controls
+	// render here (the app is a content-only AdwApplicationWindow with no
+	// separate titlebar). The bar itself stays visible even with no chat open
+	// — only its avatar+title content is hidden — so the controls never vanish.
+	header := adw.NewHeaderBar()
 	header.AddCSSClass("chatot-conv-header")
-	header.SetMarginTop(6)
-	header.SetMarginBottom(6)
-	header.SetMarginStart(10)
-	header.SetMarginEnd(10)
+
+	headerContent := gtk.NewBox(gtk.OrientationHorizontal, 10)
 
 	avatarSlot := gtk.NewBox(gtk.OrientationVertical, 0)
-	header.Append(avatarSlot)
+	avatarSlot.SetVAlign(gtk.AlignCenter)
+	headerContent.Append(avatarSlot)
 
 	textCol := gtk.NewBox(gtk.OrientationVertical, 0)
-	header.Append(textCol)
+	textCol.SetVAlign(gtk.AlignCenter)
+	headerContent.Append(textCol)
 
 	titleLabel := gtk.NewLabel("")
 	titleLabel.SetXAlign(0)
@@ -433,22 +438,24 @@ func NewConversationView(c client.Client) *ConversationView {
 	subtitleLabel.AddCSSClass("chatot-conv-subtitle")
 	textCol.Append(subtitleLabel)
 
-	textCol.SetHExpand(true)
+	headerContent.SetVisible(false)
+	header.SetShowStartTitleButtons(false)
+	// Suppress the AdwHeaderBar's default centered page title ("Conversation");
+	// the chat identity lives in headerContent, packed at the start.
+	header.SetTitleWidget(gtk.NewLabel(""))
+	header.PackStart(headerContent)
+
+	menuBtn := gtk.NewButtonFromIconName("view-more-symbolic")
+	menuBtn.AddCSSClass("flat")
+	menuBtn.SetTooltipText("Chat options")
+	menuBtn.SetSensitive(false)
+	header.PackEnd(menuBtn)
 
 	groupInfoBtn := gtk.NewButtonFromIconName("dialog-information-symbolic")
 	groupInfoBtn.SetTooltipText("Group info")
-	groupInfoBtn.SetHAlign(gtk.AlignEnd)
 	groupInfoBtn.SetVisible(false)
-	header.Append(groupInfoBtn)
+	header.PackEnd(groupInfoBtn)
 
-	menuBtn := gtk.NewButtonWithLabel("⋮")
-	menuBtn.AddCSSClass("flat")
-	menuBtn.SetTooltipText("Chat options")
-	menuBtn.SetHAlign(gtk.AlignEnd)
-	menuBtn.SetSensitive(false)
-	header.Append(menuBtn)
-
-	header.SetVisible(false)
 	root.Append(header)
 
 	searchBar := gtk.NewBox(gtk.OrientationHorizontal, 6)
@@ -537,6 +544,7 @@ func NewConversationView(c client.Client) *ConversationView {
 		c:                    c,
 		events:               c.Events(),
 		header:               header,
+		headerContent:        headerContent,
 		avatarSlot:           avatarSlot,
 		avatarCache:          newAvatarCache(),
 		titleLabel:           titleLabel,
@@ -1016,7 +1024,8 @@ const conversationAvatarSize = 40
 // async fetch or cause flicker on every presence update.
 func (cv *ConversationView) refreshHeader() {
 	if cv.jid == "" {
-		cv.header.SetVisible(false)
+		cv.headerContent.SetVisible(false)
+		cv.groupInfoBtn.SetVisible(false)
 		cv.menuBtn.SetSensitive(false)
 		return
 	}
@@ -1024,7 +1033,7 @@ func (cv *ConversationView) refreshHeader() {
 	cv.titleLabel.SetLabel(name)
 	cv.subtitleLabel.SetLabel(presenceSubtitle(cv.presence[cv.jid], time.Now()))
 	cv.groupInfoBtn.SetVisible(strings.HasSuffix(cv.jid, "@g.us"))
-	cv.header.SetVisible(true)
+	cv.headerContent.SetVisible(true)
 	cv.menuBtn.SetSensitive(true)
 
 	if cv.avatarJID != cv.jid {
@@ -1266,21 +1275,33 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 	canEdit := !vm.Deleted && msg.FromMe && !vm.IsMedia && !vm.IsLocation && !vm.IsContact && !vm.IsPoll && !vm.IsEvent
 	canDelete := !vm.Deleted && msg.FromMe
 	if !vm.Deleted && (onReply != nil || onReact != nil || (canEdit && onEdit != nil) || (canDelete && onDelete != nil) || onStar != nil || onForward != nil) {
-		// Hover-reveal, per the mockup ("put the ⋯ menu on hover"): the action
-		// row is hidden until the pointer enters the bubble's row. Its popovers
-		// are parented to the always-visible bubble (not the buttons inside the
-		// row) so hiding the row on pointer-leave can't dismiss an open menu.
+		// Hover-reveal beside the bubble, per the mockup — NOT stacked below it.
+		// Placing the actions inside the bubble (below) forced the bubble taller
+		// on hover, which reflowed the list and read as flicker. Here they sit in
+		// the horizontal row next to the bubble (left of an own message, right of
+		// an incoming one) and toggle opacity so the reserved gutter never shifts
+		// layout. Popovers parent to the always-present bubble so an open menu
+		// survives the pointer leaving the row.
 		actions := buildBubbleActions(bubble, msg, vm, onReply, onReact, onEdit, onDelete, onStar, onForward, toastOverlay, canEdit, canDelete)
-		actions.SetVisible(false)
-		bubble.Append(actions)
+		actions.SetVAlign(gtk.AlignCenter)
+		actions.SetOpacity(0)
+		actions.SetCanTarget(false)
 
 		motion := gtk.NewEventControllerMotion()
-		motion.ConnectEnter(func(_, _ float64) { actions.SetVisible(true) })
-		motion.ConnectLeave(func() { actions.SetVisible(false) })
+		motion.ConnectEnter(func(_, _ float64) { actions.SetOpacity(1); actions.SetCanTarget(true) })
+		motion.ConnectLeave(func() { actions.SetOpacity(0); actions.SetCanTarget(false) })
 		row.AddController(motion)
-	}
 
-	row.Append(bubble)
+		if vm.FromMe {
+			row.Append(actions)
+			row.Append(bubble)
+		} else {
+			row.Append(bubble)
+			row.Append(actions)
+		}
+	} else {
+		row.Append(bubble)
+	}
 	wrapper.Append(row)
 
 	return wrapper
