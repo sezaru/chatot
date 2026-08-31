@@ -216,6 +216,11 @@ func activate(app *adw.Application, c client.Client) {
 		return win.IsActive(), conversation.CurrentJID()
 	})
 
+	// System-tray StatusNotifierItem: click to raise, Open/Quit menu, unread
+	// tooltip. Degrades to a no-op with no StatusNotifierWatcher on the bus.
+	tray := ui.SetupTray(func() { win.Present() }, func() { app.Quit() })
+	go watchTrayUnread(c, tray)
+
 	// Feed pairing QR codes into the linking screen.
 	go func() {
 		for code := range c.QRCodes() {
@@ -323,6 +328,33 @@ func markReadOnOpen(c client.Client, jid string, msgs []client.Message) {
 			return
 		}
 	}
+}
+
+// watchTrayUnread seeds the tray's unread tooltip and refreshes it on the
+// events that move an unread count (new message, receipt, or a synced
+// pin/mute/unread change). Its own Events() subscription is independent of the
+// chat list's and the notifier's (fan-out bus).
+func watchTrayUnread(c client.Client, tray *ui.Tray) {
+	tray.SetUnread(totalUnread(c))
+	for ev := range c.Events() {
+		switch ev.Kind {
+		case client.EventMessage, client.EventReceipt, client.EventChatUpdate, client.EventHistorySync:
+			tray.SetUnread(totalUnread(c))
+		}
+	}
+}
+
+// totalUnread sums the unread counts across all chats.
+func totalUnread(c client.Client) int {
+	chats, err := c.Chats(0)
+	if err != nil {
+		return 0
+	}
+	total := 0
+	for _, chat := range chats {
+		total += chat.UnreadCount
+	}
+	return total
 }
 
 // chatNameFor looks up jid's display name from the chat list, for dialogs
