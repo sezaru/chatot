@@ -134,6 +134,9 @@ func NewFake() *Fake {
 		// m14 seeds F50's live-location bubble, sharing until an hour from now.
 		{ID: "m14", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2100,
 			Location: &Location{Latitude: 51.5007, Longitude: -0.1246, IsLive: true, LiveUntil: now + 3600}},
+		// m15 seeds F52's event bubble: a group-style scheduled event a week out.
+		{ID: "m15", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2000,
+			EventInvite: &EventInvite{Name: "Team offsite", Location: "Bletchley Park", StartTS: now + 7*86400}},
 	}
 
 	f.messages[statusBroadcastJID] = []Message{
