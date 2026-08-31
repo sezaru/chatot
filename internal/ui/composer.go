@@ -402,20 +402,21 @@ func NewComposer(c client.Client) *Composer {
 	entryRow.SetMarginStart(8)
 	entryRow.SetMarginEnd(8)
 
+	// Layout per the mockup: 📎 attach · 🙂 emoji · [entry] · 🎤 mic · ➤ send.
 	attachBtn := gtk.NewMenuButton()
-	attachBtn.SetIconName("list-add-symbolic")
+	attachBtn.SetIconName("mail-attachment-symbolic")
 	attachBtn.AddCSSClass("flat")
 	attachBtn.SetSensitive(false)
 	entryRow.Append(attachBtn)
+
+	emojiBtn := gtk.NewButtonWithLabel("🙂")
+	emojiBtn.AddCSSClass("flat")
+	entryRow.Append(emojiBtn)
 
 	entry := gtk.NewEntry()
 	entry.SetHExpand(true)
 	entry.SetPlaceholderText("Type a message")
 	entryRow.Append(entry)
-
-	emojiBtn := gtk.NewButtonWithLabel("😀")
-	emojiBtn.AddCSSClass("flat")
-	entryRow.Append(emojiBtn)
 
 	recordBtn := gtk.NewButtonFromIconName("audio-input-microphone-symbolic")
 	recordBtn.AddCSSClass("flat")

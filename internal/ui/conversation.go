@@ -1283,13 +1283,15 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		// layout. Popovers parent to the always-present bubble so an open menu
 		// survives the pointer leaving the row.
 		actions := buildBubbleActions(bubble, msg, vm, onReply, onReact, onEdit, onDelete, onStar, onForward, toastOverlay, canEdit, canDelete)
-		actions.SetVAlign(gtk.AlignCenter)
-		actions.SetOpacity(0)
-		actions.SetCanTarget(false)
+		actions.SetVAlign(gtk.AlignEnd)
+		// Hidden until hover. The row is edge-anchored (start for incoming, end
+		// for own) with empty space beside the bubble, so revealing the actions
+		// fills that gap without moving the bubble — no reflow, no flicker.
+		actions.SetVisible(false)
 
 		motion := gtk.NewEventControllerMotion()
-		motion.ConnectEnter(func(_, _ float64) { actions.SetOpacity(1); actions.SetCanTarget(true) })
-		motion.ConnectLeave(func() { actions.SetOpacity(0); actions.SetCanTarget(false) })
+		motion.ConnectEnter(func(_, _ float64) { actions.SetVisible(true) })
+		motion.ConnectLeave(func() { actions.SetVisible(false) })
 		row.AddController(motion)
 
 		if vm.FromMe {
@@ -1350,55 +1352,58 @@ func copyTextWithUndo(overlay *adw.ToastOverlay, text string) {
 	overlay.AddToast(toast)
 }
 
-// buildBubbleActions builds the small affordance row shown on non-deleted
-// bubbles: the reaction quick-row and edit stay inline; reply, forward, copy,
-// react (as a menu entry too) and star/delete live behind the "⋯" menu. Star
-// applies to any message, own or theirs, unlike edit/delete which are
-// own-message only.
+// buildBubbleActions builds the hover affordances shown beside a non-deleted
+// bubble, laid out per the mockup: a horizontal quick-react pill
+// (👍❤️😂😮😢🙏 ＋) on top, and a row of three icon buttons below — ↩ reply,
+// 🙂 react (full picker), ⋯ more (reply/forward/copy/star/edit/delete). Edit is
+// own-message-only and lives in the ⋯ menu; star applies to any message.
 func buildBubbleActions(parent gtk.Widgetter, msg client.Message, vm bubbleView, onReply func(client.Message), onReact func(msg client.Message, emoji string), onEdit func(client.Message), onDelete func(client.Message), onStar func(client.Message), onForward func(client.Message), toastOverlay *adw.ToastOverlay, canEdit, canDelete bool) *gtk.Box {
-	actions := gtk.NewBox(gtk.OrientationHorizontal, 2)
-	actions.AddCSSClass("chatot-bubble-actions")
-
-	if canEdit && onEdit != nil {
-		editBtn := gtk.NewButtonWithLabel("✎")
-		editBtn.AddCSSClass("flat")
-		editBtn.ConnectClicked(func() { onEdit(msg) })
-		actions.Append(editBtn)
-	}
+	column := gtk.NewBox(gtk.OrientationVertical, 5)
+	column.AddCSSClass("chatot-bubble-actions")
 
 	if onReact != nil {
-		menuBtn := gtk.NewButtonWithLabel("🙂+")
-		menuBtn.AddCSSClass("flat")
-
-		popover := gtk.NewPopover()
-		picker := gtk.NewBox(gtk.OrientationHorizontal, 4)
+		pill := gtk.NewBox(gtk.OrientationHorizontal, 1)
+		pill.AddCSSClass("chatot-react-pill")
 		for _, emoji := range reactEmojis {
-			emojiBtn := gtk.NewButtonWithLabel(emoji)
-			emojiBtn.AddCSSClass("flat")
-			emojiBtn.ConnectClicked(func() {
-				onReact(msg, emoji)
-				popover.Popdown()
-			})
-			picker.Append(emojiBtn)
+			b := gtk.NewButtonWithLabel(emoji)
+			b.AddCSSClass("flat")
+			b.AddCSSClass("chatot-react-emoji")
+			b.ConnectClicked(func() { onReact(msg, emoji) })
+			pill.Append(b)
 		}
-
-		moreBtn := gtk.NewButtonWithLabel("+")
-		moreBtn.AddCSSClass("flat")
-		moreBtn.ConnectClicked(func() {
-			openEmojiChooser(parent, msg, onReact)
-			popover.Popdown()
-		})
-		picker.Append(moreBtn)
-
-		popover.SetChild(picker)
-		popover.SetParent(parent)
-		menuBtn.ConnectClicked(func() { popover.Popup() })
-		actions.Append(menuBtn)
+		plus := gtk.NewButtonWithLabel("＋")
+		plus.AddCSSClass("flat")
+		plus.AddCSSClass("chatot-react-emoji")
+		plus.ConnectClicked(func() { openEmojiChooser(parent, msg, onReact) })
+		pill.Append(plus)
+		column.Append(pill)
 	}
 
-	if onReply != nil || onForward != nil || onReact != nil || onStar != nil || (canDelete && onDelete != nil) {
-		moreMenuBtn := gtk.NewButtonWithLabel("⋯")
-		moreMenuBtn.AddCSSClass("flat")
+	icons := gtk.NewBox(gtk.OrientationHorizontal, 2)
+
+	iconBtn := func(label string) *gtk.Button {
+		b := gtk.NewButtonWithLabel(label)
+		b.AddCSSClass("flat")
+		b.AddCSSClass("chatot-bubble-iconbtn")
+		return b
+	}
+
+	if onReply != nil {
+		reply := iconBtn("↩")
+		reply.SetTooltipText("Reply")
+		reply.ConnectClicked(func() { onReply(msg) })
+		icons.Append(reply)
+	}
+	if onReact != nil {
+		react := iconBtn("🙂")
+		react.SetTooltipText("React")
+		react.ConnectClicked(func() { openEmojiChooser(parent, msg, onReact) })
+		icons.Append(react)
+	}
+
+	if onReply != nil || onForward != nil || onReact != nil || onStar != nil || (canEdit && onEdit != nil) || (canDelete && onDelete != nil) {
+		moreMenuBtn := iconBtn("⋯")
+		moreMenuBtn.SetTooltipText("More")
 
 		popover := gtk.NewPopover()
 		menu := gtk.NewBox(gtk.OrientationVertical, 0)
@@ -1425,8 +1430,8 @@ func buildBubbleActions(parent gtk.Widgetter, msg client.Message, vm bubbleView,
 		if msg.Text != "" {
 			addItem("Copy text", false, func() { copyTextWithUndo(toastOverlay, msg.Text) })
 		}
-		if onReact != nil {
-			addItem("React…", false, func() { openEmojiChooser(parent, msg, onReact) })
+		if canEdit && onEdit != nil {
+			addItem("Edit", false, func() { onEdit(msg) })
 		}
 		if onStar != nil {
 			addItem(starMenuLabel(msg.Starred), false, func() { onStar(msg) })
@@ -1441,8 +1446,9 @@ func buildBubbleActions(parent gtk.Widgetter, msg client.Message, vm bubbleView,
 			popover.SetParent(parent)
 			popover.Popup()
 		})
-		actions.Append(moreMenuBtn)
+		icons.Append(moreMenuBtn)
 	}
 
-	return actions
+	column.Append(icons)
+	return column
 }
