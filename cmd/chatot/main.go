@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -46,6 +47,28 @@ func buildClient() client.Client {
 		m.AddAccount("business", "Bakery (business)", client.NewFake())
 		return m
 	}
+	// CHATOT_OFFLINE renders a COPY of the real local store with no network
+	// connection (dev seam for reproducing the real UI against real data). It
+	// never touches the live session or the phone link.
+	if os.Getenv("CHATOT_OFFLINE") == "1" {
+		dir, err := copyOfflineState(stateDir())
+		if err != nil {
+			log.Fatalf("chatot: copy offline state: %v", err)
+		}
+		c, err := client.NewWhatsmeow(dir)
+		if err != nil {
+			log.Fatalf("chatot: init offline client: %v", err)
+		}
+		c.SetOffline(true)
+		name := "Account 1"
+		if jid := c.OwnJID(); jid != "" {
+			name = jid
+		}
+		m.SetBaseDir(dir)
+		m.AddAccount("default", name, c)
+		return m
+	}
+
 	stateDir := stateDir()
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		log.Fatalf("chatot: create state dir: %v", err)
@@ -66,6 +89,60 @@ func buildClient() client.Client {
 		log.Printf("chatot: load account roster: %v", err)
 	}
 	return m
+}
+
+// copyOfflineState copies the store, session, and avatar cache from src into a
+// fresh temp dir so CHATOT_OFFLINE can render real data read-only without ever
+// writing the real store. Media isn't copied (chips render without it).
+func copyOfflineState(src string) (string, error) {
+	dst, err := os.MkdirTemp("", "chatot-offline-")
+	if err != nil {
+		return "", err
+	}
+	for _, name := range []string{"session.db", "chatot.db", "chatot.db-wal", "chatot.db-shm"} {
+		if err := copyFile(filepath.Join(src, name), filepath.Join(dst, name)); err != nil && !os.IsNotExist(err) {
+			return "", err
+		}
+	}
+	if err := copyDir(filepath.Join(src, "avatars"), filepath.Join(dst, "avatars")); err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	log.Printf("chatot: offline render from copy of %s at %s", src, dst)
+	return dst, nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
+}
+
+func copyDir(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dst, 0o700); err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if err := copyFile(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // stateDir resolves $XDG_STATE_HOME/chatot, falling back to

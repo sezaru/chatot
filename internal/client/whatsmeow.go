@@ -63,7 +63,17 @@ type Whatsmeow struct {
 	// proxyOverride, when non-empty, is the per-account proxy applied at Start
 	// in preference to the global CHATOT_PROXY.
 	proxyOverride string
+
+	// offline, when set, renders the local store without ever connecting to
+	// WhatsApp: Start is a no-op and LoggedIn reports the paired state straight
+	// from the session store (IsLoggedIn needs a live socket, which offline
+	// lacks). A dev seam for reproducing the real UI against a copied store.
+	offline bool
 }
+
+// SetOffline puts the client in read-only, no-network mode (see the offline
+// field). Must be called before Start.
+func (w *Whatsmeow) SetOffline(v bool) { w.offline = v }
 
 // SetProxy sets a per-account proxy URL applied at the next Start, overriding
 // the global CHATOT_PROXY for this client. Empty falls back to the global
@@ -274,6 +284,9 @@ func (w *Whatsmeow) applyChatUpdate(jid string, mutate func(jid string) error) {
 // QR codes onto QRCodes(); pairing completion arrives as an EventPairSuccess
 // on Events() once whatsmeow's own handler processes events.PairSuccess.
 func (w *Whatsmeow) Start(ctx context.Context) error {
+	if w.offline {
+		return nil
+	}
 	proxy := w.proxyOverride
 	if proxy == "" {
 		proxy = os.Getenv("CHATOT_PROXY")
@@ -321,6 +334,9 @@ func (w *Whatsmeow) pumpQR(qrChan <-chan whatsmeow.QRChannelItem) {
 func (w *Whatsmeow) QRCodes() <-chan string { return w.qrCodes }
 
 func (w *Whatsmeow) LoggedIn() bool {
+	if w.offline {
+		return w.wa.Store.ID != nil
+	}
 	return w.wa.Store.ID != nil && w.wa.IsLoggedIn()
 }
 
