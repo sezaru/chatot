@@ -427,8 +427,10 @@ func NewChatList(c client.Client) *ChatList {
 	appMenu.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
 	addAppMenuItem("Set status", func() { cl.showPostStatusDialog() })
 	addAppMenuItem("Privacy settings", func() { showPrivacyDialog(cl.window, cl.c) })
-	addAppMenuItem("Blocked contacts", func() {})   // stub until a blocked-list view exists
-	addAppMenuItem("Keyboard shortcuts", func() {}) // stub until a shortcuts window exists
+	addAppMenuItem("Blocked contacts", func() { showBlockedDialog(cl.window, cl.c) })
+	addAppMenuItem("Keyboard shortcuts", func() { showShortcutsDialog(cl.window) })
+	addAppMenuItem("Preferences", func() { appMenuBtn.ActivateAction("app.preferences", nil) })
+	appMenu.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
 	addAppMenuItem("About chatot", func() { showAboutDialog(cl.window) })
 	appPopover.SetChild(appMenu)
 	appMenuBtn.SetPopover(appPopover)
