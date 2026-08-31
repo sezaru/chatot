@@ -316,6 +316,9 @@ func activate(app *adw.Application, c client.Client) {
 	if os.Getenv("CHATOT_SHOT_PREFS") == "1" {
 		ui.ShowPreferences(&win.Window, &prefs, func(updated settings.Settings) { prefs = updated })
 	}
+	if os.Getenv("CHATOT_SHOT_SWITCHER") == "1" {
+		glib.IdleAdd(func() { chatList.PopupAccountSwitcher() })
+	}
 }
 
 // applySettings pushes a loaded Settings into the live package vars/state
