@@ -131,6 +131,9 @@ func NewFake() *Fake {
 		// "Click to open · closes after viewing" placeholder.
 		{ID: "m13", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2200,
 			Attachment: &Attachment{Kind: "image", MimeType: "image/jpeg", ViewOnce: true}},
+		// m14 seeds F50's live-location bubble, sharing until an hour from now.
+		{ID: "m14", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2100,
+			Location: &Location{Latitude: 51.5007, Longitude: -0.1246, IsLive: true, LiveUntil: now + 3600}},
 	}
 
 	f.messages[statusBroadcastJID] = []Message{
@@ -364,6 +367,24 @@ func (f *Fake) SendLocation(ctx context.Context, jid string, loc Location, reply
 	for i := range f.chats {
 		if f.chats[i].JID == jid {
 			f.chats[i].Preview = "📍 Location"
+			f.chats[i].LastMessageTS = msg.TS
+			break
+		}
+	}
+	return id, nil
+}
+
+func (f *Fake) SendLiveLocation(ctx context.Context, jid string, lat, lon float64, durationSecs int) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id := f.nextMsgID()
+	now := time.Now().Unix()
+	loc := Location{Latitude: lat, Longitude: lon, IsLive: true, LiveUntil: now + int64(durationSecs)}
+	msg := Message{ID: id, ChatJID: jid, FromJID: "me", FromMe: true, TS: now, Location: &loc}
+	f.messages[jid] = append(f.messages[jid], msg)
+	for i := range f.chats {
+		if f.chats[i].JID == jid {
+			f.chats[i].Preview = "📍 Live location"
 			f.chats[i].LastMessageTS = msg.TS
 			break
 		}

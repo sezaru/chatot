@@ -230,6 +230,10 @@ window {
 	font-weight: bold;
 }
 
+.chatot-location-live {
+	color: #1b8c72;
+}
+
 .chatot-location-coords {
 	opacity: 0.6;
 	font-size: 0.85em;

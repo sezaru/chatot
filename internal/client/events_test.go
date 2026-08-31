@@ -523,6 +523,28 @@ func TestLocationStoreRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLiveLocationStoreRoundTrip(t *testing.T) {
+	m := &Message{
+		ID: "LOC2", ChatJID: "a@s.whatsapp.net",
+		Location: &Location{Latitude: 51.5, Longitude: -0.12, IsLive: true, LiveUntil: 1735689600},
+	}
+	row := storeMessageRow(m)
+	if row.Kind != "location" {
+		t.Fatalf("Kind = %q, want location", row.Kind)
+	}
+
+	back := messageFromStore(store.Message{
+		ID: row.MsgID, ChatJID: row.ChatJID, Kind: row.Kind, Payload: row.Payload,
+	}, "")
+	if back.Location == nil {
+		t.Fatal("expected Location to decode back")
+	}
+	if !back.Location.IsLive || back.Location.LiveUntil != 1735689600 ||
+		back.Location.Latitude != 51.5 || back.Location.Longitude != -0.12 {
+		t.Errorf("round-trip mismatch: %+v", back.Location)
+	}
+}
+
 func TestTranslateReceipt(t *testing.T) {
 	chat := mustJID(t, "1234567890@s.whatsapp.net")
 	evt := &events.Receipt{

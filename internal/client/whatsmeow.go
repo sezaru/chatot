@@ -684,6 +684,36 @@ func (w *Whatsmeow) SendLocation(ctx context.Context, jid string, loc Location, 
 	return id, nil
 }
 
+// SendLiveLocation shares a live location for durationSecs, starting now.
+// This sends a single waE2E.LiveLocationMessage (sequence 1) rather than the
+// periodic stream of updates real live-location sharing performs — see the
+// Client interface doc. LiveUntil on the optimistic echo is computed locally
+// (now + durationSecs); the wire protocol carries no absolute expiry.
+func (w *Whatsmeow) SendLiveLocation(ctx context.Context, jid string, lat, lon float64, durationSecs int) (string, error) {
+	to, err := types.ParseJID(jid)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+
+	liveMsg := &waE2E.LiveLocationMessage{
+		DegreesLatitude:  proto.Float64(lat),
+		DegreesLongitude: proto.Float64(lon),
+		SequenceNumber:   proto.Int64(1),
+	}
+
+	id := w.wa.GenerateMessageID()
+	if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{LiveLocationMessage: liveMsg}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		return "", fmt.Errorf("chatot/client: send live location: %w", err)
+	}
+
+	loc := Location{Latitude: lat, Longitude: lon, IsLive: true, LiveUntil: time.Now().Unix() + int64(durationSecs)}
+	out := Message{ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(), Location: &loc}
+	if err := w.ingestMessage(&out); err != nil {
+		w.log.Warnf("chatot/client: optimistic upsert of sent live location failed: %v", err)
+	}
+	return id, nil
+}
+
 // SendContact shares contact as a vCard. Optimistic echo mirrors SendLocation.
 func (w *Whatsmeow) SendContact(ctx context.Context, jid string, contact Contact, replyTo *MsgRef) (string, error) {
 	to, err := types.ParseJID(jid)

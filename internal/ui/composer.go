@@ -186,6 +186,30 @@ func parseLocation(name, address, lat, long string) (client.Location, bool) {
 	}, true
 }
 
+// liveLocationAction is what a live-location dialog submission resolves to.
+type liveLocationAction struct {
+	JID          string
+	Latitude     float64
+	Longitude    float64
+	DurationSecs int
+	ReplyTo      *client.MsgRef
+}
+
+// SubmitLiveLocation resolves a live-location send. Fails (ok=false) with no
+// active chat or a non-positive duration; on success it clears any pending
+// reply like the other sends.
+func (s *composeState) SubmitLiveLocation(lat, lon float64, durationSecs int) (liveLocationAction, bool) {
+	if s.jid == "" || durationSecs <= 0 {
+		return liveLocationAction{}, false
+	}
+	action := liveLocationAction{JID: s.jid, Latitude: lat, Longitude: lon, DurationSecs: durationSecs}
+	if s.replyTo != nil {
+		action.ReplyTo = &client.MsgRef{ChatJID: s.replyTo.ChatJID, MsgID: s.replyTo.ID}
+	}
+	s.replyTo = nil
+	return action, true
+}
+
 // contactAction is what a contact-pick submission resolves to.
 type contactAction struct {
 	JID     string
@@ -682,7 +706,7 @@ func newAttachTile(iconName, label string, onClick func()) *gtk.Button {
 	return btn
 }
 
-// newAttachPopover builds the "+" button's popover: five tiles for the
+// newAttachPopover builds the "+" button's popover: tiles for the
 // attachment sources the mockup groups behind one button. Camera (a future
 // GStreamer-capture feature) and Event (F52) are intentionally omitted.
 func newAttachPopover(c *Composer) *gtk.Popover {
@@ -695,6 +719,7 @@ func newAttachPopover(c *Composer) *gtk.Popover {
 		{"insert-image-symbolic", "Photo or video", func() { c.pickAttachment(mediaFilter()) }},
 		{"text-x-generic-symbolic", "Document", func() { c.pickAttachment(nil) }},
 		{"mark-location-symbolic", "Location", c.pickLocation},
+		{"find-location-symbolic", "Live location", c.pickLiveLocation},
 		{"avatar-default-symbolic", "Contact", c.pickContact},
 		{"view-list-symbolic", "Poll", c.pickPoll},
 		{"image-x-generic-symbolic", "GIF", func() { c.showPicker("gif") }},
@@ -941,6 +966,87 @@ func (c *Composer) sendLocation(name, address, lat, long string) bool {
 		glib.IdleAdd(func() { c.onSent(msg) })
 	}()
 	return true
+}
+
+// devLocationLat/Lon stand in for a real GPS fix, which chatot has no way to
+// obtain yet. // TODO real location source
+const (
+	devLocationLat = 51.5007
+	devLocationLon = -0.1246
+)
+
+// liveLocationDurations are the picker's duration choices, in seconds.
+var liveLocationDurations = []struct {
+	label   string
+	seconds int
+}{
+	{"15 minutes", 15 * 60},
+	{"1 hour", 60 * 60},
+	{"8 hours", 8 * 60 * 60},
+}
+
+// pickLiveLocation opens a small modal offering a sharing duration and, on
+// pick, sends a live location at the dev placeholder coordinates. No-ops if
+// there's no active chat or no window set yet.
+func (c *Composer) pickLiveLocation() {
+	if c.state.jid == "" || c.window == nil {
+		return
+	}
+
+	dialog := gtk.NewWindow()
+	dialog.SetTitle("Share live location")
+	dialog.SetTransientFor(c.window)
+	dialog.SetModal(true)
+
+	box := gtk.NewBox(gtk.OrientationVertical, 6)
+	box.SetMarginTop(12)
+	box.SetMarginBottom(12)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
+	box.Append(gtk.NewLabel("Share for:"))
+
+	for _, d := range liveLocationDurations {
+		secs := d.seconds
+		btn := gtk.NewButtonWithLabel(d.label)
+		btn.ConnectClicked(func() {
+			c.sendLiveLocation(secs)
+			dialog.Close()
+		})
+		box.Append(btn)
+	}
+
+	dialog.SetChild(box)
+	dialog.Present()
+}
+
+// sendLiveLocation resolves a live-location send for durationSecs against
+// composeState and sends it in the background, mirroring sendLocation's flow.
+func (c *Composer) sendLiveLocation(durationSecs int) {
+	action, ok := c.state.SubmitLiveLocation(devLocationLat, devLocationLon, durationSecs)
+	if !ok {
+		return
+	}
+	c.refreshQuoteBar()
+
+	go func() {
+		id, err := c.c.SendLiveLocation(context.Background(), action.JID, action.Latitude, action.Longitude, action.DurationSecs)
+		if err != nil {
+			log.Printf("chatot: send live location failed: %v", err)
+			return
+		}
+		if c.onSent == nil {
+			return
+		}
+		now := time.Now()
+		msg := client.Message{
+			ID: id, ChatJID: action.JID, FromMe: true, TS: now.Unix(), ReplyTo: action.ReplyTo,
+			Location: &client.Location{
+				Latitude: action.Latitude, Longitude: action.Longitude,
+				IsLive: true, LiveUntil: now.Unix() + int64(action.DurationSecs),
+			},
+		}
+		glib.IdleAdd(func() { c.onSent(msg) })
+	}()
 }
 
 // pollOptionCount is how many option entries the create-poll dialog offers.
