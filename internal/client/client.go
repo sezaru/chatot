@@ -324,13 +324,14 @@ type GroupParticipant struct {
 
 // GroupInfo is a group's metadata and membership.
 type GroupInfo struct {
-	JID          string
-	Name         string
-	Topic        string
-	OwnerJID     string
-	Announce     bool // only admins may send
-	Locked       bool // only admins may edit group info
-	Participants []GroupParticipant
+	JID               string
+	Name              string
+	Topic             string
+	OwnerJID          string
+	Announce          bool   // only admins may send
+	Locked            bool   // only admins may edit group info
+	DisappearingTimer uint32 // seconds; 0 = off
+	Participants      []GroupParticipant
 }
 
 // SearchHit is a single fts5 match over the local store. MsgID is "" for a
@@ -495,6 +496,9 @@ type Client interface {
 	SetGroupAnnounce(ctx context.Context, jid string, announce bool) error
 	// SetGroupLocked toggles locked mode (true = only admins can edit info).
 	SetGroupLocked(ctx context.Context, jid string, locked bool) error
+	// SetGroupDisappearingTimer sets jid's disappearing-message timer in
+	// seconds (0 disables it).
+	SetGroupDisappearingTimer(ctx context.Context, jid string, seconds int64) error
 	// GroupInviteLink returns jid's invite link, resetting it first if reset.
 	GroupInviteLink(ctx context.Context, jid string, reset bool) (string, error)
 	// JoinGroupWithLink joins via an invite link or bare code and returns the

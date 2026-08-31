@@ -1075,6 +1075,14 @@ func (f *Fake) SetGroupLocked(ctx context.Context, jid string, locked bool) erro
 	return nil
 }
 
+func (f *Fake) SetGroupDisappearingTimer(ctx context.Context, jid string, seconds int64) error {
+	f.mu.Lock()
+	f.ensureGroupLocked(jid).DisappearingTimer = uint32(seconds)
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
 func (f *Fake) GroupInviteLink(ctx context.Context, jid string, reset bool) (string, error) {
 	code := "FAKEINVITECODE01234"
 	if reset {

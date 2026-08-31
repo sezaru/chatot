@@ -40,13 +40,14 @@ func groupInfoFromWhatsmeow(info *types.GroupInfo) *GroupInfo {
 		}
 	}
 	return &GroupInfo{
-		JID:          info.JID.String(),
-		Name:         info.Name,
-		Topic:        info.Topic,
-		OwnerJID:     info.OwnerJID.String(),
-		Announce:     info.IsAnnounce,
-		Locked:       info.IsLocked,
-		Participants: parts,
+		JID:               info.JID.String(),
+		Name:              info.Name,
+		Topic:             info.Topic,
+		OwnerJID:          info.OwnerJID.String(),
+		Announce:          info.IsAnnounce,
+		Locked:            info.IsLocked,
+		DisappearingTimer: info.DisappearingTimer,
+		Participants:      parts,
 	}
 }
 
@@ -158,6 +159,20 @@ func (w *Whatsmeow) SetGroupLocked(ctx context.Context, jid string, locked bool)
 	}
 	if err := w.wa.SetGroupLocked(ctx, j, locked); err != nil {
 		return fmt.Errorf("chatot/client: set group locked: %w", err)
+	}
+	w.refreshGroupInfo(jid)
+	return nil
+}
+
+// SetGroupDisappearingTimer sets jid's disappearing-message timer, then
+// refreshes.
+func (w *Whatsmeow) SetGroupDisappearingTimer(ctx context.Context, jid string, seconds int64) error {
+	j, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse group jid: %w", err)
+	}
+	if err := w.wa.SetDisappearingTimer(ctx, j, time.Duration(seconds)*time.Second, time.Now()); err != nil {
+		return fmt.Errorf("chatot/client: set disappearing timer: %w", err)
 	}
 	w.refreshGroupInfo(jid)
 	return nil
