@@ -140,6 +140,24 @@ func TestDisappearingSecondsForIndex(t *testing.T) {
 	}
 }
 
+func TestDisappearingIndexForSeconds(t *testing.T) {
+	cases := []struct {
+		seconds uint32
+		want    int
+	}{
+		{0, 0},
+		{24 * 60 * 60, 1},
+		{7 * 24 * 60 * 60, 2},
+		{90 * 24 * 60 * 60, 3},
+		{42, 0},
+	}
+	for _, tc := range cases {
+		if got := disappearingIndexForSeconds(tc.seconds); got != tc.want {
+			t.Errorf("disappearingIndexForSeconds(%d) = %d, want %d", tc.seconds, got, tc.want)
+		}
+	}
+}
+
 func TestParticipantSelection(t *testing.T) {
 	sel := newParticipantSelection()
 	if sel.Count() != 0 {
