@@ -399,6 +399,11 @@ window {
 	padding-top: 4px;
 }
 
+.chatot-join-banner {
+	background-color: alpha(#1b8c72, 0.12);
+	border-bottom: 1px solid alpha(currentColor, 0.12);
+}
+
 .chatot-conv-search-count {
 	opacity: 0.6;
 	font-size: 0.85em;

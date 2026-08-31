@@ -3,7 +3,10 @@
 // before the whatsmeow-backed implementation exists (F2).
 package client
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // EventKind identifies the payload carried by an Event.
 type EventKind int
@@ -361,6 +364,13 @@ type GroupInfo struct {
 	Participants      []GroupParticipant
 }
 
+// JoinRequest is a pending request to join an approval-required group; the
+// requester's display name is resolved by the UI, not carried here.
+type JoinRequest struct {
+	JID         string
+	RequestedAt time.Time
+}
+
 // SearchHit is a single fts5 match over the local store. MsgID is "" for a
 // chat-name match (Snippet then holds the chat name, not a message excerpt).
 type SearchHit struct {
@@ -543,6 +553,12 @@ type Client interface {
 	// LinkGroupToCommunity links an existing group as a sub-group of
 	// community.
 	LinkGroupToCommunity(ctx context.Context, community, group string) error
+	// GroupJoinRequests returns jid's pending join requests (approval-required
+	// groups only); empty for a group with none.
+	GroupJoinRequests(ctx context.Context, jid string) ([]JoinRequest, error)
+	// ResolveGroupJoinRequest approves or rejects participantJID's pending
+	// request to join groupJID.
+	ResolveGroupJoinRequest(ctx context.Context, groupJID, participantJID string, approve bool) error
 
 	// Newsletters returns the channels ("newsletters") this account is
 	// subscribed to, fetched live from WhatsApp (never persisted).
