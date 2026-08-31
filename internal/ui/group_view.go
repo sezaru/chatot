@@ -191,6 +191,18 @@ func disappearingSecondsForIndex(idx int) int64 {
 	return disappearingSecondsByIndex[idx]
 }
 
+// disappearingIndexForSeconds maps a stored disappearing-timer duration back
+// to its disappearingOptions dropdown index, the inverse of
+// disappearingSecondsForIndex. An unrecognized duration falls back to "Off".
+func disappearingIndexForSeconds(seconds uint32) int {
+	for i, s := range disappearingSecondsByIndex {
+		if int64(seconds) == s {
+			return i
+		}
+	}
+	return 0
+}
+
 // showGroupInfoDialog opens an actionable modal for jid: name/topic editing,
 // announce/locked toggles, per-participant admin actions, add-participant,
 // invite link and leave — the admin-only controls gated by c.OwnJID(). The
@@ -308,6 +320,16 @@ func populateGroupInfo(box *gtk.Box, dialog *gtk.Window, c client.Client, info c
 			})
 		})
 		box.Append(locked)
+
+		disappearing := gtk.NewDropDownFromStrings(disappearingOptions)
+		disappearing.SetSelected(uint(disappearingIndexForSeconds(info.DisappearingTimer)))
+		disappearing.NotifyProperty("selected", func() {
+			seconds := disappearingSecondsForIndex(int(disappearing.Selected()))
+			runGroupAction(status, reload, "set disappearing timer", func(ctx context.Context) error {
+				return c.SetGroupDisappearingTimer(ctx, info.JID, seconds)
+			})
+		})
+		box.Append(dropdownRow("Disappearing messages", disappearing))
 	}
 
 	box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
