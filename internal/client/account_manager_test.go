@@ -141,3 +141,77 @@ func TestAccountsMetaStatus(t *testing.T) {
 		t.Errorf("seeded Fake is logged in, status = %q, want %q", metas[0].Status, "Connected")
 	}
 }
+
+// running reports whether id's client is currently started (white-box: stop is
+// set while running).
+func (m *AccountManager) running(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a := m.findLocked(id)
+	return a != nil && a.stop != nil
+}
+
+func TestSetKeepInactiveConnected(t *testing.T) {
+	m := NewAccountManager()
+	m.AddAccount("a", "A", NewFake())
+	m.AddAccount("b", "B", NewFake())
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !m.running("a") || !m.running("b") {
+		t.Fatal("default keepInactive should start both accounts")
+	}
+
+	m.SetKeepInactiveConnected(false)
+	if !m.running("a") {
+		t.Error("active account a should stay running")
+	}
+	if m.running("b") {
+		t.Error("non-active account b should be stopped when keep-connected is off")
+	}
+
+	// Switching active starts the newly-active and stops the previously-active.
+	if err := m.SetActive("b"); err != nil {
+		t.Fatal(err)
+	}
+	if !m.running("b") {
+		t.Error("newly-active account b should be started")
+	}
+	if m.running("a") {
+		t.Error("previously-active account a should be stopped")
+	}
+
+	m.SetKeepInactiveConnected(true)
+	if !m.running("a") || !m.running("b") {
+		t.Error("re-enabling keep-connected should start every account")
+	}
+}
+
+func TestActiveNameAndCount(t *testing.T) {
+	m := NewAccountManager()
+	if m.ActiveName() != "" || m.Count() != 0 {
+		t.Fatal("empty manager should report no active name and zero count")
+	}
+	m.AddAccount("a", "A", NewFake())
+	m.AddAccount("b", "B", NewFake())
+	if got := m.ActiveName(); got != "A" {
+		t.Errorf("ActiveName = %q, want %q", got, "A")
+	}
+	if got := m.Count(); got != 2 {
+		t.Errorf("Count = %d, want 2", got)
+	}
+}
+
+func TestSetAccountProxyUnknown(t *testing.T) {
+	m := NewAccountManager()
+	m.AddAccount("a", "A", NewFake())
+	if err := m.SetAccountProxy("missing", "socks5://x"); err == nil {
+		t.Fatal("setting a proxy on an unknown account should error")
+	}
+	if err := m.SetAccountProxy("a", "socks5://x"); err != nil {
+		t.Fatalf("setting a proxy on a known account should succeed, got %v", err)
+	}
+	if got := m.AccountProxy("a"); got != "socks5://x" {
+		t.Errorf("AccountProxy = %q, want %q", got, "socks5://x")
+	}
+}

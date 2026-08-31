@@ -19,6 +19,10 @@ const defaultAccountID = "default"
 type rosterEntry struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
+	// Proxy is an optional per-account SOCKS5/HTTP proxy URL; when set it
+	// overrides the global proxy for this account. Applied when the account's
+	// client is (re)created, so a change needs a relink/restart to take effect.
+	Proxy string `json:"proxy,omitempty"`
 }
 
 type roster struct {

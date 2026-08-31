@@ -20,6 +20,13 @@ type Settings struct {
 	// to the WhatsApp connection at startup; "" connects directly. Changing
 	// it takes effect on the next launch, not the running session.
 	Proxy string `json:"proxy"`
+	// NotificationsPerAccount prefixes each toast title with the active
+	// account's label (e.g. "Work · Sam Okafor") when more than one account is
+	// linked, so it's clear which account a notification belongs to.
+	NotificationsPerAccount bool `json:"notificationsPerAccount"`
+	// KeepInactiveConnected keeps every linked account connected in the
+	// background; when false only the account currently shown stays connected.
+	KeepInactiveConnected bool `json:"keepInactiveConnected"`
 }
 
 // Default returns the preferences a fresh install starts with: chatot
@@ -27,10 +34,12 @@ type Settings struct {
 // WhatsApp's own defaults.
 func Default() Settings {
 	return Settings{
-		SendReadReceipts:     false,
-		SendTypingIndicators: true,
-		ShowNotifications:    true,
-		Theme:                "system",
+		SendReadReceipts:        false,
+		SendTypingIndicators:    true,
+		ShowNotifications:       true,
+		Theme:                   "system",
+		NotificationsPerAccount: true,
+		KeepInactiveConnected:   true,
 	}
 }
 

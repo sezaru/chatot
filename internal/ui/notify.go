@@ -32,6 +32,19 @@ func DecodeCallActionParam(param string) (chatJID, callID string, ok bool) {
 // no settings UI yet (mirrors ui.SendReadReceipts).
 var NotificationsEnabled = true
 
+// NotificationsPerAccount, when true, prefixes a toast title with the active
+// account's label once more than one account is linked. Set from settings.
+var NotificationsPerAccount = true
+
+// accountPrefixedTitle prepends "label · " to title when label is non-empty,
+// producing e.g. "Work · Sam Okafor"; an empty label leaves title unchanged.
+func accountPrefixedTitle(title, label string) string {
+	if label == "" {
+		return title
+	}
+	return label + " · " + title
+}
+
 // notifyInput is the GTK-free input to decideNotify, gathered by Notifier
 // from the event, the chat's stored state and the window's live focus.
 type notifyInput struct {
@@ -107,15 +120,38 @@ type Notifier struct {
 	events  <-chan client.Event
 	app     *gio.Application
 	focused func() (focused bool, openJID string)
+	// account reports the active account's label and the number of linked
+	// accounts, for the per-account title prefix. Nil in the single-client
+	// (non-manager) case.
+	account func() (label string, count int)
 }
 
 // NewNotifier starts watching c.Events() in its own goroutine. focused
 // reports the app window's live activation state and the JID of the
-// currently-open chat ("" if none).
-func NewNotifier(c client.Client, app *gio.Application, focused func() (bool, string)) *Notifier {
-	n := &Notifier{c: c, events: c.Events(), app: app, focused: focused}
+// currently-open chat ("" if none). account (may be nil) reports the active
+// account's label and count for the per-account title prefix.
+func NewNotifier(c client.Client, app *gio.Application, focused func() (bool, string), account func() (string, int)) *Notifier {
+	n := &Notifier{c: c, events: c.Events(), app: app, focused: focused, account: account}
 	go n.watchEvents()
 	return n
+}
+
+// accountPrefix returns the active account's label to prefix a toast title
+// with, or "" when the prefix is disabled, there's no account accessor, or only
+// one account is linked.
+//
+// TODO: background-account notifications — the manager only proxies the active
+// account's events, so today only the active account can notify; the prefix
+// therefore always names the active account.
+func (n *Notifier) accountPrefix() string {
+	if !NotificationsPerAccount || n.account == nil {
+		return ""
+	}
+	label, count := n.account()
+	if count <= 1 {
+		return ""
+	}
+	return label
 }
 
 func (n *Notifier) watchEvents() {
@@ -141,6 +177,7 @@ func (n *Notifier) watchEvents() {
 func (n *Notifier) handleMessage(msg client.Message) {
 	name, muted := n.chatInfo(msg.ChatJID)
 	title, body := messageNotification(name, msg)
+	title = accountPrefixedTitle(title, n.accountPrefix())
 	glib.IdleAdd(func() {
 		focused, openJID := n.focused()
 		if !decideNotify(notifyInput{
@@ -162,6 +199,7 @@ func (n *Notifier) handleMessage(msg client.Message) {
 func (n *Notifier) handleCall(call client.Call) {
 	name, _ := n.chatInfo(call.ChatJID)
 	title, body := callNotification(name)
+	title = accountPrefixedTitle(title, n.accountPrefix())
 	glib.IdleAdd(func() {
 		if !decideNotify(notifyInput{Kind: "call", ChatJID: call.ChatJID, Enabled: NotificationsEnabled}) {
 			return
