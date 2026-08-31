@@ -142,8 +142,9 @@ func translateReaction(v *events.Message, r *waProto.ReactionMessage) *Event {
 }
 
 // extractText fills in Text, ReplyTo, Attachment and the rich-kind fields
-// (Location, Contact, Poll) from the leaf proto message, covering plain/quoted
-// text, the common media kinds, (live) locations, contacts and poll creation.
+// (Location, Contact, Poll, Event) from the leaf proto message, covering
+// plain/quoted text, the common media kinds, (live) locations, contacts,
+// poll creation and scheduled events.
 func extractText(m *waProto.Message, msg *Message) {
 	if m == nil {
 		return
@@ -218,6 +219,15 @@ func extractText(m *waProto.Message, msg *Message) {
 			}
 		}
 		ctx = arr.GetContextInfo()
+	case m.GetEventMessage() != nil:
+		ev := m.GetEventMessage()
+		msg.EventInvite = &EventInvite{
+			Name: ev.GetName(), Description: ev.GetDescription(),
+			Location: eventLocationText(ev.GetLocation()),
+			StartTS:  ev.GetStartTime(), EndTS: ev.GetEndTime(),
+			Canceled: ev.GetIsCanceled(),
+		}
+		ctx = ev.GetContextInfo()
 	case m.GetPollCreationMessage() != nil:
 		poll := m.GetPollCreationMessage()
 		opts := poll.GetOptions()
@@ -273,6 +283,21 @@ func parseVCardPhones(vcard string) []string {
 		}
 	}
 	return phones
+}
+
+// eventLocationText renders an event's attached location as a single display
+// string: the name, or "lat, long" when unnamed, or "" when absent entirely.
+func eventLocationText(loc *waProto.LocationMessage) string {
+	if loc == nil {
+		return ""
+	}
+	if name := loc.GetName(); name != "" {
+		return name
+	}
+	if loc.GetDegreesLatitude() == 0 && loc.GetDegreesLongitude() == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%v, %v", loc.GetDegreesLatitude(), loc.GetDegreesLongitude())
 }
 
 // buildVCard renders contact as a minimal vCard 3.0 (FN plus one TEL line per

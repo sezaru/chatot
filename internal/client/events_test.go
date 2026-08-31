@@ -545,6 +545,72 @@ func TestLiveLocationStoreRoundTrip(t *testing.T) {
 	}
 }
 
+func TestTranslateEventMessage(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+			ID:            "EV1",
+		},
+		Message: &waProto.Message{EventMessage: &waE2E.EventMessage{
+			Name:        proto.String("Team offsite"),
+			Description: proto.String("Bring laptops"),
+			Location:    &waE2E.LocationMessage{Name: proto.String("Bletchley Park")},
+			StartTime:   proto.Int64(1735689600),
+			ContextInfo: &waE2E.ContextInfo{StanzaID: proto.String("quoted-id")},
+		}},
+	}
+	e := translate(evt)
+	if e == nil || e.Message == nil || e.Message.EventInvite == nil {
+		t.Fatalf("expected a Message with EventInvite, got %+v", e)
+	}
+	ei := e.Message.EventInvite
+	if ei.Name != "Team offsite" || ei.Description != "Bring laptops" {
+		t.Errorf("name/description = %q/%q", ei.Name, ei.Description)
+	}
+	if ei.Location != "Bletchley Park" {
+		t.Errorf("Location = %q, want Bletchley Park", ei.Location)
+	}
+	if ei.StartTS != 1735689600 {
+		t.Errorf("StartTS = %d, want 1735689600", ei.StartTS)
+	}
+	if ei.Canceled {
+		t.Error("expected Canceled=false")
+	}
+	if e.Message.ReplyTo == nil || e.Message.ReplyTo.MsgID != "quoted-id" {
+		t.Errorf("ReplyTo = %+v, want quoted-id", e.Message.ReplyTo)
+	}
+}
+
+func TestEventStoreRoundTrip(t *testing.T) {
+	m := &Message{
+		ID: "EV1", ChatJID: "a@s.whatsapp.net",
+		EventInvite: &EventInvite{
+			Name: "Team offsite", Description: "Bring laptops", Location: "Bletchley Park",
+			StartTS: 1735689600, EndTS: 1735693200,
+		},
+	}
+	row := storeMessageRow(m)
+	if row.Kind != "event" {
+		t.Fatalf("Kind = %q, want event", row.Kind)
+	}
+	if row.Payload == "" {
+		t.Fatal("expected a non-empty payload")
+	}
+
+	back := messageFromStore(store.Message{
+		ID: row.MsgID, ChatJID: row.ChatJID, Kind: row.Kind, Payload: row.Payload,
+	}, "")
+	if back.EventInvite == nil {
+		t.Fatal("expected EventInvite to decode back")
+	}
+	if back.EventInvite.Name != "Team offsite" || back.EventInvite.Description != "Bring laptops" ||
+		back.EventInvite.Location != "Bletchley Park" ||
+		back.EventInvite.StartTS != 1735689600 || back.EventInvite.EndTS != 1735693200 {
+		t.Errorf("round-trip mismatch: %+v", back.EventInvite)
+	}
+}
+
 func TestTranslateReceipt(t *testing.T) {
 	chat := mustJID(t, "1234567890@s.whatsapp.net")
 	evt := &events.Receipt{

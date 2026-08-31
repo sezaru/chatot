@@ -38,6 +38,8 @@ type bubbleView struct {
 	Contact          contactView
 	IsPoll           bool
 	Poll             pollView
+	IsEvent          bool
+	Event            eventView
 	Edited           bool
 	EditedMarker     string
 	Deleted          bool
@@ -149,6 +151,9 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 	case m.Poll != nil:
 		v.IsPoll = true
 		v.Poll = pollVM(m)
+	case m.EventInvite != nil:
+		v.IsEvent = true
+		v.Event = eventVM(m)
 	case m.Attachment != nil:
 		v.IsMedia = true
 		v.Media = mediaVM(m)
@@ -1032,6 +1037,8 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		bubble.Append(buildContactContent(vm.Contact))
 	} else if vm.IsPoll {
 		bubble.Append(buildPollContent(msg, vm.Poll, onVote))
+	} else if vm.IsEvent {
+		bubble.Append(buildEventContent(vm.Event))
 	} else if vm.IsMedia {
 		bubble.Append(buildMediaContent(msg, vm.Media, c))
 	} else {
@@ -1084,7 +1091,7 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 
 	// Editing is a text-only, own-message affordance (WhatsApp only edits text);
 	// a deleted bubble gets no affordances at all (nothing left to act on).
-	canEdit := !vm.Deleted && msg.FromMe && !vm.IsMedia && !vm.IsLocation && !vm.IsContact && !vm.IsPoll
+	canEdit := !vm.Deleted && msg.FromMe && !vm.IsMedia && !vm.IsLocation && !vm.IsContact && !vm.IsPoll && !vm.IsEvent
 	canDelete := !vm.Deleted && msg.FromMe
 	if !vm.Deleted && (onReply != nil || onReact != nil || (canEdit && onEdit != nil) || (canDelete && onDelete != nil) || onStar != nil || onForward != nil) {
 		bubble.Append(buildBubbleActions(msg, vm, onReply, onReact, onEdit, onDelete, onStar, onForward, toastOverlay, canEdit, canDelete))

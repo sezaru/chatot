@@ -153,6 +153,9 @@ type Message struct {
 	// Forwarded is true once WhatsApp's forwarded flag (ContextInfo.IsForwarded)
 	// was set on this message; drives the "↩ Forwarded" marker.
 	Forwarded bool
+	// EventInvite is non-nil for a scheduled-event message (a calendar-style
+	// invite posted in a chat, typically a group).
+	EventInvite *EventInvite
 }
 
 // Poll is a poll-creation message with its immutable definition (Name,
@@ -194,6 +197,19 @@ type Location struct {
 	Longitude float64
 	IsLive    bool
 	LiveUntil int64
+}
+
+// EventInvite is a scheduled event posted in a chat (WhatsApp's
+// calendar-style invite): a name, an optional description, an optional
+// attached location, and a start time. EndTS is 0 when the event carries
+// none.
+type EventInvite struct {
+	Name        string
+	Description string
+	Location    string
+	StartTS     int64
+	EndTS       int64
+	Canceled    bool
 }
 
 // Contact is a shared vCard. For a ContactsArrayMessage (several people

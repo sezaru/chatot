@@ -239,6 +239,27 @@ window {
 	font-size: 0.85em;
 }
 
+.chatot-event-title {
+	font-weight: bold;
+	color: #1b8c72;
+}
+
+.chatot-event-canceled {
+	color: inherit;
+	opacity: 0.6;
+	text-decoration: line-through;
+}
+
+.chatot-event-when {
+	opacity: 0.85;
+	font-size: 0.9em;
+}
+
+.chatot-event-location {
+	opacity: 0.6;
+	font-size: 0.85em;
+}
+
 .chatot-bubble-time {
 	opacity: 0.5;
 	font-size: 0.7em;

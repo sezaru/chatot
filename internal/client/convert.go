@@ -36,6 +36,17 @@ type pollPayload struct {
 	Selectable int      `json:"selectable,omitempty"`
 }
 
+// eventPayload is the JSON shape stored in a message row's opaque payload
+// when Kind == "event".
+type eventPayload struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Location    string `json:"location,omitempty"`
+	StartTS     int64  `json:"start_ts,omitempty"`
+	EndTS       int64  `json:"end_ts,omitempty"`
+	Canceled    bool   `json:"canceled,omitempty"`
+}
+
 // hashPollOption returns the SHA-256 of an option name, the form WhatsApp
 // transmits votes in and poll_votes stores. Vote tallying matches these
 // against the poll's option names.
@@ -92,6 +103,16 @@ func storeMessageRow(m *Message) store.MessageRow {
 		}
 		if b, err := json.Marshal(pollPayload{
 			Name: m.Poll.Name, Options: names, Selectable: m.Poll.SelectableCount,
+		}); err == nil {
+			row.Payload = string(b)
+		}
+	}
+	if m.EventInvite != nil {
+		row.Kind = "event"
+		if b, err := json.Marshal(eventPayload{
+			Name: m.EventInvite.Name, Description: m.EventInvite.Description,
+			Location: m.EventInvite.Location, StartTS: m.EventInvite.StartTS,
+			EndTS: m.EventInvite.EndTS, Canceled: m.EventInvite.Canceled,
 		}); err == nil {
 			row.Payload = string(b)
 		}
@@ -180,6 +201,14 @@ func messageFromStore(m store.Message, selfJID string) Message {
 		var p pollPayload
 		if err := json.Unmarshal([]byte(m.Payload), &p); err == nil {
 			out.Poll = pollFromStore(p, m.PollVotes, selfJID)
+		}
+	case "event":
+		var p eventPayload
+		if err := json.Unmarshal([]byte(m.Payload), &p); err == nil {
+			out.EventInvite = &EventInvite{
+				Name: p.Name, Description: p.Description, Location: p.Location,
+				StartTS: p.StartTS, EndTS: p.EndTS, Canceled: p.Canceled,
+			}
 		}
 	}
 	return out
