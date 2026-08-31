@@ -30,11 +30,17 @@ func main() {
 	os.Exit(app.Run(os.Args))
 }
 
-// buildClient returns the real whatsmeow-backed client, or the seeded Fake
-// when CHATOT_FAKE=1 (dev/mockup path with no live WhatsApp link).
+// buildClient returns an AccountManager holding one account — the real
+// whatsmeow-backed client, or the seeded Fake when CHATOT_FAKE=1 (dev/mockup
+// path with no live WhatsApp link). The manager is the multi-account seam
+// (F58+); with a single account it behaves exactly like the bare client.
+// Future accounts get $XDG_STATE_HOME/chatot/accounts/<id>/; the "default"
+// account keeps the legacy $XDG_STATE_HOME/chatot path for back-compat.
 func buildClient() client.Client {
+	m := client.NewAccountManager()
 	if os.Getenv("CHATOT_FAKE") == "1" {
-		return client.NewFake()
+		m.AddAccount("default", "Account 1", client.NewFake())
+		return m
 	}
 	stateDir := stateDir()
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
@@ -44,7 +50,12 @@ func buildClient() client.Client {
 	if err != nil {
 		log.Fatalf("chatot: init whatsmeow client: %v", err)
 	}
-	return c
+	name := "Account 1"
+	if jid := c.OwnJID(); jid != "" {
+		name = jid
+	}
+	m.AddAccount("default", name, c)
+	return m
 }
 
 // stateDir resolves $XDG_STATE_HOME/chatot, falling back to
