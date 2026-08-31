@@ -120,3 +120,69 @@ func TestParseParticipantList(t *testing.T) {
 		}
 	}
 }
+
+func TestDisappearingSecondsForIndex(t *testing.T) {
+	cases := []struct {
+		idx  int
+		want int64
+	}{
+		{0, 0},
+		{1, 24 * 60 * 60},
+		{2, 7 * 24 * 60 * 60},
+		{3, 90 * 24 * 60 * 60},
+		{-1, 0},
+		{4, 0},
+	}
+	for _, tc := range cases {
+		if got := disappearingSecondsForIndex(tc.idx); got != tc.want {
+			t.Errorf("disappearingSecondsForIndex(%d) = %d, want %d", tc.idx, got, tc.want)
+		}
+	}
+}
+
+func TestParticipantSelection(t *testing.T) {
+	sel := newParticipantSelection()
+	if sel.Count() != 0 {
+		t.Fatalf("new selection Count = %d, want 0", sel.Count())
+	}
+
+	sel.Add("a@s.whatsapp.net", "Alex")
+	sel.Add("b@s.whatsapp.net", "Mom")
+	sel.Add("a@s.whatsapp.net", "Alex Rivera") // duplicate add is a no-op
+	if got := sel.Count(); got != 2 {
+		t.Errorf("Count after adds = %d, want 2", got)
+	}
+	if !sel.Contains("a@s.whatsapp.net") {
+		t.Error("Contains(a) = false, want true")
+	}
+	if sel.Contains("z@s.whatsapp.net") {
+		t.Error("Contains(z) = true, want false")
+	}
+
+	wantJIDs := []string{"a@s.whatsapp.net", "b@s.whatsapp.net"}
+	if got := sel.JIDs(); len(got) != len(wantJIDs) || got[0] != wantJIDs[0] || got[1] != wantJIDs[1] {
+		t.Errorf("JIDs() = %v, want %v", got, wantJIDs)
+	}
+
+	chips := sel.Chips()
+	if len(chips) != 2 || chips[0].Name != "Alex" || chips[1].Name != "Mom" {
+		t.Errorf("Chips() = %v, want Alex then Mom (first add wins name)", chips)
+	}
+
+	sel.Add("c@s.whatsapp.net", "Priya")
+	sel.Remove("b@s.whatsapp.net")
+	if sel.Contains("b@s.whatsapp.net") {
+		t.Error("Contains(b) after Remove = true, want false")
+	}
+	if got := sel.Count(); got != 2 {
+		t.Errorf("Count after remove = %d, want 2", got)
+	}
+	if got := sel.JIDs(); len(got) != 2 || got[0] != "a@s.whatsapp.net" || got[1] != "c@s.whatsapp.net" {
+		t.Errorf("JIDs() after remove = %v, want [a c]", got)
+	}
+
+	sel.Remove("nonexistent@s.whatsapp.net") // no-op, must not panic or corrupt state
+	if got := sel.Count(); got != 2 {
+		t.Errorf("Count after removing missing jid = %d, want 2", got)
+	}
+}
