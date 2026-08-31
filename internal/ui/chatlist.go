@@ -171,6 +171,7 @@ type ChatList struct {
 	// Account switcher (F58): the header identity is a MenuButton whose popover
 	// lists accounts; switcher is nil until SetAccountSwitcher wires the manager.
 	switcher           AccountSwitcher
+	accountBtn         *gtk.MenuButton // header switcher button; dev-hook popup target
 	accountAvatar      *gtk.Label
 	accountAvatarClass string // current avatar palette class, swapped on active change
 	accountName        *gtk.Label
@@ -305,7 +306,7 @@ func NewChatList(c client.Client) *ChatList {
 		chipRow: chipRow, postStatusBar: postStatusBar, followBar: followBar,
 		search: search, starredT: starredToggle, statusT: statusToggle, channelT: channelsToggle,
 		accountAvatar: accountAvatar, accountAvatarClass: "chatot-account-avatar",
-		accountName: accountName, accountStatus: accountStatus,
+		accountName: accountName, accountStatus: accountStatus, accountBtn: accountBtn,
 	}
 
 	accountBtn.SetCreatePopupFunc(func(mb *gtk.MenuButton) {
@@ -504,6 +505,13 @@ func (cl *ChatList) SetAccountSwitcher(sw AccountSwitcher) {
 
 // OnAddAccountRequested registers f for the switcher's "Add account…" item;
 // STUBBED until F59 builds the add-account flow.
+// PopupAccountSwitcher opens the account switcher popover — a dev/screenshot hook.
+func (cl *ChatList) PopupAccountSwitcher() {
+	if cl.accountBtn != nil {
+		cl.accountBtn.Popup()
+	}
+}
+
 func (cl *ChatList) OnAddAccountRequested(f func()) { cl.onAddAccount = f }
 
 // OnManageAccountsRequested registers f for the switcher's "Manage accounts…"
