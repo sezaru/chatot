@@ -127,6 +127,10 @@ func NewFake() *Fake {
 			Attachment: &Attachment{Kind: "document", Filename: "lease-2026.pdf", MimeType: "application/pdf"}},
 		{ID: "m12", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2300,
 			Text: "Cabin listing — 3 bedrooms: https://stay.example.com/cabin/4412"},
+		// m13 seeds F49's view-once bubble: unopened, so it renders the
+		// "Click to open · closes after viewing" placeholder.
+		{ID: "m13", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2200,
+			Attachment: &Attachment{Kind: "image", MimeType: "image/jpeg", ViewOnce: true}},
 	}
 
 	f.messages[statusBroadcastJID] = []Message{
@@ -730,7 +734,7 @@ func (f *Fake) ChatMedia(jid string) ([]MediaItem, error) {
 	defer f.mu.Unlock()
 	var out []MediaItem
 	for _, m := range f.messages[jid] {
-		if m.Attachment == nil || (m.Attachment.Kind != "image" && m.Attachment.Kind != "video") {
+		if m.Attachment == nil || (m.Attachment.Kind != "image" && m.Attachment.Kind != "video") || m.Attachment.ViewOnce {
 			continue
 		}
 		out = append(out, MediaItem{
@@ -1235,6 +1239,21 @@ func (f *Fake) DownloadMedia(ctx context.Context, msgID string) (string, error) 
 		}
 	}
 	return "", fmt.Errorf("chatot/client: message %q not found for download", msgID)
+}
+
+// MarkViewOnceOpened marks msgID's attachment as viewed, mirroring the store
+// tombstone the real client persists.
+func (f *Fake) MarkViewOnceOpened(ctx context.Context, chatJID, msgID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	msgs := f.messages[chatJID]
+	for i := range msgs {
+		if msgs[i].ID == msgID && msgs[i].Attachment != nil {
+			msgs[i].Attachment.Viewed = true
+			return nil
+		}
+	}
+	return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, chatJID)
 }
 
 // Avatar reports no profile picture for every jid — the mockup has no real

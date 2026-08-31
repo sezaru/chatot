@@ -105,6 +105,26 @@ func TestIngestMessageStoredAndReadable(t *testing.T) {
 	}
 }
 
+func TestIngestViewOnceAttachmentRoundTrips(t *testing.T) {
+	w := newIngestFixture(t)
+	must(t, w.ingestMessage(&Message{
+		ChatJID: "1234567890@s.whatsapp.net", ID: "m1", TS: 10,
+		Attachment: &Attachment{Kind: "image", MimeType: "image/jpeg", ViewOnce: true},
+	}))
+
+	msgs, err := w.store.Messages("1234567890@s.whatsapp.net", 50)
+	must(t, err)
+	if len(msgs) != 1 || msgs[0].Attachment == nil {
+		t.Fatalf("got %+v, want one stored message with an attachment", msgs)
+	}
+	if !msgs[0].Attachment.ViewOnce {
+		t.Fatal("ViewOnce = false, want true to survive the store round trip")
+	}
+	if msgs[0].Attachment.Viewed {
+		t.Fatal("Viewed = true, want false before it's ever opened")
+	}
+}
+
 func TestIngestReadReceiptClearsUnread(t *testing.T) {
 	w := newIngestFixture(t)
 	must(t, w.ingestMessage(&Message{ChatJID: "1234567890@s.whatsapp.net", ID: "m1", Text: "hi", TS: 10, FromMe: false}))

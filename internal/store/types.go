@@ -81,6 +81,10 @@ type Attachment struct {
 	Thumbnail []byte
 	// IsGif marks a video message WhatsApp flags gifPlayback (looped, muted).
 	IsGif bool
+	// ViewOnce marks media WhatsApp flags viewOnce (openable exactly once).
+	ViewOnce bool
+	// Viewed is true once a ViewOnce attachment has been opened locally.
+	Viewed bool
 }
 
 // SearchHit is a single Search result: either a message match (MsgID set,
@@ -182,4 +186,8 @@ type MediaRow struct {
 	Thumbnail []byte
 	// IsGif marks a video message WhatsApp flags gifPlayback (looped, muted).
 	IsGif bool
+	// ViewOnce marks media WhatsApp flags viewOnce (openable exactly once).
+	ViewOnce bool
+	// Viewed is true once a ViewOnce attachment has been opened locally.
+	Viewed bool
 }

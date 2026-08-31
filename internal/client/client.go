@@ -283,6 +283,13 @@ type Attachment struct {
 	// looped and muted. Inline looping playback is deferred (F37 ships only
 	// the badge); this just tags the kind.
 	IsGIF bool
+	// ViewOnce marks media WhatsApp flags viewOnce: it may be opened exactly
+	// once before it's considered spent. Never set outbound.
+	ViewOnce bool
+	// Viewed is true once a ViewOnce attachment has been opened locally; a
+	// spent attachment renders a tombstone-style placeholder and can't be
+	// re-downloaded through the UI.
+	Viewed bool
 }
 
 // MediaItem is one image/video attachment in a chat, for the media/links/docs
@@ -526,6 +533,9 @@ type Client interface {
 
 	// media
 	DownloadMedia(ctx context.Context, msgID string) (localPath string, err error)
+	// MarkViewOnceOpened marks msgID's view-once attachment as viewed, a
+	// local-only tombstone: once set, the UI never re-offers it for opening.
+	MarkViewOnceOpened(ctx context.Context, chatJID, msgID string) error
 	// Avatar resolves jid's profile picture to a local cached file path,
 	// fetching it on first use. Returns ("", nil) if there's no picture (or
 	// it's not visible to us) — that's normal, not an error.

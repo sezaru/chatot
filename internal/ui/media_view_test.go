@@ -141,6 +141,42 @@ func TestChipLabel_NoGIFSuffix(t *testing.T) {
 	}
 }
 
+func TestMediaVM_ViewOnce(t *testing.T) {
+	m := client.Message{
+		ID:         "1",
+		Attachment: &client.Attachment{Kind: "image", ViewOnce: true},
+	}
+	out := mediaVM(m)
+	if !out.ViewOnce || out.Viewed {
+		t.Errorf("got ViewOnce=%v Viewed=%v, want ViewOnce=true Viewed=false", out.ViewOnce, out.Viewed)
+	}
+}
+
+func TestViewOnceRenderState(t *testing.T) {
+	cases := []struct {
+		name               string
+		isViewOnce, viewed bool
+		wantTitle, wantSub string
+		wantSpent          bool
+	}{
+		{"not view-once", false, false, "", "", false},
+		{"unopened", true, false, "view once", "Click to open · closes after viewing", false},
+		{"opened", true, true, "opened", "Opened", true},
+		// A viewed=true attachment that somehow isn't view-once shouldn't happen
+		// in practice, but the selector should still treat isViewOnce as the gate.
+		{"viewed but not view-once", false, true, "", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			title, sub, spent := viewOnceRenderState(tc.isViewOnce, tc.viewed)
+			if title != tc.wantTitle || sub != tc.wantSub || spent != tc.wantSpent {
+				t.Errorf("viewOnceRenderState(%v, %v) = (%q, %q, %v), want (%q, %q, %v)",
+					tc.isViewOnce, tc.viewed, title, sub, spent, tc.wantTitle, tc.wantSub, tc.wantSpent)
+			}
+		})
+	}
+}
+
 func TestInlineable(t *testing.T) {
 	for _, kind := range []string{"image", "video", "sticker", "audio"} {
 		if !inlineable(kind) {
