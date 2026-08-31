@@ -281,6 +281,9 @@ func activate(app *adw.Application, c client.Client) {
 			ui.ShowMediaPage(&win.Window, c, jid, chatNameFor(c, jid))
 		}
 	}
+	if os.Getenv("CHATOT_SHOT_PREFS") == "1" {
+		ui.ShowPreferences(&win.Window, &prefs, func(updated settings.Settings) { prefs = updated })
+	}
 }
 
 // applySettings pushes a loaded Settings into the live package vars/state
