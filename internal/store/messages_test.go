@@ -114,6 +114,42 @@ func TestMessagesMediaGifFlagRoundTrips(t *testing.T) {
 	}
 }
 
+func TestMessagesMediaViewOnceRoundTripsAndSetMediaViewedIsSticky(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", TS: 1}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Kind: "image", MimeType: "image/jpeg", ViewOnce: true}))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if msgs[0].Attachment == nil || !msgs[0].Attachment.ViewOnce || msgs[0].Attachment.Viewed {
+		t.Fatalf("got %+v, want ViewOnce=true Viewed=false", msgs[0].Attachment)
+	}
+
+	must(t, s.SetMediaViewed("a@s.whatsapp.net", "m1"))
+
+	msgs, err = s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if !msgs[0].Attachment.Viewed {
+		t.Fatalf("got %+v, want Viewed=true after SetMediaViewed", msgs[0].Attachment)
+	}
+
+	row, ok, err := s.MediaByMsgID("m1")
+	must(t, err)
+	if !ok || !row.ViewOnce || !row.Viewed {
+		t.Fatalf("MediaByMsgID = %+v ok=%v, want ViewOnce=true Viewed=true", row, ok)
+	}
+
+	// A re-upsert (e.g. a retried decrypt refreshing the row) must not
+	// clobber the sticky viewed flag back to unset.
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Kind: "image", MimeType: "image/jpeg", ViewOnce: true}))
+	row, ok, err = s.MediaByMsgID("m1")
+	must(t, err)
+	if !ok || !row.Viewed {
+		t.Fatalf("MediaByMsgID after re-upsert = %+v ok=%v, want Viewed still true", row, ok)
+	}
+}
+
 func TestMessagesBeforePagesOlderInChronologicalOrder(t *testing.T) {
 	s := newTestStore(t)
 	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))

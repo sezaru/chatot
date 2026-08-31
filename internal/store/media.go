@@ -14,8 +14,8 @@ func (s *Store) UpsertMedia(row MediaRow) error {
 		thumb = row.Thumbnail
 	}
 	_, err := s.db.Exec(`
-		INSERT INTO media(chat_jid, msg_id, kind, filename, caption, mime_type, local_path, proto_blob, thumbnail, is_gif)
-		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?)
+		INSERT INTO media(chat_jid, msg_id, kind, filename, caption, mime_type, local_path, proto_blob, thumbnail, is_gif, view_once)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?)
 		ON CONFLICT(chat_jid, msg_id) DO UPDATE SET
 			kind = excluded.kind,
 			filename = COALESCE(excluded.filename, media.filename),
@@ -24,8 +24,9 @@ func (s *Store) UpsertMedia(row MediaRow) error {
 			local_path = COALESCE(excluded.local_path, media.local_path),
 			proto_blob = COALESCE(excluded.proto_blob, media.proto_blob),
 			thumbnail = COALESCE(excluded.thumbnail, media.thumbnail),
-			is_gif = excluded.is_gif
-	`, row.ChatJID, row.MsgID, row.Kind, row.Filename, row.Caption, row.MimeType, row.LocalPath, blob, thumb, boolToInt(row.IsGif))
+			is_gif = excluded.is_gif,
+			view_once = excluded.view_once
+	`, row.ChatJID, row.MsgID, row.Kind, row.Filename, row.Caption, row.MimeType, row.LocalPath, blob, thumb, boolToInt(row.IsGif), boolToInt(row.ViewOnce))
 	return err
 }
 
@@ -36,13 +37,13 @@ func (s *Store) UpsertMedia(row MediaRow) error {
 func (s *Store) MediaByMsgID(msgID string) (row MediaRow, ok bool, err error) {
 	r := s.db.QueryRow(`
 		SELECT chat_jid, msg_id, kind, COALESCE(filename, ''), COALESCE(caption, ''),
-			COALESCE(mime_type, ''), COALESCE(local_path, ''), proto_blob, thumbnail, is_gif
+			COALESCE(mime_type, ''), COALESCE(local_path, ''), proto_blob, thumbnail, is_gif, view_once, viewed
 		FROM media WHERE msg_id = ? LIMIT 1
 	`, msgID)
 	var blob, thumb []byte
-	var isGif int
+	var isGif, viewOnce, viewed int
 	if err := r.Scan(&row.ChatJID, &row.MsgID, &row.Kind, &row.Filename, &row.Caption,
-		&row.MimeType, &row.LocalPath, &blob, &thumb, &isGif); err != nil {
+		&row.MimeType, &row.LocalPath, &blob, &thumb, &isGif, &viewOnce, &viewed); err != nil {
 		if err == sql.ErrNoRows {
 			return MediaRow{}, false, nil
 		}
@@ -51,7 +52,16 @@ func (s *Store) MediaByMsgID(msgID string) (row MediaRow, ok bool, err error) {
 	row.ProtoBlob = blob
 	row.Thumbnail = thumb
 	row.IsGif = isGif != 0
+	row.ViewOnce = viewOnce != 0
+	row.Viewed = viewed != 0
 	return row, true, nil
+}
+
+// SetMediaViewed marks a view-once attachment as opened; once set it's
+// permanent — the UI never re-offers it for opening.
+func (s *Store) SetMediaViewed(chatJID, msgID string) error {
+	_, err := s.db.Exec(`UPDATE media SET viewed = 1 WHERE chat_jid = ? AND msg_id = ?`, chatJID, msgID)
+	return err
 }
 
 // SetMediaProtoBlob overwrites a media row's proto descriptor, used after a

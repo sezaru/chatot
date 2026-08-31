@@ -141,5 +141,9 @@ CREATE TABLE IF NOT EXISTS media (
     thumbnail BLOB,
     -- true for a video message WhatsApp flags gifPlayback (looped, muted).
     is_gif INTEGER NOT NULL DEFAULT 0,
+    -- true for media WhatsApp flags viewOnce (openable exactly once).
+    view_once INTEGER NOT NULL DEFAULT 0,
+    -- true once a view_once attachment has been opened locally.
+    viewed INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat_jid, msg_id)
 );

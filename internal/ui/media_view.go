@@ -24,6 +24,8 @@ type mediaView struct {
 	HasThumbnail bool
 	Thumbnail    []byte
 	IsGIF        bool
+	ViewOnce     bool
+	Viewed       bool
 }
 
 // mediaVM derives the media view-model for m. HasLocal requires both a
@@ -37,7 +39,7 @@ func mediaVM(m client.Message) mediaView {
 		return mediaView{}
 	}
 	a := *m.Attachment
-	v := mediaView{IsMedia: true, Kind: a.Kind, Chip: mediaChip(a), IsGIF: a.IsGIF}
+	v := mediaView{IsMedia: true, Kind: a.Kind, Chip: mediaChip(a), IsGIF: a.IsGIF, ViewOnce: a.ViewOnce, Viewed: a.Viewed}
 	if a.LocalPath != "" {
 		if info, err := os.Stat(a.LocalPath); err == nil && !info.IsDir() {
 			v.HasLocal = true
@@ -70,6 +72,11 @@ func inlineable(kind string) bool {
 // flips to an "open" affordance (document).
 func buildMediaContent(msg client.Message, mv mediaView, c client.Client) gtk.Widgetter {
 	slot := gtk.NewBox(gtk.OrientationVertical, 0)
+
+	if mv.ViewOnce {
+		slot.Append(buildViewOnceContent(msg, mv, c, slot))
+		return slot
+	}
 
 	if mv.HasLocal && inlineable(mv.Kind) {
 		widget := inlineMediaWidget(mv)
@@ -149,6 +156,109 @@ func withGIFBadge(widget gtk.Widgetter) gtk.Widgetter {
 	overlay.SetChild(widget)
 	overlay.AddOverlay(gifBadge())
 	return overlay
+}
+
+// viewOnceRenderState is the pure placeholder-text/state selector for a
+// view-once attachment: unopened shows the "click to open" invite, opened
+// shows a spent tombstone that can never be reopened.
+func viewOnceRenderState(isViewOnce, viewed bool) (title, subtitle string, spent bool) {
+	if !isViewOnce {
+		return "", "", false
+	}
+	if viewed {
+		return "opened", "Opened", true
+	}
+	return "view once", "Click to open · closes after viewing", false
+}
+
+// viewOnceNoun/viewOnceIcon label a view-once bubble by attachment kind;
+// only image and video ever carry WhatsApp's viewOnce flag.
+func viewOnceNoun(kind string) string {
+	if kind == "video" {
+		return "Video"
+	}
+	return "Photo"
+}
+
+func viewOnceIcon(kind string) string {
+	if kind == "video" {
+		return "🎥"
+	}
+	return "📷"
+}
+
+// buildViewOnceContent renders a view-once attachment's placeholder bubble.
+// Unopened, it's a clickable button that downloads the media, marks it
+// viewed, and replaces itself with the spent tombstone; once viewed (either
+// this run or restored from the store) it renders that tombstone directly
+// and is never clickable again.
+func buildViewOnceContent(msg client.Message, mv mediaView, c client.Client, slot *gtk.Box) gtk.Widgetter {
+	state := mv
+	if state.Viewed {
+		return viewOnceTombstone(state)
+	}
+
+	title, subtitle, _ := viewOnceRenderState(state.ViewOnce, state.Viewed)
+	body := gtk.NewBox(gtk.OrientationVertical, 2)
+	body.AddCSSClass("chatot-viewonce")
+	label := gtk.NewLabel(viewOnceIcon(state.Kind) + " " + viewOnceNoun(state.Kind) + " · " + title)
+	label.AddCSSClass("chatot-viewonce-title")
+	label.SetHAlign(gtk.AlignStart)
+	sub := gtk.NewLabel(subtitle)
+	sub.AddCSSClass("chatot-viewonce-subtitle")
+	sub.SetHAlign(gtk.AlignStart)
+	body.Append(label)
+	body.Append(sub)
+
+	btn := gtk.NewButton()
+	btn.SetChild(body)
+	btn.AddCSSClass("flat")
+	btn.ConnectClicked(func() { onViewOnceClicked(&state, msg, c, slot, btn) })
+	return btn
+}
+
+// viewOnceTombstone renders the permanent spent placeholder for an opened
+// view-once attachment.
+func viewOnceTombstone(mv mediaView) gtk.Widgetter {
+	_, subtitle, _ := viewOnceRenderState(true, true)
+	body := gtk.NewBox(gtk.OrientationVertical, 2)
+	body.AddCSSClass("chatot-viewonce")
+	body.AddCSSClass("chatot-viewonce-spent")
+	label := gtk.NewLabel(viewOnceIcon(mv.Kind) + " " + viewOnceNoun(mv.Kind) + " · opened")
+	label.AddCSSClass("chatot-viewonce-title")
+	label.SetHAlign(gtk.AlignStart)
+	sub := gtk.NewLabel(subtitle)
+	sub.AddCSSClass("chatot-viewonce-subtitle")
+	sub.SetHAlign(gtk.AlignStart)
+	body.Append(label)
+	body.Append(sub)
+	return body
+}
+
+// onViewOnceClicked opens a view-once attachment exactly once: downloads it,
+// marks it viewed in the store, then swaps the button for the spent
+// tombstone regardless of whether the caller ever does anything with the
+// downloaded path (opening it is left to the desktop default app).
+func onViewOnceClicked(mv *mediaView, msg client.Message, c client.Client, slot *gtk.Box, btn *gtk.Button) {
+	btn.SetSensitive(false)
+	go func() {
+		path, err := c.DownloadMedia(context.Background(), msg.ID)
+		if err == nil {
+			err = c.MarkViewOnceOpened(context.Background(), msg.ChatJID, msg.ID)
+		}
+		glib.IdleAdd(func() {
+			if err != nil {
+				btn.SetSensitive(true)
+				return
+			}
+			mv.HasLocal = true
+			mv.LocalPath = path
+			mv.Viewed = true
+			slot.Remove(btn)
+			slot.Append(viewOnceTombstone(*mv))
+			openFile(path)
+		})
+	}()
 }
 
 // onThumbnailClicked downloads the full attachment and swaps the thumbnail

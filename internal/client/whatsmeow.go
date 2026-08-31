@@ -1595,6 +1595,13 @@ func (w *Whatsmeow) DownloadMedia(ctx context.Context, msgID string) (string, er
 	return path, nil
 }
 
+// MarkViewOnceOpened records that a view-once attachment has been opened.
+// This is a local-only tombstone (WhatsApp doesn't sync it via app-state);
+// once set the UI never re-offers the attachment for opening.
+func (w *Whatsmeow) MarkViewOnceOpened(ctx context.Context, chatJID, msgID string) error {
+	return w.store.SetMediaViewed(chatJID, msgID)
+}
+
 // decodeDownloadable reconstructs the concrete waE2E media message proto
 // from its stashed bytes. It must be the concrete type (not a hand-rolled
 // struct satisfying whatsmeow.DownloadableMessage): whatsmeow.Client.Download

@@ -206,6 +206,26 @@ window {
 	border-radius: 4px;
 }
 
+.chatot-viewonce {
+	padding: 4px 2px;
+	min-width: 160px;
+}
+
+.chatot-viewonce-title {
+	font-weight: bold;
+	color: #1b8c72;
+}
+
+.chatot-viewonce-spent .chatot-viewonce-title {
+	color: inherit;
+	opacity: 0.6;
+}
+
+.chatot-viewonce-subtitle {
+	opacity: 0.6;
+	font-size: 0.85em;
+}
+
 .chatot-location-title {
 	font-weight: bold;
 }

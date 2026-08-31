@@ -41,7 +41,7 @@ func (s *Store) ChatMedia(jid string) ([]MediaItem, error) {
 	rows, err := s.db.Query(`
 		SELECT md.msg_id, md.kind, COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, m.ts
 		FROM media md JOIN messages m ON m.chat_jid = md.chat_jid AND m.msg_id = md.msg_id
-		WHERE md.chat_jid = ? AND md.kind IN ('image', 'video') AND m.deleted = 0
+		WHERE md.chat_jid = ? AND md.kind IN ('image', 'video') AND m.deleted = 0 AND md.view_once = 0
 		ORDER BY m.ts DESC, m.rowid DESC
 	`, jid)
 	if err != nil {
