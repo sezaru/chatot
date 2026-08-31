@@ -610,8 +610,8 @@ func NewConversationView(c client.Client) *ConversationView {
 	factory.ConnectSetup(func(obj *glib.Object) {
 		item := obj.Cast().(*gtk.ListItem)
 		row := gtk.NewBox(gtk.OrientationVertical, 0)
-		row.SetMarginStart(8)
-		row.SetMarginEnd(8)
+		row.SetMarginStart(20)
+		row.SetMarginEnd(20)
 		item.SetChild(row)
 	})
 	factory.ConnectBind(func(obj *glib.Object) {

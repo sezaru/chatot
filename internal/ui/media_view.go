@@ -8,6 +8,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 
 	"chatot/internal/client"
 )
@@ -19,6 +20,7 @@ type mediaView struct {
 	IsMedia      bool
 	Kind         string
 	Chip         string
+	Caption      string // caption text or filename, without the "[kind]" prefix
 	HasLocal     bool
 	LocalPath    string
 	HasThumbnail bool
@@ -39,7 +41,11 @@ func mediaVM(m client.Message) mediaView {
 		return mediaView{}
 	}
 	a := *m.Attachment
-	v := mediaView{IsMedia: true, Kind: a.Kind, Chip: mediaChip(a), IsGIF: a.IsGIF, ViewOnce: a.ViewOnce, Viewed: a.Viewed}
+	caption := a.Caption
+	if caption == "" {
+		caption = a.Filename
+	}
+	v := mediaView{IsMedia: true, Kind: a.Kind, Chip: mediaChip(a), Caption: caption, IsGIF: a.IsGIF, ViewOnce: a.ViewOnce, Viewed: a.Viewed}
 	if a.LocalPath != "" {
 		if info, err := os.Stat(a.LocalPath); err == nil && !info.IsDir() {
 			v.HasLocal = true
@@ -86,54 +92,221 @@ func buildMediaContent(msg client.Message, mv mediaView, c client.Client) gtk.Wi
 		slot.Append(widget)
 		return slot
 	}
-
-	if mv.HasThumbnail {
-		if texture, err := gdk.NewTextureFromBytes(glib.NewBytesWithGo(mv.Thumbnail)); err == nil {
-			slot.Append(buildThumbnailContent(texture, msg, mv, c, slot))
-			return slot
-		}
+	if mv.HasLocal { // downloaded document → "Open" row
+		slot.Append(buildDocumentOpenRow(mv))
+		return slot
 	}
 
+	// Not downloaded. Per the mockup's attachment-load states: image/video are a
+	// hatched 280×115 tile with a centred green ⬇ circle (or the embedded
+	// thumbnail with that circle overlaid); audio/document are a compact row
+	// with a small ⬇ circle and a two-line label.
 	state := mv
-	btn := gtk.NewButtonWithLabel(chipLabel(state))
-	btn.AddCSSClass("flat")
-	btn.AddCSSClass("chatot-bubble-media")
-	btn.ConnectClicked(func() { onMediaChipClicked(&state, msg, c, slot, btn) })
-	slot.Append(btn)
+	if isVisualKind(mv.Kind) {
+		slot.Append(buildAttachmentTile(&state, msg, c, slot))
+		return slot
+	}
+	slot.Append(buildMediaRow(&state, msg, c, slot))
 	return slot
 }
 
-// buildThumbnailContent renders the embedded low-res preview as a Picture
-// with a small "tap to load" button overlaid, so the message reads
-// instantly instead of showing a bare chip while the full media downloads.
-func buildThumbnailContent(texture *gdk.Texture, msg client.Message, mv mediaView, c client.Client, slot *gtk.Box) gtk.Widgetter {
-	size := 280
-	height := 200
+// isVisualKind reports whether the attachment renders as a picture-shaped tile
+// (image/video/sticker) rather than a document/voice row.
+func isVisualKind(kind string) bool {
+	return kind == "image" || kind == "video" || kind == "sticker"
+}
+
+// buildMediaTile is the image/video not-downloaded state: the embedded
+// thumbnail if we have one, else a diagonal-hatch placeholder, with a green
+// download circle centred on it. Clicking anywhere downloads and swaps to the
+// inline widget.
+func buildAttachmentTile(mv *mediaView, msg client.Message, c client.Client, slot *gtk.Box) gtk.Widgetter {
+	w, h := 280, 158
 	if mv.Kind == "sticker" {
-		size, height = stickerRenderSize, stickerRenderSize
+		w, h = stickerRenderSize, stickerRenderSize
 	}
-	pic := gtk.NewPictureForPaintable(texture)
-	pic.SetCanShrink(true)
-	pic.SetContentFit(gtk.ContentFitCover)
-	pic.SetSizeRequest(size, height)
 
 	overlay := gtk.NewOverlay()
-	overlay.SetChild(pic)
+	if mv.HasThumbnail {
+		if texture, err := gdk.NewTextureFromBytes(glib.NewBytesWithGo(mv.Thumbnail)); err == nil {
+			pic := gtk.NewPictureForPaintable(texture)
+			pic.SetCanShrink(true)
+			pic.SetContentFit(gtk.ContentFitCover)
+			pic.SetSizeRequest(w, h)
+			pic.AddCSSClass("chatot-media-tile")
+			overlay.SetChild(pic)
+		}
+	}
+	if overlay.Child() == nil {
+		hatch := gtk.NewBox(gtk.OrientationVertical, 7)
+		hatch.AddCSSClass("chatot-media-hatch")
+		hatch.SetSizeRequest(w, h)
+		caption := gtk.NewLabel(mediaIcon(mv.Kind) + "  " + mediaNoun(mv.Kind))
+		caption.AddCSSClass("chatot-media-caption")
+		caption.SetVAlign(gtk.AlignEnd)
+		caption.SetHAlign(gtk.AlignCenter)
+		caption.SetMarginBottom(10)
+		hatch.Append(caption)
+		overlay.SetChild(hatch)
+	}
 
-	btn := gtk.NewButtonWithLabel("⬇ tap to load")
-	btn.AddCSSClass("flat")
-	btn.AddCSSClass("chatot-bubble-media")
-	btn.SetHAlign(gtk.AlignCenter)
-	btn.SetVAlign(gtk.AlignCenter)
-	overlay.AddOverlay(btn)
-
+	circle := mediaDownloadCircle(true)
+	circle.SetHAlign(gtk.AlignCenter)
+	circle.SetVAlign(gtk.AlignCenter)
+	overlay.AddOverlay(circle)
 	if mv.IsGIF {
 		overlay.AddOverlay(gifBadge())
 	}
 
-	state := mv
-	btn.ConnectClicked(func() { onThumbnailClicked(&state, msg, c, slot, overlay, btn) })
+	click := gtk.NewGestureClick()
+	click.ConnectReleased(func(int, float64, float64) { downloadAndSwap(mv, msg, c, slot, overlay, circle) })
+	overlay.AddController(click)
 	return overlay
+}
+
+// buildMediaRow is the audio/document not-downloaded state: a small green ⬇
+// circle plus a two-line label (noun/filename over "Click to download").
+func buildMediaRow(mv *mediaView, msg client.Message, c client.Client, slot *gtk.Box) gtk.Widgetter {
+	row := gtk.NewBox(gtk.OrientationHorizontal, 10)
+	row.AddCSSClass("chatot-media-row")
+
+	circle := mediaDownloadCircle(false)
+	circle.SetVAlign(gtk.AlignCenter)
+	row.Append(circle)
+
+	col := gtk.NewBox(gtk.OrientationVertical, 2)
+	col.SetVAlign(gtk.AlignCenter)
+	title := gtk.NewLabel(mediaRowTitle(*mv))
+	title.SetXAlign(0)
+	title.AddCSSClass("chatot-media-row-title")
+	sub := gtk.NewLabel("Click to download")
+	sub.SetXAlign(0)
+	sub.AddCSSClass("chatot-media-row-sub")
+	col.Append(title)
+	col.Append(sub)
+	row.Append(col)
+
+	click := gtk.NewGestureClick()
+	click.ConnectReleased(func(int, float64, float64) { downloadAndSwap(mv, msg, c, slot, row, circle) })
+	row.AddController(click)
+	return row
+}
+
+// mediaRowTitle labels a voice/document row — the filename for documents, the
+// plain noun for voice notes.
+func mediaRowTitle(mv mediaView) string {
+	if mv.Kind == "document" && mv.Caption != "" {
+		return mediaIcon(mv.Kind) + "  " + mv.Caption
+	}
+	return mediaIcon(mv.Kind) + "  " + mediaNoun(mv.Kind)
+}
+
+// buildDocumentOpenRow is the downloaded-document state: a 📄 + filename with
+// an "Open" button, per the mockup.
+func buildDocumentOpenRow(mv mediaView) gtk.Widgetter {
+	row := gtk.NewBox(gtk.OrientationHorizontal, 9)
+	row.AddCSSClass("chatot-media-row")
+
+	icon := gtk.NewLabel("📄")
+	row.Append(icon)
+
+	name := mv.Caption
+	if name == "" {
+		name = mediaNoun(mv.Kind)
+	}
+	label := gtk.NewLabel(name)
+	label.SetXAlign(0)
+	label.SetHExpand(true)
+	label.SetEllipsize(pango.EllipsizeMiddle)
+	row.Append(label)
+
+	open := gtk.NewButtonWithLabel("Open")
+	open.AddCSSClass("chatot-media-open")
+	open.SetVAlign(gtk.AlignCenter)
+	open.ConnectClicked(func() { openFile(mv.LocalPath) })
+	row.Append(open)
+	return row
+}
+
+// downloadAndSwap downloads msg's media off the main loop and, on success,
+// replaces `current` in slot with the inline widget (image/video/audio) or the
+// document "Open" row; on failure it swaps in a click-to-retry state.
+func downloadAndSwap(mv *mediaView, msg client.Message, c client.Client, slot *gtk.Box, current gtk.Widgetter, circle *gtk.Label) {
+	circle.SetText("…")
+	go func() {
+		path, err := c.DownloadMedia(context.Background(), msg.ID)
+		glib.IdleAdd(func() {
+			if err != nil {
+				slot.Remove(current)
+				slot.Append(buildMediaRetry(mv, msg, c, slot))
+				return
+			}
+			mv.HasLocal = true
+			mv.LocalPath = path
+			slot.Remove(current)
+			switch {
+			case inlineable(mv.Kind):
+				w := inlineMediaWidget(*mv)
+				if mv.IsGIF {
+					w = withGIFBadge(w)
+				}
+				slot.Append(w)
+			default:
+				slot.Append(buildDocumentOpenRow(*mv))
+			}
+		})
+	}()
+}
+
+// buildMediaRetry is the failed-download state: a red ↻ circle with a
+// "Download failed · click to retry" row.
+func buildMediaRetry(mv *mediaView, msg client.Message, c client.Client, slot *gtk.Box) gtk.Widgetter {
+	row := gtk.NewBox(gtk.OrientationHorizontal, 10)
+	row.AddCSSClass("chatot-media-row")
+
+	circle := gtk.NewLabel("↻")
+	circle.AddCSSClass("chatot-media-dl")
+	circle.AddCSSClass("chatot-media-dl-sm")
+	circle.AddCSSClass("chatot-media-dl-fail")
+	circle.SetVAlign(gtk.AlignCenter)
+	row.Append(circle)
+
+	col := gtk.NewBox(gtk.OrientationVertical, 2)
+	col.SetVAlign(gtk.AlignCenter)
+	title := gtk.NewLabel(mediaRowTitle(*mv))
+	title.SetXAlign(0)
+	title.AddCSSClass("chatot-media-row-title")
+	sub := gtk.NewLabel("Download failed · click to retry")
+	sub.SetXAlign(0)
+	sub.AddCSSClass("chatot-media-row-fail")
+	col.Append(title)
+	col.Append(sub)
+	row.Append(col)
+
+	click := gtk.NewGestureClick()
+	click.ConnectReleased(func(int, float64, float64) {
+		slot.Remove(row)
+		if isVisualKind(mv.Kind) {
+			slot.Append(buildAttachmentTile(mv, msg, c, slot))
+		} else {
+			slot.Append(buildMediaRow(mv, msg, c, slot))
+		}
+	})
+	row.AddController(click)
+	return row
+}
+
+// mediaDownloadCircle is the green ⬇ disc overlaid on / leading an
+// undownloaded attachment (large = 38px tile centre, small = 28px row).
+func mediaDownloadCircle(large bool) *gtk.Label {
+	g := gtk.NewLabel("⬇")
+	g.AddCSSClass("chatot-media-dl")
+	if large {
+		g.AddCSSClass("chatot-media-dl-lg")
+	} else {
+		g.AddCSSClass("chatot-media-dl-sm")
+	}
+	return g
 }
 
 // gifBadge builds the small green "GIF" chip overlaid on a GIF attachment's
@@ -261,45 +434,40 @@ func onViewOnceClicked(mv *mediaView, msg client.Message, c client.Client, slot 
 	}()
 }
 
-// onThumbnailClicked downloads the full attachment and swaps the thumbnail
-// overlay for the inline widget (or, for non-inlineable kinds like
-// documents, a normal downloaded chip that opens the file on click).
-func onThumbnailClicked(mv *mediaView, msg client.Message, c client.Client, slot *gtk.Box, overlay *gtk.Overlay, btn *gtk.Button) {
-	btn.SetSensitive(false)
-	btn.SetLabel("Loading…")
-	go func() {
-		path, err := c.DownloadMedia(context.Background(), msg.ID)
-		glib.IdleAdd(func() {
-			if err != nil {
-				btn.SetSensitive(true)
-				btn.SetLabel("⬇ tap to load (failed)")
-				return
-			}
-			mv.HasLocal = true
-			mv.LocalPath = path
-			slot.Remove(overlay)
-			if inlineable(mv.Kind) {
-				slot.Append(inlineMediaWidget(*mv))
-				return
-			}
-			openBtn := gtk.NewButtonWithLabel(chipLabel(*mv))
-			openBtn.AddCSSClass("flat")
-			openBtn.AddCSSClass("chatot-bubble-media")
-			openBtn.ConnectClicked(func() { openFile(mv.LocalPath) })
-			slot.Append(openBtn)
-		})
-	}()
+// mediaNoun / mediaIcon give an uncached attachment a human label + glyph
+// (matching the mockup's attachment-load states) instead of a raw "[video]".
+func mediaNoun(kind string) string {
+	switch kind {
+	case "video":
+		return "Video"
+	case "image":
+		return "Photo"
+	case "document":
+		return "Document"
+	case "audio":
+		return "Voice message"
+	case "sticker":
+		return "Sticker"
+	default:
+		return "Attachment"
+	}
 }
 
-func chipLabel(mv mediaView) string {
-	label := mv.Chip
-	if !mv.HasLocal {
-		label = "⬇ " + label
+func mediaIcon(kind string) string {
+	switch kind {
+	case "video":
+		return "🎥"
+	case "image":
+		return "📷"
+	case "document":
+		return "📄"
+	case "audio":
+		return "🎤"
+	case "sticker":
+		return "🩹"
+	default:
+		return "📎"
 	}
-	if mv.IsGIF {
-		label += "  GIF"
-	}
-	return label
 }
 
 // stickerRenderSize is the mockup's bare-sticker footprint: no bubble, no
@@ -332,35 +500,6 @@ func inlineMediaWidget(mv mediaView) gtk.Widgetter {
 	p.SetContentFit(gtk.ContentFitContain)
 	p.SetSizeRequest(280, 200)
 	return p
-}
-
-// onMediaChipClicked handles a click on the media chip: if already
-// downloaded it opens the file with the desktop default app; otherwise it
-// downloads in the background and applies the result on the GTK main loop.
-func onMediaChipClicked(mv *mediaView, msg client.Message, c client.Client, slot *gtk.Box, btn *gtk.Button) {
-	if mv.HasLocal {
-		openFile(mv.LocalPath)
-		return
-	}
-	btn.SetSensitive(false)
-	go func() {
-		path, err := c.DownloadMedia(context.Background(), msg.ID)
-		glib.IdleAdd(func() {
-			btn.SetSensitive(true)
-			if err != nil {
-				btn.SetLabel(mv.Chip + " (failed)")
-				return
-			}
-			mv.HasLocal = true
-			mv.LocalPath = path
-			if inlineable(mv.Kind) {
-				slot.Remove(btn)
-				slot.Append(inlineMediaWidget(*mv))
-				return
-			}
-			btn.SetLabel(chipLabel(*mv))
-		})
-	}()
 }
 
 // openFile launches path with the desktop's default application for it.

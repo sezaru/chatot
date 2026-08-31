@@ -192,9 +192,71 @@ window {
 	border-left-color: alpha(currentColor, 0.6);
 }
 
-.chatot-bubble-media {
-	font-style: italic;
-	opacity: 0.85;
+/* Attachment load states (mockup 1f). Uncached image/video = a diagonal-hatch
+   tile with a centred green download disc; audio/document = a compact row. */
+.chatot-media-tile {
+	border-radius: 10px;
+}
+
+.chatot-media-hatch {
+	border-radius: 10px;
+	background-color: alpha(currentColor, 0.08);
+	background-image: repeating-linear-gradient(45deg,
+		alpha(currentColor, 0.05) 0px, alpha(currentColor, 0.05) 7px,
+		alpha(currentColor, 0.10) 7px, alpha(currentColor, 0.10) 14px);
+}
+
+.chatot-media-caption {
+	font-size: 0.8em;
+	opacity: 0.65;
+}
+
+.chatot-media-dl {
+	color: #ffffff;
+	background-color: #1b8c72;
+	border-radius: 999px;
+}
+
+.chatot-media-dl-lg {
+	min-width: 38px;
+	min-height: 38px;
+	font-size: 15px;
+}
+
+.chatot-media-dl-sm {
+	min-width: 28px;
+	min-height: 28px;
+	font-size: 13px;
+}
+
+.chatot-media-dl-fail {
+	background-color: alpha(#c01c28, 0.18);
+	color: #ff7b85;
+}
+
+.chatot-media-row {
+	padding: 3px 2px;
+	min-width: 240px;
+}
+
+.chatot-media-row-title {
+	font-size: 0.92em;
+}
+
+.chatot-media-row-sub {
+	font-size: 0.78em;
+	opacity: 0.55;
+}
+
+.chatot-media-row-fail {
+	font-size: 0.78em;
+	color: #ff7b85;
+}
+
+.chatot-media-open {
+	border-radius: 7px;
+	padding: 2px 10px;
+	color: #147a63;
 }
 
 .chatot-gif-badge {

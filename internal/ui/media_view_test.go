@@ -123,24 +123,6 @@ func TestMediaVM_IsGIF(t *testing.T) {
 	}
 }
 
-func TestChipLabel_GIFSuffix(t *testing.T) {
-	mv := mediaView{Chip: "[video]", IsGIF: true}
-	got := chipLabel(mv)
-	want := "⬇ [video]  GIF"
-	if got != want {
-		t.Errorf("chipLabel = %q, want %q", got, want)
-	}
-}
-
-func TestChipLabel_NoGIFSuffix(t *testing.T) {
-	mv := mediaView{Chip: "[image]"}
-	got := chipLabel(mv)
-	want := "⬇ [image]"
-	if got != want {
-		t.Errorf("chipLabel = %q, want %q", got, want)
-	}
-}
-
 func TestMediaVM_ViewOnce(t *testing.T) {
 	m := client.Message{
 		ID:         "1",
