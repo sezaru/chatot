@@ -25,6 +25,11 @@ var reactEmojis = []string{"👍", "❤️", "😂", "😮", "😢", "🙏"}
 // user-facing setting exists.
 var SendReadReceipts = false
 
+// SendTypingIndicators gates outbound SendTyping calls from the composer's
+// typing-debounce state machine. Default true, matching WhatsApp's own
+// default; the Preferences window's Privacy page toggles it.
+var SendTypingIndicators = true
+
 // sendAction is what composeState.Submit resolves a submission to: the
 // send it wants performed, if any.
 type sendAction struct {
@@ -500,6 +505,9 @@ func (c *Composer) tickTyping() {
 // network call never blocks the GTK main loop; failures are logged only,
 // mirroring submit/sendMedia's error handling for outbound calls.
 func (c *Composer) sendTypingAsync(jid string, typing bool) {
+	if !SendTypingIndicators {
+		return
+	}
 	go func() {
 		if err := c.c.SendTyping(jid, typing); err != nil {
 			log.Printf("chatot: send typing failed: %v", err)
