@@ -1358,28 +1358,8 @@ func copyTextWithUndo(overlay *adw.ToastOverlay, text string) {
 // 🙂 react (full picker), ⋯ more (reply/forward/copy/star/edit/delete). Edit is
 // own-message-only and lives in the ⋯ menu; star applies to any message.
 func buildBubbleActions(parent gtk.Widgetter, msg client.Message, vm bubbleView, onReply func(client.Message), onReact func(msg client.Message, emoji string), onEdit func(client.Message), onDelete func(client.Message), onStar func(client.Message), onForward func(client.Message), toastOverlay *adw.ToastOverlay, canEdit, canDelete bool) *gtk.Box {
-	column := gtk.NewBox(gtk.OrientationVertical, 5)
-	column.AddCSSClass("chatot-bubble-actions")
-
-	if onReact != nil {
-		pill := gtk.NewBox(gtk.OrientationHorizontal, 1)
-		pill.AddCSSClass("chatot-react-pill")
-		for _, emoji := range reactEmojis {
-			b := gtk.NewButtonWithLabel(emoji)
-			b.AddCSSClass("flat")
-			b.AddCSSClass("chatot-react-emoji")
-			b.ConnectClicked(func() { onReact(msg, emoji) })
-			pill.Append(b)
-		}
-		plus := gtk.NewButtonWithLabel("＋")
-		plus.AddCSSClass("flat")
-		plus.AddCSSClass("chatot-react-emoji")
-		plus.ConnectClicked(func() { openEmojiChooser(parent, msg, onReact) })
-		pill.Append(plus)
-		column.Append(pill)
-	}
-
 	icons := gtk.NewBox(gtk.OrientationHorizontal, 2)
+	icons.AddCSSClass("chatot-bubble-actions")
 
 	iconBtn := func(label string) *gtk.Button {
 		b := gtk.NewButtonWithLabel(label)
@@ -1395,9 +1375,36 @@ func buildBubbleActions(parent gtk.Widgetter, msg client.Message, vm bubbleView,
 		icons.Append(reply)
 	}
 	if onReact != nil {
+		// The 🙂 button opens the quick-react pill on click (NOT on hover); the
+		// pill's ＋ opens the full emoji picker. Parented to the bubble so it
+		// survives the pointer leaving the (hover-hidden) action row.
 		react := iconBtn("🙂")
 		react.SetTooltipText("React")
-		react.ConnectClicked(func() { openEmojiChooser(parent, msg, onReact) })
+
+		reactPop := gtk.NewPopover()
+		pill := gtk.NewBox(gtk.OrientationHorizontal, 1)
+		pill.AddCSSClass("chatot-react-pill")
+		for _, emoji := range reactEmojis {
+			b := gtk.NewButtonWithLabel(emoji)
+			b.AddCSSClass("flat")
+			b.AddCSSClass("chatot-react-emoji")
+			b.ConnectClicked(func() {
+				onReact(msg, emoji)
+				reactPop.Popdown()
+			})
+			pill.Append(b)
+		}
+		plus := gtk.NewButtonWithLabel("＋")
+		plus.AddCSSClass("flat")
+		plus.AddCSSClass("chatot-react-emoji")
+		plus.ConnectClicked(func() {
+			reactPop.Popdown()
+			openEmojiChooser(parent, msg, onReact)
+		})
+		pill.Append(plus)
+		reactPop.SetChild(pill)
+		reactPop.SetParent(parent)
+		react.ConnectClicked(func() { reactPop.Popup() })
 		icons.Append(react)
 	}
 
@@ -1449,6 +1456,5 @@ func buildBubbleActions(parent gtk.Widgetter, msg client.Message, vm bubbleView,
 		icons.Append(moreMenuBtn)
 	}
 
-	column.Append(icons)
-	return column
+	return icons
 }
