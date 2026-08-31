@@ -14,6 +14,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 
 	"chatot/internal/client"
 )
@@ -620,6 +621,10 @@ func NewConversationView(c client.Client) *ConversationView {
 	// sibling below this view) off the bottom of the window.
 	scroller.SetPropagateNaturalHeight(false)
 	scroller.SetMinContentHeight(0)
+	// Never scroll horizontally: a long message must wrap within the pane, not
+	// widen it (which would push content off the right edge like the sidebar
+	// list did vertically).
+	scroller.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 	scroller.SetChild(cv.listView)
 	scroller.SetVisible(false)
 
@@ -1212,6 +1217,9 @@ func buildBubble(msg client.Message, vm bubbleView, c client.Client, onReply fun
 		}
 		text.SetXAlign(0)
 		text.SetWrap(true)
+		// WrapWordChar so a long unbroken token (e.g. a URL) still breaks
+		// instead of forcing the bubble wider than the pane.
+		text.SetWrapMode(pango.WrapWordChar)
 		// Cap the natural width so a long paragraph wraps into a hugging bubble
 		// (~two-thirds of the pane) instead of stretching edge-to-edge, matching
 		// the mockup's bubble sizing.

@@ -298,7 +298,25 @@ func NewChatList(c client.Client) *ChatList {
 	list := gtk.NewListBox()
 	list.AddCSSClass("navigation-sidebar")
 	list.SetVExpand(true)
-	root.Append(list)
+
+	// The list MUST live in a height-constrained scroller. GtkListBox is NOT
+	// virtualized, so its minimum height is the sum of EVERY chat row; with a
+	// real account (dozens of chats) that minimum (~3500px) propagates up and
+	// forces the whole window taller than the screen — shoving the composer
+	// off the bottom and leaving nothing for either pane to scroll. Wrapping in
+	// a ScrolledWindow is necessary but NOT sufficient: MinContentHeight(0)
+	// does not override a GtkListBox child's propagated minimum here, but an
+	// explicit SetSizeRequest minimum does. VExpand then grows it to fill the
+	// pane and it scrolls internally. hscrollbar Never so a long chat name
+	// can't widen the sidebar.
+	listScroller := gtk.NewScrolledWindow()
+	listScroller.SetChild(list)
+	listScroller.SetVExpand(true)
+	listScroller.SetPropagateNaturalHeight(false)
+	listScroller.SetMinContentHeight(0)
+	listScroller.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
+	listScroller.SetSizeRequest(-1, 80)
+	root.Append(listScroller)
 
 	cl := &ChatList{
 		Box: root, c: c, events: c.Events(), list: list,
