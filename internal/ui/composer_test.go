@@ -425,3 +425,12 @@ func TestComposeStateEditAndReplyMutuallyExclusive(t *testing.T) {
 		t.Error("StartReply should clear a pending edit")
 	}
 }
+
+func TestComposerButtons(t *testing.T) {
+	if mic, send := composerButtons(true); !mic || send {
+		t.Errorf("empty entry: want mic on/send off, got mic=%v send=%v", mic, send)
+	}
+	if mic, send := composerButtons(false); mic || !send {
+		t.Errorf("non-empty entry: want mic off/send on, got mic=%v send=%v", mic, send)
+	}
+}

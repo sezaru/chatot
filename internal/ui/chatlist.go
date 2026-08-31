@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sort"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -176,18 +178,43 @@ func (cl *ChatList) SetWindow(w *gtk.Window) { cl.window = w }
 func NewChatList(c client.Client) *ChatList {
 	root := gtk.NewBox(gtk.OrientationVertical, 0)
 
-	searchRow := gtk.NewBox(gtk.OrientationHorizontal, 4)
+	// Row 1: account header. TODO multi-account: name/phone are hard-coded
+	// placeholders until per-account data exists.
+	accountRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	accountRow.AddCSSClass("chatot-account-row")
 
-	search := gtk.NewSearchEntry()
-	search.SetPlaceholderText("Search chats and messages")
-	search.AddCSSClass("chatot-search-entry")
-	search.SetHExpand(true)
-	searchRow.Append(search)
+	accountAvatar := gtk.NewLabel("S")
+	accountAvatar.AddCSSClass("chatot-avatar")
+	accountAvatar.AddCSSClass("chatot-account-avatar")
+	accountAvatar.SetSizeRequest(32, 32)
+	accountRow.Append(accountAvatar)
+
+	accountText := gtk.NewBox(gtk.OrientationVertical, 0)
+	accountText.SetHExpand(true)
+	accountText.SetVAlign(gtk.AlignCenter)
+	accountName := gtk.NewLabel("Sezar (personal)")
+	accountName.SetXAlign(0)
+	accountName.AddCSSClass("chatot-chat-name")
+	accountText.Append(accountName)
+	accountPhone := gtk.NewLabel("+351 912 000 000")
+	accountPhone.SetXAlign(0)
+	accountPhone.AddCSSClass("chatot-account-phone")
+	accountText.Append(accountPhone)
+	accountRow.Append(accountText)
 
 	plusBtn := gtk.NewMenuButton()
 	plusBtn.SetIconName("list-add-symbolic")
+	plusBtn.AddCSSClass("flat")
 	plusBtn.SetTooltipText("New chat, group, community, or invite")
-	searchRow.Append(plusBtn)
+	accountRow.Append(plusBtn)
+
+	appMenuBtn := gtk.NewMenuButton()
+	appMenuBtn.SetIconName("open-menu-symbolic")
+	appMenuBtn.AddCSSClass("flat")
+	appMenuBtn.SetTooltipText("Menu")
+	accountRow.Append(appMenuBtn)
+
+	root.Append(accountRow)
 
 	plusMenu := gtk.NewBox(gtk.OrientationVertical, 0)
 	newChatItem := gtk.NewButtonWithLabel("New chat")
@@ -207,31 +234,21 @@ func NewChatList(c client.Client) *ChatList {
 	plusPopover.SetChild(plusMenu)
 	plusBtn.SetPopover(plusPopover)
 
+	// Row 2: full-width search. Drives the same query/filter logic as
+	// before via ConnectSearchChanged below.
+	search := gtk.NewSearchEntry()
+	search.SetPlaceholderText("Search")
+	search.AddCSSClass("chatot-search-entry")
+	search.SetHExpand(true)
+	root.Append(search)
+
+	// The old header's filter icons are gone from the bar; they live in the
+	// ⋮ app menu (built below) but stay real ToggleButtons so all the
+	// existing active-state cross-clearing keeps working unchanged.
 	archiveToggle := gtk.NewToggleButton()
-	archiveToggle.SetIconName("mail-archive-symbolic")
-	archiveToggle.SetTooltipText("Show archived chats")
-	searchRow.Append(archiveToggle)
-
 	starredToggle := gtk.NewToggleButton()
-	starredToggle.SetIconName("starred-symbolic")
-	starredToggle.SetTooltipText("Starred messages")
-	searchRow.Append(starredToggle)
-
 	statusToggle := gtk.NewToggleButton()
-	statusToggle.SetIconName("emblem-photos-symbolic")
-	statusToggle.SetTooltipText("Status updates")
-	searchRow.Append(statusToggle)
-
 	channelsToggle := gtk.NewToggleButton()
-	channelsToggle.SetIconName("emblem-shared-symbolic")
-	channelsToggle.SetTooltipText("Channels")
-	searchRow.Append(channelsToggle)
-
-	privacyBtn := gtk.NewButtonFromIconName("preferences-system-privacy-symbolic")
-	privacyBtn.SetTooltipText("Privacy settings")
-	searchRow.Append(privacyBtn)
-
-	root.Append(searchRow)
 
 	chipRow := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	chipRow.AddCSSClass("chatot-chip-row")
@@ -390,14 +407,49 @@ func NewChatList(c client.Client) *ChatList {
 		cl.showPostStatusDialog()
 	})
 
-	privacyBtn.ConnectClicked(func() {
-		showPrivacyDialog(cl.window, cl.c)
-	})
+	appPopover := gtk.NewPopover()
+	appMenu := gtk.NewBox(gtk.OrientationVertical, 0)
+	addAppMenuItem := func(label string, onClick func()) {
+		item := gtk.NewButtonWithLabel(label)
+		item.AddCSSClass("flat")
+		item.SetHAlign(gtk.AlignFill)
+		item.Child().(*gtk.Label).SetXAlign(0)
+		item.ConnectClicked(func() {
+			appPopover.Popdown()
+			onClick()
+		})
+		appMenu.Append(item)
+	}
+	addAppMenuItem("Archived chats", func() { archiveToggle.SetActive(!archiveToggle.Active()) })
+	addAppMenuItem("Starred messages", func() { starredToggle.SetActive(!starredToggle.Active()) })
+	addAppMenuItem("Status updates", func() { statusToggle.SetActive(!statusToggle.Active()) })
+	addAppMenuItem("Channels", func() { channelsToggle.SetActive(!channelsToggle.Active()) })
+	appMenu.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
+	addAppMenuItem("Set status", func() { cl.showPostStatusDialog() })
+	addAppMenuItem("Privacy settings", func() { showPrivacyDialog(cl.window, cl.c) })
+	addAppMenuItem("Blocked contacts", func() {})   // stub until a blocked-list view exists
+	addAppMenuItem("Keyboard shortcuts", func() {}) // stub until a shortcuts window exists
+	addAppMenuItem("About chatot", func() { showAboutDialog(cl.window) })
+	appPopover.SetChild(appMenu)
+	appMenuBtn.SetPopover(appPopover)
 
 	cl.refresh()
 	go cl.watchEvents()
 
 	return cl
+}
+
+// showAboutDialog presents a minimal AboutDialog for the ⋮ menu's "About".
+func showAboutDialog(parent *gtk.Window) {
+	about := adw.NewAboutDialog()
+	about.SetApplicationName("chatot")
+	about.SetDeveloperName("chatot")
+	about.SetVersion("0.1.0")
+	if parent != nil {
+		about.Present(parent)
+		return
+	}
+	about.Present(nil)
 }
 
 // OnChatSelected registers f to be called with the JID of the activated row.
@@ -1158,9 +1210,11 @@ func chatsOrEmpty(c client.Client) []client.Chat {
 	return chats
 }
 
-// showNewGroupDialog opens a modal to create a group: a name entry plus a
-// comma-separated participant list. On success it opens the new group's chat
-// through the same onSelect seam a chat-row activation uses.
+// showNewGroupDialog opens the two-step "New group" flow: page 1 picks
+// participants from the 1:1 contact list (with search + a live selected
+// count + removable chips), page 2 sets the group's name, disappearing
+// timer and "only admins can post" mode. On success it opens the new
+// group's chat through the same onSelect seam a chat-row activation uses.
 func (cl *ChatList) showNewGroupDialog() {
 	dialog := gtk.NewWindow()
 	dialog.SetTitle("New group")
@@ -1168,42 +1222,190 @@ func (cl *ChatList) showNewGroupDialog() {
 		dialog.SetTransientFor(cl.window)
 	}
 	dialog.SetModal(true)
+	dialog.SetDefaultSize(380, 560)
 
-	box := gtk.NewBox(gtk.OrientationVertical, 8)
-	box.SetMarginTop(12)
-	box.SetMarginBottom(12)
-	box.SetMarginStart(12)
-	box.SetMarginEnd(12)
+	sel := newParticipantSelection()
+	contacts := newChatContacts(chatsOrEmpty(cl.c))
+	checkButtons := make(map[string]*gtk.CheckButton, len(contacts))
+
+	stack := gtk.NewStack()
+	stack.SetVExpand(true)
+
+	// --- page 1: add participants ---
+	page1 := gtk.NewBox(gtk.OrientationVertical, 8)
+	page1.SetMarginTop(12)
+	page1.SetMarginBottom(12)
+	page1.SetMarginStart(12)
+	page1.SetMarginEnd(12)
+
+	countLabel := gtk.NewLabel("0 of 1024 selected")
+	countLabel.SetXAlign(0)
+	countLabel.AddCSSClass("chatot-conv-title")
+	page1.Append(countLabel)
+
+	chipsBox := gtk.NewBox(gtk.OrientationHorizontal, 4)
+	page1.Append(chipsBox)
+
+	nextBtn := gtk.NewButtonWithLabel("Next")
+	nextBtn.AddCSSClass("suggested-action")
+	nextBtn.SetSensitive(false)
+
+	var refresh func()
+	refresh = func() {
+		countLabel.SetText(fmt.Sprintf("%d of 1024 selected", sel.Count()))
+		nextBtn.SetSensitive(sel.Count() > 0)
+		for chipsBox.FirstChild() != nil {
+			chipsBox.Remove(chipsBox.FirstChild())
+		}
+		for _, chip := range sel.Chips() {
+			jid := chip.JID
+			btn := gtk.NewButtonWithLabel(chip.Name + " ×")
+			btn.ConnectClicked(func() {
+				if cb, ok := checkButtons[jid]; ok {
+					cb.SetActive(false)
+				}
+			})
+			chipsBox.Append(btn)
+		}
+	}
+
+	search := gtk.NewSearchEntry()
+	search.SetPlaceholderText("Search contacts")
+	page1.Append(search)
+
+	contactsList := gtk.NewListBox()
+	contactsList.AddCSSClass("navigation-sidebar")
+	for _, ct := range contacts {
+		ct := ct
+		row := gtk.NewBox(gtk.OrientationHorizontal, 8)
+		row.SetMarginTop(6)
+		row.SetMarginBottom(6)
+		row.SetMarginStart(8)
+		row.SetMarginEnd(8)
+		cb := gtk.NewCheckButton()
+		checkButtons[ct.JID] = cb
+		cb.ConnectToggled(func() {
+			if cb.Active() {
+				sel.Add(ct.JID, ct.Name)
+			} else {
+				sel.Remove(ct.JID)
+			}
+			refresh()
+		})
+		row.Append(cb)
+		row.Append(buildAvatar(cl.c, cl.avatarCache, ct.JID, contactInitial(ct.Name), 32))
+		nameLabel := gtk.NewLabel(ct.Name)
+		nameLabel.SetXAlign(0)
+		nameLabel.SetHExpand(true)
+		row.Append(nameLabel)
+		contactsList.Append(row)
+	}
+	contactsList.SetFilterFunc(func(row *gtk.ListBoxRow) bool {
+		idx := row.Index()
+		if idx < 0 || idx >= len(contacts) {
+			return true
+		}
+		q := strings.ToLower(strings.TrimSpace(search.Text()))
+		if q == "" {
+			return true
+		}
+		return strings.Contains(strings.ToLower(contacts[idx].Name), q)
+	})
+	search.ConnectSearchChanged(func() { contactsList.InvalidateFilter() })
+
+	scroller := gtk.NewScrolledWindow()
+	scroller.SetChild(contactsList)
+	scroller.SetVExpand(true)
+	page1.Append(scroller)
+	page1.Append(nextBtn)
+
+	stack.AddNamed(page1, "participants")
+
+	// --- page 2: group details ---
+	page2 := gtk.NewBox(gtk.OrientationVertical, 8)
+	page2.SetMarginTop(12)
+	page2.SetMarginBottom(12)
+	page2.SetMarginStart(12)
+	page2.SetMarginEnd(12)
 
 	nameEntry := gtk.NewEntry()
 	nameEntry.SetPlaceholderText("Group name (max 25 chars)")
-	box.Append(nameEntry)
+	page2.Append(nameEntry)
 
-	partsEntry := gtk.NewEntry()
-	partsEntry.SetPlaceholderText("Participants: +1555…, +1666… (comma-separated)")
-	box.Append(partsEntry)
+	disappearingDropdown := gtk.NewDropDownFromStrings(disappearingOptions)
+	page2.Append(dropdownRow("Disappearing messages", disappearingDropdown))
+
+	announceRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	announceLabel := gtk.NewLabel("Only admins can post")
+	announceLabel.SetXAlign(0)
+	announceLabel.SetHExpand(true)
+	announceRow.Append(announceLabel)
+	announceSwitch := gtk.NewSwitch()
+	announceRow.Append(announceSwitch)
+	page2.Append(announceRow)
+
+	hint := gtk.NewLabel("You can change this later")
+	hint.SetXAlign(0)
+	hint.AddCSSClass("chatot-conv-subtitle")
+	page2.Append(hint)
+
+	footer := gtk.NewLabel("")
+	footer.SetXAlign(0)
+	page2.Append(footer)
 
 	status := gtk.NewLabel("")
 	status.SetXAlign(0)
-	box.Append(status)
+	page2.Append(status)
 
+	btnRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	backBtn := gtk.NewButtonWithLabel("Back")
+	btnRow.Append(backBtn)
 	createBtn := gtk.NewButtonWithLabel("Create")
 	createBtn.AddCSSClass("suggested-action")
-	box.Append(createBtn)
+	createBtn.SetSensitive(false)
+	btnRow.Append(createBtn)
+	page2.Append(btnRow)
+
+	nameEntry.ConnectChanged(func() {
+		createBtn.SetSensitive(strings.TrimSpace(nameEntry.Text()) != "")
+	})
+
+	stack.AddNamed(page2, "details")
+
+	nextBtn.ConnectClicked(func() {
+		footer.SetText(fmt.Sprintf("%d participants · you will be admin", sel.Count()))
+		stack.SetVisibleChildName("details")
+	})
+	backBtn.ConnectClicked(func() { stack.SetVisibleChildName("participants") })
 
 	createBtn.ConnectClicked(func() {
 		name := strings.TrimSpace(nameEntry.Text())
 		if name == "" {
-			status.SetText("Enter a group name")
 			return
 		}
-		parts := parseParticipantList(partsEntry.Text())
+		parts := sel.JIDs()
+		announce := announceSwitch.Active()
+		seconds := disappearingSecondsForIndex(int(disappearingDropdown.Selected()))
 		createBtn.SetSensitive(false)
+		backBtn.SetSensitive(false)
 		status.SetText("Creating…")
 		go func() {
 			jid, err := cl.c.CreateGroup(context.Background(), name, parts)
+			if err == nil {
+				if announce {
+					if aerr := cl.c.SetGroupAnnounce(context.Background(), jid, true); aerr != nil {
+						log.Printf("chatot/ui: set group announce: %v", aerr)
+					}
+				}
+				if seconds > 0 {
+					if derr := cl.c.SetGroupDisappearingTimer(context.Background(), jid, seconds); derr != nil {
+						log.Printf("chatot/ui: set group disappearing timer: %v", derr)
+					}
+				}
+			}
 			glib.IdleAdd(func() {
 				createBtn.SetSensitive(true)
+				backBtn.SetSensitive(true)
 				if err != nil {
 					status.SetText("Couldn't create group, try again")
 					return
@@ -1216,9 +1418,18 @@ func (cl *ChatList) showNewGroupDialog() {
 		}()
 	})
 
-	dialog.SetChild(box)
-	dialog.SetDefaultWidget(createBtn)
+	dialog.SetChild(stack)
+	stack.SetVisibleChildName("participants")
 	dialog.Present()
+}
+
+// contactInitial returns the upper-cased first rune of name, or "?" if name
+// is empty, for a contact-row avatar placeholder.
+func contactInitial(name string) string {
+	for _, r := range name {
+		return strings.ToUpper(string(r))
+	}
+	return "?"
 }
 
 // showJoinGroupDialog opens a modal to join a group by pasting an invite link

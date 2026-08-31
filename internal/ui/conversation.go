@@ -224,6 +224,7 @@ type ConversationView struct {
 	listView      *gtk.ListView
 	model         *gioutil.ListModel[client.Message]
 	empty         *gtk.Label
+	emptyBox      *gtk.Box
 
 	// msgs mirrors model 1:1 and is the authoritative slice the bind factory
 	// indexes by ListItem position (for the message and its predecessor, which
@@ -473,10 +474,18 @@ func NewConversationView(c client.Client) *ConversationView {
 	searchRevealer.SetRevealChild(false)
 	root.Append(searchRevealer)
 
+	emptyBox := gtk.NewBox(gtk.OrientationVertical, 8)
+	emptyBox.SetVExpand(true)
+	emptyBox.SetVAlign(gtk.AlignCenter)
+	emptyBox.SetHAlign(gtk.AlignCenter)
+	emptyIcon := gtk.NewImageFromIconName("chat-symbolic")
+	emptyIcon.SetPixelSize(64)
+	emptyIcon.AddCSSClass("chatot-placeholder")
+	emptyBox.Append(emptyIcon)
 	empty := gtk.NewLabel("Select a chat")
 	empty.AddCSSClass("chatot-placeholder")
-	empty.SetVExpand(true)
-	root.Append(empty)
+	emptyBox.Append(empty)
+	root.Append(emptyBox)
 
 	model := conversationModelType.New()
 
@@ -505,6 +514,7 @@ func NewConversationView(c client.Client) *ConversationView {
 		scroller:             scroller,
 		model:                model,
 		empty:                empty,
+		emptyBox:             emptyBox,
 		presence:             make(map[string]PresenceState),
 	}
 
@@ -654,12 +664,12 @@ func (cv *ConversationView) Load(jid string) {
 
 	if len(msgs) == 0 {
 		cv.empty.SetLabel("No messages yet")
-		cv.empty.SetVisible(true)
+		cv.emptyBox.SetVisible(true)
 		cv.scroller.SetVisible(false)
 		return
 	}
 
-	cv.empty.SetVisible(false)
+	cv.emptyBox.SetVisible(false)
 	cv.scroller.SetVisible(true)
 	cv.scrollToBottom()
 }
@@ -924,8 +934,8 @@ func (cv *ConversationView) appendMessage(msg client.Message) {
 	cv.msgs = append(cv.msgs, msg)
 	cv.byID[msg.ID] = msg
 
-	if cv.empty.Visible() {
-		cv.empty.SetVisible(false)
+	if cv.emptyBox.Visible() {
+		cv.emptyBox.SetVisible(false)
 		cv.scroller.SetVisible(true)
 	}
 

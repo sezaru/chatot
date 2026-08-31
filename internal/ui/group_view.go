@@ -113,6 +113,84 @@ func parseParticipantList(input string) []string {
 	return out
 }
 
+// participantSelection tracks the new-group flow's picked participants,
+// preserving insertion order for the chip row while supporting O(1)
+// membership checks.
+type participantSelection struct {
+	order []string
+	names map[string]string
+}
+
+func newParticipantSelection() *participantSelection {
+	return &participantSelection{names: make(map[string]string)}
+}
+
+// Add records jid as selected (name is used for its chip label), a no-op if
+// already selected.
+func (s *participantSelection) Add(jid, name string) {
+	if _, ok := s.names[jid]; ok {
+		return
+	}
+	s.order = append(s.order, jid)
+	s.names[jid] = name
+}
+
+// Remove deselects jid, a no-op if not selected.
+func (s *participantSelection) Remove(jid string) {
+	if _, ok := s.names[jid]; !ok {
+		return
+	}
+	delete(s.names, jid)
+	for i, j := range s.order {
+		if j == jid {
+			s.order = append(s.order[:i], s.order[i+1:]...)
+			break
+		}
+	}
+}
+
+// Contains reports whether jid is currently selected.
+func (s *participantSelection) Contains(jid string) bool {
+	_, ok := s.names[jid]
+	return ok
+}
+
+// Count returns the number of selected participants.
+func (s *participantSelection) Count() int { return len(s.order) }
+
+// JIDs returns the selected JIDs in the order they were added.
+func (s *participantSelection) JIDs() []string {
+	out := make([]string, len(s.order))
+	copy(out, s.order)
+	return out
+}
+
+// Chips returns the selected (jid, name) pairs in insertion order, for
+// rendering the removable chip row.
+func (s *participantSelection) Chips() []struct{ JID, Name string } {
+	out := make([]struct{ JID, Name string }, len(s.order))
+	for i, jid := range s.order {
+		out[i] = struct{ JID, Name string }{JID: jid, Name: s.names[jid]}
+	}
+	return out
+}
+
+// disappearingOptions are the labels for the new-group "Disappearing
+// messages" dropdown, index-aligned with disappearingSecondsForIndex.
+var disappearingOptions = []string{"Off", "24 hours", "7 days", "90 days"}
+
+var disappearingSecondsByIndex = []int64{0, 24 * 60 * 60, 7 * 24 * 60 * 60, 90 * 24 * 60 * 60}
+
+// disappearingSecondsForIndex maps a disappearingOptions dropdown selection
+// to a duration in seconds (0 = off), defaulting to off for an out-of-range
+// index.
+func disappearingSecondsForIndex(idx int) int64 {
+	if idx < 0 || idx >= len(disappearingSecondsByIndex) {
+		return 0
+	}
+	return disappearingSecondsByIndex[idx]
+}
+
 // showGroupInfoDialog opens an actionable modal for jid: name/topic editing,
 // announce/locked toggles, per-participant admin actions, add-participant,
 // invite link and leave — the admin-only controls gated by c.OwnJID(). The

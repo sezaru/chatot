@@ -312,12 +312,14 @@ type Composer struct {
 	entry      *gtk.Entry
 	attachBtn  *gtk.MenuButton
 	emojiBtn   *gtk.Button
-	gifBtn     *gtk.MenuButton
 	recordBtn  *gtk.Button
+	sendBtn    *gtk.Button
 
 	gifProvider GIFProvider
-	// pickerStack backs gifBtn's popover: a "gif" page and a "stickers" page.
-	pickerStack *gtk.Stack
+	// pickerStack/pickerPopover back the GIF+Stickers picker, now reached
+	// from the attach ＋ popover rather than a dedicated bar button.
+	pickerStack   *gtk.Stack
+	pickerPopover *gtk.Popover
 
 	stickerRecents *stickerRecents
 
@@ -379,25 +381,23 @@ func NewComposer(c client.Client) *Composer {
 
 	entry := gtk.NewEntry()
 	entry.SetHExpand(true)
-	entry.SetPlaceholderText("Message")
+	entry.SetPlaceholderText("Type a message")
 	entryRow.Append(entry)
 
 	emojiBtn := gtk.NewButtonWithLabel("😀")
 	emojiBtn.AddCSSClass("flat")
 	entryRow.Append(emojiBtn)
 
-	gifBtn := gtk.NewMenuButton()
-	gifBtn.SetLabel("GIF")
-	gifBtn.AddCSSClass("flat")
-	entryRow.Append(gifBtn)
-
-	recordBtn := gtk.NewButtonWithLabel("🎤")
+	recordBtn := gtk.NewButtonFromIconName("audio-input-microphone-symbolic")
 	recordBtn.AddCSSClass("flat")
+	recordBtn.SetTooltipText("Record voice message")
 	recordBtn.SetSensitive(false)
 	entryRow.Append(recordBtn)
 
-	sendBtn := gtk.NewButtonWithLabel("Send")
+	sendBtn := gtk.NewButtonFromIconName("go-next-symbolic")
 	sendBtn.AddCSSClass("chatot-send")
+	sendBtn.SetTooltipText("Send")
+	sendBtn.SetVisible(false)
 	entryRow.Append(sendBtn)
 
 	root.Append(entryRow)
@@ -411,17 +411,18 @@ func NewComposer(c client.Client) *Composer {
 		entry:          entry,
 		attachBtn:      attachBtn,
 		emojiBtn:       emojiBtn,
-		gifBtn:         gifBtn,
 		recordBtn:      recordBtn,
+		sendBtn:        sendBtn,
 		gifProvider:    unconfiguredGIFProvider{},
 		typing:         newTypingModel(typingDebounce),
 		stickerRecents: newStickerRecents(stickerRecentsCap),
 	}
 
-	attachBtn.SetPopover(newAttachPopover(comp))
 	pickerPopover, pickerStack := newPickerPopover(comp)
-	gifBtn.SetPopover(pickerPopover)
 	comp.pickerStack = pickerStack
+	comp.pickerPopover = pickerPopover
+	pickerPopover.SetParent(attachBtn)
+	attachBtn.SetPopover(newAttachPopover(comp))
 
 	entry.ConnectActivate(comp.submit)
 	entry.ConnectChanged(comp.onEntryChanged)
@@ -451,6 +452,7 @@ func NewComposer(c client.Client) *Composer {
 // keystroke of a burst); an entry cleared back to empty forces paused
 // immediately rather than waiting out the debounce window.
 func (c *Composer) onEntryChanged() {
+	c.updateSendVisibility()
 	jid := c.state.jid
 	if jid == "" {
 		return
@@ -464,6 +466,21 @@ func (c *Composer) onEntryChanged() {
 	if send, composing := c.typing.Keystroke(time.Now()); send {
 		c.sendTypingAsync(jid, composing)
 	}
+}
+
+// composerButtons decides which trailing action the composer shows given
+// whether the entry is empty: the mic (record a voice note) on an empty
+// entry, the green send arrow once there's text to send — WhatsApp's toggle.
+func composerButtons(entryEmpty bool) (showMic, showSend bool) {
+	return entryEmpty, !entryEmpty
+}
+
+// updateSendVisibility toggles the mic/send buttons off the entry's current
+// text per composerButtons. Safe to call with no active chat.
+func (c *Composer) updateSendVisibility() {
+	showMic, showSend := composerButtons(strings.TrimSpace(c.entry.Text()) == "")
+	c.recordBtn.SetVisible(showMic)
+	c.sendBtn.SetVisible(showSend)
 }
 
 // tickTyping is invoked on the GTK main loop roughly once a second; it asks
@@ -672,6 +689,8 @@ func newAttachPopover(c *Composer) *gtk.Popover {
 		{"mark-location-symbolic", "Location", c.pickLocation},
 		{"avatar-default-symbolic", "Contact", c.pickContact},
 		{"view-list-symbolic", "Poll", c.pickPoll},
+		{"image-x-generic-symbolic", "GIF", func() { c.showPicker("gif") }},
+		{"face-smile-symbolic", "Stickers", func() { c.showPicker("stickers") }},
 	}
 
 	grid := gtk.NewGrid()
@@ -693,8 +712,9 @@ func newAttachPopover(c *Composer) *gtk.Popover {
 	return popover
 }
 
-// newPickerPopover builds the GIF button's popover: a Stack + StackSwitcher
-// holding a "GIF" page and a "Stickers" page.
+// newPickerPopover builds the GIF/Stickers picker popover: a Stack +
+// StackSwitcher holding a "GIF" page and a "Stickers" page. It's fronted by
+// the attach ＋ menu's GIF/Stickers tiles (see showPicker).
 func newPickerPopover(c *Composer) (*gtk.Popover, *gtk.Stack) {
 	popover := gtk.NewPopover()
 
@@ -715,6 +735,16 @@ func newPickerPopover(c *Composer) (*gtk.Popover, *gtk.Stack) {
 
 	popover.SetChild(box)
 	return popover, stack
+}
+
+// showPicker pops the GIF/Stickers popover (parented to the attach button)
+// on the requested page — the ＋ menu now fronts it instead of a bar button.
+func (c *Composer) showPicker(page string) {
+	if c.pickerStack == nil || c.pickerPopover == nil {
+		return
+	}
+	c.pickerStack.SetVisibleChildName(page)
+	c.pickerPopover.Popup()
 }
 
 // onGIFChosen would send the picked GIF; unwired until a real GIFProvider
@@ -1121,7 +1151,7 @@ func (c *Composer) toggleRecording() {
 	}
 	c.recorder = rec
 	c.recording = true
-	c.recordBtn.SetLabel("⏹")
+	c.recordBtn.SetIconName("media-playback-stop-symbolic")
 	c.recordBtn.AddCSSClass("destructive-action")
 	c.entry.SetSensitive(false)
 	c.attachBtn.SetSensitive(false)
@@ -1188,7 +1218,7 @@ func (c *Composer) stopRecording() {
 // resetRecordButton restores the mic button to its idle appearance and
 // re-enables the entry/attach controls it disabled while recording.
 func (c *Composer) resetRecordButton() {
-	c.recordBtn.SetLabel("🎤")
+	c.recordBtn.SetIconName("audio-input-microphone-symbolic")
 	c.recordBtn.RemoveCSSClass("destructive-action")
 	c.recordBtn.SetSensitive(c.state.jid != "")
 	c.entry.SetSensitive(true)

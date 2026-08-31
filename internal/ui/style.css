@@ -278,8 +278,10 @@ window {
 	background-color: #1b8c72;
 	color: #ffffff;
 	border-radius: 999px;
+	/* Equal min-width/min-height keeps the arrow-only button a true circle. */
+	min-width: 34px;
 	min-height: 34px;
-	padding: 4px 14px;
+	padding: 0;
 }
 
 .chatot-send:hover {
@@ -317,7 +319,24 @@ window {
 }
 
 .chatot-search-entry {
-	margin: 6px 8px 4px 8px;
+	margin: 2px 8px 6px 8px;
+}
+
+/* Sidebar account header row (avatar + name/phone + ＋/⋮ menus). */
+.chatot-account-row {
+	padding: 8px 8px 4px 8px;
+}
+
+/* Green initial-avatar for the account header; a plain label so the brand
+   fill sticks (the button-provider gotcha only bites colored buttons). */
+.chatot-account-avatar {
+	background-color: #1b8c72;
+	color: #ffffff;
+}
+
+.chatot-account-phone {
+	opacity: 0.55;
+	font-size: 0.82em;
 }
 
 .chatot-search-snippet {
