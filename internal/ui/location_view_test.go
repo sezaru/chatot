@@ -37,6 +37,24 @@ func TestLocationVM_UnnamedFallback(t *testing.T) {
 	}
 }
 
+func TestLocationVM_LiveUntil(t *testing.T) {
+	until := mustParse(t, "2026-08-30 15:04:00").Unix()
+	live := locationVM(client.Message{Location: &client.Location{
+		Latitude: 1, Longitude: 2, IsLive: true, LiveUntil: until,
+	}})
+	if want := "Live location · until 15:04"; live.Title != want {
+		t.Errorf("Title = %q, want %q", live.Title, want)
+	}
+	if !live.Live {
+		t.Error("expected Live=true")
+	}
+
+	static := locationVM(client.Message{Location: &client.Location{Latitude: 1, Longitude: 2}})
+	if static.Live {
+		t.Error("expected Live=false for a static location")
+	}
+}
+
 func TestLocationVM_NoLocation(t *testing.T) {
 	if locationVM(client.Message{Text: "hi"}).IsLocation {
 		t.Error("expected IsLocation=false for a non-location message")

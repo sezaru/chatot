@@ -17,6 +17,7 @@ type locationPayload struct {
 	Latitude  float64 `json:"lat"`
 	Longitude float64 `json:"long"`
 	IsLive    bool    `json:"live,omitempty"`
+	LiveUntil int64   `json:"live_until,omitempty"`
 }
 
 // contactPayload is the JSON shape stored in a message row's opaque payload
@@ -70,7 +71,7 @@ func storeMessageRow(m *Message) store.MessageRow {
 		if b, err := json.Marshal(locationPayload{
 			Name: m.Location.Name, Address: m.Location.Address,
 			Latitude: m.Location.Latitude, Longitude: m.Location.Longitude,
-			IsLive: m.Location.IsLive,
+			IsLive: m.Location.IsLive, LiveUntil: m.Location.LiveUntil,
 		}); err == nil {
 			row.Payload = string(b)
 		}
@@ -166,7 +167,8 @@ func messageFromStore(m store.Message, selfJID string) Message {
 		if err := json.Unmarshal([]byte(m.Payload), &p); err == nil {
 			out.Location = &Location{
 				Name: p.Name, Address: p.Address,
-				Latitude: p.Latitude, Longitude: p.Longitude, IsLive: p.IsLive,
+				Latitude: p.Latitude, Longitude: p.Longitude,
+				IsLive: p.IsLive, LiveUntil: p.LiveUntil,
 			}
 		}
 	case "contact":

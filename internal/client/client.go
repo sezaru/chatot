@@ -183,13 +183,17 @@ type PollVote struct {
 
 // Location is a shared or live-shared geographic point. Name/Address are
 // often empty (a live location carries neither); IsLive marks a continuously
-// updated share rather than a one-off pin.
+// updated share rather than a one-off pin. LiveUntil is the unix timestamp
+// the share was started for (0 if unknown, e.g. a live location received
+// from another WhatsApp client — the wire protocol carries no absolute
+// expiry, only a stream of position updates).
 type Location struct {
 	Name      string
 	Address   string
 	Latitude  float64
 	Longitude float64
 	IsLive    bool
+	LiveUntil int64
 }
 
 // Contact is a shared vCard. For a ContactsArrayMessage (several people
@@ -384,6 +388,11 @@ type Client interface {
 	SendText(ctx context.Context, jid, text string, replyTo *MsgRef) (string, error)
 	SendMedia(ctx context.Context, jid string, m Attachment, replyTo *MsgRef) (string, error)
 	SendLocation(ctx context.Context, jid string, loc Location, replyTo *MsgRef) (string, error)
+	// SendLiveLocation shares a live location for durationSecs. This sends a
+	// single initial update, not a continuous stream — real live-location
+	// sharing periodically re-sends the position for the whole duration,
+	// which is a follow-up (needs a background ticker + a way to cancel it).
+	SendLiveLocation(ctx context.Context, jid string, lat, lon float64, durationSecs int) (string, error)
 	// SendContact shares a vCard built from contact's name/phone(s).
 	SendContact(ctx context.Context, jid string, contact Contact, replyTo *MsgRef) (string, error)
 	// ForwardMessage re-sends msg's content to toJID, marked as forwarded.

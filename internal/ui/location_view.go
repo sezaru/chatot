@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
@@ -12,7 +13,8 @@ import (
 // from a client.Message so it's unit-testable without a display.
 type locationView struct {
 	IsLocation bool
-	Title      string // Name, or "Location"/"Live location" when unnamed
+	Live       bool
+	Title      string // Name, or "Location"/"Live location [· until HH:MM]" when unnamed
 	Address    string
 	Coords     string // "lat, long"
 	MapsURL    string
@@ -33,8 +35,15 @@ func locationVM(m client.Message) locationView {
 			title = "Location"
 		}
 	}
+	// LiveUntil is 0 for a live location whose expiry chatot doesn't know
+	// (e.g. received from another WhatsApp client); the bare "Live location"
+	// title already conveys the live state in that case.
+	if loc.IsLive && loc.LiveUntil != 0 {
+		title += " · until " + time.Unix(loc.LiveUntil, 0).UTC().Format("15:04")
+	}
 	return locationView{
 		IsLocation: true,
+		Live:       loc.IsLive,
 		Title:      title,
 		Address:    loc.Address,
 		Coords:     fmtCoord(loc.Latitude) + ", " + fmtCoord(loc.Longitude),
@@ -63,6 +72,9 @@ func buildLocationContent(v locationView) gtk.Widgetter {
 	title := gtk.NewLabel("📍 " + v.Title)
 	title.SetXAlign(0)
 	title.AddCSSClass("chatot-location-title")
+	if v.Live {
+		title.AddCSSClass("chatot-location-live")
+	}
 	box.Append(title)
 
 	if v.Address != "" {
