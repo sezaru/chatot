@@ -53,6 +53,7 @@ func ShowPreferences(parent *gtk.Window, s *settings.Settings, onChange func(set
 
 	win.Add(generalPage(s, onChange))
 	win.Add(privacyPage(s, onChange))
+	win.Add(networkPage(s, onChange))
 
 	win.Present()
 }
@@ -134,6 +135,32 @@ func privacyPage(s *settings.Settings, onChange func(settings.Settings)) *adw.Pr
 		onChange(*s)
 	})
 	group.Add(typingRow)
+
+	page.Add(group)
+	return page
+}
+
+// networkPage builds the proxy-configuration page. Applying a proxy to an
+// already-connected whatsmeow client mid-session is out of scope; the
+// stored value only takes effect the next time chatot starts.
+func networkPage(s *settings.Settings, onChange func(settings.Settings)) *adw.PreferencesPage {
+	page := adw.NewPreferencesPage()
+	page.SetTitle("Network")
+	page.SetIconName("network-workgroup-symbolic")
+
+	group := adw.NewPreferencesGroup()
+	group.SetTitle("Proxy")
+	group.SetDescription("Restart chatot for a proxy change to take effect")
+
+	proxyRow := adw.NewEntryRow()
+	proxyRow.SetTitle("Proxy URL")
+	proxyRow.SetTooltipText("socks5://host:port or http://host:port")
+	proxyRow.SetText(s.Proxy)
+	proxyRow.ConnectChanged(func() {
+		s.Proxy = proxyRow.Text()
+		onChange(*s)
+	})
+	group.Add(proxyRow)
 
 	page.Add(group)
 	return page

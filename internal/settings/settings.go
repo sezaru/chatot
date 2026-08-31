@@ -16,6 +16,10 @@ type Settings struct {
 	SendTypingIndicators bool   `json:"sendTypingIndicators"`
 	ShowNotifications    bool   `json:"showNotifications"`
 	Theme                string `json:"theme"` // "system", "light", or "dark"
+	// Proxy is a SOCKS5 or HTTP proxy URL (e.g. "socks5://host:port") applied
+	// to the WhatsApp connection at startup; "" connects directly. Changing
+	// it takes effect on the next launch, not the running session.
+	Proxy string `json:"proxy"`
 }
 
 // Default returns the preferences a fresh install starts with: chatot

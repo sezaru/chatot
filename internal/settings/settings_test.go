@@ -20,6 +20,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		SendTypingIndicators: false,
 		ShowNotifications:    false,
 		Theme:                "dark",
+		Proxy:                "socks5://localhost:9050",
 	}
 	if err := Save(dir, want); err != nil {
 		t.Fatalf("Save: %v", err)
