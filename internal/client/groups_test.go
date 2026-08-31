@@ -158,6 +158,73 @@ func TestFakeUpdateGroupParticipants_BadAction(t *testing.T) {
 	}
 }
 
+func TestFakeGroupJoinRequests_Seeded(t *testing.T) {
+	reqs, err := NewFake().GroupJoinRequests(context.Background(), "weekendtrip@g.us")
+	if err != nil {
+		t.Fatalf("GroupJoinRequests: %v", err)
+	}
+	if len(reqs) != 1 {
+		t.Fatalf("len = %d, want 1", len(reqs))
+	}
+}
+
+func TestFakeGroupJoinRequests_NoneForUnknownGroup(t *testing.T) {
+	reqs, err := NewFake().GroupJoinRequests(context.Background(), "other@g.us")
+	if err != nil {
+		t.Fatalf("GroupJoinRequests: %v", err)
+	}
+	if len(reqs) != 0 {
+		t.Fatalf("len = %d, want 0", len(reqs))
+	}
+}
+
+func TestFakeResolveGroupJoinRequest_Approve(t *testing.T) {
+	ctx := context.Background()
+	f := NewFake()
+	const g = "weekendtrip@g.us"
+	reqs, _ := f.GroupJoinRequests(ctx, g)
+	requester := reqs[0].JID
+
+	if err := f.ResolveGroupJoinRequest(ctx, g, requester, true); err != nil {
+		t.Fatalf("ResolveGroupJoinRequest: %v", err)
+	}
+	if reqs, _ := f.GroupJoinRequests(ctx, g); len(reqs) != 0 {
+		t.Fatalf("request still pending after approve: %v", reqs)
+	}
+	if !hasParticipant(t, f, g, requester, false) {
+		t.Fatalf("approved requester %s not added to group", requester)
+	}
+}
+
+func TestFakeResolveGroupJoinRequest_Reject(t *testing.T) {
+	ctx := context.Background()
+	f := NewFake()
+	const g = "weekendtrip@g.us"
+	reqs, _ := f.GroupJoinRequests(ctx, g)
+	requester := reqs[0].JID
+
+	if err := f.ResolveGroupJoinRequest(ctx, g, requester, false); err != nil {
+		t.Fatalf("ResolveGroupJoinRequest: %v", err)
+	}
+	if reqs, _ := f.GroupJoinRequests(ctx, g); len(reqs) != 0 {
+		t.Fatalf("request still pending after reject: %v", reqs)
+	}
+	info, _ := f.GroupInfo(ctx, g)
+	for _, p := range info.Participants {
+		if p.JID == requester {
+			t.Fatalf("rejected requester %s was added to group", requester)
+		}
+	}
+}
+
+func TestFakeResolveGroupJoinRequest_Unknown(t *testing.T) {
+	f := NewFake()
+	err := f.ResolveGroupJoinRequest(context.Background(), "weekendtrip@g.us", "nobody@s.whatsapp.net", true)
+	if err == nil {
+		t.Error("expected error for unknown join request")
+	}
+}
+
 func hasParticipant(t *testing.T, f *Fake, jid, member string, wantAdmin bool) bool {
 	t.Helper()
 	info, err := f.GroupInfo(context.Background(), jid)

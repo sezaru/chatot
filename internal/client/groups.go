@@ -251,6 +251,45 @@ func (w *Whatsmeow) LinkGroupToCommunity(ctx context.Context, community, group s
 	return nil
 }
 
+// GroupJoinRequests returns jid's pending join requests.
+func (w *Whatsmeow) GroupJoinRequests(ctx context.Context, jid string) ([]JoinRequest, error) {
+	j, err := types.ParseJID(jid)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: parse group jid: %w", err)
+	}
+	reqs, err := w.wa.GetGroupRequestParticipants(ctx, j)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: get group join requests: %w", err)
+	}
+	out := make([]JoinRequest, len(reqs))
+	for i, r := range reqs {
+		out[i] = JoinRequest{JID: r.JID.String(), RequestedAt: r.RequestedAt}
+	}
+	return out, nil
+}
+
+// ResolveGroupJoinRequest approves or rejects participantJID's pending
+// request to join groupJID, then pushes a refresh so the UI updates.
+func (w *Whatsmeow) ResolveGroupJoinRequest(ctx context.Context, groupJID, participantJID string, approve bool) error {
+	j, err := types.ParseJID(groupJID)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse group jid: %w", err)
+	}
+	p, err := types.ParseJID(participantJID)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse participant jid: %w", err)
+	}
+	action := whatsmeow.ParticipantChangeReject
+	if approve {
+		action = whatsmeow.ParticipantChangeApprove
+	}
+	if _, err := w.wa.UpdateGroupRequestParticipants(ctx, j, []types.JID{p}, action); err != nil {
+		return fmt.Errorf("chatot/client: resolve group join request: %w", err)
+	}
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: groupJID}})
+	return nil
+}
+
 // insertGroupChat ensures a chat row exists for a newly created/joined group
 // so it shows up in the chat list.
 func (w *Whatsmeow) insertGroupChat(jid, name string) {

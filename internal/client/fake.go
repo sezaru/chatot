@@ -32,6 +32,9 @@ type Fake struct {
 	// mutations are reflected in a subsequent GroupInfo.
 	groups     map[string]*GroupInfo
 	nextGroupN int
+	// joinRequests holds mutable in-memory pending join requests keyed by
+	// group JID, seeded so the join-approval banner has something to show.
+	joinRequests map[string][]JoinRequest
 	// historySynced tracks chats RequestMoreHistory has already backfilled,
 	// so a chat only grows one extra page of synthetic older history rather
 	// than without bound.
@@ -74,6 +77,11 @@ func NewFake() *Fake {
 			},
 		},
 		historySynced: make(map[string]bool),
+		joinRequests: map[string][]JoinRequest{
+			"weekendtrip@g.us": {
+				{JID: "1998887777@s.whatsapp.net", RequestedAt: time.Unix(now-1800, 0)},
+			},
+		},
 		newsletters: map[string]*Newsletter{
 			"111111@newsletter": {ID: "111111@newsletter", Name: "Chatot News", Description: "Release notes and updates", Muted: false},
 			"222222@newsletter": {ID: "222222@newsletter", Name: "Weather Alerts", Description: "Daily local forecast", Muted: true},
@@ -1171,6 +1179,44 @@ func (f *Fake) LinkGroupToCommunity(ctx context.Context, community, group string
 	if _, ok := f.groups[group]; !ok {
 		return fmt.Errorf("chatot/client: unknown group %q", group)
 	}
+	return nil
+}
+
+// GroupJoinRequests returns jid's pending join requests, empty if none.
+func (f *Fake) GroupJoinRequests(ctx context.Context, jid string) ([]JoinRequest, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	reqs := f.joinRequests[jid]
+	out := make([]JoinRequest, len(reqs))
+	copy(out, reqs)
+	return out, nil
+}
+
+// ResolveGroupJoinRequest removes participantJID from jid's pending
+// requests; approve only affects whether the participant is also added to
+// the group's membership.
+func (f *Fake) ResolveGroupJoinRequest(ctx context.Context, groupJID, participantJID string, approve bool) error {
+	f.mu.Lock()
+	reqs := f.joinRequests[groupJID]
+	kept := reqs[:0]
+	found := false
+	for _, r := range reqs {
+		if r.JID == participantJID {
+			found = true
+			continue
+		}
+		kept = append(kept, r)
+	}
+	f.joinRequests[groupJID] = kept
+	if found && approve {
+		g := f.ensureGroupLocked(groupJID)
+		g.Participants = append(g.Participants, GroupParticipant{JID: participantJID})
+	}
+	f.mu.Unlock()
+	if !found {
+		return fmt.Errorf("chatot/client: no pending join request from %q in %q", participantJID, groupJID)
+	}
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: groupJID}})
 	return nil
 }
 

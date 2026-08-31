@@ -298,6 +298,15 @@ type ConversationView struct {
 	searchIdx            int
 	highlightedPositions map[int]bool
 
+	// joinBanner shows a "N people requested to join" strip above the thread
+	// when the open chat is a group with pending, admin-reviewable join
+	// requests; joinBannerReq tracks the in-flight fetch's target jid so a
+	// stale response (from a chat the user already navigated away from)
+	// can't clobber the banner.
+	joinBanner      *gtk.Revealer
+	joinBannerLabel *gtk.Label
+	joinBannerReq   string
+
 	toastOverlay *adw.ToastOverlay
 }
 
@@ -479,6 +488,27 @@ func NewConversationView(c client.Client) *ConversationView {
 	searchRevealer.SetRevealChild(false)
 	root.Append(searchRevealer)
 
+	joinBannerBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	joinBannerBox.AddCSSClass("chatot-join-banner")
+	joinBannerBox.SetMarginStart(10)
+	joinBannerBox.SetMarginEnd(10)
+	joinBannerBox.SetMarginTop(6)
+	joinBannerBox.SetMarginBottom(6)
+
+	joinBannerLabel := gtk.NewLabel("")
+	joinBannerLabel.SetXAlign(0)
+	joinBannerLabel.SetHExpand(true)
+	joinBannerBox.Append(joinBannerLabel)
+
+	joinReviewBtn := gtk.NewButtonWithLabel("Review")
+	joinReviewBtn.AddCSSClass("flat")
+	joinBannerBox.Append(joinReviewBtn)
+
+	joinBanner := gtk.NewRevealer()
+	joinBanner.SetChild(joinBannerBox)
+	joinBanner.SetRevealChild(false)
+	root.Append(joinBanner)
+
 	emptyBox := gtk.NewBox(gtk.OrientationVertical, 8)
 	emptyBox.SetVExpand(true)
 	emptyBox.SetVAlign(gtk.AlignCenter)
@@ -521,11 +551,19 @@ func NewConversationView(c client.Client) *ConversationView {
 		empty:                empty,
 		emptyBox:             emptyBox,
 		presence:             make(map[string]PresenceState),
+		joinBanner:           joinBanner,
+		joinBannerLabel:      joinBannerLabel,
 	}
 
 	groupInfoBtn.ConnectClicked(func() {
 		if cv.jid != "" {
 			showGroupInfoDialog(cv.window, cv.c, cv.jid)
+		}
+	})
+
+	joinReviewBtn.ConnectClicked(func() {
+		if cv.jid != "" {
+			showJoinRequestsDialog(cv.window, cv.c, cv.jid, func() { cv.refreshJoinBanner() })
 		}
 	})
 
@@ -650,6 +688,7 @@ func (cv *ConversationView) Load(jid string) {
 	cv.historyRequested = false
 	cv.historyInFlight = false
 	cv.refreshHeader()
+	cv.refreshJoinBanner()
 
 	msgs, err := cv.c.Messages(jid, conversationPageSize)
 	if err != nil {
@@ -851,6 +890,16 @@ func (cv *ConversationView) watchEvents() {
 					}
 				}
 			})
+		case client.EventChatUpdate:
+			if ev.ChatUpdate == nil {
+				continue
+			}
+			jid := ev.ChatUpdate.JID
+			glib.IdleAdd(func() {
+				if jid == cv.jid {
+					cv.refreshJoinBanner()
+				}
+			})
 		case client.EventAvatar:
 			if ev.Avatar == nil {
 				continue
@@ -894,6 +943,33 @@ func (cv *ConversationView) refreshHeader() {
 		removeAllChildren(cv.avatarSlot)
 		cv.avatarSlot.Append(buildAvatar(cv.c, cv.avatarCache, cv.jid, initialFor(name), conversationAvatarSize))
 	}
+}
+
+// refreshJoinBanner hides the join-request banner and, for a group chat,
+// re-fetches its pending requests off the GTK main loop to repopulate it.
+// Must run on the GTK main loop; the fetch itself does not.
+func (cv *ConversationView) refreshJoinBanner() {
+	cv.joinBanner.SetRevealChild(false)
+	jid := cv.jid
+	cv.joinBannerReq = jid
+	if jid == "" || !strings.HasSuffix(jid, "@g.us") {
+		return
+	}
+	go func() {
+		reqs, err := cv.c.GroupJoinRequests(context.Background(), jid)
+		glib.IdleAdd(func() {
+			if cv.joinBannerReq != jid || cv.jid != jid {
+				return
+			}
+			text := joinRequestBannerText(len(reqs))
+			if err != nil || text == "" {
+				cv.joinBanner.SetRevealChild(false)
+				return
+			}
+			cv.joinBannerLabel.SetLabel(text)
+			cv.joinBanner.SetRevealChild(true)
+		})
+	}()
 }
 
 // chatName looks up jid's display name from the chat list, falling back to
