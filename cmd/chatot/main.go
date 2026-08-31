@@ -289,11 +289,19 @@ func activate(app *adw.Application, c client.Client) {
 // applySettings pushes a loaded Settings into the live package vars/state
 // the rest of the app actually reads: Composer gates read receipts and
 // typing indicators on ui.SendReadReceipts/ui.SendTypingIndicators, and the
-// AdwStyleManager owns the color scheme.
+// AdwStyleManager owns the color scheme. It must run before c.Start so the
+// proxy (below) is in place before whatsmeow connects.
 func applySettings(s settings.Settings) {
 	ui.SendReadReceipts = s.SendReadReceipts
 	ui.SendTypingIndicators = s.SendTypingIndicators
 	ui.ApplyTheme(s.Theme)
+
+	// Whatsmeow.Start reads CHATOT_PROXY itself (see internal/client), so
+	// seeding it here reuses that exact path rather than adding a new one.
+	// An operator-set CHATOT_PROXY always wins over the saved setting.
+	if s.Proxy != "" && os.Getenv("CHATOT_PROXY") == "" {
+		os.Setenv("CHATOT_PROXY", s.Proxy)
+	}
 }
 
 func sendPresence(c client.Client, available bool) {
