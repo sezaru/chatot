@@ -520,6 +520,13 @@ type Client interface {
 	// JoinGroupWithLink joins via an invite link or bare code and returns the
 	// joined group's JID, persisting it as a chat.
 	JoinGroupWithLink(ctx context.Context, code string) (jid string, err error)
+	// CreateCommunity creates a WhatsApp community (a parent group whose
+	// linked announcement group is created automatically by the server) and
+	// returns its JID, persisting it as a chat like a regular group.
+	CreateCommunity(ctx context.Context, name, description string) (jid string, err error)
+	// LinkGroupToCommunity links an existing group as a sub-group of
+	// community.
+	LinkGroupToCommunity(ctx context.Context, community, group string) error
 
 	// Newsletters returns the channels ("newsletters") this account is
 	// subscribed to, fetched live from WhatsApp (never persisted).

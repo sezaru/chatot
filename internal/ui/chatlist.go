@@ -326,9 +326,7 @@ func NewChatList(c client.Client) *ChatList {
 
 	newCommunityItem.ConnectClicked(func() {
 		plusPopover.Popdown()
-		if cl.onNewCommunity != nil {
-			cl.onNewCommunity()
-		}
+		cl.showNewCommunityDialog()
 	})
 
 	joinInviteItem.ConnectClicked(func() {
@@ -1468,6 +1466,10 @@ func (cl *ChatList) showJoinGroupDialog() {
 			status.SetText("Paste an invite link or code")
 			return
 		}
+		if !isValidInviteInput(code) {
+			status.SetText("That doesn't look like a chat.whatsapp.com invite")
+			return
+		}
 		joinBtn.SetSensitive(false)
 		status.SetText("Joining…")
 		go func() {
@@ -1490,6 +1492,101 @@ func (cl *ChatList) showJoinGroupDialog() {
 
 	dialog.SetChild(box)
 	dialog.SetDefaultWidget(joinBtn)
+	dialog.Present()
+}
+
+// isValidInviteInput reports whether s looks like a usable WhatsApp group
+// invite: either a chat.whatsapp.com link (with or without scheme) carrying a
+// non-empty code, or a bare invite code with no whitespace or slashes.
+func isValidInviteInput(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	lower := strings.ToLower(s)
+	if strings.Contains(lower, "whatsapp.com") {
+		const marker = "chat.whatsapp.com/"
+		idx := strings.Index(lower, marker)
+		if idx < 0 {
+			return false
+		}
+		code := strings.Trim(s[idx+len(marker):], "/ \t")
+		return code != "" && !strings.ContainsAny(code, " \t")
+	}
+	if strings.ContainsAny(s, " \t/") {
+		return false
+	}
+	return len(s) >= 6
+}
+
+// showNewCommunityDialog opens a modal to create a community (name +
+// optional description), then opens the new community's chat via onSelect.
+// WhatsApp communities are, from the client's perspective, a parent group;
+// they render as a regular group chat in the list.
+func (cl *ChatList) showNewCommunityDialog() {
+	dialog := gtk.NewWindow()
+	dialog.SetTitle("New community")
+	if cl.window != nil {
+		dialog.SetTransientFor(cl.window)
+	}
+	dialog.SetModal(true)
+
+	box := gtk.NewBox(gtk.OrientationVertical, 8)
+	box.SetMarginTop(12)
+	box.SetMarginBottom(12)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
+
+	nameEntry := gtk.NewEntry()
+	nameEntry.SetPlaceholderText("Community name (max 25 chars)")
+	box.Append(nameEntry)
+
+	descEntry := gtk.NewEntry()
+	descEntry.SetPlaceholderText("Description (optional)")
+	box.Append(descEntry)
+
+	status := gtk.NewLabel("")
+	status.SetXAlign(0)
+	box.Append(status)
+
+	createBtn := gtk.NewButtonWithLabel("Create")
+	createBtn.AddCSSClass("suggested-action")
+	createBtn.SetSensitive(false)
+	box.Append(createBtn)
+
+	nameEntry.ConnectChanged(func() {
+		createBtn.SetSensitive(strings.TrimSpace(nameEntry.Text()) != "")
+	})
+
+	create := func() {
+		name := strings.TrimSpace(nameEntry.Text())
+		if name == "" {
+			return
+		}
+		description := strings.TrimSpace(descEntry.Text())
+		createBtn.SetSensitive(false)
+		status.SetText("Creating…")
+		go func() {
+			jid, err := cl.c.CreateCommunity(context.Background(), name, description)
+			glib.IdleAdd(func() {
+				createBtn.SetSensitive(strings.TrimSpace(nameEntry.Text()) != "")
+				if err != nil {
+					status.SetText("Couldn't create community, try again")
+					return
+				}
+				dialog.Close()
+				if cl.onSelect != nil {
+					cl.onSelect(jid)
+				}
+			})
+		}()
+	}
+	createBtn.ConnectClicked(create)
+	nameEntry.ConnectActivate(create)
+	descEntry.ConnectActivate(create)
+
+	dialog.SetChild(box)
+	dialog.SetDefaultWidget(createBtn)
 	dialog.Present()
 }
 

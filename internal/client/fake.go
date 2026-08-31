@@ -1137,6 +1137,40 @@ func (f *Fake) JoinGroupWithLink(ctx context.Context, code string) (string, erro
 	return jid, nil
 }
 
+func (f *Fake) CreateCommunity(ctx context.Context, name, description string) (string, error) {
+	if !validGroupName(name) {
+		return "", fmt.Errorf("chatot/client: invalid community name %q (1-25 chars)", name)
+	}
+	f.mu.Lock()
+	f.nextGroupN++
+	jid := fmt.Sprintf("fake-community-%d@g.us", f.nextGroupN)
+	f.groups[jid] = &GroupInfo{
+		JID:      jid,
+		Name:     name,
+		Topic:    description,
+		OwnerJID: fakeOwnJID,
+		Participants: []GroupParticipant{
+			{JID: fakeOwnJID, IsAdmin: true, IsSuperAdmin: true},
+		},
+	}
+	f.chats = append(f.chats, Chat{JID: jid, Name: name, IsGroup: true, LastMessageTS: time.Now().Unix()})
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return jid, nil
+}
+
+func (f *Fake) LinkGroupToCommunity(ctx context.Context, community, group string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.groups[community]; !ok {
+		return fmt.Errorf("chatot/client: unknown community %q", community)
+	}
+	if _, ok := f.groups[group]; !ok {
+		return fmt.Errorf("chatot/client: unknown group %q", group)
+	}
+	return nil
+}
+
 // Labels returns the non-deleted labels.
 func (f *Fake) Labels() ([]Label, error) {
 	f.mu.Lock()
