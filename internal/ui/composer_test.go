@@ -426,11 +426,11 @@ func TestComposeStateEditAndReplyMutuallyExclusive(t *testing.T) {
 	}
 }
 
-func TestComposerButtons(t *testing.T) {
-	if mic, send := composerButtons(true); !mic || send {
-		t.Errorf("empty entry: want mic on/send off, got mic=%v send=%v", mic, send)
+func TestSendEnabled(t *testing.T) {
+	if sendEnabled("") || sendEnabled("   ") {
+		t.Error("send should be disabled for empty/whitespace entry")
 	}
-	if mic, send := composerButtons(false); mic || !send {
-		t.Errorf("non-empty entry: want mic off/send on, got mic=%v send=%v", mic, send)
+	if !sendEnabled("hi") {
+		t.Error("send should be enabled once there's text")
 	}
 }

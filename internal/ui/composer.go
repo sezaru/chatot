@@ -424,10 +424,12 @@ func NewComposer(c client.Client) *Composer {
 	recordBtn.SetSensitive(false)
 	entryRow.Append(recordBtn)
 
+	// Send is always visible (mockup 1e: "idle · send disabled"), greyed out
+	// until there's text — not the WhatsApp mic-XOR-send swap, which hid it.
 	sendBtn := gtk.NewButtonFromIconName("go-next-symbolic")
 	sendBtn.AddCSSClass("chatot-send")
 	sendBtn.SetTooltipText("Send")
-	sendBtn.SetVisible(false)
+	sendBtn.SetSensitive(false)
 	entryRow.Append(sendBtn)
 
 	root.Append(entryRow)
@@ -498,19 +500,17 @@ func (c *Composer) onEntryChanged() {
 	}
 }
 
-// composerButtons decides which trailing action the composer shows given
-// whether the entry is empty: the mic (record a voice note) on an empty
-// entry, the green send arrow once there's text to send — WhatsApp's toggle.
-func composerButtons(entryEmpty bool) (showMic, showSend bool) {
-	return entryEmpty, !entryEmpty
+// sendEnabled reports whether the send button should be active: only when the
+// entry holds non-whitespace text. Per the mockup the button is always shown
+// (mic and send both visible); this drives its sensitivity, not visibility.
+func sendEnabled(text string) bool {
+	return strings.TrimSpace(text) != ""
 }
 
-// updateSendVisibility toggles the mic/send buttons off the entry's current
-// text per composerButtons. Safe to call with no active chat.
+// updateSendVisibility greys/enables the send button off the entry's current
+// text. Safe to call with no active chat.
 func (c *Composer) updateSendVisibility() {
-	showMic, showSend := composerButtons(strings.TrimSpace(c.entry.Text()) == "")
-	c.recordBtn.SetVisible(showMic)
-	c.sendBtn.SetVisible(showSend)
+	c.sendBtn.SetSensitive(sendEnabled(c.entry.Text()))
 }
 
 // tickTyping is invoked on the GTK main loop roughly once a second; it asks
@@ -1270,6 +1270,7 @@ func (c *Composer) toggleRecording() {
 	c.recordBtn.AddCSSClass("destructive-action")
 	c.entry.SetSensitive(false)
 	c.attachBtn.SetSensitive(false)
+	c.sendBtn.SetVisible(false)
 
 	jid := c.state.jid
 	go func() {
@@ -1338,6 +1339,8 @@ func (c *Composer) resetRecordButton() {
 	c.recordBtn.SetSensitive(c.state.jid != "")
 	c.entry.SetSensitive(true)
 	c.attachBtn.SetSensitive(c.state.jid != "")
+	c.sendBtn.SetVisible(true)
+	c.updateSendVisibility()
 }
 
 // guessAttachmentKind best-effort classifies path by extension, for the
