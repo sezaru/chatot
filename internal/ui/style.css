@@ -384,6 +384,17 @@ window {
 	font-size: 0.82em;
 }
 
+/* Account switcher popover: give it a comfortable min width and dim the
+   per-row status subline like the header's. */
+.chatot-account-switcher {
+	min-width: 240px;
+}
+
+.chatot-account-status {
+	opacity: 0.55;
+	font-size: 0.82em;
+}
+
 .chatot-search-snippet {
 	opacity: 0.55;
 	font-size: 0.9em;

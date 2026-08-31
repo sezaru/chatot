@@ -167,6 +167,16 @@ type ChatList struct {
 	starredT *gtk.ToggleButton
 	statusT  *gtk.ToggleButton
 	channelT *gtk.ToggleButton
+
+	// Account switcher (F58): the header identity is a MenuButton whose popover
+	// lists accounts; switcher is nil until SetAccountSwitcher wires the manager.
+	switcher           AccountSwitcher
+	accountAvatar      *gtk.Label
+	accountAvatarClass string // current avatar palette class, swapped on active change
+	accountName        *gtk.Label
+	accountStatus      *gtk.Label
+	onAddAccount       func() // "Add account…"; STUBBED until F59
+	onManageAccounts   func() // "Manage accounts…"; STUBBED until F59
 }
 
 // SetWindow supplies the parent window the new-chat dialog needs; call once
@@ -178,8 +188,9 @@ func (cl *ChatList) SetWindow(w *gtk.Window) { cl.window = w }
 func NewChatList(c client.Client) *ChatList {
 	root := gtk.NewBox(gtk.OrientationVertical, 0)
 
-	// Row 1: account header. TODO multi-account: name/phone are hard-coded
-	// placeholders until per-account data exists.
+	// Row 1: account header. The identity (avatar + name + status + chevron) is
+	// a MenuButton whose popover is the account switcher; SetAccountSwitcher
+	// fills in the live per-account data (placeholders show until then).
 	accountRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
 	accountRow.AddCSSClass("chatot-account-row")
 
@@ -187,20 +198,33 @@ func NewChatList(c client.Client) *ChatList {
 	accountAvatar.AddCSSClass("chatot-avatar")
 	accountAvatar.AddCSSClass("chatot-account-avatar")
 	accountAvatar.SetSizeRequest(32, 32)
-	accountRow.Append(accountAvatar)
 
 	accountText := gtk.NewBox(gtk.OrientationVertical, 0)
 	accountText.SetHExpand(true)
 	accountText.SetVAlign(gtk.AlignCenter)
-	accountName := gtk.NewLabel("Sezar (personal)")
+	accountName := gtk.NewLabel("Account 1")
 	accountName.SetXAlign(0)
+	accountName.SetEllipsize(pango.EllipsizeEnd)
+	accountName.SetMaxWidthChars(1)
 	accountName.AddCSSClass("chatot-chat-name")
 	accountText.Append(accountName)
-	accountPhone := gtk.NewLabel("+351 912 000 000")
-	accountPhone.SetXAlign(0)
-	accountPhone.AddCSSClass("chatot-account-phone")
-	accountText.Append(accountPhone)
-	accountRow.Append(accountText)
+	accountStatus := gtk.NewLabel("")
+	accountStatus.SetXAlign(0)
+	accountStatus.AddCSSClass("chatot-account-phone")
+	accountText.Append(accountStatus)
+
+	accountBtnBox := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	accountBtnBox.SetHExpand(true)
+	accountBtnBox.Append(accountAvatar)
+	accountBtnBox.Append(accountText)
+	accountBtnBox.Append(gtk.NewImageFromIconName("pan-down-symbolic"))
+
+	accountBtn := gtk.NewMenuButton()
+	accountBtn.AddCSSClass("flat")
+	accountBtn.SetHExpand(true)
+	accountBtn.SetChild(accountBtnBox)
+	accountBtn.SetTooltipText("Switch account")
+	accountRow.Append(accountBtn)
 
 	plusBtn := gtk.NewMenuButton()
 	plusBtn.SetIconName("list-add-symbolic")
@@ -280,7 +304,16 @@ func NewChatList(c client.Client) *ChatList {
 		composingJIDs: make(map[string]string), avatarCache: newAvatarCache(),
 		chipRow: chipRow, postStatusBar: postStatusBar, followBar: followBar,
 		search: search, starredT: starredToggle, statusT: statusToggle, channelT: channelsToggle,
+		accountAvatar: accountAvatar, accountAvatarClass: "chatot-account-avatar",
+		accountName: accountName, accountStatus: accountStatus,
 	}
+
+	accountBtn.SetCreatePopupFunc(func(mb *gtk.MenuButton) {
+		if cl.switcher == nil {
+			return
+		}
+		mb.SetPopover(cl.buildAccountPopover())
+	})
 
 	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
 		idx := row.Index()
@@ -460,6 +493,53 @@ func (cl *ChatList) OnChatSelected(f func(jid string)) {
 // OnNewCommunityRequested registers f to be called when the user picks "New
 // community" from the ＋ menu; STUBBED until F48 implements communities.
 func (cl *ChatList) OnNewCommunityRequested(f func()) { cl.onNewCommunity = f }
+
+// SetAccountSwitcher wires the multi-account manager behind the header's
+// switcher popover and refreshes the header to the active account. The rest of
+// the app keeps holding a plain client.Client; only this seam sees the manager.
+func (cl *ChatList) SetAccountSwitcher(sw AccountSwitcher) {
+	cl.switcher = sw
+	cl.refreshAccountHeader()
+}
+
+// OnAddAccountRequested registers f for the switcher's "Add account…" item;
+// STUBBED until F59 builds the add-account flow.
+func (cl *ChatList) OnAddAccountRequested(f func()) { cl.onAddAccount = f }
+
+// OnManageAccountsRequested registers f for the switcher's "Manage accounts…"
+// item; STUBBED until F59 builds the manage-accounts flow.
+func (cl *ChatList) OnManageAccountsRequested(f func()) { cl.onManageAccounts = f }
+
+// refreshAccountHeader repaints the header identity (avatar initial + palette
+// colour, name, status line) from the switcher's active account. Called at
+// wire time and after each successful switch; SetActive itself publishes a
+// refresh event that reloads the chat list separately.
+func (cl *ChatList) refreshAccountHeader() {
+	if cl.switcher == nil {
+		return
+	}
+	metas := cl.switcher.Accounts()
+	if len(metas) == 0 {
+		return
+	}
+	activeID := cl.switcher.ActiveID()
+	active := metas[0]
+	for _, m := range metas {
+		if m.ID == activeID {
+			active = m
+			break
+		}
+	}
+	cl.accountName.SetText(active.Name)
+	cl.accountStatus.SetText(active.Status)
+	cl.accountAvatar.SetText(initialFor(active.Name))
+	newClass := avatarColorClass(active.ID)
+	if cl.accountAvatarClass != newClass {
+		cl.accountAvatar.RemoveCSSClass(cl.accountAvatarClass)
+		cl.accountAvatar.AddCSSClass(newClass)
+		cl.accountAvatarClass = newClass
+	}
+}
 
 // OpenGlobalSearch switches the sidebar into search mode with query
 // pre-filled, clearing any active starred/status/channels filter — the

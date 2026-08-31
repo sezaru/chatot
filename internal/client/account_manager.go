@@ -18,10 +18,24 @@ type Account struct {
 }
 
 // AccountMeta is the display-facing view of an account (no live Client), for
-// the account switcher UI.
+// the account switcher UI. Status/Unread are a best-effort snapshot read off
+// the account's client at Accounts() time: Status is "Connected" when logged
+// in, else the relink prompt (a live "reconnecting" state isn't observable
+// through the Client seam); Unread is the summed unread count across its chats.
 type AccountMeta struct {
-	ID   string
-	Name string
+	ID     string
+	Name   string
+	Status string
+	Unread int
+}
+
+// accountStatusLine is the pure status subline for an account, given whether
+// its client is logged in.
+func accountStatusLine(loggedIn bool) string {
+	if loggedIn {
+		return "Connected"
+	}
+	return "Logged out · scan to relink"
 }
 
 // AccountManager owns an ordered set of accounts, exactly one of them active,
@@ -136,7 +150,18 @@ func (m *AccountManager) Accounts() []AccountMeta {
 	defer m.mu.Unlock()
 	out := make([]AccountMeta, len(m.accounts))
 	for i, a := range m.accounts {
-		out[i] = AccountMeta{ID: a.ID, Name: a.Name}
+		unread := 0
+		if chats, err := a.c.Chats(0); err == nil {
+			for _, ch := range chats {
+				unread += ch.UnreadCount
+			}
+		}
+		out[i] = AccountMeta{
+			ID:     a.ID,
+			Name:   a.Name,
+			Status: accountStatusLine(a.c.LoggedIn()),
+			Unread: unread,
+		}
 	}
 	return out
 }

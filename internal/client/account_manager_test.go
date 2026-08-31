@@ -120,3 +120,24 @@ func lastText(t *testing.T, f *Fake, jid string) string {
 	}
 	return msgs[len(msgs)-1].Text
 }
+
+func TestAccountStatusLine(t *testing.T) {
+	if got := accountStatusLine(true); got != "Connected" {
+		t.Errorf("logged-in status = %q, want %q", got, "Connected")
+	}
+	if got := accountStatusLine(false); got != "Logged out · scan to relink" {
+		t.Errorf("logged-out status = %q, want %q", got, "Logged out · scan to relink")
+	}
+}
+
+func TestAccountsMetaStatus(t *testing.T) {
+	m := NewAccountManager()
+	m.AddAccount("a", "A", NewFake())
+	metas := m.Accounts()
+	if len(metas) != 1 {
+		t.Fatalf("want 1 account meta, got %d", len(metas))
+	}
+	if metas[0].Status != "Connected" {
+		t.Errorf("seeded Fake is logged in, status = %q, want %q", metas[0].Status, "Connected")
+	}
+}

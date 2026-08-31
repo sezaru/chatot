@@ -39,7 +39,11 @@ func main() {
 func buildClient() client.Client {
 	m := client.NewAccountManager()
 	if os.Getenv("CHATOT_FAKE") == "1" {
-		m.AddAccount("default", "Account 1", client.NewFake())
+		// Seed three fake accounts so the switcher is populated for
+		// screenshots/dev; the first is active. Each is its own Fake client.
+		m.AddAccount("personal", "Sezar (personal)", client.NewFake())
+		m.AddAccount("work", "Work", client.NewFake())
+		m.AddAccount("business", "Bakery (business)", client.NewFake())
 		return m
 	}
 	stateDir := stateDir()
@@ -82,6 +86,18 @@ func activate(app *adw.Application, c client.Client) {
 
 	chatList.OnNewCommunityRequested(func() {
 		log.Printf("chatot: new community requested (F48 not yet implemented)")
+	})
+
+	// The account manager is the multi-account switcher seam; hand it to the
+	// header's switcher popover without disturbing the client.Client wiring.
+	if am, ok := c.(*client.AccountManager); ok {
+		chatList.SetAccountSwitcher(am)
+	}
+	chatList.OnAddAccountRequested(func() {
+		log.Printf("chatot: add account requested (F59 not yet implemented)")
+	})
+	chatList.OnManageAccountsRequested(func() {
+		log.Printf("chatot: manage accounts requested (F59 not yet implemented)")
 	})
 
 	conversation := ui.NewConversationView(c)
