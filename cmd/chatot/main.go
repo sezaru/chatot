@@ -86,6 +86,11 @@ func activate(app *adw.Application, c client.Client) {
 
 	prefs := settings.Load(settings.Dir())
 	applySettings(prefs)
+	saveSettings := func() {
+		if err := settings.Save(settings.Dir(), prefs); err != nil {
+			log.Printf("chatot: save settings failed: %v", err)
+		}
+	}
 
 	chatList := ui.NewChatList(c)
 	sidebar := adw.NewNavigationPage(chatList, "Chats")
@@ -101,6 +106,9 @@ func activate(app *adw.Application, c client.Client) {
 	am, hasAccounts := c.(*client.AccountManager)
 	if hasAccounts {
 		chatList.SetAccountSwitcher(am)
+		// Apply the keep-inactive-connected preference before Start so it
+		// governs which accounts connect on launch.
+		am.SetKeepInactiveConnected(prefs.KeepInactiveConnected)
 	}
 
 	conversation := ui.NewConversationView(c)
@@ -191,7 +199,7 @@ func activate(app *adw.Application, c client.Client) {
 			ui.ShowAddAccountDialog(&win.Window, am, refresh)
 		})
 		chatList.OnManageAccountsRequested(func() {
-			ui.ShowManageAccountsDialog(&win.Window, am, refresh)
+			ui.ShowManageAccountsDialog(&win.Window, am, &prefs, refresh, saveSettings)
 		})
 	}
 
@@ -252,9 +260,13 @@ func activate(app *adw.Application, c client.Client) {
 	app.AddAction(preferencesAction)
 	app.SetAccelsForAction("app.preferences", []string{"<Ctrl>comma"})
 
+	var accountInfo func() (string, int)
+	if hasAccounts {
+		accountInfo = func() (string, int) { return am.ActiveName(), am.Count() }
+	}
 	ui.NewNotifier(c, &app.Application.Application, func() (bool, string) {
 		return win.IsActive(), conversation.CurrentJID()
-	})
+	}, accountInfo)
 
 	// System-tray StatusNotifierItem: click to raise, Open/Quit menu, unread
 	// tooltip. Degrades to a no-op with no StatusNotifierWatcher on the bus.
@@ -333,7 +345,7 @@ func activate(app *adw.Application, c client.Client) {
 		glib.IdleAdd(func() { chatList.PopupAccountSwitcher() })
 	}
 	if os.Getenv("CHATOT_SHOT_MANAGE") == "1" && hasAccounts {
-		ui.ShowManageAccountsDialog(&win.Window, am, func() { chatList.RefreshAccounts() })
+		ui.ShowManageAccountsDialog(&win.Window, am, &prefs, func() { chatList.RefreshAccounts() }, saveSettings)
 	}
 	if os.Getenv("CHATOT_SHOT_ADDACCOUNT") == "1" && hasAccounts {
 		ui.ShowAddAccountDialog(&win.Window, am, func() { chatList.RefreshAccounts() })
@@ -348,6 +360,7 @@ func activate(app *adw.Application, c client.Client) {
 func applySettings(s settings.Settings) {
 	ui.SendReadReceipts = s.SendReadReceipts
 	ui.SendTypingIndicators = s.SendTypingIndicators
+	ui.NotificationsPerAccount = s.NotificationsPerAccount
 	ui.ApplyTheme(s.Theme)
 
 	// Whatsmeow.Start reads CHATOT_PROXY itself (see internal/client), so

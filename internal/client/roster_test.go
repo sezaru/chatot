@@ -25,7 +25,7 @@ func TestSlugify(t *testing.T) {
 func TestRosterRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "accounts.json")
 	want := roster{Accounts: []rosterEntry{
-		{ID: "work", Label: "Work"},
+		{ID: "work", Label: "Work", Proxy: "socks5://localhost:1080"},
 		{ID: "bakery", Label: "Bakery (business)"},
 	}}
 	if err := saveRoster(path, want); err != nil {

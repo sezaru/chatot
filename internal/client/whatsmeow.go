@@ -59,7 +59,16 @@ type Whatsmeow struct {
 
 	blockMu sync.Mutex
 	blocked map[string]bool // jid -> blocked, warmed on connect and kept live by SetBlocked + inbound events
+
+	// proxyOverride, when non-empty, is the per-account proxy applied at Start
+	// in preference to the global CHATOT_PROXY.
+	proxyOverride string
 }
+
+// SetProxy sets a per-account proxy URL applied at the next Start, overriding
+// the global CHATOT_PROXY for this client. Empty falls back to the global
+// proxy. Not applied to an already-connected session.
+func (w *Whatsmeow) SetProxy(url string) { w.proxyOverride = url }
 
 // NewWhatsmeow opens (or creates) the whatsmeow auth/session store under
 // stateDir and constructs the client. stateDir defaults to
@@ -265,7 +274,11 @@ func (w *Whatsmeow) applyChatUpdate(jid string, mutate func(jid string) error) {
 // QR codes onto QRCodes(); pairing completion arrives as an EventPairSuccess
 // on Events() once whatsmeow's own handler processes events.PairSuccess.
 func (w *Whatsmeow) Start(ctx context.Context) error {
-	if proxy := os.Getenv("CHATOT_PROXY"); proxy != "" {
+	proxy := w.proxyOverride
+	if proxy == "" {
+		proxy = os.Getenv("CHATOT_PROXY")
+	}
+	if proxy != "" {
 		if err := w.wa.SetProxyAddress(proxy); err != nil {
 			w.log.Warnf("failed to set proxy %q: %v", proxy, err)
 		}

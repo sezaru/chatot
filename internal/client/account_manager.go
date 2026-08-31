@@ -17,8 +17,12 @@ type Account struct {
 	ID   string
 	Name string
 	c    Client
+	// Proxy is this account's optional per-account proxy URL, applied when its
+	// client is (re)created; overrides the global proxy for this account.
+	Proxy string
 	// stop cancels the context this account's client was Started with, so
-	// RemoveAccount can disconnect it without touching the whole app.
+	// RemoveAccount can disconnect it without touching the whole app. Nil when
+	// the account isn't currently running.
 	stop context.CancelFunc
 }
 
@@ -78,6 +82,14 @@ type AccountManager struct {
 	events  *eventBus
 	qrCodes chan string
 
+	// keepInactive keeps non-active accounts connected in the background (the
+	// default). When false, only the active account runs; switching accounts
+	// starts the newly-active one and stops the previously-active.
+	keepInactive bool
+	// baseCtx is the context handed to Start, reused to start accounts later
+	// (on an account switch or a keep-connected toggle).
+	baseCtx context.Context
+
 	// baseDir is $XDG_STATE_HOME/chatot; pairing accounts get baseDir/accounts/
 	// <id>/ and the roster is baseDir/accounts.json. Empty in fake/test mode,
 	// where AddPairingAccount and roster persistence are disabled.
@@ -88,8 +100,9 @@ type AccountManager struct {
 // AddAccount; the first one added becomes active.
 func NewAccountManager() *AccountManager {
 	return &AccountManager{
-		events:  newEventBus(nil),
-		qrCodes: make(chan string, 1),
+		events:       newEventBus(nil),
+		qrCodes:      make(chan string, 1),
+		keepInactive: true,
 	}
 }
 
@@ -206,13 +219,7 @@ func (m *AccountManager) ActiveID() string {
 // newly active account.
 func (m *AccountManager) SetActive(id string) error {
 	m.mu.Lock()
-	var target *Account
-	for _, a := range m.accounts {
-		if a.ID == id {
-			target = a
-			break
-		}
-	}
+	target := m.findLocked(id)
 	if target == nil {
 		m.mu.Unlock()
 		return fmt.Errorf("chatot/client: unknown account %q", id)
@@ -221,6 +228,9 @@ func (m *AccountManager) SetActive(id string) error {
 		m.mu.Unlock()
 		return nil
 	}
+	prev := m.findLocked(m.activeID)
+	keep := m.keepInactive
+	ctx := m.baseCtx
 	if m.stopProxy != nil {
 		close(m.stopProxy)
 	}
@@ -229,24 +239,160 @@ func (m *AccountManager) SetActive(id string) error {
 	m.startProxy(target, m.stopProxy)
 	m.mu.Unlock()
 
+	// With background accounts disconnected, bring the newly-active one up and
+	// take the previously-active one down (start-before-stop avoids a gap).
+	if !keep && ctx != nil {
+		if err := m.startAccount(ctx, target); err != nil {
+			return err
+		}
+		if prev != nil {
+			m.stopAccount(prev)
+		}
+	}
+
 	m.events.Publish(Event{Kind: EventHistorySync, HistorySync: &HistorySync{}})
 	return nil
 }
 
-// Start starts every registered account so background accounts stay connected;
-// with a single account this is exactly the old single-client Start.
+// Start starts the registered accounts and remembers ctx so accounts can be
+// (re)started later on a switch or a keep-connected toggle. With keepInactive
+// (the default) every account is started so background accounts stay connected;
+// with it off only the active account runs. Single-account behavior is
+// identical either way.
 func (m *AccountManager) Start(ctx context.Context) error {
 	m.mu.Lock()
+	m.baseCtx = ctx
+	keep := m.keepInactive
+	active := m.activeID
 	accts := make([]*Account, len(m.accounts))
 	copy(accts, m.accounts)
 	m.mu.Unlock()
 	for _, a := range accts {
-		actx, cancel := context.WithCancel(ctx)
-		m.mu.Lock()
-		a.stop = cancel
-		m.mu.Unlock()
-		if err := a.c.Start(actx); err != nil {
+		if !keep && a.ID != active {
+			continue
+		}
+		if err := m.startAccount(ctx, a); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// startAccount starts a on a child of ctx if it isn't already running,
+// recording its cancel func so it can be stopped later. A no-op when already
+// running (stop != nil).
+func (m *AccountManager) startAccount(ctx context.Context, a *Account) error {
+	m.mu.Lock()
+	if a.stop != nil {
+		m.mu.Unlock()
+		return nil
+	}
+	actx, cancel := context.WithCancel(ctx)
+	a.stop = cancel
+	m.mu.Unlock()
+	if err := a.c.Start(actx); err != nil {
+		cancel()
+		m.mu.Lock()
+		a.stop = nil
+		m.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
+// stopAccount cancels a's client context and marks it not running. A no-op when
+// already stopped.
+func (m *AccountManager) stopAccount(a *Account) {
+	m.mu.Lock()
+	stop := a.stop
+	a.stop = nil
+	m.mu.Unlock()
+	if stop != nil {
+		stop()
+	}
+}
+
+// ActiveName returns the active account's display label ("" if none).
+func (m *AccountManager) ActiveName() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, a := range m.accounts {
+		if a.ID == m.activeID {
+			return a.Name
+		}
+	}
+	return ""
+}
+
+// Count returns the number of registered accounts.
+func (m *AccountManager) Count() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.accounts)
+}
+
+// SetKeepInactiveConnected applies the keep-inactive-connected preference: when
+// turned off, every non-active account is disconnected; when turned on, they're
+// (re)connected. Idempotent; a no-op before Start (nothing is running yet).
+func (m *AccountManager) SetKeepInactiveConnected(keep bool) {
+	m.mu.Lock()
+	if m.keepInactive == keep {
+		m.mu.Unlock()
+		return
+	}
+	m.keepInactive = keep
+	ctx := m.baseCtx
+	active := m.activeID
+	accts := make([]*Account, len(m.accounts))
+	copy(accts, m.accounts)
+	m.mu.Unlock()
+
+	for _, a := range accts {
+		if a.ID == active {
+			continue
+		}
+		if keep {
+			if ctx != nil {
+				if err := m.startAccount(ctx, a); err != nil {
+					return
+				}
+			}
+		} else {
+			m.stopAccount(a)
+		}
+	}
+}
+
+// SetAccountProxy records a per-account proxy URL and persists the roster. It
+// does not reconnect the account: the proxy is applied when the account's
+// client is next (re)created, so a relink or restart is needed to take effect.
+func (m *AccountManager) SetAccountProxy(id, proxy string) error {
+	m.mu.Lock()
+	a := m.findLocked(id)
+	if a == nil {
+		m.mu.Unlock()
+		return fmt.Errorf("chatot/client: unknown account %q", id)
+	}
+	a.Proxy = proxy
+	m.mu.Unlock()
+	return m.persistRoster()
+}
+
+// AccountProxy returns id's configured per-account proxy URL ("" if none/unknown).
+func (m *AccountManager) AccountProxy(id string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if a := m.findLocked(id); a != nil {
+		return a.Proxy
+	}
+	return ""
+}
+
+// findLocked returns the account with id, or nil. Caller must hold m.mu.
+func (m *AccountManager) findLocked(id string) *Account {
+	for _, a := range m.accounts {
+		if a.ID == id {
+			return a
 		}
 	}
 	return nil
@@ -275,7 +421,13 @@ func (m *AccountManager) LoadRoster() error {
 		if err != nil {
 			return fmt.Errorf("chatot/client: restore account %q: %w", e.ID, err)
 		}
+		if e.Proxy != "" {
+			c.SetProxy(e.Proxy)
+		}
 		m.AddAccount(e.ID, e.Label, c)
+		if a := m.accountByID(e.ID); a != nil {
+			a.Proxy = e.Proxy
+		}
 	}
 	return nil
 }
@@ -298,12 +450,15 @@ func (m *AccountManager) AddPairingAccount(label string) (*Account, error) {
 	m.AddAccount(id, label, c)
 
 	a := m.accountByID(id)
-	ctx, cancel := context.WithCancel(context.Background())
 	m.mu.Lock()
-	a.stop = cancel
+	ctx := m.baseCtx
 	m.mu.Unlock()
-	if err := c.Start(ctx); err != nil {
-		cancel()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// A pairing account always starts so its QR/pair events flow, regardless of
+	// the keep-inactive-connected setting.
+	if err := m.startAccount(ctx, a); err != nil {
 		return nil, fmt.Errorf("chatot/client: start account %q: %w", id, err)
 	}
 
@@ -413,7 +568,7 @@ func (m *AccountManager) persistRoster() error {
 		if a.ID == defaultAccountID {
 			continue
 		}
-		r.Accounts = append(r.Accounts, rosterEntry{ID: a.ID, Label: a.Name})
+		r.Accounts = append(r.Accounts, rosterEntry{ID: a.ID, Label: a.Name, Proxy: a.Proxy})
 	}
 	m.mu.Unlock()
 	return saveRoster(filepath.Join(m.baseDir, rosterFile), r)

@@ -117,3 +117,40 @@ func TestDecodeCallActionParamMalformed(t *testing.T) {
 		t.Fatal("expected ok=false for a param missing the separator")
 	}
 }
+
+func TestAccountPrefixedTitle(t *testing.T) {
+	if got := accountPrefixedTitle("Sam Okafor", "Work"); got != "Work · Sam Okafor" {
+		t.Errorf("prefixed title = %q, want %q", got, "Work · Sam Okafor")
+	}
+	if got := accountPrefixedTitle("Sam Okafor", ""); got != "Sam Okafor" {
+		t.Errorf("empty label should leave title unchanged, got %q", got)
+	}
+}
+
+func TestNotifierAccountPrefix(t *testing.T) {
+	multi := func() (string, int) { return "Work", 2 }
+	single := func() (string, int) { return "Work", 1 }
+
+	cases := []struct {
+		name    string
+		perAcct bool
+		account func() (string, int)
+		want    string
+	}{
+		{"multi account, enabled", true, multi, "Work"},
+		{"single account, enabled", true, single, ""},
+		{"multi account, disabled", false, multi, ""},
+		{"no accessor", true, nil, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prev := NotificationsPerAccount
+			NotificationsPerAccount = tc.perAcct
+			defer func() { NotificationsPerAccount = prev }()
+			n := &Notifier{account: tc.account}
+			if got := n.accountPrefix(); got != tc.want {
+				t.Errorf("accountPrefix() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

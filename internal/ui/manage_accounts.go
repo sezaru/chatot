@@ -8,17 +8,20 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"chatot/internal/client"
+	"chatot/internal/settings"
 )
 
 // manageAccountsAvatarSize matches the switcher's row avatar.
 const manageAccountsAvatarSize = 40
 
 // ShowManageAccountsDialog opens the "Accounts" manager: a per-account row
-// (avatar + name + status + a ⋮ menu of Relink/Remove) and an Add… button that
-// chains into the add-account dialog. The list rebuilds after every add/remove
-// and calls onChanged so the switcher/header stay in sync. Room is intentionally
-// left below the list for F60's per-account toggles.
-func ShowManageAccountsDialog(parent *gtk.Window, am *client.AccountManager, onChanged func()) {
+// (avatar + name + status + a ⋮ menu of Relink/Account settings/Remove), an
+// Add… button that chains into the add-account dialog, and two global toggles
+// below the list (notifications-per-account, keep-inactive-connected). The list
+// rebuilds after every add/remove and calls onChanged so the switcher/header
+// stay in sync; toggle changes mutate prefs, call onSettingsChanged to persist,
+// and (for keep-connected) apply immediately to the manager.
+func ShowManageAccountsDialog(parent *gtk.Window, am *client.AccountManager, prefs *settings.Settings, onChanged, onSettingsChanged func()) {
 	dialog := gtk.NewWindow()
 	dialog.SetTitle("Accounts")
 	if parent != nil {
@@ -76,6 +79,36 @@ func ShowManageAccountsDialog(parent *gtk.Window, am *client.AccountManager, onC
 		ShowAddAccountDialog(dialog, am, changed)
 	})
 
+	toggles := adw.NewPreferencesGroup()
+
+	perAccount := adw.NewSwitchRow()
+	perAccount.SetTitle("Notifications per account")
+	perAccount.SetSubtitle("Toast titles are prefixed with the label")
+	perAccount.SetActive(prefs.NotificationsPerAccount)
+	perAccount.Connect("notify::active", func() {
+		prefs.NotificationsPerAccount = perAccount.Active()
+		NotificationsPerAccount = prefs.NotificationsPerAccount
+		if onSettingsChanged != nil {
+			onSettingsChanged()
+		}
+	})
+	toggles.Add(perAccount)
+
+	keepConnected := adw.NewSwitchRow()
+	keepConnected.SetTitle("Keep inactive accounts connected")
+	keepConnected.SetSubtitle("Receive while another account is shown")
+	keepConnected.SetActive(prefs.KeepInactiveConnected)
+	keepConnected.Connect("notify::active", func() {
+		prefs.KeepInactiveConnected = keepConnected.Active()
+		am.SetKeepInactiveConnected(prefs.KeepInactiveConnected)
+		if onSettingsChanged != nil {
+			onSettingsChanged()
+		}
+	})
+	toggles.Add(keepConnected)
+
+	box.Append(toggles)
+
 	dialog.SetChild(box)
 	dialog.Present()
 }
@@ -125,6 +158,16 @@ func buildManageAccountRow(dialog *gtk.Window, am *client.AccountManager, meta c
 	})
 	menuBox.Append(relink)
 
+	acctSettings := gtk.NewButtonWithLabel("Account settings…")
+	acctSettings.AddCSSClass("flat")
+	acctSettings.SetHAlign(gtk.AlignFill)
+	acctSettings.Child().(*gtk.Label).SetXAlign(0)
+	acctSettings.ConnectClicked(func() {
+		pop.Popdown()
+		showAccountSettingsDialog(dialog, am, meta)
+	})
+	menuBox.Append(acctSettings)
+
 	remove := gtk.NewButtonWithLabel("Remove")
 	remove.AddCSSClass("flat")
 	remove.SetHAlign(gtk.AlignFill)
@@ -140,6 +183,34 @@ func buildManageAccountRow(dialog *gtk.Window, am *client.AccountManager, meta c
 	row.Append(menuBtn)
 
 	return row
+}
+
+// showAccountSettingsDialog edits per-account settings (currently just a proxy
+// override). The proxy is applied when the account's client is next created, so
+// a relink or restart is needed for a change to take effect.
+func showAccountSettingsDialog(parent *gtk.Window, am *client.AccountManager, meta client.AccountMeta) {
+	dialog := adw.NewPreferencesDialog()
+	dialog.SetTitle(meta.Name)
+
+	page := adw.NewPreferencesPage()
+	group := adw.NewPreferencesGroup()
+	group.SetTitle("Proxy")
+	group.SetDescription("Relink or restart chatot for a proxy change to take effect")
+
+	proxyRow := adw.NewEntryRow()
+	proxyRow.SetTitle("Proxy URL")
+	proxyRow.SetTooltipText("socks5://host:port or http://host:port")
+	proxyRow.SetText(am.AccountProxy(meta.ID))
+	proxyRow.ConnectChanged(func() {
+		if err := am.SetAccountProxy(meta.ID, proxyRow.Text()); err != nil {
+			log.Printf("chatot: set account %q proxy failed: %v", meta.ID, err)
+		}
+	})
+	group.Add(proxyRow)
+
+	page.Add(group)
+	dialog.Add(page)
+	dialog.Present(parent)
 }
 
 // confirmRemoveAccount asks before removing meta, then removes it off the main

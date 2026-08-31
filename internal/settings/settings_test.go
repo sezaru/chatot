@@ -16,11 +16,13 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 func TestSaveLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	want := Settings{
-		SendReadReceipts:     true,
-		SendTypingIndicators: false,
-		ShowNotifications:    false,
-		Theme:                "dark",
-		Proxy:                "socks5://localhost:9050",
+		SendReadReceipts:        true,
+		SendTypingIndicators:    false,
+		ShowNotifications:       false,
+		Theme:                   "dark",
+		Proxy:                   "socks5://localhost:9050",
+		NotificationsPerAccount: false,
+		KeepInactiveConnected:   false,
 	}
 	if err := Save(dir, want); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -28,6 +30,16 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	got := Load(dir)
 	if got != want {
 		t.Errorf("Load after Save = %+v, want %+v", got, want)
+	}
+}
+
+func TestDefaultMultiAccountTogglesOn(t *testing.T) {
+	d := Default()
+	if !d.NotificationsPerAccount {
+		t.Error("NotificationsPerAccount should default true")
+	}
+	if !d.KeepInactiveConnected {
+		t.Error("KeepInactiveConnected should default true")
 	}
 }
 
