@@ -1,6 +1,9 @@
 /result
 /result-*
 .direnv/
+.devenv/
+.devenv.flake.nix
+devenv.local.nix
 /chatot
 *.test
 /tmp/

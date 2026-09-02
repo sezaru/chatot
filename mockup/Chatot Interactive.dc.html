@@ -1,0 +1,2001 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><link href="https://fonts.googleapis.com/css2?family=Cantarell:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#d7d7d7}
+*{box-sizing:border-box}
+input,textarea,button{font:inherit;color:inherit}
+input::placeholder{color:rgba(128,128,128,.75)}
+a{color:#1b8c72}a:hover{color:#147a63}
+@keyframes blink{0%,100%{opacity:.25}50%{opacity:1}}
+@keyframes pop{from{transform:scale(.96);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style></helmet>
+
+<div style="min-height:100vh;display:flex;align-items:safe center;justify-content:safe center;overflow:auto;padding:18px;font-family:Cantarell,system-ui,sans-serif">
+<div ref="{{ rootRef }}" style="width:min(1240px,100%);height:min(840px,calc(100vh - 36px));min-width:760px;min-height:520px;flex:none;position:relative;display:flex;flex-direction:column;border-radius:12px;overflow:hidden;background:var(--bg,#fafafa);color:var(--tx,rgba(0,0,0,.85));box-shadow:0 0 0 1px rgba(0,0,0,.14),0 18px 54px rgba(0,0,0,.3);{{ themeVars }}">
+
+<sc-if value="{{ isLinking }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;inset:0;z-index:60;display:flex;flex-direction:column;background:var(--bg,#fafafa)">
+    <div style="height:47px;flex:none;background:var(--hdr,#fff);border-bottom:1px solid var(--bd,rgba(0,0,0,.08));display:flex;align-items:center;padding:0 10px 0 14px;gap:10px">
+      <span style="font-size:15px;font-weight:700;flex:1">chatot</span>
+      <span style="display:flex;gap:8px"><span style="width:24px;height:24px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:11px;color:var(--dim,rgba(0,0,0,.55))">−</span><span style="width:24px;height:24px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:9px;color:var(--dim,rgba(0,0,0,.55))">□</span><span style="width:24px;height:24px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:10px;color:var(--dim,rgba(0,0,0,.55))">✕</span></span>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:30px">
+      <span style="font-size:22px;font-weight:700">Link chatot to WhatsApp</span>
+      <span style="font-size:13.5px;color:var(--dim,rgba(0,0,0,.55));max-width:420px;text-align:center;line-height:1.5;text-wrap:pretty">Open WhatsApp on your phone, go to Settings → Linked devices → Link a device, and point the camera here.</span>
+      <div style="width:220px;height:220px;border-radius:14px;background:#fff;border:1px solid var(--bd2,rgba(0,0,0,.13));display:grid;place-items:center;padding:14px">
+        <div style="width:100%;height:100%;background:repeating-conic-gradient(#111 0 25%,#fff 0 50%) 0 0/16px 16px;border-radius:4px;position:relative">
+          <span style="position:absolute;inset:38% 38%;background:#fff;border-radius:6px;display:grid;place-items:center;font-size:15px">🐦</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--dim,rgba(0,0,0,.55))"><span style="width:7px;height:7px;border-radius:999px;background:#1b8c72;animation:blink 1.4s infinite"></span>Waiting for scan · code refreshes in 42s</div>
+      <div style="display:flex;gap:10px;margin-top:4px">
+        <button onClick="{{ onScanned }}" style="border:none;height:36px;padding:0 18px;border-radius:9px;background:var(--ac,#1b8c72);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">Simulate a successful scan</button>
+        <button onClick="{{ onLinkPhone }}" style="height:36px;padding:0 16px;border-radius:9px;background:var(--chip,rgba(0,0,0,.08));border:none;font-size:13.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))">Link with phone number</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<div style="display:flex;height:47px;flex:none;background:var(--hdr,#fff);border-bottom:1px solid var(--bd,rgba(0,0,0,.08))">
+  <div style="flex:none;display:flex;align-items:center;gap:6px;padding:0 8px 0 10px;border-right:1px solid var(--bd,rgba(0,0,0,.08));width:{{ sidebarHeadWidth }}">
+    <sc-if value="{{ sidebarBack }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ onSidebarBack }}" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:15px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">←</button>
+    </sc-if>
+    <sc-if value="{{ showAccountButton }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ toggleAccount }}" style="flex:1;min-width:0;display:flex;align-items:center;gap:9px;padding:4px 8px 4px 4px;border:none;background:{{ accountBtnBg }};border-radius:8px;cursor:pointer;text-align:left;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+        <span style="width:28px;height:28px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;background:{{ acctColor }}">{{ acctInitial }}</span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column">
+          <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ acctLabel }}</span>
+          <span style="font:9.5px/1.2 'JetBrains Mono',ui-monospace,monospace;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap">{{ acctPhone }}</span>
+        </span>
+        <span style="flex:none;font-size:9px;color:var(--dim,rgba(0,0,0,.55))">▾</span>
+      </button>
+    </sc-if>
+    <sc-if value="{{ showPlainTitle }}" hint-placeholder-val="{{ true }}">
+      <span style="font-size:15px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ sidebarTitle }}</span>
+    </sc-if>
+    <button onClick="{{ togglePlus }}" style="width:28px;height:28px;border:none;background:transparent;border-radius:7px;display:grid;place-items:center;color:var(--dim,rgba(0,0,0,.55));font-size:15px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">＋</button>
+    <button onClick="{{ toggleAppMenu }}" style="width:28px;height:28px;border:none;background:transparent;border-radius:7px;display:grid;place-items:center;color:var(--dim,rgba(0,0,0,.55));font-size:15px;letter-spacing:1px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">⋮</button>
+  </div>
+  <div style="flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:0 10px 0 14px">
+    <sc-if value="{{ chatSearchOn }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;display:flex;align-items:center;gap:8px;height:32px;padding:0 6px 0 12px;background:var(--chat,#fff);border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:999px">
+        <input value="{{ chatQuery }}" onChange="{{ onChatQuery }}" placeholder="Search in this chat" style="flex:1;border:none;outline:none;background:transparent;font-size:13.5px"/>
+        <span style="font-size:11.5px;color:var(--dim2,rgba(0,0,0,.45));white-space:nowrap">{{ hitLabel }}</span>
+        <button onClick="{{ onHitPrev }}" style="width:24px;height:24px;border:none;background:transparent;border-radius:999px;cursor:pointer;font-size:11px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">▲</button>
+        <button onClick="{{ onHitNext }}" style="width:24px;height:24px;border:none;background:transparent;border-radius:999px;cursor:pointer;font-size:11px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">▼</button>
+        <button onClick="{{ onChatSearchClose }}" style="width:24px;height:24px;border:none;background:transparent;border-radius:999px;cursor:pointer;font-size:11px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">✕</button>
+      </div>
+    </sc-if>
+    <sc-if value="{{ showConvTitle }}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{ onOpenInfo }}" style="flex:1;min-width:0;display:flex;align-items:center;gap:10px;border:none;background:transparent;padding:2px 6px;border-radius:8px;cursor:pointer;text-align:left" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+        <span style="width:28px;height:28px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;background:{{ activeColor }}">{{ activeInitial }}</span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+          <span style="display:flex;align-items:center;gap:6px;min-width:0">
+            <span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ activeName }}</span>
+            <sc-if value="{{ activeMuted }}" hint-placeholder-val="{{ false }}"><span title="{{ muteTitle }}" style="font-size:10px;flex:none;opacity:.55">🔇</span></sc-if>
+            <sc-if value="{{ activeTimer }}" hint-placeholder-val="{{ false }}"><span title="Disappearing messages" style="font-size:10px;flex:none;opacity:.55">⏱</span></sc-if>
+          </span>
+          <span style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:{{ presenceColor }}">{{ activePresence }}</span>
+        </span>
+      </button>
+    </sc-if>
+    <button onClick="{{ toggleChatMenu }}" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;display:grid;place-items:center;font-size:15px;letter-spacing:1px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">⋮</button>
+    <sc-if value="{{ windowControls }}" hint-placeholder-val="{{ true }}">
+      <span style="display:flex;gap:8px;flex:none">
+        <span style="width:24px;height:24px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:11px;color:var(--dim,rgba(0,0,0,.55))">−</span>
+        <span style="width:24px;height:24px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:9px;color:var(--dim,rgba(0,0,0,.55))">□</span>
+        <span style="width:24px;height:24px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:10px;color:var(--dim,rgba(0,0,0,.55))">✕</span>
+      </span>
+    </sc-if>
+  </div>
+</div>
+
+<div style="display:flex;flex:1;min-height:0">
+
+  <sc-if value="{{ multi }}" hint-placeholder-val="{{ false }}">
+    <div style="width:54px;flex:none;background:var(--side,#ebebeb);border-right:1px solid var(--bd,rgba(0,0,0,.08));display:flex;flex-direction:column;align-items:center;gap:10px;padding:10px 0">
+      <sc-for list="{{ accounts }}" as="acc" hint-placeholder-count="2">
+        <button onClick="{{ acc.onClick }}" title="{{ acc.name }}" style="width:38px;height:38px;flex:none;border:none;border-radius:12px;color:#fff;font-weight:700;font-size:14px;cursor:pointer;position:relative;background:{{ acc.color }};box-shadow:{{ acc.ring }}">{{ acc.initial }}
+          <sc-if value="{{ acc.unread }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:-3px;right:-4px;min-width:17px;height:17px;padding:0 5px;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;font-size:10px;font-weight:700;display:grid;place-items:center;border:2px solid var(--side,#ebebeb)">{{ acc.unread }}</span></sc-if>
+        </button>
+      </sc-for>
+      <button onClick="{{ onAddAccount }}" style="width:38px;height:38px;border:1px dashed var(--bd2,rgba(0,0,0,.2));background:transparent;border-radius:12px;color:var(--dim,rgba(0,0,0,.55));font-size:16px;cursor:pointer">＋</button>
+    </div>
+  </sc-if>
+
+  <div style="width:334px;flex:none;background:var(--side,#ebebeb);border-right:1px solid var(--bd,rgba(0,0,0,.08));display:flex;flex-direction:column;min-height:0">
+
+    <sc-if value="{{ sidebarIsChats }}" hint-placeholder-val="{{ true }}">
+      <div style="padding:8px 8px 4px;flex:none">
+        <div style="display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;background:var(--chat,#fff);border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:999px">
+          <span style="font-size:12px;color:var(--dim2,rgba(0,0,0,.45))">⌕</span>
+          <input value="{{ query }}" onChange="{{ onQuery }}" placeholder="Search" style="flex:1;border:none;outline:none;background:transparent;font-size:13.5px"/>
+          <sc-if value="{{ hasQuery }}" hint-placeholder-val="{{ false }}"><button onClick="{{ onClearQuery }}" style="border:none;background:transparent;cursor:pointer;font-size:11px;color:var(--dim,rgba(0,0,0,.55))">✕</button></sc-if>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding:4px 8px 6px;flex:none;min-width:0">
+        <div style="flex:1;min-width:0;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:1px">
+        <sc-for list="{{ filters }}" as="f" hint-placeholder-count="4">
+          <button onClick="{{ f.onClick }}" style="flex:none;display:flex;align-items:center;gap:5px;font-size:12px;padding:4px 11px;border:none;border-radius:999px;cursor:pointer;white-space:nowrap;font-weight:{{ f.weight }};background:{{ f.bg }};color:{{ f.fg }}"><sc-if value="{{ f.dot }}" hint-placeholder-val="{{ false }}"><span style="width:8px;height:8px;flex:none;border-radius:3px;background:{{ f.dot }}"></span></sc-if>{{ f.label }}<sc-if value="{{ f.count }}" hint-placeholder-val="{{ false }}"><span style="font-size:10.5px;font-weight:700;color:{{ f.countColor }}">{{ f.count }}</span></sc-if></button>
+        </sc-for>
+        </div>
+        <sc-if value="{{ labelsAvailable }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ onLabels }}" title="Labels" style="flex:none;width:28px;height:24px;display:grid;place-items:center;border:none;border-radius:999px;background:{{ labelsBtnBg }};font-size:13px;letter-spacing:1px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer">⋯</button>
+        </sc-if>
+      </div>
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:2px 0 8px">
+        <sc-for list="{{ chatList }}" as="c" hint-placeholder-count="8">
+          <div onClick="{{ c.onClick }}" onContextMenu="{{ c.onContext }}" style="display:flex;gap:10px;align-items:flex-start;margin:0 8px 1px;padding:7px 8px;border-radius:8px;cursor:pointer;background:{{ c.bg }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+            <sc-if value="{{ c.stripe }}" hint-placeholder-val="{{ false }}"><span style="width:3px;height:38px;flex:none;border-radius:999px;background:{{ c.stripe }}"></span></sc-if>
+            <span style="width:38px;height:38px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:15px;background:{{ c.color }}">{{ c.initial }}</span>
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+              <span style="display:flex;align-items:center;gap:5px;width:100%;min-width:0">
+                <span style="flex:1;min-width:0;font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</span>
+                <sc-if value="{{ c.pinned }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;opacity:.45">📌</span></sc-if>
+                <sc-if value="{{ c.muted }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;opacity:.4">🔇</span></sc-if>
+              </span>
+              <span style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:{{ c.previewStyle }};color:{{ c.previewColor }}">{{ c.preview }}</span>
+            </span>
+            <span style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none">
+              <span style="font-size:10.5px;color:{{ c.timeColor }}">{{ c.time }}</span>
+              <sc-if value="{{ c.unread }}" hint-placeholder-val="{{ false }}"><span style="min-width:19px;height:19px;padding:0 6px;border-radius:999px;font-size:10.5px;font-weight:700;display:grid;place-items:center;background:{{ c.badgeBg }};color:{{ c.badgeFg }}">{{ c.unread }}</span></sc-if>
+            </span>
+          </div>
+        </sc-for>
+        <sc-if value="{{ listEmpty }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:36px 22px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+            <span style="font-size:13px;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">{{ emptyText }}</span>
+            <button onClick="{{ onEmptyAction }}" style="border:none;background:var(--chip,rgba(0,0,0,.08));border-radius:8px;padding:6px 13px;font-size:12.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))">{{ emptyAction }}</button>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ sidebarIsPeople }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:8px 8px 4px;flex:none">
+        <div style="display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;background:var(--chat,#fff);border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:999px">
+          <span style="font-size:12px;color:var(--dim2,rgba(0,0,0,.45))">⌕</span>
+          <input value="{{ peopleQuery }}" onChange="{{ onPeopleQuery }}" placeholder="Search name or number" style="flex:1;border:none;outline:none;background:transparent;font-size:13.5px"/>
+        </div>
+      </div>
+      <sc-if value="{{ pickingGroup }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:2px 10px 6px;display:flex;gap:6px;flex-wrap:wrap;flex:none">
+          <sc-for list="{{ picked }}" as="p" hint-placeholder-count="2">
+            <button onClick="{{ p.onRemove }}" style="display:flex;align-items:center;gap:5px;flex:none;white-space:nowrap;border:none;background:var(--chip,rgba(0,0,0,.08));border-radius:999px;padding:3px 8px 3px 4px;font-size:11.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))"><span style="width:18px;height:18px;border-radius:999px;color:#fff;display:grid;place-items:center;font-size:9px;font-weight:700;background:{{ p.color }}">{{ p.initial }}</span>{{ p.name }} ✕</button>
+          </sc-for>
+          <sc-if value="{{ nonePicked }}" hint-placeholder-val="{{ true }}"><span style="font-size:11.5px;white-space:nowrap;color:var(--dim2,rgba(0,0,0,.45));padding:4px 2px">Pick people to add</span></sc-if>
+        </div>
+      </sc-if>
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:2px 0 8px">
+        <sc-for list="{{ people }}" as="p" hint-placeholder-count="8">
+          <div onClick="{{ p.onClick }}" style="display:flex;gap:10px;align-items:center;margin:0 8px 1px;padding:7px 8px;border-radius:8px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+            <span style="width:34px;height:34px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;background:{{ p.color }}">{{ p.initial }}</span>
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+              <span style="font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.name }}</span>
+              <span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.status }}</span>
+            </span>
+            <sc-if value="{{ p.check }}" hint-placeholder-val="{{ false }}"><span style="width:20px;height:20px;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;display:grid;place-items:center;font-size:11px">✓</span></sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <sc-if value="{{ pickingGroup }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:none;padding:10px;border-top:1px solid var(--bd,rgba(0,0,0,.08))">
+          <button onClick="{{ onGroupNext }}" style="width:100%;height:36px;border:none;border-radius:9px;background:var(--ac,#1b8c72);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">Next · name the group</button>
+        </div>
+      </sc-if>
+    </sc-if>
+
+    <sc-if value="{{ sidebarIsGroupName }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;display:flex;flex-direction:column;gap:14px;padding:18px 14px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+          <button onClick="{{ onPickPhoto }}" style="width:72px;height:72px;border:none;border-radius:999px;display:grid;place-items:center;font-size:26px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55));background:{{ groupPhotoBg }}" style-hover="filter:brightness(.95)">{{ groupPhotoIcon }}</button>
+          <span style="font-size:11.5px;white-space:nowrap;color:var(--dim,rgba(0,0,0,.55))">{{ photoLabel }}</span>
+        </div>
+        <input value="{{ groupName }}" onChange="{{ onGroupName }}" placeholder="{{ groupNameTitle }}" style="height:38px;border-radius:9px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:var(--chat,#fff);padding:0 12px;font-size:13.5px;outline:none"/>
+        <sc-if value="{{ isCommunity }}" hint-placeholder-val="{{ false }}">
+          <span style="font-size:11.5px;line-height:1.45;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">A community is a parent group. Members join through the groups you link to it; an announcement group is created with it.</span>
+        </sc-if>
+        <div style="display:flex;flex-direction:column;gap:4px;display:{{ participantsDisplay }}">
+          <span style="font-size:11.5px;font-weight:700;color:var(--dim,rgba(0,0,0,.55));text-transform:uppercase;letter-spacing:.4px">{{ pickedCountLabel }}</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <sc-for list="{{ picked }}" as="p" hint-placeholder-count="2">
+              <span style="display:flex;align-items:center;gap:5px;flex:none;white-space:nowrap;background:var(--chip,rgba(0,0,0,.08));border-radius:999px;padding:3px 9px 3px 4px;font-size:11.5px"><span style="width:18px;height:18px;border-radius:999px;color:#fff;display:grid;place-items:center;font-size:9px;font-weight:700;background:{{ p.color }}">{{ p.initial }}</span>{{ p.name }}</span>
+            </sc-for>
+          </div>
+        </div>
+        <div style="flex:1"></div>
+        <button onClick="{{ onCreateGroup }}" style="height:38px;border:none;border-radius:9px;background:var(--ac,#1b8c72);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">{{ createLabel }}</button>
+      </div>
+    </sc-if>
+  </div>
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:var(--chat,#fff);position:relative">
+
+    <sc-if value="{{ trayOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;z-index:22;background:var(--bg,#fafafa);display:flex;flex-direction:column;animation:fade .12s ease">
+        <div style="flex:none;height:47px;display:flex;align-items:center;gap:8px;padding:0 8px 0 8px;background:var(--hdr,#fff);border-bottom:1px solid var(--bd,rgba(0,0,0,.08))">
+          <button onClick="{{ onTrayClose }}" style="flex:none;border:none;background:transparent;border-radius:8px;padding:6px 12px;font-size:13.5px;white-space:nowrap;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">Cancel</button>
+          <span style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center">
+            <span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">{{ trayName }}</span>
+            <span style="font:10px/1.3 'JetBrains Mono',ui-monospace,monospace;white-space:nowrap;color:var(--dim,rgba(0,0,0,.55))">{{ trayMeta }}</span>
+          </span>
+          <button onClick="{{ onTraySend }}" style="flex:none;border:none;background:var(--ac,#1b8c72);color:#fff;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer">{{ traySendLabel }}</button>
+        </div>
+
+        <div style="flex:1;min-height:0;display:grid;place-items:center;padding:16px">
+          <sc-if value="{{ trayIsImage }}" hint-placeholder-val="{{ true }}">
+            <div style="height:100%;max-height:100%;width:auto;max-width:min(100%,460px);aspect-ratio:4/3;border-radius:12px;display:grid;place-items:center;font-size:64px;background:{{ trayPreviewBg }}">{{ trayIcon }}</div>
+          </sc-if>
+          <sc-if value="{{ trayIsFile }}" hint-placeholder-val="{{ false }}">
+            <div style="height:100%;max-height:100%;width:auto;max-width:min(100%,460px);min-width:280px;aspect-ratio:4/3;border-radius:12px;padding:12px;background:var(--inb,rgba(0,0,0,.06));display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px">
+              <span style="font-size:48px;line-height:1">{{ trayIcon }}</span>
+              <span style="font-size:14.5px;white-space:nowrap;color:var(--tx,rgba(0,0,0,.85))">No preview available</span>
+              <span style="font:11px/1 'JetBrains Mono',ui-monospace,monospace;white-space:nowrap;color:var(--dim,rgba(0,0,0,.55))">{{ trayMeta }}</span>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="flex:none;padding:0 16px 12px;display:flex;justify-content:center">
+          <input value="{{ trayCaption }}" onChange="{{ onTrayCaption }}" onKeyDown="{{ onTrayKey }}" placeholder="Caption" style="width:min(100%,460px);height:36px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:var(--chat,#fff);border-radius:8px;padding:0 12px;font-size:13.5px;outline:none"/>
+        </div>
+
+        <div style="flex:none;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 16px 14px;border-top:1px solid var(--bd,rgba(0,0,0,.08));background:var(--hdr,#fff)">
+          <sc-for list="{{ trayItems }}" as="i" hint-placeholder-count="2">
+            <div onClick="{{ i.onClick }}" style="position:relative;width:54px;height:54px;flex:none;border-radius:8px;display:grid;place-items:center;font-size:22px;cursor:pointer;background:{{ i.bg }};box-shadow:{{ i.ring }}">{{ i.icon }}
+              <sc-if value="{{ i.hasCaption }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:4px;bottom:3px;font-size:9px">💬</span></sc-if>
+              <button onClick="{{ i.onRemove }}" title="Remove" style="position:absolute;top:-6px;right:-6px;width:19px;height:19px;border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:999px;background:var(--pop,#fff);color:var(--dim,rgba(0,0,0,.55));font-size:9px;cursor:pointer;display:grid;place-items:center;box-shadow:0 1px 3px rgba(0,0,0,.2)">✕</button>
+            </div>
+          </sc-for>
+          <button onClick="{{ onTrayAdd }}" title="Add files" style="width:54px;height:54px;flex:none;border:1px dashed var(--bd2,rgba(0,0,0,.22));background:transparent;border-radius:8px;font-size:18px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">＋</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ paneIsStarred }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:none;display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--bd,rgba(0,0,0,.08))">
+        <button onClick="{{ onCloseMedia }}" style="width:28px;height:28px;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:15px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">←</button>
+        <span style="font-size:14px;font-weight:700;flex:1">Starred messages</span>
+        <span style="font-size:11.5px;white-space:nowrap;color:var(--dim,rgba(0,0,0,.55))">{{ starredCount }}</span>
+      </div>
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:8px">
+        <sc-for list="{{ starredRows }}" as="r" hint-placeholder-count="3">
+          <div onClick="{{ r.onClick }}" style="display:flex;gap:11px;align-items:flex-start;padding:9px 10px;border-radius:9px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+            <span style="width:32px;height:32px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;background:{{ r.color }}">{{ r.initial }}</span>
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+              <span style="font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.chat }}</span>
+              <span style="font-size:12.5px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.text }}</span>
+            </span>
+            <span style="flex:none;display:flex;align-items:center;gap:6px">
+              <span style="font-size:10.5px;color:var(--dim2,rgba(0,0,0,.45));white-space:nowrap">{{ r.time }}</span>
+              <button onClick="{{ r.onUnstar }}" title="Unstar" style="width:24px;height:24px;border:none;background:transparent;border-radius:999px;cursor:pointer;font-size:12px">⭐</button>
+            </span>
+          </div>
+        </sc-for>
+        <sc-if value="{{ starredEmpty }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:60px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
+            <span style="width:56px;height:56px;border-radius:999px;background:var(--inb,rgba(0,0,0,.06));display:grid;place-items:center;font-size:22px">⭐</span>
+            <span style="font-size:14px;color:var(--dim,rgba(0,0,0,.55))">No starred messages</span>
+            <span style="font-size:12px;color:var(--dim2,rgba(0,0,0,.45));max-width:280px;text-wrap:pretty">Star a message from its ⋯ menu to keep it here.</span>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ paneIsMedia }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:none;display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--bd,rgba(0,0,0,.08))">
+        <button onClick="{{ onCloseMedia }}" style="width:28px;height:28px;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:15px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">←</button>
+        <span style="font-size:14px;font-weight:700;flex:1">Media, links and docs</span>
+        <div style="display:flex;gap:4px;background:var(--chip,rgba(0,0,0,.08));border-radius:9px;padding:3px">
+          <sc-for list="{{ mediaTabs }}" as="t" hint-placeholder-count="3">
+            <button onClick="{{ t.onClick }}" style="border:none;border-radius:7px;padding:5px 14px;font-size:12.5px;cursor:pointer;font-weight:{{ t.weight }};background:{{ t.bg }};color:{{ t.fg }}">{{ t.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:14px">
+        <sc-if value="{{ mediaIsGrid }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
+            <sc-for list="{{ mediaItems }}" as="m" hint-placeholder-count="10">
+              <div style="aspect-ratio:1;border-radius:9px;position:relative;overflow:hidden;background:{{ m.bg }}">
+                <span style="position:absolute;left:7px;bottom:6px;font-size:10.5px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)">{{ m.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{ mediaIsList }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <sc-for list="{{ mediaRows }}" as="r" hint-placeholder-count="5">
+              <div style="display:flex;gap:12px;align-items:center;padding:9px 10px;border-radius:9px" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+                <span style="width:38px;height:38px;flex:none;border-radius:9px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:15px">{{ r.icon }}</span>
+                <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                  <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.title }}</span>
+                  <span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.sub }}</span>
+                </span>
+                <span style="font-size:11px;color:var(--dim2,rgba(0,0,0,.45));flex:none">{{ r.date }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ paneIsChat }}" hint-placeholder-val="{{ true }}">
+      <div ref="{{ scrollRef }}" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:5px;padding:10px 18px 14px">
+        <sc-for list="{{ messages }}" as="m" hint-placeholder-count="6">
+          <div onMouseEnter="{{ m.onEnter }}" onMouseLeave="{{ m.onLeave }}" style="display:flex;align-items:flex-end;gap:6px;margin-top:{{ m.gap }};justify-content:{{ m.justify }}">
+
+            <sc-if value="{{ m.isSystem }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size:10.5px;color:var(--dim,rgba(0,0,0,.55));background:var(--inb,rgba(0,0,0,.06));padding:3px 11px;border-radius:999px;text-align:center;max-width:70%">{{ m.text }}</span>
+            </sc-if>
+
+            <sc-if value="{{ m.isBubble }}" hint-placeholder-val="{{ true }}">
+              <div style="max-width:64%;position:relative;min-width:0">
+                <div style="border-radius:14px;padding:7px 11px 5px;box-shadow:{{ m.hit }};background:{{ m.bubBg }};color:{{ m.bubFg }}">
+                  <sc-if value="{{ m.author }}" hint-placeholder-val="{{ false }}"><div style="font-size:12px;font-weight:700;margin-bottom:2px;color:{{ m.authorColor }}">{{ m.author }}</div></sc-if>
+                  <sc-if value="{{ m.reply }}" hint-placeholder-val="{{ false }}">
+                    <div style="border-left:2px solid {{ m.quoteBar }};padding:1px 0 1px 7px;margin-bottom:4px;font-size:11.5px;line-height:1.35;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:{{ m.quoteFg }}">{{ m.reply }}</div>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isText }}" hint-placeholder-val="{{ true }}">
+                    <div style="font-size:13.5px;line-height:1.45;text-wrap:pretty;white-space:pre-wrap">{{ m.text }}</div>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isImage }}" hint-placeholder-val="{{ false }}">
+                    <sc-if value="{{ m.dlPending }}" hint-placeholder-val="{{ false }}">
+                      <div onClick="{{ m.onDownload }}" style="width:280px;height:115px;border-radius:10px;margin:-2px 0 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;cursor:pointer;background:{{ m.hatch }}">
+                        <span style="width:38px;height:38px;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;display:grid;place-items:center;font-size:15px">⬇</span>
+                        <span style="font-size:12px;color:{{ m.subFg }}">{{ m.mediaLabel }}</span>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ m.dlLoading }}" hint-placeholder-val="{{ false }}">
+                      <div style="width:280px;height:115px;border-radius:10px;margin:-2px 0 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;background:{{ m.hatch }}">
+                        <span style="width:38px;height:38px;border-radius:999px;border:3px solid rgba(128,128,128,.25);border-top-color:var(--ac,#1b8c72);box-sizing:border-box;animation:spin .9s linear infinite"></span>
+                        <span style="font-size:12px;color:{{ m.subFg }}">Downloading… 1.4 / 4.1 MB</span>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ m.dlReady }}" hint-placeholder-val="{{ true }}">
+                      <div style="width:280px;height:115px;border-radius:10px;margin:-2px 0 4px;display:flex;align-items:flex-end;padding:8px;background:{{ m.hatchSolid }}">
+                        <sc-if value="{{ m.isVideo }}" hint-placeholder-val="{{ false }}">
+                          <span style="display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.55);border-radius:999px;padding:4px 10px 4px 5px">
+                            <span style="width:20px;height:20px;border-radius:999px;background:#fff;display:grid;place-items:center"><span style="width:0;height:0;border-left:6px solid rgba(0,0,0,.75);border-top:4px solid transparent;border-bottom:4px solid transparent;margin-left:2px"></span></span>
+                            <span style="font:10.5px/1 'JetBrains Mono',ui-monospace,monospace;color:#fff">{{ m.mediaLen }}</span>
+                          </span>
+                        </sc-if>
+                        <sc-if value="{{ m.isGif }}" hint-placeholder-val="{{ false }}">
+                          <span style="font:9.5px/1 'JetBrains Mono',ui-monospace,monospace;background:rgba(0,0,0,.5);color:#fff;padding:2px 5px;border-radius:4px">GIF · loop</span>
+                        </sc-if>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ m.text }}" hint-placeholder-val="{{ false }}"><div style="font-size:13.5px;line-height:1.45">{{ m.text }}</div></sc-if>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isSticker }}" hint-placeholder-val="{{ false }}">
+                    <span style="width:128px;height:128px;border-radius:12px;display:grid;place-items:center;font-size:64px;background:{{ m.hatch }}">{{ m.text }}</span>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isEmoji }}" hint-placeholder-val="{{ false }}">
+                    <span style="font-size:40px;line-height:1.1">{{ m.text }}</span>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isLoc }}" hint-placeholder-val="{{ false }}">
+                    <div style="width:270px;height:86px;border-radius:10px;background:repeating-linear-gradient(45deg,rgba(0,0,0,.05) 0 9px,rgba(0,0,0,.09) 9px 18px);display:grid;place-items:center;margin:-2px 0 4px"><span style="width:13px;height:13px;border-radius:999px;background:#c01c28;box-shadow:0 0 0 4px rgba(192,28,40,.22)"></span></div>
+                    <div style="font-size:12.5px;font-weight:700">📍 {{ m.locTitle }}</div>
+                    <div style="font-size:11px;color:{{ m.subFg }}">{{ m.locSub }}</div>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isPoll }}" hint-placeholder-val="{{ false }}">
+                    <div style="width:270px;display:flex;flex-direction:column;gap:7px;padding:2px 0 4px">
+                      <div style="font-size:13px;font-weight:700">{{ m.pollQ }}</div>
+                      <sc-for list="{{ m.pollOpts }}" as="o" hint-placeholder-count="3">
+                        <div onClick="{{ o.onClick }}" style="display:flex;flex-direction:column;gap:3px;cursor:pointer">
+                          <div style="display:flex;align-items:center;gap:8px;font-size:12.5px">
+                            <span style="width:16px;height:16px;flex:none;border-radius:4px;border:1.5px solid {{ o.boxBorder }};background:{{ o.boxBg }};color:#fff;display:grid;place-items:center;font-size:9px">{{ o.tick }}</span>
+                            <span style="flex:1">{{ o.text }}</span>
+                            <span style="font-size:11px;opacity:.7">{{ o.votes }}</span>
+                          </div>
+                          <div style="height:4px;border-radius:999px;background:{{ o.trackBg }};overflow:hidden"><div style="height:100%;border-radius:999px;background:{{ o.fillBg }};width:{{ o.pct }}"></div></div>
+                        </div>
+                      </sc-for>
+                      <div style="font-size:11px;opacity:.65;border-top:1px solid {{ m.hair }};padding-top:5px">{{ m.pollFoot }}</div>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isContact }}" hint-placeholder-val="{{ false }}">
+                    <div style="width:250px;display:flex;align-items:center;gap:10px;padding:2px 0 6px">
+                      <span style="width:38px;height:38px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;background:{{ m.cardColor }}">{{ m.cardInitial }}</span>
+                      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:13px;font-weight:700">{{ m.cardName }}</span><span style="font-size:11.5px;color:{{ m.subFg }}">{{ m.cardPhone }}</span></span>
+                    </div>
+                    <div style="border-top:1px solid {{ m.hair }};padding-top:6px;text-align:center;font-size:12.5px;font-weight:700;color:{{ m.linkFg }};cursor:pointer">Message</div>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isVoice }}" hint-placeholder-val="{{ false }}">
+                    <sc-if value="{{ m.dlPending }}" hint-placeholder-val="{{ false }}">
+                      <div onClick="{{ m.onDownload }}" style="display:flex;align-items:center;gap:10px;width:260px;cursor:pointer;padding:2px 0 3px">
+                        <span style="width:28px;height:28px;flex:none;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;display:grid;place-items:center;font-size:13px">⬇</span>
+                        <span style="flex:1;display:flex;flex-direction:column;gap:2px">
+                          <span style="font-size:12.5px">🎤 Voice message · {{ m.voiceLen }}</span>
+                          <span style="font-size:10.5px;color:{{ m.subFg }}">Click to download · 48 KB</span>
+                        </span>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ m.dlReady }}" hint-placeholder-val="{{ true }}">
+                      <div style="width:260px;display:flex;align-items:center;gap:10px;padding:2px 0 3px">
+                        <span onClick="{{ m.onPlay }}" style="width:28px;height:28px;flex:none;border-radius:999px;display:grid;place-items:center;cursor:pointer;font-size:11px;background:{{ m.playBg }};color:{{ m.playFg }}">{{ m.playIcon }}</span>
+                        <span style="flex:1;height:4px;border-radius:999px;position:relative;background:{{ m.trackBg }}">
+                          <span style="position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:{{ m.fillFg }};width:{{ m.voicePct }}"></span>
+                          <span style="position:absolute;top:-3px;width:10px;height:10px;border-radius:999px;background:{{ m.fillFg }};left:{{ m.voicePct }}"></span>
+                        </span>
+                        <span style="font:11px/1 'JetBrains Mono',ui-monospace,monospace;flex:none;color:{{ m.subFg }}">{{ m.voiceLen }}</span>
+                      </div>
+                    </sc-if>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isDoc }}" hint-placeholder-val="{{ false }}">
+                    <sc-if value="{{ m.dlPending }}" hint-placeholder-val="{{ false }}">
+                      <div onClick="{{ m.onDownload }}" style="display:flex;align-items:center;gap:10px;width:260px;cursor:pointer;padding:2px 0 3px">
+                        <span style="width:28px;height:28px;flex:none;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;display:grid;place-items:center;font-size:13px">⬇</span>
+                        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                          <span style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📄 {{ m.docName }}</span>
+                          <span style="font-size:10.5px;color:{{ m.subFg }}">Click to download · {{ m.docMeta }}</span>
+                        </span>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ m.dlFailed }}" hint-placeholder-val="{{ false }}">
+                      <div onClick="{{ m.onDownload }}" style="display:flex;align-items:center;gap:10px;width:260px;cursor:pointer;padding:2px 0 3px">
+                        <span style="width:28px;height:28px;flex:none;border-radius:999px;background:rgba(192,28,40,.18);color:#c01c28;display:grid;place-items:center;font-size:13px">↻</span>
+                        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                          <span style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📄 {{ m.docName }}</span>
+                          <span style="font-size:10.5px;color:#c01c28">Download failed · click to retry</span>
+                        </span>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ m.dlReady }}" hint-placeholder-val="{{ true }}">
+                      <div style="display:flex;align-items:center;gap:9px;padding:2px 0 3px">
+                        <span style="font-size:15px">📄</span>
+                        <span style="display:flex;flex-direction:column;min-width:0">
+                          <span style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.docName }}</span>
+                          <span style="font-size:10.5px;white-space:nowrap;color:{{ m.subFg }}">{{ m.docMeta }}</span>
+                        </span>
+                        <span onClick="{{ m.onOpenDoc }}" style="flex:none;margin-left:6px;font-size:11.5px;border:1px solid {{ m.hair }};border-radius:7px;padding:3px 9px;cursor:pointer;white-space:nowrap;color:{{ m.linkFg }}">Open</span>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ m.text }}" hint-placeholder-val="{{ false }}"><div style="font-size:13.5px;line-height:1.45;padding-top:2px">{{ m.text }}</div></sc-if>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isViewOnce }}" hint-placeholder-val="{{ false }}">
+                    <div onClick="{{ m.onViewOnce }}" style="width:240px;display:flex;align-items:center;gap:10px;padding:2px 0 3px;cursor:pointer">
+                      <span style="width:28px;height:28px;flex:none;border-radius:999px;border:1.5px solid var(--ac,#1b8c72);color:var(--ac2,#147a63);display:grid;place-items:center;font-size:12px">1</span>
+                      <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:700">{{ m.voTitle }}</span><span style="font-size:11px;color:{{ m.subFg }}">{{ m.voSub }}</span></span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isDownload }}" hint-placeholder-val="{{ false }}">
+                    <div onClick="{{ m.onDownload }}" style="width:240px;display:flex;align-items:center;gap:10px;padding:2px 0 3px;cursor:pointer">
+                      <span style="width:28px;height:28px;flex:none;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;display:grid;place-items:center;font-size:13px">⬇</span>
+                      <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px">{{ m.dlTitle }}</span><span style="font-size:10.5px;color:{{ m.subFg }}">{{ m.dlSub }}</span></span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isRevoked }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size:13px;font-style:italic;opacity:.6;display:flex;align-items:center;gap:6px">🚫 This message was deleted</div>
+                  </sc-if>
+
+                  <div style="display:flex;justify-content:flex-end;align-items:center;gap:5px;font-size:10px;margin-top:2px;color:{{ m.metaFg }}">
+                    <sc-if value="{{ m.edited }}" hint-placeholder-val="{{ false }}"><span style="font-style:italic">edited</span></sc-if>
+                    <span>{{ m.time }}</span>
+                    <sc-if value="{{ m.ticks }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;font-weight:700;color:{{ m.tickColor }}">{{ m.ticks }}</span></sc-if>
+                  </div>
+                </div>
+
+                <sc-if value="{{ m.hover }}" hint-placeholder-val="{{ false }}">
+                  <div style="position:absolute;z-index:6;top:-15px;white-space:nowrap;display:flex;align-items:center;gap:2px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:999px;padding:2px 4px;box-shadow:0 4px 14px rgba(0,0,0,.16);animation:fade .1s ease;{{ m.reactSide }}">
+                    <sc-for list="{{ m.quick }}" as="q" hint-placeholder-count="6">
+                      <button onClick="{{ q.onClick }}" style="width:24px;height:24px;border:none;background:transparent;border-radius:999px;font-size:13px;cursor:pointer;line-height:1" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ q.e }}</button>
+                    </sc-for>
+                    <button onClick="{{ m.onMoreReacts }}" title="More reactions" style="width:24px;height:24px;border:none;background:var(--chip,rgba(0,0,0,.08));border-radius:999px;font-size:12px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer" style-hover="background:var(--sel,rgba(0,0,0,.1))">＋</button>
+                    <span style="width:1px;height:16px;background:var(--bd,rgba(0,0,0,.09));margin:0 2px"></span>
+                    <button onClick="{{ m.onReply }}" title="Reply" style="width:24px;height:24px;border:none;background:transparent;border-radius:999px;font-size:12px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">↩</button>
+                    <button onClick="{{ m.onForward }}" title="Forward" style="width:24px;height:24px;border:none;background:transparent;border-radius:999px;font-size:12px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">↪</button>
+                    <button onClick="{{ m.onMenu }}" title="More" style="width:24px;height:24px;border:none;background:transparent;border-radius:999px;font-size:13px;letter-spacing:1px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">⋯</button>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ m.hasReacts }}" hint-placeholder-val="{{ false }}">
+                  <div style="position:absolute;bottom:-11px;display:flex;gap:4px;{{ m.reactSide }}">
+                    <sc-for list="{{ m.reacts }}" as="r" hint-placeholder-count="1">
+                      <span onClick="{{ r.onClick }}" style="display:flex;align-items:center;gap:3px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.08));box-shadow:0 1px 3px rgba(0,0,0,.12);border-radius:999px;padding:1px 6px;font-size:11px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))">{{ r.e }}<sc-if value="{{ r.n }}" hint-placeholder-val="{{ false }}"><span style="font-size:9.5px;opacity:.6">{{ r.n }}</span></sc-if></span>
+                    </sc-for>
+                  </div>
+                </sc-if>
+              </div>
+
+            </sc-if>
+          </div>
+        </sc-for>
+
+        <sc-if value="{{ typing }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;justify-content:flex-start;margin-top:2px">
+            <div style="background:var(--inb,rgba(0,0,0,.06));border-radius:14px;padding:10px 14px;display:flex;gap:4px">
+              <span style="width:6px;height:6px;border-radius:999px;background:currentColor;opacity:.4;animation:blink 1.1s infinite"></span>
+              <span style="width:6px;height:6px;border-radius:999px;background:currentColor;opacity:.4;animation:blink 1.1s infinite .2s"></span>
+              <span style="width:6px;height:6px;border-radius:999px;background:currentColor;opacity:.4;animation:blink 1.1s infinite .4s"></span>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ replyBar }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:none;margin:0 12px;padding:7px 10px;border-radius:9px 9px 0 0;background:var(--inb,rgba(0,0,0,.06));display:flex;align-items:center;gap:10px;border-left:3px solid var(--ac,#1b8c72)">
+          <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+            <span style="font-size:11.5px;font-weight:700;color:var(--ac2,#147a63)">{{ replyName }}</span>
+            <span style="font-size:12px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ replyText }}</span>
+          </span>
+          <button onClick="{{ onCancelReply }}" style="border:none;background:transparent;cursor:pointer;font-size:12px;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ blocked }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:none;border-top:1px solid var(--bd,rgba(0,0,0,.1));padding:14px 12px;display:flex;align-items:center;justify-content:center;gap:12px;background:var(--bg,#fafafa)">
+          <span style="font-size:13px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap">You blocked {{ activeName }}. You won't receive messages.</span>
+          <button onClick="{{ onUnblock }}" style="flex:none;border:1px solid var(--bd2,rgba(0,0,0,.15));background:var(--chat,#fff);border-radius:8px;padding:6px 14px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;color:var(--ac2,#147a63)">Unblock</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ recording }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:none;border-top:1px solid var(--bd,rgba(0,0,0,.1));padding:8px 12px;display:flex;align-items:center;gap:8px">
+          <span style="width:32px;height:32px;border-radius:999px;display:grid;place-items:center;font-size:14px;opacity:.35">📎</span>
+          <span style="width:32px;height:32px;border-radius:999px;display:grid;place-items:center;font-size:15px;opacity:.35">🙂</span>
+          <span style="flex:1;height:34px;border:1px solid var(--bd,rgba(0,0,0,.09));background:var(--inb,rgba(0,0,0,.04));border-radius:999px;display:flex;align-items:center;gap:9px;padding:0 14px;font-size:13px;color:var(--dim,rgba(0,0,0,.55))">
+            <span style="width:8px;height:8px;border-radius:999px;background:#c01c28;animation:blink 1.1s infinite"></span>
+            <span>Recording…</span>
+            <span style="font:12px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--tx,rgba(0,0,0,.85))">{{ recTime }}</span>
+            <span style="flex:1"></span>
+            <button onClick="{{ onRecordCancel }}" style="border:none;background:transparent;font-size:12px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">Cancel</button>
+          </span>
+          <button onClick="{{ onRecordStop }}" style="width:34px;height:34px;border:none;border-radius:999px;background:#c01c28;color:#fff;display:grid;place-items:center;font-size:12px;cursor:pointer">■</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ composerIdle }}" hint-placeholder-val="{{ true }}">
+      <div style="flex:none;border-top:1px solid var(--bd,rgba(0,0,0,.1));padding:8px 12px;display:flex;align-items:center;gap:7px">
+        <button onClick="{{ toggleAttach }}" style="width:32px;height:32px;border:none;border-radius:999px;background:{{ attachBg }};display:grid;place-items:center;font-size:14px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer">📎</button>
+        <button onClick="{{ togglePicker }}" style="width:32px;height:32px;border:none;border-radius:999px;background:{{ pickerBg }};display:grid;place-items:center;font-size:15px;cursor:pointer">🙂</button>
+        <input value="{{ draft }}" onChange="{{ onDraft }}" onKeyDown="{{ onKey }}" placeholder="Write a message" style="flex:1;height:34px;border:1px solid var(--bd2,rgba(0,0,0,.15));background:var(--chat,#fff);border-radius:999px;padding:0 14px;font-size:13.5px;outline:none"/>
+        <sc-if value="{{ canSend }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ onSend }}" style="width:34px;height:34px;border:none;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;display:grid;place-items:center;font-size:13px;cursor:pointer">➤</button>
+        </sc-if>
+        <sc-if value="{{ canRecord }}" hint-placeholder-val="{{ true }}">
+          <button onClick="{{ onRecord }}" style="width:34px;height:34px;border:none;border-radius:999px;background:transparent;display:grid;place-items:center;font-size:14px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer">🎤</button>
+        </sc-if>
+      </div>
+      </sc-if>
+    </sc-if>
+  </div>
+</div>
+
+<sc-if value="{{ anyPopover }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ closeAll }}" style="position:absolute;inset:0;z-index:30"></div>
+</sc-if>
+
+<sc-if value="{{ menu }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;z-index:31;min-width:230px;max-width:270px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.26);padding:6px;display:flex;flex-direction:column;gap:1px;animation:pop .1s ease;{{ menuPos }}">
+    <sc-for list="{{ menuItems }}" as="i" hint-placeholder-count="5">
+      <sc-if value="{{ i.isSep }}" hint-placeholder-val="{{ false }}"><span style="height:1px;background:var(--bd,rgba(0,0,0,.09));margin:4px 6px"></span></sc-if>
+      <sc-if value="{{ i.isItem }}" hint-placeholder-val="{{ true }}">
+        <button onClick="{{ i.onClick }}" style="display:flex;align-items:center;gap:10px;border:none;background:transparent;border-radius:7px;padding:7px 10px;font-size:13px;cursor:pointer;text-align:left;color:{{ i.color }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+          <span style="width:16px;text-align:center;font-size:13px;opacity:.85">{{ i.icon }}</span>
+          <span style="flex:1">{{ i.label }}</span>
+          <sc-if value="{{ i.accel }}" hint-placeholder-val="{{ false }}"><span style="font:10.5px/1 'JetBrains Mono',monospace;opacity:.45">{{ i.accel }}</span></sc-if>
+        </button>
+      </sc-if>
+    </sc-for>
+  </div>
+</sc-if>
+
+<sc-if value="{{ labelsOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;z-index:31;width:214px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.26);padding:6px;display:flex;flex-direction:column;gap:1px;animation:pop .1s ease;{{ labelsPos }}">
+    <sc-for list="{{ labelRows }}" as="l" hint-placeholder-count="3">
+      <button onClick="{{ l.onClick }}" style="display:flex;align-items:center;gap:10px;padding:7px 9px;border:none;border-radius:7px;font-size:13.5px;cursor:pointer;text-align:left;white-space:nowrap;color:var(--tx,rgba(0,0,0,.85));background:{{ l.bg }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+        <span style="width:9px;height:9px;flex:none;border-radius:3px;background:{{ l.color }}"></span>{{ l.name }}
+        <sc-if value="{{ l.count }}" hint-placeholder-val="{{ false }}"><span style="margin-left:auto;font-size:11px;font-weight:700;color:var(--ac2,#147a63)">{{ l.count }}</span></sc-if>
+      </button>
+    </sc-for>
+    <span style="height:1px;background:var(--bd,rgba(0,0,0,.09));margin:4px 6px"></span>
+    <button onClick="{{ onManageLabels }}" style="display:flex;align-items:center;gap:10px;padding:7px 9px;border:none;background:transparent;border-radius:7px;font-size:13.5px;cursor:pointer;text-align:left;white-space:nowrap;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))"><span style="width:9px;text-align:center">＋</span>Manage lists…</button>
+  </div>
+</sc-if>
+
+<sc-if value="{{ reactPickOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;z-index:32;width:322px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.26);padding:8px;display:flex;flex-direction:column;gap:6px;animation:pop .1s ease;{{ reactPickPos }}">
+    <span style="font-size:11.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--dim,rgba(0,0,0,.55));padding:0 2px">Pick a reaction</span>
+    <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;max-height:160px;overflow-y:auto">
+      <sc-for list="{{ reactEmojis }}" as="e" hint-placeholder-count="32">
+        <button onClick="{{ e.onClick }}" style="border:none;background:transparent;border-radius:6px;height:32px;font-size:18px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ e.c }}</button>
+      </sc-for>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ accountOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;z-index:31;top:52px;left:{{ accountPopLeft }};width:300px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.26);padding:6px;display:flex;flex-direction:column;gap:1px;animation:pop .1s ease">
+    <sc-for list="{{ accountRows }}" as="a" hint-placeholder-count="4">
+      <button onClick="{{ a.onClick }}" style="display:flex;align-items:center;gap:10px;border:none;border-radius:8px;padding:8px 9px;cursor:pointer;text-align:left;color:var(--tx,rgba(0,0,0,.85));opacity:{{ a.opacity }};background:{{ a.bg }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+        <span style="width:32px;height:32px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;background:{{ a.color }}">{{ a.initial }}</span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+          <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.label }}</span>
+          <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:{{ a.statusColor }}"><span style="width:7px;height:7px;border-radius:999px;flex:none;background:{{ a.dot }}"></span>{{ a.status }}</span>
+        </span>
+        <sc-if value="{{ a.current }}" hint-placeholder-val="{{ false }}"><span style="flex:none;color:var(--ac,#1b8c72);font-size:12px">✓</span></sc-if>
+        <sc-if value="{{ a.unread }}" hint-placeholder-val="{{ false }}"><span style="flex:none;min-width:19px;height:19px;padding:0 6px;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;font-size:10.5px;font-weight:700;display:grid;place-items:center">{{ a.unread }}</span></sc-if>
+      </button>
+    </sc-for>
+    <span style="height:1px;background:var(--bd,rgba(0,0,0,.09));margin:4px 6px"></span>
+    <sc-for list="{{ accountActions }}" as="i" hint-placeholder-count="3">
+      <button onClick="{{ i.onClick }}" style="display:flex;align-items:center;gap:11px;border:none;background:{{ i.bg }};border-radius:7px;padding:8px 9px;font-size:13.5px;cursor:pointer;text-align:left;white-space:nowrap;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+        <span style="width:16px;flex:none;text-align:center;opacity:.65">{{ i.icon }}</span>{{ i.label }}
+      </button>
+    </sc-for>
+  </div>
+</sc-if>
+
+<sc-if value="{{ attachOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;z-index:31;left:352px;bottom:60px;width:230px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.26);padding:6px;display:flex;flex-direction:column;gap:1px;animation:pop .1s ease">
+    <sc-for list="{{ attachItems }}" as="i" hint-placeholder-count="7">
+      <button onClick="{{ i.onClick }}" style="display:flex;align-items:center;gap:11px;border:none;background:transparent;border-radius:7px;padding:8px 10px;font-size:13px;cursor:pointer;text-align:left;white-space:nowrap;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+        <span style="width:28px;height:28px;flex:none;border-radius:999px;display:grid;place-items:center;font-size:13px;background:{{ i.bg }}">{{ i.icon }}</span>{{ i.label }}
+      </button>
+    </sc-for>
+  </div>
+</sc-if>
+
+<sc-if value="{{ pickerOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;z-index:31;left:352px;bottom:60px;width:360px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.26);padding:8px;display:flex;flex-direction:column;gap:8px;animation:pop .1s ease">
+    <div style="display:flex;gap:4px;background:var(--chip,rgba(0,0,0,.08));border-radius:9px;padding:3px">
+      <sc-for list="{{ pickerTabs }}" as="t" hint-placeholder-count="3">
+        <button onClick="{{ t.onClick }}" style="flex:1;border:none;border-radius:7px;padding:5px 0;font-size:12.5px;cursor:pointer;font-weight:{{ t.weight }};background:{{ t.bg }};color:{{ t.fg }}">{{ t.label }}</button>
+      </sc-for>
+    </div>
+    <sc-if value="{{ pickerIsEmoji }}" hint-placeholder-val="{{ true }}">
+      <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:2px;max-height:210px;overflow-y:auto">
+        <sc-for list="{{ emojis }}" as="e" hint-placeholder-count="36">
+          <button onClick="{{ e.onClick }}" style="border:none;background:transparent;border-radius:6px;height:32px;font-size:18px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ e.c }}</button>
+        </sc-for>
+      </div>
+    </sc-if>
+    <sc-if value="{{ pickerIsGif }}" hint-placeholder-val="{{ false }}">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+        <sc-for list="{{ gifs }}" as="g" hint-placeholder-count="6">
+          <button onClick="{{ g.onClick }}" style="border:none;height:74px;border-radius:8px;cursor:pointer;color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center;background:{{ g.bg }}">{{ g.label }}</button>
+        </sc-for>
+      </div>
+    </sc-if>
+    <sc-if value="{{ pickerIsSticker }}" hint-placeholder-val="{{ false }}">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+        <sc-for list="{{ stickers }}" as="s" hint-placeholder-count="8">
+          <button onClick="{{ s.onClick }}" style="border:none;background:var(--inb,rgba(0,0,0,.06));height:74px;border-radius:8px;font-size:30px;cursor:pointer">{{ s.c }}</button>
+        </sc-for>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;border-top:1px solid var(--bd,rgba(0,0,0,.09));padding-top:6px;font-size:12px;color:var(--dim,rgba(0,0,0,.55))">
+        <span style="flex:1">Recents · Porto pack · Cats</span>
+        <button onClick="{{ onAddPack }}" style="border:none;background:var(--chip,rgba(0,0,0,.08));border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))">Add pack</button>
+      </div>
+    </sc-if>
+  </div>
+</sc-if>
+
+<sc-if value="{{ dialog }}" hint-placeholder-val="{{ false }}">
+  <div onClick="{{ closeDialog }}" style="position:absolute;inset:0;z-index:40;background:rgba(0,0,0,.34);display:grid;place-items:center;animation:fade .12s ease">
+    <div onClick="{{ stop }}" style="animation:pop .12s ease;background:var(--bg,#fafafa);border-radius:14px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);color:var(--tx,rgba(0,0,0,.85));width:{{ dialogWidth }}">
+
+      <sc-if value="{{ dlgIsAlert }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:22px 22px 8px;text-align:center;display:flex;flex-direction:column;gap:8px">
+          <span style="font-size:15.5px;font-weight:700">{{ alertTitle }}</span>
+          <span style="font-size:13px;color:var(--dim,rgba(0,0,0,.55));line-height:1.5;text-wrap:pretty">{{ alertBody }}</span>
+        </div>
+        <sc-if value="{{ alertOptions }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:6px 22px 16px;display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ alertOptions }}" as="o" hint-placeholder-count="1">
+              <div onClick="{{ o.onClick }}" style="background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px;padding:10px 12px;display:flex;align-items:center;gap:12px;cursor:pointer">
+                <span style="flex:1;font-size:13px;text-align:left">{{ o.label }}</span>
+                <span style="width:40px;height:23px;border-radius:999px;flex:none;position:relative;background:{{ o.switchBg }}"><span style="position:absolute;top:2px;width:19px;height:19px;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);left:{{ o.knob }}"></span></span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <div style="display:flex;border-top:1px solid var(--bd,rgba(0,0,0,.09))">
+          <button onClick="{{ closeDialog }}" style="flex:1;border:none;background:transparent;padding:12px 0;font-size:13.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">Cancel</button>
+          <span style="width:1px;background:var(--bd,rgba(0,0,0,.09))"></span>
+          <button onClick="{{ onAlertConfirm }}" style="flex:1;border:none;background:transparent;padding:12px 0;font-size:13.5px;font-weight:700;cursor:pointer;color:{{ alertColor }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ alertConfirm }}</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsForward }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Forward to…</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+        <div style="max-height:300px;overflow-y:auto;padding:6px">
+          <sc-for list="{{ forwardList }}" as="c" hint-placeholder-count="6">
+            <div onClick="{{ c.onClick }}" style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+              <span style="width:32px;height:32px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;background:{{ c.color }}">{{ c.initial }}</span>
+              <span style="flex:1;font-size:13.5px">{{ c.name }}</span>
+              <span style="width:19px;height:19px;border-radius:999px;border:1.5px solid var(--bd2,rgba(0,0,0,.25));display:grid;place-items:center;font-size:10px;color:#fff;background:{{ c.checkBg }}">{{ c.tick }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:10px;padding:10px 14px;border-top:1px solid var(--bd,rgba(0,0,0,.09))">
+          <span style="flex:1;font-size:12.5px;color:var(--dim,rgba(0,0,0,.55));align-self:center">{{ forwardCount }}</span>
+          <button onClick="{{ onForwardSend }}" style="border:none;height:34px;padding:0 18px;border-radius:9px;background:var(--ac,#1b8c72);color:#fff;font-size:13px;font-weight:700;cursor:pointer">Send</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsPoll }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Create poll</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
+          <input value="{{ pollQ }}" onChange="{{ onPollQ }}" placeholder="Ask a question" style="height:38px;border-radius:9px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:var(--chat,#fff);padding:0 12px;font-size:13.5px;outline:none"/>
+          <sc-for list="{{ pollDraft }}" as="o" hint-placeholder-count="2">
+            <input value="{{ o.value }}" onChange="{{ o.onChange }}" placeholder="{{ o.placeholder }}" style="height:36px;border-radius:9px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:var(--chat,#fff);padding:0 12px;font-size:13px;outline:none"/>
+          </sc-for>
+          <button onClick="{{ onAddPollOpt }}" style="align-self:flex-start;border:none;background:transparent;font-size:12.5px;color:var(--ac2,#147a63);cursor:pointer;font-weight:700">＋ Add option</button>
+          <label style="display:flex;align-items:center;gap:9px;font-size:13px;cursor:pointer" onClick="{{ onTogglePollMulti }}"><span style="width:15px;height:15px;border-radius:4px;border:1.5px solid var(--bd2,rgba(0,0,0,.3));display:grid;place-items:center;font-size:9px;color:#fff;background:{{ pollMultiBg }}">{{ pollMultiTick }}</span>Allow multiple answers</label>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;padding:10px 14px;border-top:1px solid var(--bd,rgba(0,0,0,.09))">
+          <button onClick="{{ closeDialog }}" style="height:34px;padding:0 14px;border:none;border-radius:9px;background:var(--chip,rgba(0,0,0,.08));font-size:13px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))">Cancel</button>
+          <button onClick="{{ onSendPoll }}" style="height:34px;padding:0 18px;border:none;border-radius:9px;background:var(--ac,#1b8c72);color:#fff;font-size:13px;font-weight:700;cursor:pointer">Send poll</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsPrefs }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Preferences</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+        <div style="display:flex;height:400px">
+          <div style="width:170px;flex:none;border-right:1px solid var(--bd,rgba(0,0,0,.09));padding:8px;display:flex;flex-direction:column;gap:2px">
+            <sc-for list="{{ prefTabs }}" as="t" hint-placeholder-count="5">
+              <button onClick="{{ t.onClick }}" style="display:flex;align-items:center;gap:9px;border:none;border-radius:8px;padding:8px 10px;font-size:13px;cursor:pointer;text-align:left;font-weight:{{ t.weight }};background:{{ t.bg }};color:var(--tx,rgba(0,0,0,.85))">{{ t.icon }} {{ t.label }}</button>
+            </sc-for>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:14px">
+            <sc-for list="{{ prefGroups }}" as="g" hint-placeholder-count="2">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <span style="font-size:11.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--dim,rgba(0,0,0,.55))">{{ g.title }}</span>
+                <div style="background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px;overflow:hidden">
+                  <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="3">
+                    <div onClick="{{ r.onClick }}" style="display:flex;align-items:center;gap:12px;padding:11px 13px;border-top:{{ r.sep }};cursor:{{ r.cursor }}">
+                      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                        <span style="font-size:13px">{{ r.label }}</span>
+                        <sc-if value="{{ r.sub }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">{{ r.sub }}</span></sc-if>
+                      </span>
+                      <sc-if value="{{ r.isSwitch }}" hint-placeholder-val="{{ false }}">
+                        <span style="width:42px;height:24px;border-radius:999px;flex:none;position:relative;transition:background .15s;background:{{ r.switchBg }}"><span style="position:absolute;top:2px;width:20px;height:20px;border-radius:999px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .15s;left:{{ r.knob }}"></span></span>
+                      </sc-if>
+                      <sc-if value="{{ r.value }}" hint-placeholder-val="{{ false }}">
+                        <span style="font-size:12.5px;color:var(--dim,rgba(0,0,0,.55));flex:none;white-space:nowrap">{{ r.value }} ▾</span>
+                      </sc-if>
+                      <sc-if value="{{ r.isButton }}" hint-placeholder-val="{{ false }}">
+                        <span style="font-size:12.5px;font-weight:700;color:var(--ac2,#147a63);flex:none;white-space:nowrap">{{ r.button }}</span>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsAbout }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:26px 24px 18px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
+          <span style="width:84px;height:84px;border-radius:20px;background:var(--ac,#1b8c72);color:#fff;display:grid;place-items:center;font-size:38px">🐦</span>
+          <span style="font-size:19px;font-weight:700">chatot</span>
+          <span style="font:11.5px/1 'JetBrains Mono',monospace;color:var(--dim,rgba(0,0,0,.55))">0.4.0 · GTK4 · libadwaita</span>
+          <span style="font-size:12.5px;color:var(--dim,rgba(0,0,0,.55));line-height:1.5;max-width:300px;text-wrap:pretty">A native WhatsApp client for GNOME. Unofficial, not affiliated with WhatsApp or Meta.</span>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <button onClick="{{ closeDialog }}" style="height:32px;padding:0 14px;border:none;border-radius:8px;background:var(--chip,rgba(0,0,0,.08));font-size:12.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))">Website</button>
+            <button onClick="{{ closeDialog }}" style="height:32px;padding:0 14px;border:none;border-radius:8px;background:var(--chip,rgba(0,0,0,.08));font-size:12.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))">Report an issue</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsInfo }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:22px 22px 14px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+          <span style="width:76px;height:76px;border-radius:999px;color:#fff;display:grid;place-items:center;font-size:28px;font-weight:700;background:{{ activeColor }}">{{ activeInitial }}</span>
+          <span style="font-size:17px;font-weight:700">{{ activeName }}</span>
+          <span style="font-size:12.5px;color:var(--dim,rgba(0,0,0,.55))">{{ infoSub }}</span>
+        </div>
+        <div style="padding:0 18px 16px;display:flex;flex-direction:column;gap:8px">
+          <div style="background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px;overflow:hidden">
+            <sc-for list="{{ infoRows }}" as="r" hint-placeholder-count="4">
+              <div onClick="{{ r.onClick }}" style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-top:{{ r.sep }};cursor:pointer;color:{{ r.color }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+                <span style="width:16px;text-align:center">{{ r.icon }}</span><span style="flex:1;font-size:13px">{{ r.label }}</span>
+                <sc-if value="{{ r.value }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;color:var(--dim,rgba(0,0,0,.55))">{{ r.value }}</span></sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsExport }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Export chat</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+        <div style="padding:14px 14px 6px;display:flex;flex-direction:column;gap:12px">
+          <div style="background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px;overflow:hidden;display:flex;flex-direction:column">
+            <button onClick="{{ onExportFormat }}" style="display:flex;align-items:center;gap:12px;padding:11px 12px;border:none;border-bottom:1px solid var(--bd,rgba(0,0,0,.07));background:transparent;font-size:13.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))"><span style="flex:1;text-align:left">Format</span><span style="font-size:13px;white-space:nowrap;color:var(--dim,rgba(0,0,0,.55))">{{ exportFormat }} ▾</span></button>
+            <button onClick="{{ onExportRange }}" style="display:flex;align-items:center;gap:12px;padding:11px 12px;border:none;border-bottom:1px solid var(--bd,rgba(0,0,0,.07));background:transparent;font-size:13.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))"><span style="flex:1;text-align:left">Range</span><span style="font-size:13px;white-space:nowrap;color:var(--dim,rgba(0,0,0,.55))">{{ exportRange }} ▾</span></button>
+            <div onClick="{{ onExportMedia }}" style="display:flex;align-items:center;gap:12px;padding:11px 12px;font-size:13.5px;cursor:pointer">
+              <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span>Include media</span><span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55))">{{ exportMediaSub }}</span></span>
+              <span style="width:40px;height:23px;border-radius:999px;flex:none;position:relative;background:{{ exportMediaBg }}"><span style="position:absolute;top:2px;width:19px;height:19px;border-radius:999px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);left:{{ exportMediaKnob }}"></span></span>
+            </div>
+          </div>
+          <div style="background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px;padding:11px 12px;display:flex;align-items:center;gap:10px">
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+              <span style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--dim,rgba(0,0,0,.55))">Save to</span>
+              <span style="font:11.5px/1.3 'JetBrains Mono',ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--tx,rgba(0,0,0,.85))">{{ exportPath }}</span>
+            </span>
+            <button onClick="{{ onExportChoose }}" style="flex:none;font-size:12px;border:1px solid var(--bd2,rgba(0,0,0,.15));background:transparent;border-radius:8px;padding:5px 11px;cursor:pointer;white-space:nowrap;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">Choose…</button>
+          </div>
+        </div>
+        <div style="padding:12px 14px;display:flex;justify-content:flex-end;gap:10px">
+          <button onClick="{{ closeDialog }}" style="font-size:13px;padding:7px 14px;border:1px solid var(--bd2,rgba(0,0,0,.15));border-radius:8px;background:var(--chat,#fff);cursor:pointer;white-space:nowrap;color:var(--tx,rgba(0,0,0,.85))">Cancel</button>
+          <button onClick="{{ onExportRun }}" style="font-size:13px;padding:7px 16px;border:none;border-radius:8px;background:var(--ac,#1b8c72);color:#fff;font-weight:700;cursor:pointer;white-space:nowrap">Export</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsChoice }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:20px 22px 10px;display:flex;flex-direction:column;gap:6px">
+          <span style="font-size:15.5px;font-weight:700">{{ choiceTitle }}</span>
+          <span style="font-size:12.5px;line-height:1.45;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">{{ choiceBody }}</span>
+        </div>
+        <div style="padding:4px 16px 14px">
+          <div style="background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px;overflow:hidden">
+            <sc-for list="{{ choiceOptions }}" as="o" hint-placeholder-count="3">
+              <button onClick="{{ o.onClick }}" style="width:100%;display:flex;align-items:center;gap:11px;padding:11px 12px;border:none;border-top:{{ o.sep }};background:transparent;font-size:13.5px;cursor:pointer;text-align:left;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+                <span style="flex:1">{{ o.label }}</span>
+                <sc-if value="{{ o.current }}" hint-placeholder-val="{{ false }}"><span style="color:var(--ac,#1b8c72);font-size:13px">✓</span></sc-if>
+              </button>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsDevices }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Linked devices</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+        <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
+          <div style="background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px;overflow:hidden">
+            <sc-for list="{{ deviceRows }}" as="d" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:11px;padding:11px 12px;border-top:{{ d.sep }}">
+                <span style="width:32px;height:32px;flex:none;border-radius:8px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:15px">{{ d.icon }}</span>
+                <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                  <span style="font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ d.name }}</span>
+                  <span style="font:10.5px/1.3 'JetBrains Mono',ui-monospace,monospace;white-space:nowrap;color:var(--dim,rgba(0,0,0,.55))">{{ d.meta }}</span>
+                </span>
+                <sc-if value="{{ d.canUnlink }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ d.onUnlink }}" style="flex:none;font-size:12px;border:1px solid var(--bd2,rgba(0,0,0,.15));background:transparent;border-radius:8px;padding:5px 11px;cursor:pointer;white-space:nowrap;color:#c01c28" style-hover="background:var(--hov,rgba(0,0,0,.06))">Unlink</button>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+          <span style="font-size:11.5px;line-height:1.45;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">chatot is one of the linked devices on this account. Unlinking the phone signs every device out.</span>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsLabels }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Manage lists</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+        <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
+          <div style="background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px;overflow:hidden">
+            <sc-for list="{{ manageLabels }}" as="l" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:11px;padding:10px 12px;border-top:{{ l.sep }}">
+                <span style="width:12px;height:12px;flex:none;border-radius:4px;background:{{ l.color }}"></span>
+                <input value="{{ l.name }}" onChange="{{ l.onRename }}" style="flex:1;min-width:0;border:none;outline:none;background:transparent;font-size:13.5px"/>
+                <span style="font-size:11.5px;white-space:nowrap;color:var(--dim,rgba(0,0,0,.55))">{{ l.countLabel }}</span>
+                <button onClick="{{ l.onDelete }}" title="Delete label" style="width:26px;height:26px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:12px;color:#c01c28" style-hover="background:var(--hov,rgba(0,0,0,.06))">🗑</button>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="display:flex;gap:6px">
+              <sc-for list="{{ labelSwatches }}" as="c" hint-placeholder-count="5">
+                <button onClick="{{ c.onClick }}" style="width:22px;height:22px;border:none;border-radius:6px;cursor:pointer;background:{{ c.color }};box-shadow:{{ c.ring }}"></button>
+              </sc-for>
+            </div>
+            <input value="{{ newLabel }}" onChange="{{ onNewLabel }}" placeholder="New list name" style="flex:1;min-width:0;height:34px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:var(--chat,#fff);border-radius:8px;padding:0 11px;font-size:13px;outline:none"/>
+            <button onClick="{{ onAddLabel }}" style="flex:none;border:none;background:var(--ac,#1b8c72);color:#fff;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer">Add</button>
+          </div>
+          <span style="font-size:11.5px;line-height:1.45;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">Lists belong to this account and sync from your phone. Unread, Favorites and Groups are built in and can't be edited. The colour is a palette index.</span>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsContacts }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Send contact</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+        <div style="padding:10px 12px 6px">
+          <div style="display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;background:var(--chat,#fff);border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:999px">
+            <span style="font-size:12px;color:var(--dim2,rgba(0,0,0,.45))">⌕</span>
+            <input value="{{ peopleQuery }}" onChange="{{ onPeopleQuery }}" placeholder="Search contacts" style="flex:1;border:none;outline:none;background:transparent;font-size:13.5px"/>
+          </div>
+        </div>
+        <div style="max-height:290px;overflow-y:auto;padding:0 6px 6px">
+          <sc-for list="{{ contactPicks }}" as="p" hint-placeholder-count="6">
+            <div onClick="{{ p.onClick }}" style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+              <span style="width:34px;height:34px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;background:{{ p.color }}">{{ p.initial }}</span>
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                <span style="font-size:13.5px;font-weight:700">{{ p.name }}</span>
+                <span style="font:10.5px/1.3 'JetBrains Mono',ui-monospace,monospace;color:var(--dim,rgba(0,0,0,.55))">{{ p.phone }}</span>
+              </span>
+              <span style="width:19px;height:19px;flex:none;border-radius:999px;border:1.5px solid var(--bd2,rgba(0,0,0,.25));display:grid;place-items:center;font-size:10px;color:#fff;background:{{ p.checkBg }}">{{ p.tick }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;padding:10px 14px;border-top:1px solid var(--bd,rgba(0,0,0,.09))">
+          <span style="flex:1;font-size:12.5px;color:var(--dim,rgba(0,0,0,.55))">{{ contactCount }}</span>
+          <button onClick="{{ onSendContacts }}" style="border:none;height:34px;padding:0 18px;border-radius:9px;background:var(--ac,#1b8c72);color:#fff;font-size:13px;font-weight:700;cursor:pointer">Send</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsAddAccount }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Add account</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+        <div style="padding:16px 18px 18px;display:flex;flex-direction:column;align-items:center;gap:12px">
+          <span style="font-size:13px;color:var(--dim,rgba(0,0,0,.55));text-align:center;line-height:1.5;max-width:280px;text-wrap:pretty">Scan with the phone you want to link. The account is added alongside the ones you already have.</span>
+          <div style="width:192px;height:192px;border-radius:12px;background:#fff;border:1px solid var(--bd2,rgba(0,0,0,.13));display:grid;place-items:center;padding:10px">
+            <div style="width:100%;height:100%;background:repeating-conic-gradient(rgba(0,0,0,.72) 0% 25%,#fff 0% 50%) 50%/14px 14px;border-radius:4px;display:grid;place-items:center"><span style="font:9.5px/1 'JetBrains Mono',ui-monospace,monospace;background:#fff;padding:4px 7px;border-radius:4px;color:rgba(0,0,0,.6)">QR</span></div>
+          </div>
+          <span style="font-size:12.5px;color:var(--dim,rgba(0,0,0,.55))">Waiting for you to scan…</span>
+          <div style="width:100%;background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px;padding:10px 12px;display:flex;align-items:center;gap:10px">
+            <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px">Label this account</span><span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55))">Shown in the account button</span></span>
+            <input value="{{ newAcctLabel }}" onChange="{{ onNewAcctLabel }}" placeholder="Work" style="flex:none;width:130px;height:30px;border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:8px;padding:0 10px;font-size:12.5px;background:var(--chat,#fff);outline:none"/>
+          </div>
+          <button onClick="{{ onAddAccountConfirm }}" style="width:100%;height:36px;border:none;border-radius:9px;background:var(--ac,#1b8c72);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">Simulate scan and add</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsAccounts }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 10px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Accounts</span>
+          <button onClick="{{ onOpenAddAccount }}" style="border:none;background:var(--ac,#1b8c72);color:#fff;border-radius:7px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer">Add…</button>
+        </div>
+        <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+          <div style="background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px;overflow:hidden;display:flex;flex-direction:column">
+            <sc-for list="{{ manageRows }}" as="a" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:11px;padding:11px 12px;border-top:{{ a.sep }}">
+                <span style="width:34px;height:34px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;background:{{ a.color }}">{{ a.initial }}</span>
+                <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:13.5px;font-weight:700">{{ a.label }}</span><span style="font:11px/1.3 'JetBrains Mono',ui-monospace,monospace;color:{{ a.statusColor }}">{{ a.line }}</span></span>
+                <button onClick="{{ a.onMenu }}" style="flex:none;width:26px;height:26px;border:none;background:transparent;border-radius:7px;display:grid;place-items:center;font-size:14px;letter-spacing:1px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">⋮</button>
+              </div>
+            </sc-for>
+          </div>
+          <div style="background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px;overflow:hidden;display:flex;flex-direction:column">
+            <sc-for list="{{ acctToggles }}" as="r" hint-placeholder-count="2">
+              <div onClick="{{ r.onClick }}" style="display:flex;align-items:center;gap:12px;padding:11px 12px;cursor:pointer;border-top:{{ r.sep }}">
+                <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:13.5px">{{ r.label }}</span><span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55))">{{ r.sub }}</span></span>
+                <span style="width:42px;height:24px;border-radius:999px;flex:none;position:relative;background:{{ r.switchBg }}"><span style="position:absolute;top:2px;width:20px;height:20px;border-radius:999px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);left:{{ r.knob }}"></span></span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;z-index:50;left:50%;bottom:24px;transform:translateX(-50%);background:#303030;color:#fff;border-radius:10px;padding:10px 16px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.4);display:flex;align-items:center;gap:14px;animation:pop .14s ease">
+    <span>{{ toast }}</span>
+    <sc-if value="{{ toastAction }}" hint-placeholder-val="{{ false }}"><button onClick="{{ onToastAction }}" style="border:none;background:transparent;color:#7fd6bf;font-size:12.5px;font-weight:700;cursor:pointer">{{ toastAction }}</button></sc-if>
+  </div>
+</sc-if>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1300,&quot;height&quot;:900},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#1b8c72&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#1b8c72&quot;,&quot;#3584e4&quot;,&quot;#9141ac&quot;,&quot;#c64600&quot;],&quot;section&quot;:&quot;Theme&quot;}}">
+const LIGHT = {bg:'#fafafa',hdr:'#ffffff',side:'#ebebeb',chat:'#ffffff',bd:'rgba(0,0,0,.08)',bd2:'rgba(0,0,0,.13)',tx:'rgba(0,0,0,.85)',dim:'rgba(0,0,0,.55)',dim2:'rgba(0,0,0,.45)',inb:'rgba(0,0,0,.06)',pop:'#ffffff',hov:'rgba(0,0,0,.06)',sel:'rgba(0,0,0,.1)',chip:'rgba(0,0,0,.08)'};
+const DARK = {bg:'#242424',hdr:'#303030',side:'#2c2c2c',chat:'#242424',bd:'rgba(255,255,255,.09)',bd2:'rgba(255,255,255,.16)',tx:'#ffffff',dim:'rgba(255,255,255,.6)',dim2:'rgba(255,255,255,.45)',inb:'rgba(255,255,255,.09)',pop:'#383838',hov:'rgba(255,255,255,.07)',sel:'rgba(255,255,255,.13)',chip:'rgba(255,255,255,.1)'};
+
+const PEOPLE = [
+  {name:'Alex Rivera',color:'#5a7ab5',status:'Busy shipping'},
+  {name:'Priya Raman',color:'#9c5b8a',status:'At the studio'},
+  {name:'Sam Okafor',color:'#4f8a8b',status:'Available'},
+  {name:'Mom',color:'#c26b5c',status:'Hey there! I am using WhatsApp'},
+  {name:'Dad',color:'#4f8a8b',status:'Fishing 🎣'},
+  {name:'Nina Costa',color:'#b58a4a',status:'Out of office'},
+  {name:'Tomás Leal',color:'#6a6a8c',status:'Sleeping'},
+  {name:'Marco Bianchi',color:'#7a8b5a',status:'Baking'}
+];
+
+// LabelEditAction.color is an int index into WhatsApp's own label palette — the client renders the
+// index, it does not pick colours. Five shown here; the server owns the real table.
+const LABEL_PALETTE = ['#c26b5c', '#b58a4a', '#5a7ab5', '#7a8b5a', '#9c5b8a'];
+
+const ACCOUNTS = [
+  {id:'personal',label:'Sezar (personal)',phone:'+351 912 000 004',color:'#427677',initial:'S',state:'connected'},
+  {id:'work',label:'Work',phone:'+351 912 774 100',color:'#5a7ab5',initial:'W',state:'connected'},
+  {id:'bakery',label:'Bakery (business)',phone:'+351 913 552 900',color:'#b58a4a',initial:'B',state:'reconnecting',business:true},
+  {id:'test',label:'Test line',phone:'+351 910 000 111',color:'rgba(120,120,120,.55)',initial:'T',state:'loggedout'}
+];
+
+const FILES = [
+  {kind:'image',icon:'🌅',name:'sunset.jpg',meta:'2.1 MB · JPG'},
+  {kind:'file',icon:'📄',name:'error.txt',meta:'95 B · TXT'},
+  {kind:'image',icon:'🏔️',name:'cabin.png',meta:'3.4 MB · PNG'},
+  {kind:'image',icon:'🎬',name:'clip.mp4',meta:'18.2 MB · MP4'},
+  {kind:'file',icon:'🎵',name:'demo.ogg',meta:'1.1 MB · OGG'},
+  {kind:'file',icon:'📊',name:'trip-budget.ods',meta:'48 KB · ODS'}
+];
+
+let uid = 100;
+const id = () => 'm' + (++uid);
+
+function seed() {
+  return [
+    {key:'mom',name:'Mom',color:'#c26b5c',pinned:true,fav:true,time:'15:38',unread:0,presence:'last seen today at 15:20',msgs:[
+      {id:id(),side:'in',type:'text',text:'Did you book the tickets?',time:'15:20'},
+      {id:id(),side:'out',type:'text',text:'Yes, Friday morning',time:'15:32',ticks:'✓✓',read:true},
+      {id:id(),side:'in',type:'text',text:"Call me when you're free",time:'15:38'}
+    ],labels:['Family']},
+    {key:'alex',name:'Alex Rivera',color:'#5a7ab5',time:'15:42',unread:0,typing:true,presence:'typing…',msgs:[
+      {id:id(),type:'system',text:'Yesterday'},
+      {id:id(),side:'in',type:'text',text:'Did you get the keys from the landlord?',time:'18:20'},
+      {id:id(),side:'out',type:'text',text:'Picked them up this morning',time:'18:22',ticks:'✓✓',read:true,reacts:[{e:'👍',n:1},{e:'❤️',n:1}]},
+      {id:id(),type:'system',text:'Today'},
+      {id:id(),side:'in',type:'loc',locTitle:'Rua das Flores 210',locSub:'Porto · click to open in Maps',time:'09:14'},
+      {id:id(),side:'out',type:'text',text:'Two streets from the bakery',time:'09:20',ticks:'✓✓',read:true,edited:true,reply:'📍 Rua das Flores 210'},
+      {id:id(),side:'in',type:'viewonce',time:'09:30'},
+      {id:id(),side:'in',type:'contact',cardName:'Nina Costa',cardPhone:'+351 912 004 118',cardColor:'#b58a4a',time:'09:41'},
+      {id:id(),side:'in',type:'image',dl:'pending',mediaLabel:'📷 Photo · 840 KB',text:'New place, first look',time:'15:40'},
+      {id:id(),side:'in',type:'image',media:'video',dl:'pending',mediaLabel:'🎥 Video · 0:34 · 4.1 MB',mediaLen:'0:34',time:'15:41'}
+    ]},
+    {key:'trip',name:'Weekend Trip 🏔️',color:'#7a8b5a',group:true,time:'14:05',unread:7,presence:'Alex, Priya, Sam, Nina, you',msgs:[
+      {id:id(),type:'system',text:'Priya added Nina Costa'},
+      {id:id(),side:'in',author:'Priya',type:'text',text:'I can drive on Friday',time:'14:05'},
+      {id:id(),side:'in',author:'Sam',type:'poll',pollQ:'When do we leave?',pollOpts:[{text:'Friday 17:00',votes:3},{text:'Saturday 08:00',votes:1},{text:'Saturday noon',votes:0}],pollMulti:false,time:'14:07'},
+      {id:id(),type:'system',text:'Tomás requested to join · approve in group settings'},
+      {id:id(),side:'in',author:'Nina',type:'image',imgIcon:'🏔️',text:'Cabin looks like this',time:'14:12'}
+    ]},
+    {key:'unknown',name:'+1 415 555 0132',color:'rgba(120,120,120,.55)',time:'12:20',unread:0,presence:'not in your contacts',msgs:[
+      {id:id(),side:'out',type:'text',text:'sending the address now',time:'12:20',ticks:'✓'}
+    ]},
+    {key:'bakery',name:"Marco's Bakery",color:'#b58a4a',time:'Mon',unread:0,presence:'business account',msgs:[
+      {id:id(),side:'in',type:'image',imgIcon:'🥐',text:'Fresh out of the oven',time:'08:10'},
+      {id:id(),side:'out',type:'text',text:'Save me two',time:'08:12',ticks:'✓✓',read:true}
+    ]},
+    {key:'dev',name:'Dev crew',color:'#6a6a8c',group:true,muted:true,time:'Mon',unread:12,presence:'Sam, Tomás, you',msgs:[
+      {id:id(),side:'in',author:'Sam',type:'text',text:'pushed the fix',time:'11:02'},
+      {id:id(),side:'in',author:'Tomás',type:'revoked',time:'11:04'}
+    ]},
+    {key:'priya',name:'Priya Raman',color:'#9c5b8a',time:'Sun',unread:0,presence:'online',msgs:[
+      {id:id(),side:'in',type:'voice',voiceLen:'0:12',dl:'pending',time:'19:40'},
+      {id:id(),side:'in',type:'voice',voiceLen:'0:24',time:'19:42'},
+      {id:id(),side:'in',type:'sticker',text:'🐦',time:'19:44'},
+      {id:id(),side:'out',type:'emoji',text:'🎉😂',time:'19:45',ticks:'✓✓',read:true}
+    ]},
+    {key:'dad',name:'Dad',color:'#4f8a8b',fav:true,time:'02/01',unread:0,presence:'last seen yesterday',msgs:[
+      {id:id(),side:'in',type:'doc',docName:'lease-2026.pdf',docMeta:'PDF · 1.2 MB',dl:'pending',time:'10:04'},
+      {id:id(),side:'in',type:'doc',docName:'inventory.ods',docMeta:'Spreadsheet · 84 KB',dl:'failed',time:'10:06'},
+      {id:id(),side:'out',type:'text',text:'Got it, reading tonight',time:'10:30',ticks:'✓✓',read:true}
+    ]},
+    {key:'school',name:'School group',color:'#6a6a8c',group:true,archived:true,time:'12/07',unread:0,presence:'archived',msgs:[
+      {id:id(),side:'in',author:'Ana',type:'text',text:'see you all in September',time:'12:00'}
+    ]},
+    {key:'oldlandlord',name:'Old landlord',color:'#b58a4a',archived:true,time:'03/05',unread:0,presence:'archived',msgs:[
+      {id:id(),side:'in',type:'doc',docName:'receipt-may.pdf',docMeta:'PDF · 96 KB',dl:'pending',time:'09:00'}
+    ]},
+    {key:'sam',name:'Sam Okafor',color:'#4f8a8b',acct:'work',time:'16:02',unread:2,presence:'online',msgs:[
+      {id:id(),side:'in',type:'text',text:'Deploy is green, merging now',time:'16:02'}
+    ]},
+    {key:'standup',name:'Standup 📌',color:'#5a7ab5',acct:'work',group:true,time:'09:15',unread:0,presence:'Sam, Tomás, Nina, you',msgs:[
+      {id:id(),side:'in',author:'Nina',type:'text',text:'No blockers today',time:'09:15'}
+    ]},
+    {key:'rita',name:'Rita (accounting)',color:'#427677',acct:'bakery',time:'02/01',unread:1,presence:'business contact',msgs:[
+      {id:id(),side:'in',type:'doc',docName:'invoice-114.pdf',docMeta:'PDF · 210 KB',dl:'pending',time:'11:20'}
+    ],labels:['Paid']},
+    {key:'orders',name:'Orders',color:'#b58a4a',acct:'bakery',group:true,time:'Mon',unread:4,presence:'12 participants',msgs:[
+      {id:id(),side:'in',author:'Marco',type:'text',text:'Two croissant trays for Friday',time:'08:40'}
+    ],labels:['Pending order','New customer']}
+  ].map(c => Object.assign({acct: c.key === 'dev' ? 'work' : 'personal'}, c));
+}
+
+class Component extends DCLogic {
+  state = {
+    chats: seed(), active: 1, filter: 'All', query: '', draft: '', reply: null,
+    menu: null, attach: false, picker: false, pickerTab: 'Emoji', hover: null,
+    dialog: null, prefTab: 'Appearance', pane: 'chat', mediaTab: 'Media',
+    sidebar: 'chats', peopleQuery: '', picked: [], groupName: '',
+    chatSearch: false, chatQuery: '', hit: 0, toast: null, toastAction: null,
+    linking: false, dark: false, multi: true, windowControls: true,
+    accounts: ACCOUNTS.slice(), account: 'personal', merged: false, accountOpen: false,
+    newAcctLabel: '', perAcctNotif: true, keepConnected: true,
+    tray: null, traySel: 0, fileCursor: 0,
+    labels: [
+      {name: 'Family', ci: 0, acct: 'personal'}, {name: 'Landlord', ci: 3, acct: 'personal'},
+      {name: 'Deploys', ci: 2, acct: 'work'},
+      {name: 'New customer', ci: 0, acct: 'bakery'}, {name: 'Paid', ci: 2, acct: 'bakery'}, {name: 'Pending order', ci: 3, acct: 'bakery'}
+    ],
+    labelsOpen: null, labelFilter: null,
+    notifSound: true, readReceipts: true, proxy: 'None', autoDownload: 'Wi-Fi only',
+    pollQ: '', pollDraft: ['', ''], pollMulti: false, forwardPick: [], forwardMsg: null,
+    alert: null, playing: null
+  };
+
+  scrollRef = React.createRef();
+
+  scrollToEnd() {
+    const el = this.scrollRef.current;
+    if (!el) return;
+    const key = this.state.active + ':' + this.chat().msgs.length;
+    if (key !== this._lastKey) { this._lastKey = key; el.scrollTop = el.scrollHeight; }
+  }
+  componentDidUpdate() { this.scrollToEnd(); }
+  componentDidMount() { this._lastKey = null; this.scrollToEnd(); }
+
+  set = (o) => this.setState(o);
+  toast = (msg, action) => {
+    clearTimeout(this._t);
+    this.setState({toast: msg, toastAction: action || null});
+    this._t = setTimeout(() => this.setState({toast: null, toastAction: null}), 2600);
+  };
+  closeAll = () => this.setState({menu: null, attach: false, picker: false, accountOpen: false, reactPick: null, labelsOpen: null});
+
+  openTray = (kind) => this.setState(s => {
+    const f = FILES.find(x => x.kind === kind) || FILES[0];
+    return {attach: false, tray: [Object.assign({id: id(), caption: ''}, f)], traySel: 0, fileCursor: 1};
+  });
+  trayAdd = () => this.setState(s => {
+    const f = FILES[s.fileCursor % FILES.length];
+    return {tray: s.tray.concat([Object.assign({id: id(), caption: ''}, f)]), traySel: s.tray.length, fileCursor: s.fileCursor + 1};
+  });
+  traySend = () => {
+    const items = this.state.tray || [];
+    this.setState({tray: null, traySel: 0});
+    items.forEach(it => {
+      if (it.kind === 'image') this.push({type: 'image', imgIcon: it.icon, text: it.caption});
+      else this.push({type: 'doc', docName: it.name, docMeta: it.meta, text: it.caption});
+    });
+  };
+  chat = () => this.state.chats[this.state.active];
+
+  patch = (fn) => this.setState(s => {
+    const chats = s.chats.slice();
+    const c = Object.assign({}, chats[s.active]);
+    c.msgs = c.msgs.slice();
+    fn(c);
+    chats[s.active] = c;
+    return {chats};
+  });
+
+  now = () => { const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); };
+
+  push = (msg) => {
+    const m = Object.assign({id: id(), side: 'out', time: this.now(), ticks: '✓'}, msg);
+    if (this.state.reply) m.reply = this.state.reply.text;
+    this.patch(c => { c.msgs.push(m); c.time = m.time; });
+    this.setState({reply: null});
+    setTimeout(() => this.patch(c => {
+      const i = c.msgs.findIndex(x => x.id === m.id);
+      if (i > -1) c.msgs[i] = Object.assign({}, c.msgs[i], {ticks: '✓✓'});
+    }), 700);
+    setTimeout(() => this.patch(c => {
+      const i = c.msgs.findIndex(x => x.id === m.id);
+      if (i > -1) c.msgs[i] = Object.assign({}, c.msgs[i], {read: true});
+    }), 1600);
+  };
+
+  send = () => {
+    const t = this.state.draft.trim();
+    if (this.state.tray) { this.setState({draft: ''}); this.traySend(); if (t) this.push({type: 'text', text: t}); return; }
+    if (!t) return;
+    this.setState({draft: ''});
+    const emojiOnly = /^[\p{Extended_Pictographic}\u200d\uFE0F]{1,4}$/u.test(t);
+    this.push({type: emojiOnly ? 'emoji' : 'text', text: t});
+  };
+
+  react = (mid, e) => this.patch(c => {
+    const i = c.msgs.findIndex(x => x.id === mid);
+    if (i < 0) return;
+    const m = Object.assign({}, c.msgs[i]);
+    const rs = (m.reacts || []).slice();
+    const j = rs.findIndex(r => r.e === e);
+    if (j > -1) rs.splice(j, 1); else rs.push({e, n: 1});
+    m.reacts = rs;
+    c.msgs[i] = m;
+  });
+
+  rootRef = React.createRef();
+
+  anchor = (e, w, h) => {
+    const root = this.rootRef.current;
+    if (!root || !e || !e.currentTarget) return {top: 60, left: 60};
+    const r = e.currentTarget.getBoundingClientRect();
+    const b = root.getBoundingClientRect();
+    const k = (b.width / root.offsetWidth) || 1;
+    const W = root.offsetWidth, H = root.offsetHeight;
+    let left = (r.left - b.left + r.width) / k - w;
+    let top = (r.bottom - b.top) / k + 6;
+    left = Math.max(8, Math.min(left, W - w - 8));
+    if (top + h > H - 8) {
+      const above = (r.top - b.top) / k - h - 6;
+      top = above >= 8 ? above : Math.max(8, H - h - 8);
+    }
+    return {top, left};
+  };
+
+  openMenu = (kind, pos) => this.setState(s => ({
+    menu: s.menu && s.menu.kind === kind && s.menu.mid === (pos && pos.mid) ? null : Object.assign({kind}, pos),
+    attach: false, picker: false, accountOpen: false, reactPick: null
+  }));
+
+  menuDef() {
+    const m = this.state.menu;
+    if (!m) return [];
+    const I = (icon, label, onClick, extra) => Object.assign({isItem: true, icon, label, onClick, color: 'var(--tx,rgba(0,0,0,.85))', accel: ''}, extra);
+    const SEP = {isSep: true};
+    const danger = {color: '#c01c28'};
+    const close = fn => () => { this.setState({menu: null}); fn && fn(); };
+    if (m.kind === 'app') return [
+      I('📂', 'Archived', close(() => this.setState({sidebar: 'archived', query: '', labelFilter: null}))),
+      I('⭐', 'Starred messages', close(() => this.setState({pane: 'starred'}))),
+      SEP,
+      I('🖥', 'Linked devices', close(() => this.setState({dialog: 'devices'}))),
+      I('⚙', 'Preferences', close(() => this.setState({dialog: 'prefs'})), {accel: 'Ctrl+,'}),
+      I('🐦', 'About chatot', close(() => this.setState({dialog: 'about'}))),
+      SEP,
+      I('⏻', 'Unlink this device', close(() => this.setState({linking: true})), danger),
+      I('✕', 'Quit', close(() => this.toast('chatot keeps running in the tray')), {accel: 'Ctrl+Q'})
+    ];
+    if (m.kind === 'plus') return [
+      I('💬', 'New chat', close(() => this.setState({sidebar: 'newchat', picked: []}))),
+      I('👥', 'New group', close(() => this.setState({sidebar: 'newgroup', newKind: 'group', picked: []}))),
+      I('🏘', 'New community', close(() => this.setState({sidebar: 'groupname', newKind: 'community', groupName: '', picked: []})))
+    ];
+    if (m.kind === 'chat') {
+      const c = this.chat();
+      return [
+        I('ℹ', c.group ? 'Group info' : 'Contact info', close(() => this.setState({dialog: 'info'}))),
+        I('⌕', 'Search in chat', close(() => this.setState({chatSearch: true, chatQuery: '', hit: 0})), {accel: 'Ctrl+F'}),
+        I('🖼', 'Media, links and docs', close(() => this.setState({pane: 'media', mediaTab: 'Media'}))),
+        SEP,
+        I(c.muted ? '🔔' : '🔇', c.muted ? 'Unmute notifications' : 'Mute notifications…', close(() => {
+          if (c.muted) { this.patch(x => { x.muted = false; x.muteUntil = null; }); this.toast('Notifications on'); }
+          else this.setState({dialog: 'choice', choice: 'mute'});
+        })),
+        I('📌', c.pinned ? 'Unpin chat' : 'Pin chat', close(() => { this.patch(x => { x.pinned = !x.pinned; }); this.toast(c.pinned ? 'Unpinned' : 'Pinned to top'); })),
+        I('⏱', 'Disappearing messages…', close(() => this.setState({dialog: 'choice', choice: 'timer'}))),
+        I('📂', c.archived ? 'Unarchive chat' : 'Archive chat', close(() => { this.patch(x => { x.archived = !x.archived; }); this.toast(c.archived ? 'Chat unarchived' : 'Chat archived'); })),
+        SEP,
+        I('⤓', 'Export chat…', close(() => this.setState({dialog: 'export'}))),
+        I('🗑', 'Clear chat…', close(() => this.setState({dialog: 'alert', alert: 'clear'})), danger),
+        I('🚫', c.blocked ? 'Unblock contact' : 'Block contact…', close(() => {
+          if (c.blocked) { this.patch(x => { x.blocked = false; }); this.toast('Unblocked'); }
+          else this.setState({dialog: 'alert', alert: 'block'});
+        }), danger)
+      ];
+    }
+    if (m.kind === 'chatrow') {
+      const i = m.row;
+      const c = this.state.chats[i];
+      const upd = fn => this.setState(st => { const chats = st.chats.slice(); const n = Object.assign({}, chats[i]); fn(n); chats[i] = n; return {chats}; });
+      const toggleLabel = name => upd(n => {
+        const ls = (n.labels || []).slice();
+        const j = ls.indexOf(name);
+        if (j > -1) ls.splice(j, 1); else ls.push(name);
+        n.labels = ls;
+      });
+      return [
+        I('📌', c.pinned ? 'Unpin chat' : 'Pin chat', close(() => upd(n => { n.pinned = !n.pinned; }))),
+        I(c.muted ? '🔔' : '🔇', c.muted ? 'Unmute' : 'Mute', close(() => upd(n => { n.muted = !n.muted; }))),
+        I('🏷', 'Lists', () => {}, {color: 'var(--dim,rgba(0,0,0,.55))'})
+      ].concat(this.state.labels.filter(l => l.acct === (c.acct || 'personal')).map(l => I(
+        (c.labels || []).includes(l.name) ? '☑' : '☐', l.name, () => toggleLabel(l.name)
+      ))).concat([
+        I('＋', 'New list…', close(() => this.setState({dialog: 'labels', newLabel: ''}))),
+        SEP,
+        I(c.archived ? '📥' : '📂', c.archived ? 'Unarchive chat' : 'Archive chat', close(() => { upd(n => { n.archived = !n.archived; }); this.toast(c.archived ? 'Unarchived' : 'Archived'); })),
+        I('🗑', 'Delete chat', close(() => { this.setState(st => ({chats: st.chats.filter((_, j) => j !== i), active: 0})); this.toast('Chat deleted'); }), danger)
+      ]);
+    }
+    if (m.kind === 'msg') {
+      const mid = m.mid;
+      const msg = this.chat().msgs.find(x => x.id === mid);
+      return [
+        I('↩', 'Reply', close(() => this.setState({reply: {name: msg.side === 'out' ? 'You' : this.chat().name, text: this.preview(msg)}}))),
+        I('↪', 'Forward', close(() => this.setState({dialog: 'forward', forwardMsg: mid, forwardPick: []}))),
+        I('⭐', msg.starred ? 'Unstar message' : 'Star message', close(() => { this.patch(c => { const i = c.msgs.findIndex(x => x.id === mid); c.msgs[i] = Object.assign({}, c.msgs[i], {starred: !msg.starred}); }); this.toast(msg.starred ? 'Unstarred' : 'Message starred'); })),
+        I('📋', 'Copy text', close(() => this.toast('Copied to clipboard'))),
+        I('📌', 'Pin in chat', close(() => this.toast('Pinned for 7 days'))),
+        SEP,
+        I('ℹ', 'Message info', close(() => this.toast('Delivered 15:42 · Read 15:43'))),
+        I('🗑', 'Delete message', close(() => this.patch(c => {
+          const i = c.msgs.findIndex(x => x.id === mid);
+          if (i > -1) c.msgs[i] = {id: mid, side: msg.side, type: 'revoked', time: msg.time};
+        })), danger)
+      ];
+    }
+    return [];
+  }
+
+  preview(m) {
+    if (!m) return '';
+    return ({text: m.text, image: '📷 Photo', loc: '📍 ' + (m.locTitle || ''), poll: '📊 ' + (m.pollQ || 'Poll'),
+      contact: '👤 ' + (m.cardName || ''), voice: '🎤 Voice message', doc: '📄 ' + (m.docName || ''),
+      sticker: (m.text || '🙂') + ' Sticker', viewonce: '📷 Photo · view once', download: '📷 Photo',
+      revoked: 'This message was deleted', system: m.text})[m.type] || m.text || '';
+  }
+
+  renderVals() {
+    const s = this.state;
+    const T = s.dark ? DARK : LIGHT;
+    const ac = this.props.accent || '#1b8c72';
+    const ac2 = s.dark ? ac : '#147a63';
+    const themeVars = Object.keys(T).map(k => '--' + k + ':' + T[k]).join(';') + ';--ac:' + ac + ';--ac2:' + ac2;
+    const chat = this.chat();
+    const dark = s.dark;
+
+    // sidebar list
+    const q = s.query.trim().toLowerCase();
+    const acct = s.accounts.find(a => a.id === s.account) || s.accounts[0];
+    const acctOf = k => s.accounts.find(a => a.id === k) || acct;
+    const archiveMode = s.sidebar === 'archived';
+    let list = s.chats.map((c, i) => ({c, i})).filter(x => !!x.c.archived === archiveMode);
+    if (!s.merged) list = list.filter(x => (x.c.acct || s.accounts[0].id) === s.account);
+    if (s.labelFilter) list = list.filter(x => (x.c.labels || []).includes(s.labelFilter));
+    if (s.filter === 'Unread') list = list.filter(x => x.c.unread > 0);
+    if (s.filter === 'Favorites') list = list.filter(x => x.c.fav);
+    if (s.filter === 'Groups') list = list.filter(x => x.c.group);
+    if (q) list = list.filter(x => x.c.name.toLowerCase().includes(q) || x.c.msgs.some(m => (m.text || '').toLowerCase().includes(q)));
+    list.sort((a, b) => (b.c.pinned ? 1 : 0) - (a.c.pinned ? 1 : 0));
+
+    const chatList = list.map(({c, i}) => {
+      const last = c.msgs[c.msgs.length - 1] || {};
+      const typing = c.typing && !c.blocked;
+      let pv = typing ? 'typing…' : (last.side === 'out' ? 'You: ' : (last.author ? last.author + ': ' : '')) + this.preview(last);
+      if (s.merged) pv = acctOf(c.acct).label.split(' (')[0] + ' · ' + pv;
+      return {
+        stripe: s.merged ? acctOf(c.acct).color : null,
+        name: c.name, initial: c.name[0] === '+' ? '+' : c.name[0].toUpperCase(), color: c.color,
+        preview: pv, previewColor: typing ? ac2 : T.dim, previewStyle: typing ? 'italic' : 'normal',
+        time: c.time, timeColor: c.unread ? ac2 : T.dim2, unread: c.unread || 0,
+        badgeBg: c.muted ? T.sel : ac, badgeFg: c.muted ? T.dim : '#fff',
+        pinned: !!c.pinned, muted: !!c.muted,
+        bg: i === s.active ? T.sel : 'transparent',
+        onClick: () => this.setState(st => {
+          const chats = st.chats.slice();
+          chats[i] = Object.assign({}, chats[i], {unread: 0});
+          return {chats, active: i, pane: 'chat', chatSearch: false, reply: null, hover: null};
+        }),
+        onContext: e => { e.preventDefault(); this.openMenu('chatrow', Object.assign({row: i}, this.anchor(e, 240, 340))); }
+      };
+    });
+
+    const labelCount = n => s.chats.filter(c => (c.labels || []).includes(n)).length;
+    const acctLabels = s.labels.filter(l => l.acct === s.account);
+    const filters = ['All', 'Unread', 'Favorites', 'Groups'].map(f => {
+      const on = s.filter === f && !s.labelFilter;
+      const n = f === 'Unread' ? s.chats.filter(c => c.unread).length : f === 'Groups' ? s.chats.filter(c => c.group).length : 0;
+      return {label: f, count: n || null, dot: null, countColor: on ? 'rgba(255,255,255,.85)' : ac2, bg: on ? ac : T.chip, fg: on ? '#fff' : T.tx, weight: on ? 700 : 400, onClick: () => this.setState({filter: f, labelFilter: null})};
+    });
+    if (s.labelFilter) {
+      const fav = filters.findIndex(f => f.label === 'Favorites');
+      if (fav > -1) filters.splice(fav, 1);
+      filters.splice(2, 0, {
+        label: s.labelFilter, count: labelCount(s.labelFilter) || null, dot: '#fff', countColor: 'rgba(255,255,255,.85)',
+        bg: ac, fg: '#fff', weight: 700, onClick: () => this.setState({labelFilter: null, filter: 'All'})
+      });
+    }
+
+    // messages
+    const cq = s.chatQuery.trim().toLowerCase();
+    const hits = cq ? chat.msgs.filter(m => (m.text || '').toLowerCase().includes(cq)) : [];
+    const hitId = hits.length ? hits[((s.hit % hits.length) + hits.length) % hits.length].id : null;
+
+    const messages = chat.msgs.map(m => {
+      const out = m.side === 'out';
+      const sys = m.type === 'system';
+      const bubBg = out ? ac : T.inb;
+      const bubFg = out ? '#fff' : T.tx;
+      const sub = out ? 'rgba(255,255,255,.78)' : T.dim;
+      const o = {
+        isSystem: sys, isBubble: !sys, justify: sys ? 'center' : (out ? 'flex-end' : 'flex-start'),
+        gap: sys ? '8px' : '0px', text: m.text || '', time: m.time || '', edited: !!m.edited,
+        author: m.author || null, authorColor: out ? 'rgba(255,255,255,.8)' : ac2,
+        reply: m.reply || null, quoteBar: out ? 'rgba(255,255,255,.55)' : ac, quoteFg: out ? 'rgba(255,255,255,.8)' : T.dim,
+        bubBg, bubFg, subFg: sub, metaFg: out ? 'rgba(255,255,255,.75)' : T.dim2,
+        hair: out ? 'rgba(255,255,255,.28)' : T.bd2, chipBg: out ? 'rgba(255,255,255,.2)' : T.chip,
+        linkFg: out ? '#fff' : ac2,
+        ticks: out ? (m.read ? '✓✓' : m.ticks || '✓') : null,
+        tickColor: m.read ? (dark ? '#9fe6d3' : '#cdece4') : 'rgba(255,255,255,.75)',
+        hit: hitId === m.id ? '0 0 0 2px #e5a50a' : 'none',
+        isText: m.type === 'text', isImage: m.type === 'image', isLoc: m.type === 'loc', isPoll: m.type === 'poll',
+        isContact: m.type === 'contact', isVoice: m.type === 'voice', isDoc: m.type === 'doc',
+        isViewOnce: m.type === 'viewonce', isDownload: false, isRevoked: m.type === 'revoked',
+        isSticker: m.type === 'sticker', isEmoji: m.type === 'emoji',
+        isVideo: m.media === 'video', isGif: m.media === 'gif',
+        dlPending: (m.dl || 'ready') === 'pending', dlLoading: m.dl === 'loading',
+        dlReady: (m.dl || 'ready') === 'ready', dlFailed: m.dl === 'failed',
+        mediaLabel: m.mediaLabel || '📷 Photo · 840 KB', mediaLen: m.mediaLen || '0:34',
+        hatch: 'repeating-linear-gradient(45deg,' + (out ? 'rgba(255,255,255,.14) 0 7px,rgba(255,255,255,.22) 7px 14px' : dark ? 'rgba(255,255,255,.05) 0 7px,rgba(255,255,255,.1) 7px 14px' : 'rgba(0,0,0,.05) 0 7px,rgba(0,0,0,.09) 7px 14px') + ')',
+        hatchSolid: 'repeating-linear-gradient(45deg,' + (out ? 'rgba(255,255,255,.18) 0 7px,rgba(255,255,255,.28) 7px 14px' : dark ? 'rgba(255,255,255,.08) 0 7px,rgba(255,255,255,.14) 7px 14px' : 'rgba(0,0,0,.07) 0 7px,rgba(0,0,0,.12) 7px 14px') + ')',
+        trackBg: out ? 'rgba(255,255,255,.3)' : 'rgba(128,128,128,.28)', fillFg: out ? '#fff' : ac,
+        voicePct: s.playing === m.id ? '62%' : '34%',
+        onOpenDoc: () => this.toast('Opening ' + m.docName),
+        imgIcon: m.imgIcon || '📷', imgBg: dark ? 'linear-gradient(135deg,#3a4a52,#2b3238)' : 'linear-gradient(135deg,#cfd8dc,#aab6bd)',
+        locTitle: m.locTitle, locSub: m.locSub,
+        cardName: m.cardName, cardPhone: m.cardPhone, cardInitial: (m.cardName || '?')[0], cardColor: m.cardColor || ac,
+        docName: m.docName, docMeta: m.docMeta,
+        voTitle: m.opened ? 'Photo · opened' : 'Photo · view once', voSub: m.opened ? 'No longer available' : 'Click to open · closes after',
+        dlTitle: m.got ? '📷 Photo · 840 KB' : '📷 Photo · 840 KB', dlSub: m.got ? 'Saved to Downloads' : 'Click to download',
+        voiceLen: m.voiceLen || '0:24', playIcon: s.playing === m.id ? '❚❚' : '▶',
+        playBg: out ? 'rgba(255,255,255,.22)' : ac, playFg: '#fff',
+        bars: Array.from({length: 22}, (_, i) => ({h: (5 + ((i * 7) % 15)) + 'px', bg: out ? 'rgba(255,255,255,.6)' : 'rgba(120,120,120,.55)'})),
+        reacts: (m.reacts || []).map(r => ({e: r.e, n: r.n > 1 ? r.n : null, onClick: () => this.react(m.id, r.e)})),
+        hasReacts: !!(m.reacts && m.reacts.length),
+        reactSide: out ? 'right:8px' : 'left:8px',
+        hover: s.hover === m.id && !sys,
+        onEnter: () => this.setState({hover: m.id}),
+        onLeave: () => this.setState(st => st.hover === m.id ? {hover: null} : null),
+        quick: ['👍', '❤️', '😂', '😮', '😢', '🙏'].map(e => ({e, onClick: () => this.react(m.id, e)})),
+        onReply: () => this.setState({reply: {name: out ? 'You' : chat.name, text: this.preview(m)}, hover: null}),
+        onForward: () => this.setState({dialog: 'forward', forwardMsg: m.id, forwardPick: []}),
+        onMenu: e => this.openMenu('msg', Object.assign({mid: m.id}, this.anchor(e, 250, 330))),
+        onMoreReacts: e => { const a = this.anchor(e, 322, 218); this.setState({reactPick: {mid: m.id, top: a.top, left: a.left}, menu: null, hover: m.id}); },
+        onViewOnce: () => this.patch(c => { const i = c.msgs.findIndex(x => x.id === m.id); c.msgs[i] = Object.assign({}, c.msgs[i], {opened: true}); }),
+        onDownload: () => {
+          if (m.type === 'image') this.patch(c => { const i = c.msgs.findIndex(x => x.id === m.id); c.msgs[i] = Object.assign({}, c.msgs[i], {dl: 'loading'}); });
+          else this.toast('Downloading ' + (m.docName || 'voice message') + '…');
+          setTimeout(() => this.patch(c => { const i = c.msgs.findIndex(x => x.id === m.id); if (i > -1) c.msgs[i] = Object.assign({}, c.msgs[i], {dl: 'ready'}); }), 1300);
+        },
+        onPlay: () => this.setState(st => ({playing: st.playing === m.id ? null : m.id}))
+      };
+      if (m.type === 'sticker' || m.type === 'emoji') {
+        o.bubBg = 'transparent'; o.bubFg = T.tx; o.metaFg = T.dim2;
+        o.tickColor = ac2; o.subFg = T.dim;
+      }
+      if (m.type === 'poll') {
+        const total = m.pollOpts.reduce((a, x) => a + x.votes, 0) || 1;
+        o.pollQ = m.pollQ;
+        o.pollFoot = (m.pollMulti ? 'Select one or more' : 'Select one') + ' · ' + total + ' votes';
+        o.pollOpts = m.pollOpts.map((opt, oi) => ({
+          text: opt.text, votes: opt.votes, pct: Math.round(opt.votes / total * 100) + '%',
+          tick: opt.mine ? '✓' : '', boxBg: opt.mine ? ac : 'transparent',
+          boxBorder: opt.mine ? ac : (out ? 'rgba(255,255,255,.6)' : T.bd2),
+          trackBg: out ? 'rgba(255,255,255,.25)' : T.sel, fillBg: out ? '#fff' : ac,
+          onClick: () => this.patch(c => {
+            const i = c.msgs.findIndex(x => x.id === m.id);
+            const mm = Object.assign({}, c.msgs[i]);
+            mm.pollOpts = mm.pollOpts.map((p, pi) => {
+              if (pi === oi) return Object.assign({}, p, {mine: !p.mine, votes: p.votes + (p.mine ? -1 : 1)});
+              if (!mm.pollMulti && p.mine) return Object.assign({}, p, {mine: false, votes: p.votes - 1});
+              return p;
+            });
+            c.msgs[i] = mm;
+          })
+        }));
+      }
+      return o;
+    });
+
+    // people picker
+    const pq = s.peopleQuery.trim().toLowerCase();
+    const people = PEOPLE.filter(p => !pq || p.name.toLowerCase().includes(pq)).map(p => ({
+      name: p.name, status: p.status, color: p.color, initial: p.name[0],
+      check: s.picked.includes(p.name),
+      onClick: () => {
+        if (s.sidebar === 'newchat') {
+          const i = s.chats.findIndex(c => c.name === p.name);
+          if (i > -1) this.setState({active: i, sidebar: 'chats', pane: 'chat'});
+          else this.setState(st => ({chats: st.chats.concat([{key: p.name, name: p.name, color: p.color, time: this.now(), unread: 0, presence: 'online', msgs: []}]), active: st.chats.length, sidebar: 'chats'}));
+        } else {
+          this.setState(st => ({picked: st.picked.includes(p.name) ? st.picked.filter(n => n !== p.name) : st.picked.concat([p.name])}));
+        }
+      }
+    }));
+    const picked = s.picked.map(n => {
+      const p = PEOPLE.find(x => x.name === n) || {color: ac};
+      return {name: n, initial: n[0], color: p.color, onRemove: () => this.setState(st => ({picked: st.picked.filter(x => x !== n)}))};
+    });
+
+    // preferences
+    const sw = (on, onClick, label, subtxt) => ({label, sub: subtxt || null, isSwitch: true, switchBg: on ? ac : T.sel, knob: on ? '20px' : '2px', onClick, cursor: 'pointer', sep: '', value: null, isButton: false, button: null});
+    const row = (label, value, onClick, subtxt) => ({label, sub: subtxt || null, value, onClick, cursor: 'pointer', isSwitch: false, sep: '', isButton: false, button: null});
+    const btn = (label, button, onClick, subtxt) => ({label, sub: subtxt || null, button, isButton: true, onClick, cursor: 'pointer', isSwitch: false, sep: '', value: null});
+    const seal = rows => rows.map((r, i) => Object.assign({}, r, {sep: i ? '1px solid ' + T.bd : '0'}));
+    let prefGroups = [];
+    if (s.prefTab === 'Appearance') prefGroups = [
+      {title: 'Theme', rows: seal([
+        row('Colour scheme', s.dark ? 'Dark' : 'Light', () => this.setState(st => ({dark: !st.dark}))),
+        sw(s.windowControls, () => this.setState(st => ({windowControls: !st.windowControls})), 'Show window controls', 'Follows gtk-decoration-layout when off'),
+        btn('Account rail', s.accounts.length + ' linked', () => this.setState({dialog: 'accounts'}), 'Shown automatically while more than one account is linked')
+      ])},
+      {title: 'Chat list', rows: seal([
+        row('Font size', 'Default', () => this.toast('Font size follows GNOME text scaling')),
+        sw(true, () => this.toast('Message previews stay on'), 'Show message previews')
+      ])}
+    ];
+    if (s.prefTab === 'Notifications') prefGroups = [
+      {title: 'Alerts', rows: seal([
+        sw(s.notifSound, () => this.setState(st => ({notifSound: !st.notifSound})), 'Play sound'),
+        sw(true, () => this.toast('Desktop notifications on'), 'Desktop notifications'),
+        sw(false, () => this.toast('Preview hidden on lock screen'), 'Show message text in notifications')
+      ])},
+      {title: 'Tray', rows: seal([
+        sw(true, () => this.toast('Tray icon shows unread counts per account'), 'Show tray icon', 'Badge shows unread per account'),
+        sw(true, () => this.toast('Closing hides to tray'), 'Close to tray')
+      ])}
+    ];
+    if (s.prefTab === 'Privacy') prefGroups = [
+      {title: 'Receipts', rows: seal([
+        sw(s.readReceipts, () => this.setState(st => ({readReceipts: !st.readReceipts})), 'Send read receipts'),
+        sw(true, () => this.toast('Typing indicator on'), 'Share typing status')
+      ])},
+      {title: 'Security', rows: seal([
+        btn('Blocked contacts', '2 blocked', () => this.toast('2 blocked contacts')),
+        btn('Encryption keys', 'View', () => this.toast('Keys verified for 6 chats'))
+      ])}
+    ];
+    if (s.prefTab === 'Network') prefGroups = [
+      {title: 'Proxy (this account)', rows: seal([
+        row('Proxy type', s.proxy, () => this.setState(st => ({proxy: st.proxy === 'None' ? 'SOCKS5' : st.proxy === 'SOCKS5' ? 'HTTP' : 'None'}))),
+        row('Host', s.proxy === 'None' ? '—' : '127.0.0.1', () => this.toast('Host is per-account')),
+        row('Port', s.proxy === 'None' ? '—' : '9050', () => this.toast('Port is per-account')),
+        btn('Connection', 'Test', () => this.toast(s.proxy === 'None' ? 'Connected directly · 42 ms' : 'Proxy reachable · 118 ms'))
+      ])},
+      {title: 'Media', rows: seal([
+        row('Auto-download', s.autoDownload, () => this.setState(st => ({autoDownload: st.autoDownload === 'Wi-Fi only' ? 'Always' : st.autoDownload === 'Always' ? 'Never' : 'Wi-Fi only'})))
+      ])}
+    ];
+    if (s.prefTab === 'Advanced') prefGroups = [
+      {title: 'Storage', rows: seal([
+        btn('Media cache', '1.4 GB · Clear', () => this.toast('Cache cleared')),
+        btn('Message database', 'Export', () => this.toast('Database exported to ~/chatot'))
+      ])},
+      {title: 'Debug', rows: seal([
+        sw(false, () => this.toast('Verbose logging enabled'), 'Verbose logging'),
+        btn('Log file', 'Open', () => this.toast('~/.local/state/chatot/log'))
+      ])}
+    ];
+    if (s.prefTab === 'Shortcuts') prefGroups = [
+      {title: 'Window', rows: seal([
+        row('Search chats', 'Ctrl+K', () => {}), row('New chat', 'Ctrl+N', () => {}),
+        row('Preferences', 'Ctrl+,', () => {}), row('Close window', 'Ctrl+W', () => {})
+      ])},
+      {title: 'Conversation', rows: seal([
+        row('Search in chat', 'Ctrl+F', () => {}), row('Next / previous chat', 'Ctrl+Tab', () => {}),
+        row('Reply to last message', 'Ctrl+↑', () => {}), row('Attach a file', 'Ctrl+O', () => {}),
+        row('Emoji picker', 'Ctrl+E', () => {}), row('Cancel reply or search', 'Esc', () => {})
+      ])}
+    ];
+    const prefTabs = [['Appearance','🎨'],['Notifications','🔔'],['Privacy','🔒'],['Network','🌐'],['Shortcuts','⌨'],['Advanced','🛠']].map(([label, icon]) => ({
+      label, icon, bg: s.prefTab === label ? T.sel : 'transparent', weight: s.prefTab === label ? 700 : 400,
+      onClick: () => this.setState({prefTab: label})
+    }));
+
+    // media browser
+    const mediaTabs = ['Media', 'Links', 'Docs'].map(t => ({
+      label: t, bg: s.mediaTab === t ? (dark ? '#4a4a4a' : '#fff') : 'transparent', fg: T.tx,
+      weight: s.mediaTab === t ? 700 : 400, onClick: () => this.setState({mediaTab: t})
+    }));
+    const mediaItems = Array.from({length: 15}, (_, i) => ({
+      bg: 'linear-gradient(' + (30 + i * 23) + 'deg,' + (dark ? '#3a4a52,#2b3238' : '#cfd8dc,#9fb0b8') + ')',
+      label: ['Sat', 'Sun', 'Mon', 'Tue', 'Wed'][i % 5]
+    }));
+    const mediaRows = s.mediaTab === 'Links'
+      ? [{icon: '🔗', title: 'gnome.org/gtk4-release-notes', sub: 'GTK 4.14 release notes', date: 'Mon'},
+         {icon: '🔗', title: 'openstreetmap.org/#map=17/41.14/-8.61', sub: 'Porto · shared by Alex', date: 'Sun'},
+         {icon: '🔗', title: 'flathub.org/apps/chatot', sub: 'chatot on Flathub', date: '02/01'}]
+      : [{icon: '📄', title: 'lease-2026.pdf', sub: 'PDF · 1.2 MB · Dad', date: '02/01'},
+         {icon: '📄', title: 'trip-budget.ods', sub: 'Spreadsheet · 48 KB · Priya', date: 'Sun'},
+         {icon: '📄', title: 'cabin-rules.txt', sub: 'Text · 3 KB · Nina', date: 'Sat'}];
+
+    // dialogs
+    const starred = [];
+    s.chats.forEach((c, ci) => c.msgs.forEach(m => {
+      if (!m.starred) return;
+      starred.push({
+        chat: c.name, initial: c.name[0] === '+' ? '+' : c.name[0].toUpperCase(), color: c.color,
+        text: this.preview(m), time: m.time,
+        onClick: () => this.setState({active: ci, pane: 'chat'}),
+        onUnstar: e => { e.stopPropagation(); this.setState(st => { const chats = st.chats.slice(); const cc = Object.assign({}, chats[ci]); cc.msgs = cc.msgs.map(x => x.id === m.id ? Object.assign({}, x, {starred: false}) : x); chats[ci] = cc; return {chats}; }); }
+      });
+    }));
+
+    const alertMap = {
+      clear: {title: 'Clear this chat?', body: 'Messages are removed from chatot on this device. They stay on your phone and on ' + chat.name + '’s device.', confirm: 'Clear chat', color: '#c01c28',
+        options: [{label: 'Also delete downloaded media', on: s.clearMedia !== false, onClick: () => this.setState(st => ({clearMedia: st.clearMedia === false}))}],
+        run: () => { this.patch(c => { c.msgs = []; }); this.toast('Chat cleared'); }},
+      block: {title: 'Block ' + chat.name + '?', body: 'Blocked contacts can’t message or call you, and won’t see when you are online. You can unblock at any time.', confirm: 'Block', color: '#c01c28',
+        options: [{label: 'Also report this contact', on: !!s.blockReport, onClick: () => this.setState(st => ({blockReport: !st.blockReport}))}],
+        run: () => { this.patch(c => { c.blocked = true; }); this.toast(chat.name + ' blocked'); }}
+    };
+    const al = alertMap[s.alert] || {};
+
+    const choiceMap = {
+      mute: {
+        title: 'Mute ' + chat.name, body: 'Notifications stay off for this chat until the time is up. Messages still arrive.',
+        options: [['8 hours', 8], ['1 week', 168], ['Always', 0]].map(([label, hrs]) => ({
+          label, current: false,
+          onClick: () => { this.patch(c => { c.muted = true; c.muteUntil = label; }); this.setState({dialog: null}); this.toast('Muted · ' + label.toLowerCase()); }
+        }))
+      },
+      timer: {
+        title: 'Disappearing messages', body: 'New messages in this chat vanish from both devices after the timer. Messages already sent are unaffected.',
+        options: ['Off', '24 hours', '7 days', '90 days'].map(label => ({
+          label, current: (chat.timer || 'Off') === label,
+          onClick: () => {
+            this.patch(c => { c.timer = label === 'Off' ? null : label; });
+            this.setState({dialog: null});
+            this.push({type: 'system', text: label === 'Off' ? 'You turned off disappearing messages' : 'You set disappearing messages to ' + label});
+          }
+        }))
+      }
+    };
+    const ch = choiceMap[s.choice] || {};
+    const forwardList = s.chats.map((c, i) => ({
+      name: c.name, initial: c.name[0] === '+' ? '+' : c.name[0], color: c.color,
+      tick: s.forwardPick.includes(i) ? '✓' : '', checkBg: s.forwardPick.includes(i) ? ac : 'transparent',
+      onClick: () => this.setState(st => ({forwardPick: st.forwardPick.includes(i) ? st.forwardPick.filter(x => x !== i) : st.forwardPick.concat([i])}))
+    }));
+
+    const infoRows = seal([
+      {icon: '🔔', label: chat.muted ? 'Unmute notifications' : 'Mute notifications', onClick: () => { this.patch(c => { c.muted = !c.muted; }); this.setState({dialog: null}); }},
+      {icon: '⏱', label: 'Disappearing messages', value: 'Off', onClick: () => this.toast('Set to 7 days')},
+      {icon: '🖼', label: 'Media, links and docs', value: '15', onClick: () => this.setState({dialog: null, pane: 'media'})},
+      {icon: '🚫', label: 'Block ' + chat.name, onClick: () => { this.setState({dialog: null}); this.toast('Blocked'); }, color: '#c01c28'}
+    ]).map(r => Object.assign({color: T.tx, value: null}, r));
+
+    const menuPos = s.menu && s.menu.top != null
+      ? 'top:' + s.menu.top + 'px;left:' + s.menu.left + 'px'
+      : ({app: 'top:52px;left:250px', plus: 'top:52px;left:214px', chat: 'top:52px;right:16px'})[s.menu && s.menu.kind] || 'top:52px;left:250px';
+
+    const attachItems = [
+      ['📷', 'Photos', '#5a7ab5', () => this.openTray('image')],
+      ['🎬', 'Video', '#9c5b8a', () => this.openTray('image')],
+      ['📄', 'Document', '#4f8a8b', () => this.openTray('file')],
+      ['👤', 'Contact', '#b58a4a', () => this.setState({dialog: 'contacts', peopleQuery: '', contactPick: []})],
+      ['📍', 'Location', '#c26b5c', () => this.push({type: 'loc', locTitle: 'Praça da Liberdade', locSub: 'Porto · click to open in Maps'})],
+      ['📊', 'Poll', '#7a8b5a', () => this.setState({dialog: 'poll', pollQ: '', pollDraft: ['', ''], pollMulti: false})],
+      ['🎵', 'Audio file', '#6a6a8c', () => this.openTray('file')]
+    ].map(([icon, label, bg, fn]) => ({icon, label, bg: bg + '33', onClick: () => { this.setState({attach: false}); fn(); }}));
+
+    const pickerTabs = ['Emoji', 'GIF', 'Stickers'].map(t => ({
+      label: t, bg: s.pickerTab === t ? (dark ? '#4a4a4a' : '#fff') : 'transparent', fg: T.tx,
+      weight: s.pickerTab === t ? 700 : 400, onClick: () => this.setState({pickerTab: t})
+    }));
+    const emojis = '😀😃😄😁😆😅😂🙂🙃😉😊😇🥰😍🤩😘😗😚🤗🤔🤨😐😴🥳😎🤓🧐😕🙁😢😭😤😡👍👎👏🙏💪🔥✨🎉❤️🧡💛💚💙💜🐦🎵'.match(/./gu).map(c => ({
+      c, onClick: () => this.setState(st => ({draft: st.draft + c}))
+    }));
+    const gifs = [['Yes!', '#5a7ab5'], ['Nope', '#c26b5c'], ['LOL', '#7a8b5a'], ['Thanks', '#9c5b8a'], ['On my way', '#4f8a8b'], ['Party', '#b58a4a']].map(([label, bg]) => ({
+      label, bg, onClick: () => { this.setState({picker: false}); this.push({type: 'image', media: 'gif', imgIcon: '🎞'}); }
+    }));
+    const stickers = ['🐦', '🎵', '🥐', '🏔️', '🐱', '☕', '🌧', '🎸'].map(c => ({
+      c, onClick: () => { this.setState({picker: false}); this.push({type: 'sticker', text: c}); }
+    }));
+
+    const unreadFor = a => s.chats.filter(c => c.acct === a.id).reduce((n, c) => n + (c.unread || 0), 0);
+    const stateMeta = {
+      connected: {label: 'Connected', color: T.dim, dot: ac},
+      reconnecting: {label: 'Reconnecting…', color: '#c07000', dot: '#e8a34a'},
+      loggedout: {label: 'Logged out · scan to relink', color: '#c01c28', dot: '#c01c28'}
+    };
+    const accountRows = s.accounts.map(a => {
+      const st = stateMeta[a.state];
+      const n = unreadFor(a);
+      return {
+        label: a.label, initial: a.initial, color: a.color, opacity: a.state === 'loggedout' ? .7 : 1,
+        status: st.label + (a.state === 'connected' && n ? ' · ' + n + ' unread' : ''), statusColor: st.color, dot: st.dot,
+        current: a.id === s.account, unread: a.id === s.account ? null : (n || null),
+        bg: a.id === s.account && !s.merged ? T.sel : 'transparent',
+        onClick: () => {
+          if (a.state === 'loggedout') { this.setState({accountOpen: false}); return this.toast('Relink ' + a.label + ' to use it'); }
+          const first = s.chats.findIndex(c => c.acct === a.id);
+          this.setState({account: a.id, merged: false, accountOpen: false, pane: 'chat', chatSearch: false, active: first > -1 ? first : s.active});
+        }
+      };
+    });
+    const accountActions = [
+      {icon: '🗂', label: 'All accounts in one list', bg: s.merged ? T.sel : 'transparent', onClick: () => this.setState({merged: true, accountOpen: false})},
+      {icon: '＋', label: 'Add account…', bg: 'transparent', onClick: () => this.setState({accountOpen: false, dialog: 'addaccount', newAcctLabel: ''})},
+      {icon: '⚙', label: 'Manage accounts…', bg: 'transparent', onClick: () => this.setState({accountOpen: false, dialog: 'accounts'})}
+    ];
+    const manageRows = s.accounts.map((a, i) => ({
+      label: a.label, initial: a.initial, color: a.color, sep: i ? '1px solid ' + T.bd : '0',
+      line: a.phone + ' · ' + stateMeta[a.state].label.toLowerCase().replace('…', ''),
+      statusColor: a.state === 'connected' ? T.dim : stateMeta[a.state].color,
+      onMenu: () => this.toast('Relabel · Reconnect · Log out ' + a.label)
+    }));
+    const acctToggles = [
+      {label: 'Notifications per account', sub: 'Toast titles are prefixed with the label', on: s.perAcctNotif, onClick: () => this.setState(st => ({perAcctNotif: !st.perAcctNotif}))},
+      {label: 'Keep inactive accounts connected', sub: 'Receive while another account is shown', on: s.keepConnected, onClick: () => this.setState(st => ({keepConnected: !st.keepConnected}))}
+    ].map((r, i) => Object.assign({}, r, {sep: i ? '1px solid ' + T.bd : '0', switchBg: r.on ? ac : T.sel, knob: r.on ? '20px' : '2px'}));
+
+    const tray = s.tray;
+    const cur = tray ? tray[Math.min(s.traySel, tray.length - 1)] : null;
+    const trayItems = (tray || []).map((it, i) => ({
+      icon: it.icon, name: it.name, meta: it.meta, caption: it.caption, hasCaption: !!it.caption,
+      ring: i === s.traySel ? '0 0 0 2px ' + ac : '0 0 0 1px ' + T.bd2,
+      onClick: () => this.setState({traySel: i}),
+      bg: it.kind === 'image' ? (dark ? '#3a4a52' : '#dfe6e9') : T.chip,
+      onRemove: e => { e.stopPropagation(); this.setState(st => { const next = st.tray.filter((_, j) => j !== i); return {tray: next.length ? next : null, traySel: Math.max(0, Math.min(st.traySel, next.length - 1))}; }); }
+    }));
+
+    return {
+      themeVars, multi: s.accounts.length > 1, windowControls: s.windowControls, isLinking: s.linking,
+
+      sidebarHeadWidth: s.accounts.length > 1 ? '388px' : '334px',
+      showAccountButton: s.sidebar === 'chats',
+      showPlainTitle: s.sidebar !== 'chats',
+      emptyIsArchive: archiveMode,
+      acctLabel: s.merged ? 'All accounts' : acct.label, acctPhone: s.merged ? s.accounts.length + ' accounts · merged list' : acct.phone,
+      acctColor: s.merged ? ac : acct.color, acctInitial: s.merged ? '🗂' : acct.initial,
+      accountBtnBg: s.accountOpen ? T.sel : 'transparent',
+      toggleAccount: () => this.setState(st => ({accountOpen: !st.accountOpen, menu: null, attach: false, picker: false})),
+      accountOpen: s.accountOpen, accountPopLeft: s.multi ? '60px' : '8px',
+      accountRows, accountActions, manageRows, acctToggles,
+      newAcctLabel: s.newAcctLabel, onNewAcctLabel: e => this.setState({newAcctLabel: e.target.value}),
+      onOpenAddAccount: () => this.setState({dialog: 'addaccount', newAcctLabel: ''}),
+      onAddAccountConfirm: () => {
+        const label = s.newAcctLabel.trim() || 'New account';
+        this.setState(st => ({accounts: st.accounts.concat([{id: 'a' + Date.now(), label, phone: '+351 900 000 000', color: '#9c5b8a', initial: label[0].toUpperCase(), state: 'connected'}]), dialog: null, newAcctLabel: ''}));
+        this.toast(label + ' linked');
+      },
+      dlgIsAddAccount: s.dialog === 'addaccount', dlgIsAccounts: s.dialog === 'accounts',
+      dlgIsContacts: s.dialog === 'contacts',
+      contactPicks: PEOPLE.filter(p => !pq || p.name.toLowerCase().includes(pq)).map((p, i) => ({
+        name: p.name, initial: p.name[0], color: p.color,
+        phone: '+351 912 00' + (4 + i) + ' 1' + (10 + i * 7),
+        tick: (s.contactPick || []).includes(p.name) ? '✓' : '',
+        checkBg: (s.contactPick || []).includes(p.name) ? ac : 'transparent',
+        onClick: () => this.setState(st => ({contactPick: (st.contactPick || []).includes(p.name) ? st.contactPick.filter(n => n !== p.name) : (st.contactPick || []).concat([p.name])}))
+      })),
+      contactCount: (s.contactPick || []).length + ' selected',
+      onSendContacts: () => {
+        const picks = s.contactPick || [];
+        if (!picks.length) return this.toast('Pick at least one contact');
+        this.setState({dialog: null, contactPick: []});
+        picks.forEach((n, i) => {
+          const p = PEOPLE.find(x => x.name === n);
+          this.push({type: 'contact', cardName: n, cardPhone: '+351 912 00' + (4 + i) + ' 1' + (10 + i * 7), cardColor: p.color});
+        });
+      },
+
+      trayOpen: !!tray, trayItems,
+      trayIsImage: !!cur && cur.kind === 'image', trayIsFile: !!cur && cur.kind === 'file',
+      trayIcon: cur && cur.icon, trayName: cur && cur.name, trayMeta: cur && cur.meta,
+      trayPreviewBg: dark ? 'linear-gradient(135deg,#3a4a52,#242a2e)' : 'linear-gradient(135deg,#dfe6e9,#a9b7bd)',
+      trayCaption: cur ? cur.caption : '',
+      traySendLabel: tray && tray.length > 1 ? 'Send ' + tray.length : 'Send',
+      onTrayCaption: e => { const v = e.target.value; this.setState(st => ({tray: st.tray.map((x, j) => j === st.traySel ? Object.assign({}, x, {caption: v}) : x)})); },
+      onTrayKey: e => { if (e.key === 'Enter') { e.preventDefault(); this.traySend(); } },
+      onTrayAdd: this.trayAdd, onTraySend: this.traySend, onTrayClose: () => this.setState({tray: null, traySel: 0}),
+
+      onScanned: () => { this.setState({linking: false}); this.toast('Linked · syncing recent chats'); },
+      onLinkPhone: () => this.toast('Enter your number on the phone screen'),
+
+      sidebarTitle: s.sidebar === 'newchat' ? 'New chat' : s.sidebar === 'newgroup' ? 'Add people' : s.sidebar === 'groupname' ? (s.newKind === 'community' ? 'New community' : 'New group') : s.sidebar === 'archived' ? 'Archived · ' + s.chats.filter(c => c.archived).length : 'Chats',
+      sidebarBack: s.sidebar !== 'chats',
+      onSidebarBack: () => this.setState(st => ({sidebar: st.sidebar === 'groupname' && st.newKind !== 'community' ? 'newgroup' : 'chats'})),
+      sidebarIsChats: s.sidebar === 'chats' || archiveMode, sidebarIsPeople: s.sidebar === 'newchat' || s.sidebar === 'newgroup',
+      sidebarIsGroupName: s.sidebar === 'groupname', pickingGroup: s.sidebar === 'newgroup',
+      togglePlus: e => this.openMenu('plus', this.anchor(e, 230, 200)),
+      toggleAppMenu: e => this.openMenu('app', this.anchor(e, 250, 430)),
+      toggleChatMenu: e => this.openMenu('chat', this.anchor(e, 260, 430)),
+
+      query: s.query, hasQuery: !!s.query, onQuery: e => this.setState({query: e.target.value}),
+      onClearQuery: () => this.setState({query: ''}), filters, chatList, listEmpty: chatList.length === 0,
+      emptyText: q ? 'No chats match “' + s.query + '”'
+        : s.filter !== 'All' ? 'No chats in the ' + s.filter.toLowerCase() + ' filter'
+        : 'No chats in ' + acct.label + ' yet',
+      emptyAction: q ? 'Clear search' : s.filter !== 'All' ? 'Show all chats' : 'Start a chat',
+      onEmptyAction: () => q ? this.setState({query: ''}) : s.filter !== 'All' ? this.setState({filter: 'All'}) : this.setState({sidebar: 'newchat', picked: []}),
+      onLabels: e => { const a = this.anchor(e, 214, 190); this.setState({labelsOpen: a, menu: null, attach: false, picker: false, accountOpen: false}); },
+      labelsOpen: !!s.labelsOpen, labelsBtnBg: s.labelsOpen || s.labelFilter ? T.sel : T.chip,
+      labelsPos: s.labelsOpen ? 'top:' + s.labelsOpen.top + 'px;left:' + s.labelsOpen.left + 'px' : '',
+      labelsAvailable: !s.merged,
+      labelRows: acctLabels.map(l => ({
+        name: l.name, color: LABEL_PALETTE[l.ci % LABEL_PALETTE.length], count: labelCount(l.name) || null,
+        bg: s.labelFilter === l.name ? T.sel : 'transparent',
+        onClick: () => this.setState({labelFilter: s.labelFilter === l.name ? null : l.name, filter: 'All', labelsOpen: null})
+      })),
+      onManageLabels: () => this.setState({labelsOpen: null, dialog: 'labels', newLabel: ''}),
+      dlgIsLabels: s.dialog === 'labels',
+      manageLabels: acctLabels.map((l, li) => ({
+        name: l.name, color: LABEL_PALETTE[l.ci % LABEL_PALETTE.length], sep: li ? '1px solid ' + T.bd : '0',
+        countLabel: labelCount(l.name) + (labelCount(l.name) === 1 ? ' chat' : ' chats'),
+        onRename: e => { const v = e.target.value; this.setState(st => ({
+          labels: st.labels.map(x => x === l ? Object.assign({}, x, {name: v}) : x),
+          chats: st.chats.map(c => (c.labels || []).includes(l.name) ? Object.assign({}, c, {labels: c.labels.map(n => n === l.name ? v : n)}) : c),
+          labelFilter: st.labelFilter === l.name ? v : st.labelFilter
+        })); },
+        onDelete: () => this.setState(st => ({
+          labels: st.labels.filter(x => x !== l),
+          chats: st.chats.map(c => (c.labels || []).includes(l.name) ? Object.assign({}, c, {labels: c.labels.filter(n => n !== l.name)}) : c),
+          labelFilter: st.labelFilter === l.name ? null : st.labelFilter
+        }))
+      })),
+      labelSwatches: LABEL_PALETTE.map((color, i) => ({
+        color, title: 'Palette colour ' + (i + 1),
+        ring: (s.newLabelCi || 0) === i ? '0 0 0 2px var(--bg,#fafafa),0 0 0 4px ' + ac : 'none',
+        onClick: () => this.setState({newLabelCi: i})
+      })),
+      newLabel: s.newLabel || '', onNewLabel: e => this.setState({newLabel: e.target.value}),
+      onAddLabel: () => {
+        const name = (s.newLabel || '').trim();
+        if (!name) return this.toast('Name the label first');
+        this.setState(st => ({labels: st.labels.concat([{name, ci: st.newLabelCi || 0, acct: st.account}]), newLabel: ''}));
+      },
+
+      peopleQuery: s.peopleQuery, onPeopleQuery: e => this.setState({peopleQuery: e.target.value}),
+      people, picked, nonePicked: picked.length === 0,
+      pickedCountLabel: picked.length + ' participant' + (picked.length === 1 ? '' : 's'),
+      onGroupNext: () => picked.length ? this.setState({sidebar: 'groupname', newKind: 'group'}) : this.toast('Pick at least one person'),
+      isCommunity: s.newKind === 'community',
+      photoLabel: s.newKind === 'community' ? 'Add a community photo' : 'Add a group photo',
+      participantsDisplay: s.newKind === 'community' ? 'none' : 'flex',
+      groupNameTitle: s.newKind === 'community' ? 'Community name' : 'Group name',
+      createLabel: s.newKind === 'community' ? 'Create community' : 'Create group',
+      groupName: s.groupName, onGroupName: e => this.setState({groupName: e.target.value}),
+      onCreateGroup: () => {
+        const community = s.newKind === 'community';
+        const name = s.groupName.trim() || (community ? 'New community' : 'New group');
+        this.setState(st => ({
+          chats: st.chats.concat([{key: 'g' + Date.now(), name, color: community ? '#5a7ab5' : '#7a8b5a', group: true,
+            acct: st.account, time: this.now(), unread: 0,
+            presence: community ? 'Community · you are admin' : st.picked.join(', ') + ', you',
+            msgs: [{id: id(), type: 'system', text: community
+              ? 'You created the community “' + name + '” · announcement group added'
+              : 'You created the group “' + name + '”'}]}]),
+          active: st.chats.length, sidebar: 'chats', picked: [], groupName: '', newKind: 'group'
+        }));
+        this.toast(community ? 'Community created' : 'Group created');
+      },
+
+      accounts: s.accounts.map(a => ({
+        name: a.label, initial: a.initial, color: a.color, unread: unreadFor(a) || null,
+        ring: a.id === s.account && !s.merged ? '0 0 0 2px ' + T.side + ',0 0 0 4px ' + ac : 'none',
+        onClick: () => {
+          if (a.state === 'loggedout') return this.toast('Relink ' + a.label + ' to use it');
+          const first = s.chats.findIndex(c => c.acct === a.id);
+          this.setState({account: a.id, merged: false, pane: 'chat', chatSearch: false, active: first > -1 ? first : s.active});
+        }
+      })),
+      onAddAccount: () => this.setState({dialog: 'addaccount', newAcctLabel: ''}),
+
+      activeName: chat.name, activeInitial: chat.name[0] === '+' ? '+' : chat.name[0].toUpperCase(), activeColor: chat.color,
+      activePresence: chat.blocked ? 'Blocked' : chat.typing ? 'typing…' : chat.presence,
+      presenceColor: chat.blocked ? '#c01c28' : chat.typing ? ac2 : T.dim,
+      showConvTitle: !s.chatSearch, onOpenInfo: () => this.setState({dialog: 'info'}),
+
+      chatSearchOn: s.chatSearch, chatQuery: s.chatQuery,
+      onChatQuery: e => this.setState({chatQuery: e.target.value, hit: 0}),
+      hitLabel: cq ? (hits.length ? (((s.hit % hits.length) + hits.length) % hits.length + 1) + '/' + hits.length : '0/0') : '',
+      onHitPrev: () => this.setState(st => ({hit: st.hit - 1})), onHitNext: () => this.setState(st => ({hit: st.hit + 1})),
+      onChatSearchClose: () => this.setState({chatSearch: false, chatQuery: ''}),
+
+      paneIsChat: s.pane === 'chat', paneIsMedia: s.pane === 'media',
+      onCloseMedia: () => this.setState({pane: 'chat'}), mediaTabs, mediaItems, mediaRows,
+      mediaIsGrid: s.mediaTab === 'Media', mediaIsList: s.mediaTab !== 'Media',
+
+      messages, scrollRef: this.scrollRef, typing: !!chat.typing && !chat.blocked,
+      replyBar: !!s.reply, replyName: s.reply && s.reply.name, replyText: s.reply && s.reply.text,
+      onCancelReply: () => this.setState({reply: null}),
+
+      draft: s.draft, onDraft: e => this.setState({draft: e.target.value}),
+      onKey: e => { if (e.key === 'Enter') { e.preventDefault(); this.send(); } },
+      canSend: !!s.draft.trim() || !!tray, canRecord: !s.draft.trim() && !tray, onSend: this.send,
+      recording: !!s.recording && !chat.blocked, composerIdle: !s.recording && !chat.blocked,
+      recTime: '0:' + String(s.recSecs || 0).padStart(2, '0'),
+      onRecord: () => {
+        clearInterval(this._rec);
+        this.setState({recording: true, recSecs: 0, attach: false, picker: false});
+        this._rec = setInterval(() => this.setState(st => ({recSecs: (st.recSecs || 0) + 1})), 1000);
+      },
+      onRecordStop: () => {
+        clearInterval(this._rec);
+        const secs = s.recSecs || 1;
+        this.setState({recording: false, recSecs: 0});
+        this.push({type: 'voice', voiceLen: '0:' + String(secs).padStart(2, '0')});
+      },
+      onRecordCancel: () => { clearInterval(this._rec); this.setState({recording: false, recSecs: 0}); this.toast('Recording discarded'); },
+      toggleAttach: () => this.setState(st => ({attach: !st.attach, picker: false, menu: null})),
+      togglePicker: () => this.setState(st => ({picker: !st.picker, attach: false, menu: null})),
+      attachBg: s.attach ? T.sel : 'transparent', pickerBg: s.picker ? T.sel : 'transparent',
+      attachOpen: s.attach, attachItems, pickerOpen: s.picker, pickerTabs,
+      pickerIsEmoji: s.pickerTab === 'Emoji', pickerIsGif: s.pickerTab === 'GIF', pickerIsSticker: s.pickerTab === 'Stickers',
+      emojis, gifs, stickers, onAddPack: () => this.toast('Browse sticker packs'),
+
+      menu: !!s.menu, menuItems: this.menuDef(), menuPos, rootRef: this.rootRef,
+      reactPickOpen: !!s.reactPick,
+      reactPickPos: s.reactPick ? 'top:' + s.reactPick.top + 'px;left:' + s.reactPick.left + 'px' : '',
+      reactEmojis: '👍👎❤️🔥🎉😂🙂😉😍🥰😘🤩😎🤔😐😴😢😭😤😡🙏💪👏✨🥳🤝☕🎵🐦🏔️📌✅'.match(/./gu).map(c => ({
+        c, onClick: () => { const mid = s.reactPick.mid; this.setState({reactPick: null}); this.react(mid, c); }
+      })),
+      anyPopover: !!(s.menu || s.attach || s.picker || s.accountOpen || s.reactPick || s.labelsOpen), closeAll: this.closeAll,
+
+      dialog: !!s.dialog, closeDialog: () => this.setState({dialog: null}), stop: e => e.stopPropagation(),
+      dialogWidth: ({prefs: '720px', forward: '440px', poll: '420px', about: '380px', info: '400px', alert: '340px', addaccount: '380px', accounts: '420px', labels: '420px', contacts: '400px', export: '380px', choice: '360px', devices: '420px'})[s.dialog] || '420px',
+      dlgIsAlert: s.dialog === 'alert', dlgIsForward: s.dialog === 'forward', dlgIsPoll: s.dialog === 'poll',
+      dlgIsPrefs: s.dialog === 'prefs', dlgIsAbout: s.dialog === 'about', dlgIsInfo: s.dialog === 'info',
+      alertTitle: al.title, alertBody: al.body, alertConfirm: al.confirm, alertColor: al.color,
+      alertOptions: (al.options || []).map(o => ({label: o.label, onClick: o.onClick, switchBg: o.on ? ac : T.sel, knob: o.on ? '19px' : '2px'})),
+
+      dlgIsChoice: s.dialog === 'choice', choiceTitle: ch.title, choiceBody: ch.body,
+      choiceOptions: (ch.options || []).map((o, i) => Object.assign({sep: i ? '1px solid ' + T.bd : '0'}, o)),
+
+      dlgIsExport: s.dialog === 'export',
+      exportFormat: s.exportFormat || 'Plain text', exportRange: s.exportRange || 'All messages',
+      onExportFormat: () => this.setState(st => ({exportFormat: (st.exportFormat || 'Plain text') === 'Plain text' ? 'JSON' : (st.exportFormat === 'JSON' ? 'HTML' : 'Plain text')})),
+      onExportRange: () => this.setState(st => ({exportRange: (st.exportRange || 'All messages') === 'All messages' ? 'Last 30 days' : (st.exportRange === 'Last 30 days' ? 'Last 6 months' : 'All messages')})),
+      exportMediaSub: s.exportMedia ? '48 files · about 96 MB' : 'Text only',
+      exportMediaBg: s.exportMedia ? ac : T.sel, exportMediaKnob: s.exportMedia ? '19px' : '2px',
+      onExportMedia: () => this.setState(st => ({exportMedia: !st.exportMedia})),
+      exportPath: '~/Documents/' + chat.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + (s.exportFormat === 'JSON' ? '.json' : s.exportFormat === 'HTML' ? '.html' : '.txt'),
+      onExportChoose: () => this.toast('Portal file chooser opens here'),
+      onExportRun: () => { this.setState({dialog: null}); this.toast('Exported ' + chat.msgs.length + ' messages'); },
+
+      dlgIsDevices: s.dialog === 'devices',
+      deviceRows: [
+        {icon: '📱', name: acct.label + ' · phone', meta: acct.phone + ' · primary'},
+        {icon: '🖥', name: 'chatot (this device)', meta: 'GNOME · linked 4 days ago', canUnlink: true, onUnlink: () => { this.setState({dialog: null, linking: true}); }},
+        {icon: '🌐', name: 'WhatsApp Web · Firefox', meta: 'last active yesterday', canUnlink: true, onUnlink: () => this.toast('Device unlinked')}
+      ].map((d, i) => Object.assign({sep: i ? '1px solid ' + T.bd : '0', canUnlink: false, onUnlink: () => {}}, d)),
+
+      blocked: !!chat.blocked,
+      onUnblock: () => { this.patch(c => { c.blocked = false; }); this.toast('Unblocked'); },
+      activeMuted: !!chat.muted, muteTitle: chat.muteUntil ? 'Muted · ' + chat.muteUntil : 'Muted',
+      activeTimer: !!chat.timer,
+
+      paneIsStarred: s.pane === 'starred', starredCount: starred.length + ' starred',
+      starredEmpty: starred.length === 0, starredRows: starred,
+
+      groupPhotoBg: s.groupPhoto ? 'repeating-linear-gradient(45deg,' + (dark ? 'rgba(255,255,255,.08) 0 7px,rgba(255,255,255,.14) 7px 14px' : 'rgba(0,0,0,.07) 0 7px,rgba(0,0,0,.12) 7px 14px') + ')' : T.chip,
+      groupPhotoIcon: s.groupPhoto ? '🖼' : '👥',
+      onPickPhoto: () => { this.setState(st => ({groupPhoto: !st.groupPhoto})); this.toast(s.groupPhoto ? 'Photo removed' : 'Photo chosen'); },
+      onAlertConfirm: () => { this.setState({dialog: null}); al.run && al.run(); },
+      forwardList, forwardCount: s.forwardPick.length + ' selected',
+      onForwardSend: () => { this.setState({dialog: null}); this.toast('Forwarded to ' + s.forwardPick.length + ' chat' + (s.forwardPick.length === 1 ? '' : 's')); },
+      pollQ: s.pollQ, onPollQ: e => this.setState({pollQ: e.target.value}),
+      pollDraft: s.pollDraft.map((v, i) => ({value: v, placeholder: 'Option ' + (i + 1), onChange: e => { const val = e.target.value; this.setState(st => { const d = st.pollDraft.slice(); d[i] = val; return {pollDraft: d}; }); }})),
+      onAddPollOpt: () => this.setState(st => ({pollDraft: st.pollDraft.concat([''])})),
+      pollMultiBg: s.pollMulti ? ac : 'transparent', pollMultiTick: s.pollMulti ? '✓' : '',
+      onTogglePollMulti: () => this.setState(st => ({pollMulti: !st.pollMulti})),
+      onSendPoll: () => {
+        const opts = s.pollDraft.map(t => t.trim()).filter(Boolean);
+        if (!s.pollQ.trim() || opts.length < 2) return this.toast('Add a question and two options');
+        this.setState({dialog: null});
+        this.push({type: 'poll', pollQ: s.pollQ.trim(), pollMulti: s.pollMulti, pollOpts: opts.map(t => ({text: t, votes: 0}))});
+      },
+      prefTabs, prefGroups, infoRows,
+      infoSub: chat.group ? chat.presence : (chat.presence + ' · +351 912 000 000'),
+
+      toast: s.toast, toastAction: s.toastAction,
+      onToastAction: () => { this.setState({toast: null, toastAction: null}); this.toast('Undone'); }
+    };
+  }
+}
+</script>
+</body>
+</html>
