@@ -1,0 +1,14 @@
+{
+  "enabledPlugins": {
+    "dev-workflow@dev-ai-plugins": true,
+    "coding-guidelines@dev-ai-plugins": true
+  },
+  "extraKnownMarketplaces": {
+    "dev-ai-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "sezaru/dev-ai-plugins"
+      }
+    }
+  }
+}
