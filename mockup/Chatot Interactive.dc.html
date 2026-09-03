@@ -90,7 +90,9 @@ a{color:#1b8c72}a:hover{color:#147a63}
         </span>
       </button>
     </sc-if>
+    <sc-if value="{{ showChatMenuBtn }}" hint-placeholder-val="{{ true }}">
     <button onClick="{{ toggleChatMenu }}" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;display:grid;place-items:center;font-size:15px;letter-spacing:1px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">⋮</button>
+    </sc-if>
     <sc-if value="{{ windowControls }}" hint-placeholder-val="{{ true }}">
       <span style="display:flex;gap:8px;flex:none">
         <span style="width:24px;height:24px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:11px;color:var(--dim,rgba(0,0,0,.55))">−</span>
@@ -102,6 +104,8 @@ a{color:#1b8c72}a:hover{color:#147a63}
 </div>
 
 <div style="display:flex;flex:1;min-height:0">
+  <div style="width:{{ sidebarHeadWidth }};flex:none;display:flex;flex-direction:column;min-height:0;background:var(--side,#ebebeb);border-right:1px solid var(--bd,rgba(0,0,0,.08))">
+  <div style="flex:1;min-height:0;display:flex">
 
   <sc-if value="{{ multi }}" hint-placeholder-val="{{ false }}">
     <div style="width:54px;flex:none;background:var(--side,#ebebeb);border-right:1px solid var(--bd,rgba(0,0,0,.08));display:flex;flex-direction:column;align-items:center;gap:10px;padding:10px 0">
@@ -114,7 +118,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
     </div>
   </sc-if>
 
-  <div style="width:334px;flex:none;background:var(--side,#ebebeb);border-right:1px solid var(--bd,rgba(0,0,0,.08));display:flex;flex-direction:column;min-height:0">
+  <div style="flex:1;min-width:0;background:var(--side,#ebebeb);display:flex;flex-direction:column;min-height:0">
 
     <sc-if value="{{ sidebarIsChats }}" hint-placeholder-val="{{ true }}">
       <div style="padding:8px 8px 4px;flex:none">
@@ -216,6 +220,151 @@ a{color:#1b8c72}a:hover{color:#147a63}
         </div>
         <div style="flex:1"></div>
         <button onClick="{{ onCreateGroup }}" style="height:38px;border:none;border-radius:9px;background:var(--ac,#1b8c72);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer">{{ createLabel }}</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ sidebarIsStatus }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:6px 0 10px">
+        <div onClick="{{ onMyStatus }}" style="display:flex;gap:11px;align-items:center;padding:8px 14px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+          <span style="position:relative;width:46px;height:46px;flex:none;display:grid;place-items:center;border-radius:999px;background:{{ myRing }}">
+            <span style="width:40px;height:40px;border-radius:999px;background:var(--side,#ebebeb);display:grid;place-items:center">
+              <span style="width:36px;height:36px;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px;background:{{ myColor }}">{{ myInitial }}</span>
+            </span>
+            <sc-if value="{{ myPlus }}" hint-placeholder-val="{{ true }}"><span style="position:absolute;right:-1px;bottom:-1px;width:18px;height:18px;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;font-size:10px;line-height:1;display:grid;place-items:center;border:2px solid var(--side,#ebebeb)">＋</span></sc-if>
+          </span>
+          <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:13.5px;font-weight:700">My status</span>
+            <span style="font-size:12px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ myStatusSub }}</span>
+          </span>
+          <sc-if value="{{ myStatusPosted }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ onMyStatusMenu }}" title="Status options" style="flex:none;width:26px;height:26px;border:none;background:transparent;border-radius:999px;font-size:13px;letter-spacing:1px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer" style-hover="background:var(--sel,rgba(0,0,0,.1))">⋯</button>
+          </sc-if>
+        </div>
+        <sc-for list="{{ statusRows }}" as="r" hint-placeholder-count="6">
+          <sc-if value="{{ r.isHeader }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:15px 16px 5px;font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--dim2,rgba(0,0,0,.45))">{{ r.label }}</div>
+          </sc-if>
+          <sc-if value="{{ r.isRow }}" hint-placeholder-val="{{ true }}">
+            <div onClick="{{ r.onClick }}" onContextMenu="{{ r.onContext }}" style="display:flex;gap:11px;align-items:center;padding:7px 14px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+              <span style="width:46px;height:46px;flex:none;display:grid;place-items:center;border-radius:999px;background:{{ r.ring }}">
+                <span style="width:40px;height:40px;border-radius:999px;background:var(--side,#ebebeb);display:grid;place-items:center">
+                  <span style="width:36px;height:36px;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px;background:{{ r.color }}">{{ r.initial }}</span>
+                </span>
+              </span>
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                <span style="font-size:13.5px;font-weight:{{ r.weight }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.name }}</span>
+                <span style="font-size:12px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.sub }}</span>
+              </span>
+            </div>
+          </sc-if>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ sidebarIsChannels }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:8px 8px 0;flex:none">
+        <button onClick="{{ onFindChannels }}" style="width:100%;height:34px;display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:999px;background:var(--chat,#fff);cursor:pointer;font-size:13px;font-weight:700;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))"><span style="font-size:12px;color:var(--dim,rgba(0,0,0,.55))">⌕</span>Find channels</button>
+      </div>
+      <div style="padding:14px 16px 5px;flex:none;font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--dim2,rgba(0,0,0,.45))">{{ channelsHeader }}</div>
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:0 0 8px">
+        <sc-for list="{{ channelRows }}" as="c" hint-placeholder-count="3">
+          <div onClick="{{ c.onClick }}" onContextMenu="{{ c.onContext }}" style="display:flex;gap:10px;align-items:center;margin:0 8px 1px;padding:7px 8px;border-radius:8px;cursor:pointer;background:{{ c.bg }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+            <span style="width:40px;height:40px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:15px;background:{{ c.color }}">{{ c.initial }}</span>
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+              <span style="display:flex;align-items:center;gap:5px;min-width:0">
+                <span style="min-width:0;font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</span>
+                <sc-if value="{{ c.verified }}" hint-placeholder-val="{{ true }}"><span title="Verified channel" style="width:13px;height:13px;flex:none;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;font-size:8px;line-height:1;display:grid;place-items:center">✓</span></sc-if>
+                <sc-if value="{{ c.muted }}" hint-placeholder-val="{{ false }}"><span title="Muted" style="font-size:9px;flex:none;opacity:.4">🔇</span></sc-if>
+              </span>
+              <span style="font-size:12.5px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.preview }}</span>
+            </span>
+            <span style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none">
+              <span style="font-size:10.5px;color:{{ c.timeColor }}">{{ c.time }}</span>
+              <sc-if value="{{ c.unread }}" hint-placeholder-val="{{ false }}"><span style="min-width:19px;height:19px;padding:0 6px;border-radius:999px;font-size:10.5px;font-weight:700;display:grid;place-items:center;background:var(--ac,#1b8c72);color:#fff">{{ c.unread }}</span></sc-if>
+            </span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ sidebarIsDiscover }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:8px 8px 4px;flex:none">
+        <div style="display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;background:var(--chat,#fff);border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:999px">
+          <span style="font-size:12px;color:var(--dim2,rgba(0,0,0,.45))">⌕</span>
+          <input value="{{ discoverQuery }}" onChange="{{ onDiscoverQuery }}" placeholder="Search for channels" style="flex:1;min-width:0;border:none;outline:none;background:transparent;font-size:13.5px"/>
+          <sc-if value="{{ hasDiscoverQuery }}" hint-placeholder-val="{{ false }}"><button onClick="{{ onClearDiscoverQuery }}" title="Clear search" style="border:none;background:transparent;cursor:pointer;font-size:11px;color:var(--dim,rgba(0,0,0,.55))">✕</button></sc-if>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;padding:4px 8px 6px;flex:none;overflow-x:auto;scrollbar-width:none">
+        <sc-for list="{{ discoverCats }}" as="f" hint-placeholder-count="4">
+          <button onClick="{{ f.onClick }}" style="flex:none;font-size:12px;padding:4px 11px;border:none;border-radius:999px;cursor:pointer;white-space:nowrap;font-weight:{{ f.weight }};background:{{ f.bg }};color:{{ f.fg }}">{{ f.label }}</button>
+        </sc-for>
+      </div>
+      <div style="padding:8px 16px 5px;flex:none;font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--dim2,rgba(0,0,0,.45))">{{ discoverHeader }}</div>
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:0 0 8px">
+        <sc-for list="{{ discoverRows }}" as="c" hint-placeholder-count="5">
+          <div onClick="{{ c.onOpen }}" style="display:flex;gap:10px;align-items:center;margin:0 8px 1px;padding:7px 8px;border-radius:8px;cursor:pointer;background:{{ c.bg }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+            <span style="width:40px;height:40px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:15px;background:{{ c.color }}">{{ c.initial }}</span>
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+              <span style="display:flex;align-items:center;gap:5px;min-width:0">
+                <span style="min-width:0;font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</span>
+                <sc-if value="{{ c.verified }}" hint-placeholder-val="{{ true }}"><span title="Verified channel" style="width:13px;height:13px;flex:none;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;font-size:8px;font-weight:700;display:grid;place-items:center">✓</span></sc-if>
+              </span>
+              <span style="font:10.5px/1.35 'JetBrains Mono',ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--dim,rgba(0,0,0,.55))">{{ c.meta }}</span>
+            </span>
+            <button onClick="{{ c.onFollow }}" title="{{ c.btnTitle }}" style="flex:none;height:28px;padding:0 13px;border:{{ c.btnBorder }};border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;background:{{ c.btnBg }};color:{{ c.btnFg }}">{{ c.btnLabel }}</button>
+          </div>
+        </sc-for>
+        <sc-if value="{{ discoverEmpty }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:34px 26px;display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center">
+            <span style="font-size:13px;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">{{ discoverEmptyText }}</span>
+            <button onClick="{{ onDiscoverReset }}" style="border:none;background:var(--chip,rgba(0,0,0,.08));border-radius:8px;padding:6px 13px;font-size:12.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--sel,rgba(0,0,0,.1))">Show all channels</button>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ sidebarIsCommunities }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:8px 0">
+        <sc-for list="{{ communityRows }}" as="c" hint-placeholder-count="2">
+          <div onClick="{{ c.onClick }}" onContextMenu="{{ c.onContext }}" style="display:flex;gap:11px;align-items:center;margin:0 8px 2px;padding:8px;border-radius:10px;cursor:pointer;background:{{ c.bg }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+            <span style="width:42px;height:42px;flex:none;border-radius:14px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:16px;background:{{ c.color }}">{{ c.initial }}</span>
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+              <span style="font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</span>
+              <span style="font-size:12px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.sub }}</span>
+            </span>
+            <sc-if value="{{ c.unread }}" hint-placeholder-val="{{ false }}"><span style="flex:none;min-width:19px;height:19px;padding:0 6px;border-radius:999px;font-size:10.5px;font-weight:700;display:grid;place-items:center;background:var(--ac,#1b8c72);color:#fff">{{ c.unread }}</span></sc-if>
+          </div>
+        </sc-for>
+        <sc-if value="{{ noCommunities }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:44px 24px;display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center">
+            <span style="width:56px;height:56px;border-radius:18px;background:var(--inb,rgba(0,0,0,.06));display:grid;place-items:center;font-size:22px">🏘</span>
+            <span style="font-size:13.5px;font-weight:700">No communities yet</span>
+            <span style="font-size:12px;line-height:1.45;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">Communities bring related groups together under one announcement group.</span>
+          </div>
+        </sc-if>
+      </div>
+      <div style="flex:none;padding:8px 10px;border-top:1px solid var(--bd,rgba(0,0,0,.08))">
+        <button onClick="{{ onNewCommunity }}" style="width:100%;height:34px;border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:9px;background:var(--hdr,#fff);color:var(--ac2,#147a63);font-size:13px;font-weight:700;cursor:pointer" style-hover="border-color:var(--ac,#1b8c72)">New community</button>
+      </div>
+    </sc-if>
+
+    </div>
+  </div>
+    <sc-if value="{{ showTabs }}" hint-placeholder-val="{{ true }}">
+      <div style="flex:none;display:flex;border-top:1px solid var(--bd2,rgba(0,0,0,.13));background:var(--hdr,#fff)">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+          <button onClick="{{ t.onClick }}" title="{{ t.title }}" style="position:relative;flex:1;min-width:0;height:50px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:none;background:{{ t.bg }};cursor:pointer;color:{{ t.fg }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+            <span style="position:absolute;top:0;left:50%;margin-left:-13px;width:26px;height:2px;border-radius:0 0 2px 2px;background:{{ t.bar }}"></span>
+            <span style="position:relative;width:22px;height:22px;display:grid;place-items:center">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="{{ t.stroke }}" stroke-linecap="round" stroke-linejoin="round"><path d="{{ t.d1 }}" stroke-dasharray="{{ t.dash }}"></path><path d="{{ t.d2 }}"></path></svg>
+              <sc-if value="{{ t.badge }}" hint-placeholder-val="{{ false }}">
+                <span style="position:absolute;top:-4px;right:-10px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;font-size:9.5px;font-weight:700;line-height:1;display:grid;place-items:center;border:2px solid var(--hdr,#fff)">{{ t.badge }}</span>
+              </sc-if>
+            </span>
+            <span style="font-size:10.5px;font-weight:{{ t.weight }};letter-spacing:.15px;white-space:nowrap">{{ t.label }}</span>
+          </button>
+        </sc-for>
       </div>
     </sc-if>
   </div>
@@ -329,6 +478,243 @@ a{color:#1b8c72}a:hover{color:#147a63}
       </div>
     </sc-if>
 
+    <sc-if value="{{ paneIsViewer }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:none;display:flex;align-items:center;gap:9px;padding:7px 10px 7px 7px;border-bottom:1px solid var(--bd,rgba(0,0,0,.08));background:var(--hdr,#fff)">
+        <button onClick="{{ onCloseViewer }}" title="Back to chat · Esc" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:15px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">←</button>
+        <span style="width:30px;height:30px;flex:none;border-radius:8px;display:grid;place-items:center;font-size:14px;background:{{ viewGlyphBg }}">{{ viewGlyph }}</span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+          <span style="font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ viewTitle }}</span>
+          <span style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--dim,rgba(0,0,0,.55))">{{ viewSub }}</span>
+        </span>
+        <span style="flex:none;font:11px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--dim2,rgba(0,0,0,.45))">{{ viewCounter }}</span>
+        <span style="flex:none;width:1px;height:20px;background:var(--bd,rgba(0,0,0,.09));margin:0 2px"></span>
+        <button onClick="{{ onViewReply }}" title="Reply in chat" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:13px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">↩</button>
+        <button onClick="{{ onViewForward }}" title="Forward" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:13px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">↪</button>
+        <button onClick="{{ onViewStar }}" title="{{ viewStarTitle }}" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:13px;color:{{ viewStarFg }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ viewStarIcon }}</button>
+        <button onClick="{{ onViewInfo }}" title="Details" style="width:28px;height:28px;flex:none;border:none;border-radius:7px;cursor:pointer;font-size:13px;background:{{ viewInfoBg }};color:{{ viewInfoFg }}" style-hover="background:var(--sel,rgba(0,0,0,.1))">ℹ</button>
+        <button onClick="{{ onViewMenu }}" title="More" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:14px;letter-spacing:1px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">⋯</button>
+        <button onClick="{{ onViewPrimary }}" style="flex:none;height:28px;margin-left:3px;padding:0 13px;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;background:var(--ac,#1b8c72);color:#fff" style-hover="background:var(--ac2,#147a63)">{{ viewPrimaryLabel }}</button>
+      </div>
+
+      <div style="flex:1;min-height:0;display:flex">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+          <div ref="{{ viewStageRef }}" style="flex:1;min-height:0;position:relative;display:grid;place-items:center;overflow:hidden;padding:24px;background:{{ viewStageBg }}">
+
+            <sc-if value="{{ viewNeedsFetch }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:13px;text-align:center">
+                <button onClick="{{ onViewFetch }}" title="{{ viewFetchTitle }}" style="width:64px;height:64px;border:none;border-radius:999px;display:grid;place-items:center;font-size:22px;cursor:pointer;background:{{ viewFetchBg }};color:#fff;box-shadow:0 3px 14px rgba(0,0,0,.24)" style-hover="filter:brightness(1.08)">{{ viewFetchIcon }}</button>
+                <span style="font-size:14px;font-weight:700;color:{{ viewStageFg }}">{{ viewFetchTitle }}</span>
+                <span style="font-size:12px;color:{{ viewStageDim }}">{{ viewFetchSub }}</span>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ viewIsLoading }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:13px">
+                <span style="width:44px;height:44px;border-radius:999px;border:3px solid rgba(128,128,128,.3);border-top-color:var(--ac,#1b8c72);box-sizing:border-box;animation:spin .9s linear infinite"></span>
+                <span style="font-size:12.5px;color:{{ viewStageDim }}">{{ viewFetchSub }}</span>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ viewShowsPhoto }}" hint-placeholder-val="{{ true }}">
+              <div style="width:{{ viewPhotoW }};height:{{ viewPhotoH }};max-width:100%;max-height:100%;border-radius:4px;display:grid;place-items:center;background:{{ viewPhotoBg }};box-shadow:0 6px 26px rgba(0,0,0,.4)">
+                <span style="font-size:{{ viewPhotoGlyphSize }};line-height:1;opacity:.9">{{ viewPhotoGlyph }}</span>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ viewShowsVideo }}" hint-placeholder-val="{{ false }}">
+              <div style="width:{{ viewPhotoW }};height:{{ viewPhotoH }};max-width:100%;max-height:100%;border-radius:4px;position:relative;display:grid;place-items:center;background:{{ viewPhotoBg }};box-shadow:0 6px 26px rgba(0,0,0,.4)">
+                <span style="font-size:{{ viewPhotoGlyphSize }};line-height:1;opacity:.55">{{ viewPhotoGlyph }}</span>
+                <button onClick="{{ onViewPlay }}" title="{{ viewPlayTitle }}" style="position:absolute;width:66px;height:66px;border:none;border-radius:999px;cursor:pointer;font-size:20px;background:rgba(20,20,20,.62);color:#fff;display:grid;place-items:center;backdrop-filter:blur(3px)" style-hover="background:rgba(20,20,20,.8)">{{ viewPlayIcon }}</button>
+                <sc-if value="{{ viewIsGif }}" hint-placeholder-val="{{ false }}">
+                  <span style="position:absolute;left:10px;top:10px;font:9.5px/1 'JetBrains Mono',ui-monospace,monospace;background:rgba(0,0,0,.6);color:#fff;padding:3px 6px;border-radius:5px">GIF · loop</span>
+                </sc-if>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ viewShowsAudio }}" hint-placeholder-val="{{ false }}">
+              <div style="width:400px;max-width:100%;display:flex;flex-direction:column;gap:16px;padding:20px;border-radius:14px;border:1px solid var(--bd,rgba(0,0,0,.08));background:var(--hdr,#fff);box-shadow:0 4px 20px rgba(0,0,0,.09)">
+                <div style="display:flex;align-items:center;gap:11px">
+                  <span style="width:36px;height:36px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;background:{{ viewFromColor }}">{{ viewFromInitial }}</span>
+                  <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                    <span style="font-size:13px;font-weight:700">{{ viewFromName }}</span>
+                    <span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55))">{{ viewAudioSub }}</span>
+                  </span>
+                  <span style="flex:none;font:11px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--dim2,rgba(0,0,0,.45))">{{ viewAudioTotal }}</span>
+                </div>
+                <div style="height:44px;display:flex;align-items:center;gap:2px">
+                  <sc-for list="{{ viewWave }}" as="b" hint-placeholder-count="40">
+                    <span style="flex:1;border-radius:999px;height:{{ b.h }};background:{{ b.bg }}"></span>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ viewShowsPdf }}" hint-placeholder-val="{{ false }}">
+              <div style="width:{{ viewPageW }};height:{{ viewPageH }};max-width:100%;max-height:100%;border-radius:3px;background:#fff;box-shadow:0 6px 26px rgba(0,0,0,.28);padding:{{ viewPagePad }};display:flex;flex-direction:column;gap:{{ viewPageGap }};overflow:hidden">
+                <sc-for list="{{ viewPageLines }}" as="l" hint-placeholder-count="14">
+                  <span style="height:{{ l.h }};width:{{ l.w }};border-radius:2px;background:{{ l.bg }};flex:none"></span>
+                </sc-for>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ viewShowsFile }}" hint-placeholder-val="{{ false }}">
+              <div style="width:340px;max-width:100%;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;padding:26px 22px;border-radius:14px;border:1px solid var(--bd,rgba(0,0,0,.08));background:var(--hdr,#fff);box-shadow:0 4px 20px rgba(0,0,0,.09)">
+                <span style="width:62px;height:62px;border-radius:12px;display:grid;place-items:center;font:700 15px/1 'JetBrains Mono',ui-monospace,monospace;color:#fff;background:{{ viewFileTileBg }}">{{ viewFileExt }}</span>
+                <span style="display:flex;flex-direction:column;gap:4px;min-width:0;width:100%">
+                  <span style="font-size:14px;font-weight:700;word-break:break-word;text-wrap:pretty">{{ viewTitle }}</span>
+                  <span style="font-size:12px;color:var(--dim,rgba(0,0,0,.55))">{{ viewFileMeta }}</span>
+                </span>
+                <span style="font-size:12px;color:var(--dim2,rgba(0,0,0,.45));text-wrap:pretty">Chatot has no preview for this file type. Open it in the app your desktop uses for it.</span>
+                <sc-if value="{{ viewCardActions }}" hint-placeholder-val="{{ true }}">
+                  <span style="display:flex;gap:8px">
+                    <button onClick="{{ onViewSave }}" style="height:30px;padding:0 13px;border:1px solid var(--bd2,rgba(0,0,0,.15));border-radius:8px;background:transparent;font-size:12.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">Save as…</button>
+                    <button onClick="{{ onViewReveal }}" style="height:30px;padding:0 13px;border:1px solid var(--bd2,rgba(0,0,0,.15));border-radius:8px;background:transparent;font-size:12.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">Show in Files</button>
+                  </span>
+                </sc-if>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ viewShowsLoc }}" hint-placeholder-val="{{ false }}">
+              <div style="width:{{ viewMapW }};height:{{ viewMapH }};max-width:100%;max-height:100%;position:relative;overflow:hidden;border-radius:12px;border:1px solid var(--bd,rgba(0,0,0,.08));box-shadow:0 4px 20px rgba(0,0,0,.14);background:var(--inb,rgba(0,0,0,.06))">
+                <img src="{{ viewMapSrc }}" alt="OpenStreetMap around the shared point" width="700" height="420" style="position:absolute;left:{{ viewMapLeft }};top:{{ viewMapTop }};width:700px;height:420px;filter:{{ viewMapFilter }};user-select:none"/>
+                <span style="position:absolute;left:{{ viewMapPinX }};top:{{ viewMapPinY }};width:15px;height:15px;transform:translate(-50%,-50%);border-radius:999px;background:{{ viewMapPinBg }};box-shadow:0 0 0 5px {{ viewMapPinHalo }},0 1px 4px rgba(0,0,0,.4)"></span>
+                <sc-if value="{{ viewLocLive }}" hint-placeholder-val="{{ false }}">
+                  <span style="position:absolute;left:14px;top:14px;display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.7);border-radius:999px;padding:4px 10px;font:10px/1 'JetBrains Mono',ui-monospace,monospace;color:#fff"><span style="width:6px;height:6px;border-radius:999px;background:#7ee2c4;animation:blink 1.4s infinite"></span>LIVE · {{ viewLocFresh }}</span>
+                </sc-if>
+                <span style="position:absolute;right:14px;top:14px;display:flex;flex-direction:column;border-radius:9px;overflow:hidden;border:1px solid var(--bd2,rgba(0,0,0,.14));background:var(--pop,#fff);box-shadow:0 2px 8px rgba(0,0,0,.18)">
+                  <button onClick="{{ onViewMapIn }}" title="Zoom in" style="width:30px;height:30px;border:none;background:transparent;cursor:pointer;font-size:14px;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">＋</button>
+                  <span style="height:1px;background:var(--bd,rgba(0,0,0,.09))"></span>
+                  <button onClick="{{ onViewMapOut }}" title="Zoom out" style="width:30px;height:30px;border:none;background:transparent;cursor:pointer;font-size:14px;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">−</button>
+                </span>
+                <span style="position:absolute;left:14px;bottom:14px;max-width:calc(100% - 28px);display:flex;flex-direction:column;gap:3px;padding:10px 13px;border-radius:10px;background:{{ viewLocCardBg }};border:1px solid var(--bd,rgba(0,0,0,.08));box-shadow:0 3px 14px rgba(0,0,0,.2);backdrop-filter:blur(6px)">
+                  <span style="font-size:13px;font-weight:700">{{ viewLocTitle }}</span>
+                  <span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55))">{{ viewLocSub }}</span>
+                  <span style="font:10.5px/1.4 'JetBrains Mono',ui-monospace,monospace;color:var(--dim2,rgba(0,0,0,.45))">{{ viewLocCoords }}</span>
+                </span>
+                <span style="position:absolute;right:8px;bottom:6px;font:8.5px/1 'JetBrains Mono',ui-monospace,monospace;padding:2px 5px;border-radius:4px;color:{{ viewMapAttrFg }};background:{{ viewMapAttrBg }}">© OpenStreetMap</span>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ viewHasPrev }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ onViewPrev }}" title="Previous · ←" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);width:38px;height:38px;border:1px solid {{ viewNavBd }};border-radius:999px;cursor:pointer;font-size:14px;display:grid;place-items:center;background:{{ viewNavBg }};color:{{ viewNavFg }}" style-hover="background:{{ viewNavHov }}">‹</button>
+            </sc-if>
+            <sc-if value="{{ viewHasNext }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ onViewNext }}" title="Next · →" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);width:38px;height:38px;border:1px solid {{ viewNavBd }};border-radius:999px;cursor:pointer;font-size:14px;display:grid;place-items:center;background:{{ viewNavBg }};color:{{ viewNavFg }}" style-hover="background:{{ viewNavHov }}">›</button>
+            </sc-if>
+          </div>
+
+          <sc-if value="{{ viewHasZoomBar }}" hint-placeholder-val="{{ true }}">
+            <div style="flex:none;display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 14px;border-top:1px solid var(--bd,rgba(0,0,0,.08));background:var(--hdr,#fff)">
+              <sc-if value="{{ viewHasPages }}" hint-placeholder-val="{{ false }}">
+                <span style="display:flex;align-items:center;gap:2px;margin-right:6px">
+                  <button onClick="{{ onViewPagePrev }}" title="Previous page" style="width:26px;height:26px;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:12px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">‹</button>
+                  <span style="min-width:52px;text-align:center;font:11.5px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--dim,rgba(0,0,0,.55))">{{ viewPageLabel }}</span>
+                  <button onClick="{{ onViewPageNext }}" title="Next page" style="width:26px;height:26px;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:12px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">›</button>
+                </span>
+              </sc-if>
+              <button onClick="{{ onViewZoomOut }}" title="Zoom out · −" style="width:28px;height:28px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:transparent;border-radius:8px;cursor:pointer;font-size:13px;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">−</button>
+              <span style="min-width:46px;text-align:center;font:11.5px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--dim,rgba(0,0,0,.55))">{{ viewZoomLabel }}</span>
+              <button onClick="{{ onViewZoomIn }}" title="Zoom in · +" style="width:28px;height:28px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:transparent;border-radius:8px;cursor:pointer;font-size:13px;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">＋</button>
+              <button onClick="{{ onViewZoomFit }}" title="Fit to window · 0" style="height:28px;margin-left:4px;padding:0 11px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:{{ viewFitBg }};border-radius:8px;cursor:pointer;font-size:12px;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">Fit</button>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ viewHasTransport }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:none;display:flex;align-items:center;gap:11px;padding:8px 16px;border-top:1px solid var(--bd,rgba(0,0,0,.08));background:var(--hdr,#fff)">
+              <button onClick="{{ onViewPlay }}" title="{{ viewPlayTitle }}" style="width:32px;height:32px;flex:none;border:none;border-radius:999px;cursor:pointer;font-size:12px;background:var(--ac,#1b8c72);color:#fff;display:grid;place-items:center" style-hover="background:var(--ac2,#147a63)">{{ viewPlayIcon }}</button>
+              <span style="flex:none;font:11px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--dim,rgba(0,0,0,.55))">{{ viewElapsed }}</span>
+              <span style="flex:1;height:5px;border-radius:999px;position:relative;background:var(--chip,rgba(0,0,0,.08))">
+                <span style="position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:var(--ac,#1b8c72);width:{{ viewProgress }}"></span>
+                <span style="position:absolute;top:-4px;width:13px;height:13px;border-radius:999px;background:var(--ac,#1b8c72);border:2px solid var(--hdr,#fff);box-sizing:border-box;left:{{ viewProgress }}"></span>
+              </span>
+              <span style="flex:none;font:11px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--dim,rgba(0,0,0,.55))">{{ viewDuration }}</span>
+              <button onClick="{{ onViewSpeed }}" title="Playback speed" style="flex:none;height:26px;padding:0 9px;border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:7px;background:transparent;font:11.5px/1 'JetBrains Mono',ui-monospace,monospace;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ viewSpeed }}</button>
+              <button onClick="{{ onViewMute }}" title="{{ viewMuteTitle }}" style="flex:none;width:28px;height:28px;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:13px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ viewMuteIcon }}</button>
+              <sc-if value="{{ viewCanFullscreen }}" hint-placeholder-val="{{ true }}">
+                <button onClick="{{ onViewFullscreen }}" title="Fullscreen · F" style="flex:none;width:28px;height:28px;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:12px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">⤢</button>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ viewHasCaption }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:none;display:flex;align-items:flex-start;gap:10px;padding:9px 16px;border-top:1px solid var(--bd,rgba(0,0,0,.08));background:var(--hdr,#fff)">
+              <span style="flex:1;min-width:0;font-size:13px;line-height:1.45;text-wrap:pretty">{{ viewCaption }}</span>
+              <sc-if value="{{ viewHasReacts }}" hint-placeholder-val="{{ false }}">
+                <span style="flex:none;display:flex;gap:4px">
+                  <sc-for list="{{ viewReacts }}" as="r" hint-placeholder-count="2">
+                    <span style="display:flex;align-items:center;gap:3px;border:1px solid var(--bd,rgba(0,0,0,.08));border-radius:999px;padding:1px 7px;font-size:11.5px;background:var(--inb,rgba(0,0,0,.06))">{{ r.e }}<sc-if value="{{ r.n }}" hint-placeholder-val="{{ false }}"><span style="font-size:9.5px;opacity:.6">{{ r.n }}</span></sc-if></span>
+                  </sc-for>
+                </span>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <div style="flex:none;display:flex;align-items:center;gap:7px;padding:9px 12px;overflow-x:auto;border-top:1px solid var(--bd,rgba(0,0,0,.08));background:var(--bg,#fafafa)">
+            <sc-for list="{{ viewStrip }}" as="t" hint-placeholder-count="5">
+              <button onClick="{{ t.onClick }}" title="{{ t.title }}" style="width:52px;height:52px;flex:none;padding:0;position:relative;overflow:hidden;border:none;border-radius:9px;cursor:pointer;display:grid;place-items:center;font-size:17px;background:{{ t.bg }};box-shadow:{{ t.ring }};opacity:{{ t.dim }}">
+                <sc-if value="{{ t.hasMap }}" hint-placeholder-val="{{ false }}">
+                  <img src="{{ t.mapSrc }}" alt="" width="700" height="420" style="position:absolute;left:{{ t.mapLeft }};top:{{ t.mapTop }};width:700px;height:420px;filter:{{ t.mapFilter }}"/>
+                  <span style="position:absolute;left:{{ t.pinX }};top:{{ t.pinY }};width:8px;height:8px;transform:translate(-50%,-50%);border-radius:999px;background:#c01c28;box-shadow:0 0 0 3px rgba(192,28,40,.25)"></span>
+                </sc-if>
+                <sc-if value="{{ t.isExt }}" hint-placeholder-val="{{ false }}">
+                  <span style="font:700 10.5px/1 'JetBrains Mono',ui-monospace,monospace;color:#fff;position:relative">{{ t.ext }}</span>
+                </sc-if>
+                <sc-if value="{{ t.isGlyph }}" hint-placeholder-val="{{ true }}">
+                  <span style="position:relative;line-height:1">{{ t.glyph }}</span>
+                </sc-if>
+                <sc-if value="{{ t.badge }}" hint-placeholder-val="{{ false }}">
+                  <span style="position:absolute;right:3px;bottom:3px;font:8.5px/1 'JetBrains Mono',ui-monospace,monospace;background:rgba(0,0,0,.62);color:#fff;padding:2px 4px;border-radius:4px">{{ t.badge }}</span>
+                </sc-if>
+              </button>
+            </sc-for>
+            <span style="flex:1"></span>
+            <span style="flex:none;font-size:11.5px;white-space:nowrap;color:var(--dim2,rgba(0,0,0,.45))">{{ viewStripLabel }}</span>
+          </div>
+        </div>
+
+        <sc-if value="{{ viewInfoOpen }}" hint-placeholder-val="{{ true }}">
+          <div style="width:244px;flex:none;display:flex;flex-direction:column;min-height:0;overflow-y:auto;border-left:1px solid var(--bd,rgba(0,0,0,.08));background:var(--hdr,#fff)">
+            <div style="flex:none;display:flex;align-items:center;gap:8px;padding:11px 12px 9px 14px">
+              <span style="flex:1;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dim,rgba(0,0,0,.55))">Details</span>
+              <button onClick="{{ onViewInfo }}" title="Hide details" style="width:24px;height:24px;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:11px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">✕</button>
+            </div>
+            <div style="flex:none;display:flex;align-items:center;gap:10px;padding:0 14px 12px">
+              <span style="width:34px;height:34px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;background:{{ viewFromColor }}">{{ viewFromInitial }}</span>
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ viewFromName }}</span>
+                <span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55))">{{ viewSentAt }}</span>
+              </span>
+            </div>
+            <div style="flex:none;display:flex;flex-direction:column;gap:0;border-top:1px solid var(--bd,rgba(0,0,0,.08));padding:4px 0">
+              <sc-for list="{{ viewFacts }}" as="f" hint-placeholder-count="5">
+                <span style="display:flex;align-items:baseline;gap:10px;padding:6px 14px">
+                  <span style="flex:none;width:74px;font-size:11.5px;color:var(--dim2,rgba(0,0,0,.45))">{{ f.k }}</span>
+                  <span style="flex:1;min-width:0;font:12px/1.4 'JetBrains Mono',ui-monospace,monospace;word-break:break-word">{{ f.v }}</span>
+                </span>
+              </sc-for>
+            </div>
+            <div style="flex:none;display:flex;flex-direction:column;gap:6px;padding:11px 14px;border-top:1px solid var(--bd,rgba(0,0,0,.08))">
+              <button onClick="{{ onViewGoToMessage }}" style="height:31px;border:1px solid var(--bd2,rgba(0,0,0,.15));border-radius:8px;background:transparent;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">Show in chat</button>
+              <sc-for list="{{ viewInfoActions }}" as="a" hint-placeholder-count="3">
+                <button onClick="{{ a.onClick }}" style="height:29px;border:none;border-radius:8px;background:transparent;text-align:left;padding:0 8px;font-size:12.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ a.label }}</button>
+              </sc-for>
+            </div>
+            <div style="flex:none;display:flex;flex-direction:column;gap:5px;padding:11px 14px;border-top:1px solid var(--bd,rgba(0,0,0,.08))">
+              <span style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dim2,rgba(0,0,0,.45))">Keyboard</span>
+              <sc-for list="{{ viewKeys }}" as="k" hint-placeholder-count="4">
+                <span style="display:flex;align-items:center;gap:8px">
+                  <span style="flex:none;min-width:58px;font:10.5px/1 'JetBrains Mono',ui-monospace,monospace;padding:3px 5px;border-radius:5px;text-align:center;background:var(--chip,rgba(0,0,0,.08));color:var(--dim,rgba(0,0,0,.55))">{{ k.key }}</span>
+                  <span style="flex:1;font-size:11.5px;color:var(--dim,rgba(0,0,0,.55))">{{ k.act }}</span>
+                </span>
+              </sc-for>
+            </div>
+            <span style="flex:1;min-height:8px"></span>
+            <span style="flex:none;padding:0 14px 13px;font-size:11px;line-height:1.45;color:var(--dim2,rgba(0,0,0,.45));text-wrap:pretty">🔒 End-to-end encrypted. Files stay in Chatot's cache until you save them.</span>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
     <sc-if value="{{ paneIsChat }}" hint-placeholder-val="{{ true }}">
       <div ref="{{ scrollRef }}" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:5px;padding:10px 18px 14px">
         <sc-for list="{{ messages }}" as="m" hint-placeholder-count="6">
@@ -339,7 +725,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
             </sc-if>
 
             <sc-if value="{{ m.isBubble }}" hint-placeholder-val="{{ true }}">
-              <div style="max-width:64%;position:relative;min-width:0">
+              <div style="max-width:64%;position:relative;min-width:0;margin-bottom:{{ m.reactPad }}">
                 <div style="border-radius:14px;padding:7px 11px 5px;box-shadow:{{ m.hit }};background:{{ m.bubBg }};color:{{ m.bubFg }}">
                   <sc-if value="{{ m.author }}" hint-placeholder-val="{{ false }}"><div style="font-size:12px;font-weight:700;margin-bottom:2px;color:{{ m.authorColor }}">{{ m.author }}</div></sc-if>
                   <sc-if value="{{ m.reply }}" hint-placeholder-val="{{ false }}">
@@ -364,7 +750,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
                       </div>
                     </sc-if>
                     <sc-if value="{{ m.dlReady }}" hint-placeholder-val="{{ true }}">
-                      <div style="width:280px;height:115px;border-radius:10px;margin:-2px 0 4px;display:flex;align-items:flex-end;padding:8px;background:{{ m.hatchSolid }}">
+                      <div onClick="{{ m.onOpenAtt }}" title="Open in the viewer" style="width:280px;height:115px;border-radius:10px;margin:-2px 0 4px;display:flex;align-items:flex-end;padding:8px;cursor:pointer;background:{{ m.hatchSolid }}">
                         <sc-if value="{{ m.isVideo }}" hint-placeholder-val="{{ false }}">
                           <span style="display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.55);border-radius:999px;padding:4px 10px 4px 5px">
                             <span style="width:20px;height:20px;border-radius:999px;background:#fff;display:grid;place-items:center"><span style="width:0;height:0;border-left:6px solid rgba(0,0,0,.75);border-top:4px solid transparent;border-bottom:4px solid transparent;margin-left:2px"></span></span>
@@ -388,9 +774,23 @@ a{color:#1b8c72}a:hover{color:#147a63}
                   </sc-if>
 
                   <sc-if value="{{ m.isLoc }}" hint-placeholder-val="{{ false }}">
-                    <div style="width:270px;height:86px;border-radius:10px;background:repeating-linear-gradient(45deg,rgba(0,0,0,.05) 0 9px,rgba(0,0,0,.09) 9px 18px);display:grid;place-items:center;margin:-2px 0 4px"><span style="width:13px;height:13px;border-radius:999px;background:#c01c28;box-shadow:0 0 0 4px rgba(192,28,40,.22)"></span></div>
+                    <div onClick="{{ m.onOpenAtt }}" title="Open in the viewer" style="position:relative;width:270px;height:86px;border-radius:10px;overflow:hidden;cursor:pointer;background:{{ m.hatch }};margin:-2px 0 4px">
+                      <sc-if value="{{ m.locHasMap }}" hint-placeholder-val="{{ true }}">
+                        <img src="{{ m.locMapSrc }}" alt="Map around the shared point" width="700" height="420" style="position:absolute;left:{{ m.locMapLeft }};top:{{ m.locMapTop }};width:700px;height:420px;filter:{{ m.mapFilter }}"/>
+                      </sc-if>
+                      <span style="position:absolute;left:{{ m.locPinX }};top:{{ m.locPinY }};width:13px;height:13px;transform:translate(-50%,-50%);border-radius:999px;background:{{ m.locPinBg }};box-shadow:0 0 0 4px {{ m.locPinHalo }}"></span>
+                      <sc-if value="{{ m.locLive }}" hint-placeholder-val="{{ false }}">
+                        <span style="position:absolute;left:8px;top:8px;display:flex;align-items:center;gap:5px;background:rgba(0,0,0,.66);border-radius:999px;padding:3px 8px;font:9.5px/1 'JetBrains Mono',ui-monospace,monospace;color:#fff"><span style="width:6px;height:6px;border-radius:999px;background:#7ee2c4;animation:blink 1.4s infinite"></span>LIVE</span>
+                      </sc-if>
+                      <sc-if value="{{ m.locHasMap }}" hint-placeholder-val="{{ true }}">
+                        <span style="position:absolute;right:5px;bottom:4px;font:8.5px/1 'JetBrains Mono',ui-monospace,monospace;color:{{ m.mapAttrFg }};background:{{ m.mapAttrBg }};border-radius:4px;padding:2px 4px">© OpenStreetMap</span>
+                      </sc-if>
+                    </div>
                     <div style="font-size:12.5px;font-weight:700">📍 {{ m.locTitle }}</div>
                     <div style="font-size:11px;color:{{ m.subFg }}">{{ m.locSub }}</div>
+                    <sc-if value="{{ m.locLive }}" hint-placeholder-val="{{ false }}">
+                      <button onClick="{{ m.onStopLive }}" style="align-self:flex-start;margin-top:5px;height:25px;padding:0 10px;border:1px solid {{ m.hair }};border-radius:8px;background:transparent;font-size:11.5px;font-weight:700;cursor:pointer;color:{{ m.bubFg }}" style-hover="background:{{ m.chipBg }}">Stop sharing</button>
+                    </sc-if>
                   </sc-if>
 
                   <sc-if value="{{ m.isPoll }}" hint-placeholder-val="{{ false }}">
@@ -431,7 +831,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
                     <sc-if value="{{ m.dlReady }}" hint-placeholder-val="{{ true }}">
                       <div style="width:260px;display:flex;align-items:center;gap:10px;padding:2px 0 3px">
                         <span onClick="{{ m.onPlay }}" style="width:28px;height:28px;flex:none;border-radius:999px;display:grid;place-items:center;cursor:pointer;font-size:11px;background:{{ m.playBg }};color:{{ m.playFg }}">{{ m.playIcon }}</span>
-                        <span style="flex:1;height:4px;border-radius:999px;position:relative;background:{{ m.trackBg }}">
+                        <span onClick="{{ m.onOpenAtt }}" title="Open in the viewer" style="flex:1;height:4px;border-radius:999px;position:relative;cursor:pointer;background:{{ m.trackBg }}">
                           <span style="position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:{{ m.fillFg }};width:{{ m.voicePct }}"></span>
                           <span style="position:absolute;top:-3px;width:10px;height:10px;border-radius:999px;background:{{ m.fillFg }};left:{{ m.voicePct }}"></span>
                         </span>
@@ -466,7 +866,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
                           <span style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.docName }}</span>
                           <span style="font-size:10.5px;white-space:nowrap;color:{{ m.subFg }}">{{ m.docMeta }}</span>
                         </span>
-                        <span onClick="{{ m.onOpenDoc }}" style="flex:none;margin-left:6px;font-size:11.5px;border:1px solid {{ m.hair }};border-radius:7px;padding:3px 9px;cursor:pointer;white-space:nowrap;color:{{ m.linkFg }}">Open</span>
+                        <span onClick="{{ m.onOpenAtt }}" style="flex:none;margin-left:6px;font-size:11.5px;border:1px solid {{ m.hair }};border-radius:7px;padding:3px 9px;cursor:pointer;white-space:nowrap;color:{{ m.linkFg }}">View</span>
                       </div>
                     </sc-if>
                     <sc-if value="{{ m.text }}" hint-placeholder-val="{{ false }}"><div style="font-size:13.5px;line-height:1.45;padding-top:2px">{{ m.text }}</div></sc-if>
@@ -579,6 +979,142 @@ a{color:#1b8c72}a:hover{color:#147a63}
         </sc-if>
       </div>
       </sc-if>
+    </sc-if>
+
+    <sc-if value="{{ paneIsTabEmpty }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;padding:40px;text-align:center;background:var(--bg,#fafafa)">
+        <span style="width:66px;height:66px;border-radius:22px;background:var(--inb,rgba(0,0,0,.06));display:grid;place-items:center;font-size:26px">{{ tabEmptyIcon }}</span>
+        <span style="font-size:15px;font-weight:700">{{ tabEmptyTitle }}</span>
+        <span style="font-size:12.5px;line-height:1.5;max-width:360px;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">{{ tabEmptyText }}</span>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ paneIsChannel }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:none;display:flex;align-items:center;gap:11px;padding:8px 12px 8px 14px;border-bottom:1px solid var(--bd,rgba(0,0,0,.08))">
+        <span style="width:34px;height:34px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;background:{{ chanColor }}">{{ chanInitial }}</span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+          <span style="display:flex;align-items:center;gap:5px;min-width:0">
+            <span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ chanName }}</span>
+            <sc-if value="{{ chanVerified }}" hint-placeholder-val="{{ true }}"><span title="Verified channel" style="width:13px;height:13px;flex:none;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;font-size:8px;line-height:1;display:grid;place-items:center">✓</span></sc-if>
+            <sc-if value="{{ chanMuted }}" hint-placeholder-val="{{ false }}"><span title="Muted" style="font-size:10px;flex:none;opacity:.5">🔇</span></sc-if>
+          </span>
+          <span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ chanFollowers }}</span>
+        </span>
+        <button onClick="{{ onChanFollow }}" style="flex:none;height:30px;padding:0 15px;border-radius:999px;border:{{ chanFollowBorder }};background:{{ chanFollowBg }};color:{{ chanFollowFg }};font-size:12.5px;font-weight:700;cursor:pointer" style-hover="filter:brightness(.94)">{{ chanFollowLabel }}</button>
+        <button onClick="{{ onChanMenu }}" title="Channel options" style="flex:none;width:28px;height:28px;border:none;background:transparent;border-radius:7px;display:grid;place-items:center;font-size:15px;letter-spacing:1px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">⋮</button>
+      </div>
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:12px 16px 10px;display:flex;flex-direction:column;gap:9px">
+        <span style="align-self:center;max-width:440px;text-align:center;font-size:11.5px;line-height:1.5;color:var(--dim,rgba(0,0,0,.55));background:var(--inb,rgba(0,0,0,.06));border-radius:10px;padding:8px 14px;text-wrap:pretty">{{ chanAbout }}</span>
+        <sc-for list="{{ chanPosts }}" as="p" hint-placeholder-count="3">
+          <div style="align-self:flex-start;max-width:min(560px,84%);display:flex;flex-direction:column;gap:7px;background:var(--inb,rgba(0,0,0,.06));border-radius:14px;padding:10px 12px 9px">
+            <sc-if value="{{ p.isPhoto }}" hint-placeholder-val="{{ false }}">
+              <span style="width:100%;aspect-ratio:16/9;border-radius:9px;display:grid;place-items:center;font-size:30px;background:{{ p.bg }}">{{ p.glyph }}</span>
+            </sc-if>
+            <span style="font-size:13.5px;line-height:1.45;text-wrap:pretty">{{ p.text }}</span>
+            <span style="display:flex;align-items:center;gap:8px">
+              <span style="font:10px/1.3 'JetBrains Mono',ui-monospace,monospace;color:var(--dim2,rgba(0,0,0,.45))">{{ p.meta }}</span>
+              <span style="flex:1"></span>
+              <button onClick="{{ p.onForward }}" title="Forward to a chat" style="width:24px;height:24px;border:none;background:transparent;border-radius:999px;font-size:12px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--sel,rgba(0,0,0,.1))">↪</button>
+            </span>
+            <span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+              <sc-for list="{{ p.reacts }}" as="r" hint-placeholder-count="2">
+                <button onClick="{{ r.onClick }}" title="{{ r.title }}" style="display:flex;align-items:center;gap:5px;border:1px solid {{ r.border }};background:{{ r.bg }};border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:700;cursor:pointer;color:{{ r.fg }}" style-hover="filter:brightness(.95)">{{ r.e }} {{ r.n }}</button>
+              </sc-for>
+              <button onClick="{{ p.onReact }}" title="Add a reaction" style="width:28px;height:22px;border:1px dashed var(--bd2,rgba(0,0,0,.18));background:transparent;border-radius:999px;font-size:11px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--sel,rgba(0,0,0,.1))">＋</button>
+            </span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="flex:none;border-top:1px solid var(--bd,rgba(0,0,0,.08));padding:11px 14px;display:flex;align-items:center;justify-content:center">
+        <span style="font-size:12px;color:var(--dim,rgba(0,0,0,.55));text-align:center;text-wrap:pretty">{{ chanFooter }}</span>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ paneIsCommunity }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:none;display:flex;align-items:center;gap:11px;padding:8px 12px 8px 14px;border-bottom:1px solid var(--bd,rgba(0,0,0,.08))">
+        <button onClick="{{ onCommInfo }}" title="Community info" style="flex:1;min-width:0;display:flex;align-items:center;gap:11px;border:none;background:transparent;border-radius:9px;padding:4px 6px;margin:0 -6px;cursor:pointer;text-align:left;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+          <span style="width:36px;height:36px;flex:none;border-radius:12px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px;background:{{ commColor }}">{{ commInitial }}</span>
+          <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+            <span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ commName }}</span>
+            <span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ commSub }}</span>
+          </span>
+        </button>
+        <button onClick="{{ onCommMenu }}" title="Community options" style="flex:none;width:28px;height:28px;border:none;background:transparent;border-radius:7px;display:grid;place-items:center;font-size:15px;letter-spacing:1px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">⋮</button>
+      </div>
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:4px 0 10px">
+        <sc-for list="{{ commRows }}" as="g" hint-placeholder-count="6">
+          <sc-if value="{{ g.isHeader }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:15px 20px 5px;font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--dim2,rgba(0,0,0,.45))">{{ g.label }}</div>
+          </sc-if>
+          <sc-if value="{{ g.isRow }}" hint-placeholder-val="{{ true }}">
+            <div onClick="{{ g.onClick }}" style="display:flex;gap:11px;align-items:center;margin:0 12px 1px;padding:8px 10px;border-radius:9px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+              <span style="width:38px;height:38px;flex:none;border-radius:{{ g.radius }};color:#fff;display:grid;place-items:center;font-weight:700;font-size:{{ g.glyphSize }};background:{{ g.color }}">{{ g.initial }}</span>
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                <span style="font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.name }}</span>
+                <span style="font-size:12px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.sub }}</span>
+              </span>
+              <sc-if value="{{ g.unread }}" hint-placeholder-val="{{ false }}"><span style="flex:none;min-width:19px;height:19px;padding:0 6px;border-radius:999px;font-size:10.5px;font-weight:700;display:grid;place-items:center;background:var(--ac,#1b8c72);color:#fff">{{ g.unread }}</span></sc-if>
+              <sc-if value="{{ g.canJoin }}" hint-placeholder-val="{{ false }}"><button onClick="{{ g.onJoin }}" style="flex:none;height:28px;padding:0 14px;border-radius:8px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:transparent;font-size:12.5px;font-weight:700;cursor:pointer;color:{{ g.joinFg }}" style-hover="background:var(--sel,rgba(0,0,0,.1))">Join</button></sc-if>
+            </div>
+          </sc-if>
+        </sc-for>
+      </div>
+      <div style="flex:none;border-top:1px solid var(--bd,rgba(0,0,0,.08));padding:9px 14px;display:flex;gap:8px">
+        <sc-if value="{{ addGroupAllowed }}" hint-placeholder-val="{{ true }}">
+          <button onClick="{{ onCommAddGroup }}" title="Link an existing group to this community" style="flex:1;height:34px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:transparent;border-radius:9px;font-size:13px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">＋ Add group</button>
+        </sc-if>
+        <sc-if value="{{ addGroupDisabled }}" hint-placeholder-val="{{ false }}">
+          <button disabled="{{ true }}" title="Only community admins can add groups" style="flex:1;height:34px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:transparent;border-radius:9px;font-size:13px;cursor:not-allowed;opacity:.45;color:var(--tx,rgba(0,0,0,.85))">＋ Add group</button>
+        </sc-if>
+        <button onClick="{{ onCommInvite }}" style="flex:1;height:34px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:transparent;border-radius:9px;font-size:13px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">Invite link</button>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ paneIsStatus }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;z-index:18;display:flex;flex-direction:column;background:#12191a">
+        <div style="flex:none;padding:11px 14px 9px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;gap:4px">
+            <sc-for list="{{ statusSegs }}" as="g" hint-placeholder-count="3">
+              <span style="flex:1;height:3px;border-radius:999px;background:rgba(255,255,255,.26)"><span style="display:block;height:3px;border-radius:999px;background:#fff;width:{{ g.fill }}"></span></span>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:32px;height:32px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;background:{{ statusColor }}">{{ statusInitial }}</span>
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column">
+              <span style="font-size:13.5px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ statusName }}</span>
+              <span style="font:10px/1.4 'JetBrains Mono',ui-monospace,monospace;color:rgba(255,255,255,.62)">{{ statusMeta }}</span>
+            </span>
+            <button onClick="{{ onStatusMenu }}" title="Status options" style="width:28px;height:28px;flex:none;border:none;background:rgba(255,255,255,.1);border-radius:999px;color:#fff;font-size:14px;letter-spacing:1px;cursor:pointer" style-hover="background:rgba(255,255,255,.24)">⋮</button>
+            <button onClick="{{ onStatusClose }}" title="Close" style="width:28px;height:28px;flex:none;border:none;background:rgba(255,255,255,.1);border-radius:999px;color:#fff;font-size:12px;cursor:pointer" style-hover="background:rgba(255,255,255,.24)">✕</button>
+          </div>
+        </div>
+        <div style="flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;padding:0 16px">
+          <button onClick="{{ onStatusPrev }}" title="Previous update" style="position:absolute;left:0;top:0;bottom:0;width:24%;border:none;background:transparent;cursor:pointer"></button>
+          <button onClick="{{ onStatusNext }}" title="Next update" style="position:absolute;right:0;top:0;bottom:0;width:24%;border:none;background:transparent;cursor:pointer"></button>
+          <div style="width:min(100%,318px);display:flex;flex-direction:column;gap:12px;align-items:center;pointer-events:none">
+            <sc-if value="{{ statusIsPhoto }}" hint-placeholder-val="{{ true }}">
+              <span style="width:100%;aspect-ratio:4/5;max-height:100%;border-radius:14px;display:grid;place-items:center;font-size:62px;background:{{ statusBg }}">{{ statusGlyph }}</span>
+            </sc-if>
+            <sc-if value="{{ statusIsText }}" hint-placeholder-val="{{ false }}">
+              <span style="width:100%;aspect-ratio:4/5;border-radius:14px;display:grid;place-items:center;padding:30px;text-align:center;font-size:20px;line-height:1.35;font-weight:700;color:#fff;text-wrap:balance;background:{{ statusBg }}">{{ statusText }}</span>
+            </sc-if>
+            <sc-if value="{{ statusCaption }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size:13px;color:rgba(255,255,255,.92);text-align:center;text-wrap:pretty">{{ statusCaption }}</span>
+            </sc-if>
+          </div>
+        </div>
+        <div style="flex:none;padding:11px 14px 15px;display:flex;align-items:center;gap:8px">
+          <sc-if value="{{ statusIsMine }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ onStatusViewers }}" style="flex:1;height:36px;border:none;border-radius:999px;background:rgba(255,255,255,.12);color:#fff;font-size:13px;font-weight:700;cursor:pointer" style-hover="background:rgba(255,255,255,.24)">{{ statusViewers }}</button>
+          </sc-if>
+          <sc-if value="{{ statusCanReply }}" hint-placeholder-val="{{ true }}">
+            <input value="{{ statusReply }}" onChange="{{ onStatusReplyChange }}" onKeyDown="{{ onStatusReplyKey }}" placeholder="{{ statusReplyPh }}" style="flex:1;min-width:0;height:36px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);border-radius:999px;padding:0 15px;font-size:13px;color:#fff;outline:none"/>
+            <sc-for list="{{ statusQuick }}" as="q" hint-placeholder-count="4">
+              <button onClick="{{ q.onClick }}" title="{{ q.title }}" style="width:34px;height:34px;flex:none;border:none;border-radius:999px;background:rgba(255,255,255,.17);font-size:15px;line-height:1;cursor:pointer" style-hover="background:rgba(255,255,255,.3)">{{ q.e }}</button>
+            </sc-for>
+          </sc-if>
+        </div>
+      </div>
     </sc-if>
   </div>
 </div>
@@ -758,6 +1294,133 @@ a{color:#1b8c72}a:hover{color:#147a63}
         </div>
       </sc-if>
 
+      <sc-if value="{{ dlgIsLoc }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Send location</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">✕</button>
+        </div>
+
+        <div style="padding:12px 14px 11px">
+          <div style="display:flex;gap:4px;background:var(--chip,rgba(0,0,0,.08));border-radius:9px;padding:3px">
+            <sc-for list="{{ locTabs }}" as="t" hint-placeholder-count="2">
+              <button onClick="{{ t.onClick }}" style="flex:1;border:none;border-radius:7px;padding:6px 0;font-size:12.5px;cursor:pointer;font-weight:{{ t.weight }};background:{{ t.bg }};color:var(--tx,rgba(0,0,0,.85))">{{ t.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div onClick="{{ onLocMapClick }}" style="position:relative;height:264px;overflow:hidden;border-top:1px solid var(--bd,rgba(0,0,0,.09));border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:{{ locMapBg }};cursor:{{ locMapCursor }}">
+          <img src="{{ locMapSrc }}" alt="OpenStreetMap of central Porto around the selected point" width="700" height="420" style="position:absolute;left:{{ locMapLeft }};top:{{ locMapTop }};width:700px;height:420px;filter:{{ mapFilter }};pointer-events:none;user-select:none"/>
+
+          <sc-if value="{{ locIsFix }}" hint-placeholder-val="{{ true }}">
+            <span style="position:absolute;left:{{ locFixX }};top:{{ locFixY }};width:{{ locHaloSize }};height:{{ locHaloSize }};transform:translate(-50%,-50%);border-radius:999px;background:{{ locHaloBg }};border:1px solid {{ locHaloBd }};pointer-events:none"></span>
+            <span style="position:absolute;left:{{ locFixX }};top:{{ locFixY }};width:16px;height:16px;transform:translate(-50%,-50%);border-radius:999px;background:var(--ac,#1b8c72);border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45);pointer-events:none"></span>
+            <span style="position:absolute;left:12px;top:12px;display:flex;align-items:center;gap:7px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));box-shadow:0 3px 10px rgba(0,0,0,.18);border-radius:999px;padding:5px 11px;font:10.5px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--tx,rgba(0,0,0,.85))"><span style="width:7px;height:7px;border-radius:999px;background:var(--ac,#1b8c72)"></span>Wi-Fi fix · ±{{ locAcc }} m</span>
+          </sc-if>
+
+          <sc-if value="{{ locIsManual }}" hint-placeholder-val="{{ false }}">
+            <span style="position:absolute;left:{{ locPinX }};top:{{ locPinY }};transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;pointer-events:none">
+              <span style="width:20px;height:20px;border-radius:999px 999px 2px 999px;background:#c01c28;border:2px solid #fff;box-shadow:0 3px 7px rgba(0,0,0,.4);transform:rotate(45deg)"></span>
+              <span style="width:5px;height:5px;border-radius:999px;background:rgba(0,0,0,.4);margin-top:3px"></span>
+            </span>
+            <div onClick="{{ stop }}" style="position:absolute;left:12px;right:56px;top:12px;display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;align-items:center;gap:9px;height:36px;border-radius:9px;background:var(--pop,#fff);border:1px solid var(--bd2,rgba(0,0,0,.13));box-shadow:0 5px 16px rgba(0,0,0,.2);padding:0 11px">
+                <span style="font-size:12px;opacity:.55">🔍</span>
+                <input value="{{ locQuery }}" onChange="{{ onLocQuery }}" placeholder="Search a place or address" style="flex:1;min-width:0;border:none;background:transparent;font-size:13px;outline:none"/>
+                <sc-if value="{{ locHasQuery }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ onLocClearQuery }}" style="border:none;background:transparent;cursor:pointer;font-size:12px;color:var(--dim,rgba(0,0,0,.55))" style-hover="color:var(--tx,rgba(0,0,0,.85))">✕</button>
+                </sc-if>
+              </div>
+              <sc-if value="{{ locHasQuery }}" hint-placeholder-val="{{ false }}">
+                <div style="background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:10px;box-shadow:0 12px 28px rgba(0,0,0,.24);overflow:hidden;max-height:176px;overflow-y:auto">
+                  <sc-for list="{{ locResults }}" as="r" hint-placeholder-count="3">
+                    <button onClick="{{ r.onClick }}" style="display:flex;align-items:center;gap:10px;width:100%;border:none;background:transparent;padding:8px 11px;cursor:pointer;text-align:left;border-top:{{ r.sep }};color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+                      <span style="width:26px;height:26px;flex:none;border-radius:999px;background:rgba(194,107,92,.2);display:grid;place-items:center;font-size:12px">📍</span>
+                      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                        <span style="font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.name }}</span>
+                        <span style="font-size:11px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.addr }}</span>
+                      </span>
+                      <span style="font:10px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--dim2,rgba(0,0,0,.45));flex:none">{{ r.dist }}</span>
+                    </button>
+                  </sc-for>
+                  <sc-if value="{{ locNoResults }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding:11px 12px;font-size:12.5px;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">Nothing found nearby — click the map to drop a pin instead.</div>
+                  </sc-if>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ locIsLocating }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;inset:0;background:{{ locScrim }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px">
+              <span style="width:28px;height:28px;border-radius:999px;border:3px solid var(--chip,rgba(0,0,0,.12));border-top-color:var(--ac,#1b8c72);animation:spin .9s linear infinite"></span>
+              <span style="font-size:13.5px;font-weight:700">Finding your location…</span>
+              <span style="font:10.5px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--dim,rgba(0,0,0,.55))">org.freedesktop.portal.Location</span>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ locIsDenied }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;inset:0;background:{{ locScrim }};display:grid;place-items:center;padding:20px">
+              <div onClick="{{ stop }}" style="width:100%;max-width:372px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:12px;box-shadow:0 14px 34px rgba(0,0,0,.26);padding:17px 17px 14px;display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center">
+                <span style="width:36px;height:36px;border-radius:999px;background:rgba(192,28,40,.15);display:grid;place-items:center;font-size:16px">📍</span>
+                <span style="font-size:13.5px;font-weight:700">Location access is off</span>
+                <span style="font-size:12.5px;line-height:1.5;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">chatot asks the system for a position only while this sheet is open, and never in the background. Turn it on in Settings, or place the point yourself.</span>
+                <div style="display:flex;gap:8px;margin-top:3px">
+                  <button onClick="{{ onLocSettings }}" style="height:32px;padding:0 13px;border:none;border-radius:9px;background:var(--chip,rgba(0,0,0,.08));font-size:12.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--sel,rgba(0,0,0,.1))">Open Settings</button>
+                  <button onClick="{{ onLocManual }}" style="height:32px;padding:0 13px;border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:9px;background:transparent;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--ac2,#147a63)" style-hover="background:var(--hov,rgba(0,0,0,.06))">Pick on map</button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <div onClick="{{ stop }}" style="position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:6px;align-items:center">
+            <div style="display:flex;flex-direction:column;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:9px;overflow:hidden;box-shadow:0 3px 10px rgba(0,0,0,.18)">
+              <button onClick="{{ onLocZoomIn }}" style="width:32px;height:29px;border:none;background:transparent;cursor:pointer;font-size:14px;color:var(--tx,rgba(0,0,0,.85));opacity:{{ locZoomInOp }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">＋</button>
+              <span style="height:1px;background:var(--bd,rgba(0,0,0,.09))"></span>
+              <button onClick="{{ onLocZoomOut }}" style="width:32px;height:29px;border:none;background:transparent;cursor:pointer;font-size:14px;color:var(--tx,rgba(0,0,0,.85));opacity:{{ locZoomOutOp }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">−</button>
+            </div>
+            <button onClick="{{ onLocRecentre }}" style="width:32px;height:32px;border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:9px;background:var(--pop,#fff);cursor:pointer;font-size:14px;box-shadow:0 3px 10px rgba(0,0,0,.18);color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">⌖</button>
+          </div>
+
+          <span style="position:absolute;left:10px;bottom:9px;font:9.5px/1 'JetBrains Mono',ui-monospace,monospace;color:{{ mapAttrFg }};background:{{ mapAttrBg }};border-radius:5px;padding:3px 6px;pointer-events:none">© OpenStreetMap contributors</span>
+        </div>
+
+        <div style="padding:13px 14px 4px;display:flex;flex-direction:column;gap:10px">
+          <input value="{{ locName }}" onChange="{{ onLocName }}" placeholder="{{ locNameHint }}" style="height:36px;border-radius:9px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:var(--chat,#fff);padding:0 12px;font-size:13px;outline:none"/>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+              <span style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ locPlaceLabel }}</span>
+              <sc-if value="{{ locHasPoint }}" hint-placeholder-val="{{ true }}">
+                <span style="font:11px/1.3 'JetBrains Mono',ui-monospace,monospace;color:var(--dim,rgba(0,0,0,.55))">{{ locCoords }}</span>
+              </sc-if>
+            </span>
+            <sc-if value="{{ locHasPoint }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ onLocCopy }}" style="flex:none;height:28px;padding:0 11px;border:none;border-radius:8px;background:var(--chip,rgba(0,0,0,.08));font-size:12px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--sel,rgba(0,0,0,.1))">Copy</button>
+            </sc-if>
+          </div>
+          <span style="height:1px;background:var(--bd,rgba(0,0,0,.09))"></span>
+          <div onClick="{{ onLocLive }}" style="display:flex;align-items:center;gap:12px;cursor:pointer">
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+              <span style="font-size:13px">Share as live location</span>
+              <span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">{{ locLiveSub }}</span>
+            </span>
+            <span style="width:42px;height:24px;border-radius:999px;flex:none;position:relative;transition:background .15s;background:{{ locLiveBg }}"><span style="position:absolute;top:2px;width:20px;height:20px;border-radius:999px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .15s;left:{{ locLiveKnob }}"></span></span>
+          </div>
+          <sc-if value="{{ locLive }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;gap:4px;background:var(--chip,rgba(0,0,0,.08));border-radius:9px;padding:3px">
+              <sc-for list="{{ locDurs }}" as="d" hint-placeholder-count="3">
+                <button onClick="{{ d.onClick }}" style="flex:1;border:none;border-radius:7px;padding:6px 0;font-size:12.5px;cursor:pointer;font-weight:{{ d.weight }};background:{{ d.bg }};color:var(--tx,rgba(0,0,0,.85))">{{ d.label }}</button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-top:1px solid var(--bd,rgba(0,0,0,.09));margin-top:11px">
+          <span style="flex:1;min-width:0;font:10.5px/1.3 'JetBrains Mono',ui-monospace,monospace;color:var(--dim2,rgba(0,0,0,.45));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ locSourceNote }}</span>
+          <button onClick="{{ closeDialog }}" style="flex:none;height:34px;padding:0 14px;border:none;border-radius:9px;background:var(--chip,rgba(0,0,0,.08));font-size:13px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--sel,rgba(0,0,0,.1))">Cancel</button>
+          <button onClick="{{ onLocSend }}" style="flex:none;height:34px;padding:0 18px;border:none;border-radius:9px;font-size:13px;font-weight:700;background:{{ locSendBg }};color:{{ locSendFg }};cursor:{{ locSendCursor }}">{{ locSendLabel }}</button>
+        </div>
+      </sc-if>
+
       <sc-if value="{{ dlgIsPrefs }}" hint-placeholder-val="{{ false }}">
         <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
           <span style="font-size:14.5px;font-weight:700;flex:1">Preferences</span>
@@ -826,6 +1489,186 @@ a{color:#1b8c72}a:hover{color:#147a63}
               </div>
             </sc-for>
           </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsChanInfo }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:22px 22px 14px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+          <span style="width:76px;height:76px;border-radius:999px;color:#fff;display:grid;place-items:center;font-size:28px;font-weight:700;background:{{ infoChanColor }}">{{ infoChanInitial }}</span>
+          <span style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:17px;font-weight:700">{{ infoChanName }}</span>
+            <sc-if value="{{ infoChanVerified }}" hint-placeholder-val="{{ true }}"><span title="Verified channel" style="width:15px;height:15px;flex:none;border-radius:999px;background:var(--ac,#1b8c72);color:#fff;font-size:9px;font-weight:700;display:grid;place-items:center">✓</span></sc-if>
+          </span>
+          <span style="font:11px/1.4 'JetBrains Mono',ui-monospace,monospace;color:var(--dim,rgba(0,0,0,.55))">{{ infoChanMeta }}</span>
+          <span style="font-size:12.5px;line-height:1.5;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">{{ infoChanAbout }}</span>
+        </div>
+        <div style="padding:0 18px 18px">
+          <div style="background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px;overflow:hidden">
+            <sc-for list="{{ infoChanRows }}" as="r" hint-placeholder-count="4">
+              <div onClick="{{ r.onClick }}" style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-top:{{ r.sep }};cursor:{{ r.cursor }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+                <span style="width:16px;text-align:center">{{ r.icon }}</span>
+                <span style="flex:1;min-width:0;font-size:13px">{{ r.label }}</span>
+                <span style="flex:none;max-width:52%;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:{{ r.valueColor }}">{{ r.value }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsChanLink }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Share {{ linkChanName }}</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+        <div style="padding:16px 22px 2px;font-size:12.5px;line-height:1.5;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">Anyone with this link can open the channel and follow it. Followers are never shown to each other.</div>
+        <div style="padding:6px 22px 4px">
+          <div style="display:flex;align-items:center;gap:10px;padding:11px 13px;background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px">
+            <span style="flex:1;min-width:0;font:12px/1.4 'JetBrains Mono',ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ac2,#147a63)">{{ linkChanUrl }}</span>
+            <button onClick="{{ onCopyChanLink }}" style="flex:none;height:28px;padding:0 12px;border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:8px;background:var(--hdr,#fff);font-size:12px;font-weight:700;cursor:pointer;color:var(--ac2,#147a63)" style-hover="border-color:var(--ac,#1b8c72)">{{ copyLabel }}</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;padding:10px 14px;border-top:1px solid var(--bd,rgba(0,0,0,.09))">
+          <button onClick="{{ closeDialog }}" style="height:34px;padding:0 14px;border:none;border-radius:9px;background:var(--chip,rgba(0,0,0,.08));font-size:13px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))">Cancel</button>
+          <button onClick="{{ onSendChanLink }}" style="height:34px;padding:0 18px;border:none;border-radius:9px;background:var(--ac,#1b8c72);color:#fff;font-size:13px;font-weight:700;cursor:pointer">Send to a chat</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsReport }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Report {{ reportName }}?</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+        <div style="padding:16px 22px 2px;font-size:12.5px;line-height:1.5;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">The most recent updates from this channel are sent to chatot for review. The channel is not told who reported it.</div>
+        <div style="padding:6px 18px 4px;display:flex;flex-direction:column;gap:1px;max-height:250px;overflow-y:auto">
+          <sc-for list="{{ reportReasons }}" as="r" hint-placeholder-count="6">
+            <button onClick="{{ r.onClick }}" style="width:100%;display:flex;align-items:center;gap:11px;padding:9px 10px;border:none;border-radius:9px;background:{{ r.bg }};cursor:pointer;text-align:left;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+              <span style="width:17px;height:17px;flex:none;border-radius:999px;display:grid;place-items:center;border:{{ r.dotBorder }};background:{{ r.dotBg }}"><span style="width:7px;height:7px;border-radius:999px;background:{{ r.dotFill }}"></span></span>
+              <span style="flex:1;min-width:0;font-size:13px">{{ r.label }}</span>
+            </button>
+          </sc-for>
+        </div>
+        <div style="padding:6px 22px 2px">
+          <button onClick="{{ onToggleReportUnfollow }}" style="width:100%;display:flex;align-items:center;gap:11px;padding:9px 0;border:none;background:transparent;cursor:pointer;text-align:left;color:var(--tx,rgba(0,0,0,.85))">
+            <span style="width:19px;height:19px;flex:none;border-radius:6px;display:grid;place-items:center;font-size:11px;color:#fff;border:{{ reportUnfollowBorder }};background:{{ reportUnfollowBg }}">{{ reportUnfollowTick }}</span>
+            <span style="flex:1;font-size:13px">Also unfollow this channel</span>
+          </button>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;padding:10px 14px;border-top:1px solid var(--bd,rgba(0,0,0,.09))">
+          <button onClick="{{ closeDialog }}" style="height:34px;padding:0 14px;border:none;border-radius:9px;background:var(--chip,rgba(0,0,0,.08));font-size:13px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))">Cancel</button>
+          <button onClick="{{ onSubmitReport }}" style="height:34px;padding:0 18px;border:none;border-radius:9px;background:{{ reportBtnBg }};color:{{ reportBtnFg }};font-size:13px;font-weight:700;cursor:pointer">Report</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsCommInfo }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:22px 22px 14px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+          <span style="width:76px;height:76px;border-radius:24px;color:#fff;display:grid;place-items:center;font-size:28px;font-weight:700;background:{{ commColor }}">{{ commInitial }}</span>
+          <span style="font-size:17px;font-weight:700">{{ commName }}</span>
+          <span style="font-size:12.5px;line-height:1.5;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">{{ commAbout }}</span>
+          <span style="font:10.5px/1.4 'JetBrains Mono',ui-monospace,monospace;color:var(--dim2,rgba(0,0,0,.45))">{{ commCreated }}</span>
+        </div>
+        <div style="padding:0 18px 6px;display:flex;gap:6px">
+          <sc-for list="{{ commTabs }}" as="t" hint-placeholder-count="2">
+            <button onClick="{{ t.onClick }}" style="flex:1;height:30px;border:none;border-radius:8px;font-size:12.5px;cursor:pointer;font-weight:{{ t.weight }};background:{{ t.bg }};color:{{ t.fg }}">{{ t.label }}</button>
+          </sc-for>
+        </div>
+        <sc-if value="{{ commTabIsMembers }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:6px 18px 4px">
+            <div style="display:flex;align-items:center;gap:8px;height:32px;padding:0 12px;background:var(--chat,#fff);border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:999px">
+              <span style="font-size:12px;color:var(--dim2,rgba(0,0,0,.45))">⌕</span>
+              <input value="{{ memberQuery }}" onChange="{{ onMemberQuery }}" placeholder="Search members" style="flex:1;min-width:0;border:none;outline:none;background:transparent;font-size:13px"/>
+            </div>
+          </div>
+          <div style="padding:4px 18px 16px;max-height:250px;overflow-y:auto">
+            <sc-for list="{{ commPeople }}" as="p" hint-placeholder-count="5">
+              <div style="display:flex;align-items:center;gap:10px;padding:7px 4px">
+                <span style="width:32px;height:32px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:12.5px;background:{{ p.color }}">{{ p.initial }}</span>
+                <span style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.name }}</span>
+                <sc-if value="{{ p.role }}" hint-placeholder-val="{{ false }}"><span style="flex:none;font-size:10px;padding:2px 7px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));color:var(--dim,rgba(0,0,0,.55))">{{ p.role }}</span></sc-if>
+              </div>
+            </sc-for>
+            <sc-if value="{{ commPeopleEmpty }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:22px 8px;text-align:center;font-size:12.5px;color:var(--dim,rgba(0,0,0,.55))">No members match “{{ memberQuery }}”</div>
+            </sc-if>
+          </div>
+        </sc-if>
+        <sc-if value="{{ commTabIsGroups }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:8px 18px 16px;max-height:290px;overflow-y:auto">
+            <sc-for list="{{ commInfoGroups }}" as="g" hint-placeholder-count="4">
+              <div style="display:flex;align-items:center;gap:10px;padding:7px 4px">
+                <span style="width:32px;height:32px;flex:none;border-radius:{{ g.radius }};color:#fff;display:grid;place-items:center;font-weight:700;font-size:12.5px;background:{{ g.color }}">{{ g.initial }}</span>
+                <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                  <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.name }}</span>
+                  <span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.sub }}</span>
+                </span>
+                <span style="flex:none;font-size:10px;padding:2px 7px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));color:var(--dim,rgba(0,0,0,.55))">{{ g.state }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsCommInvite }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Invite to {{ commName }}</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+        <div style="padding:16px 22px 2px;font-size:12.5px;line-height:1.5;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">Anyone with this link can join the community and see its announcement group. Reset it to revoke every link you have shared.</div>
+        <div style="padding:6px 22px 16px">
+          <div style="display:flex;align-items:center;gap:10px;padding:11px 13px;background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px">
+            <span style="flex:1;min-width:0;font:12px/1.4 'JetBrains Mono',ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ac2,#147a63)">{{ commLink }}</span>
+            <button onClick="{{ onCopyLink }}" style="flex:none;height:28px;padding:0 12px;border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:8px;background:var(--hdr,#fff);font-size:12px;font-weight:700;cursor:pointer;color:var(--ac2,#147a63)" style-hover="border-color:var(--ac,#1b8c72)">{{ copyLabel }}</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;padding:10px 14px;border-top:1px solid var(--bd,rgba(0,0,0,.09))">
+          <button onClick="{{ onResetLink }}" style="margin-right:auto;height:34px;padding:0 14px;border:none;border-radius:9px;background:var(--chip,rgba(0,0,0,.08));font-size:13px;cursor:pointer;color:#c01c28" style-hover="background:var(--sel,rgba(0,0,0,.1))">Reset link</button>
+          <button onClick="{{ closeDialog }}" style="height:34px;padding:0 14px;border:none;border-radius:9px;background:var(--chip,rgba(0,0,0,.08));font-size:13px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))">Cancel</button>
+          <button onClick="{{ onShareLink }}" style="height:34px;padding:0 18px;border:none;border-radius:9px;background:var(--ac,#1b8c72);color:#fff;font-size:13px;font-weight:700;cursor:pointer">Send to a chat</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsCommAddGroup }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Add a group to {{ commName }}</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+        <div style="padding:16px 22px 2px;font-size:12.5px;line-height:1.5;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">{{ addGroupBody }}</div>
+        <div style="padding:4px 18px 6px;max-height:260px;overflow-y:auto">
+          <sc-for list="{{ linkableGroups }}" as="g" hint-placeholder-count="3">
+            <button onClick="{{ g.onClick }}" style="width:100%;display:flex;align-items:center;gap:11px;padding:9px 10px;border:none;border-radius:9px;background:{{ g.bg }};cursor:pointer;text-align:left;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+              <span style="width:34px;height:34px;flex:none;border-radius:999px;color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;background:{{ g.color }}">{{ g.initial }}</span>
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.name }}</span>
+                <span style="font-size:11.5px;color:var(--dim,rgba(0,0,0,.55));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.sub }}</span>
+              </span>
+              <span style="width:19px;height:19px;flex:none;border-radius:6px;display:grid;place-items:center;font-size:11px;color:#fff;border:{{ g.boxBorder }};background:{{ g.boxBg }}">{{ g.tick }}</span>
+            </button>
+          </sc-for>
+          <sc-if value="{{ noLinkable }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:24px 10px;text-align:center;font-size:12.5px;line-height:1.5;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">Every group you are in is already linked to a community.</div>
+          </sc-if>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;padding:10px 14px;border-top:1px solid var(--bd,rgba(0,0,0,.09))">
+          <span style="margin-right:auto;align-self:center;font-size:12px;color:var(--dim,rgba(0,0,0,.55))">{{ linkPickLabel }}</span>
+          <button onClick="{{ closeDialog }}" style="height:34px;padding:0 14px;border:none;border-radius:9px;background:var(--chip,rgba(0,0,0,.08));font-size:13px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))">Cancel</button>
+          <button onClick="{{ onLinkGroups }}" style="height:34px;padding:0 18px;border:none;border-radius:9px;background:{{ linkBtnBg }};color:{{ linkBtnFg }};font-size:13px;font-weight:700;cursor:pointer">Add</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsJoinLink }}" hint-placeholder-val="{{ false }}">
+        <div style="height:47px;display:flex;align-items:center;padding:0 8px 0 16px;gap:10px;border-bottom:1px solid var(--bd,rgba(0,0,0,.09));background:var(--hdr,#fff)">
+          <span style="font-size:14.5px;font-weight:700;flex:1">Join with a link</span>
+          <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
+        </div>
+        <div style="padding:16px 22px 2px;font-size:12.5px;line-height:1.5;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">Paste a community invite link. You will join the announcement group first and can pick the other groups afterwards.</div>
+        <div style="padding:6px 22px 4px">
+          <input value="{{ joinLink }}" onChange="{{ onJoinLinkChange }}" onKeyDown="{{ onJoinLinkKey }}" placeholder="chat.ot/…" style="width:100%;height:38px;border-radius:9px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:var(--chat,#fff);padding:0 12px;font:12.5px 'JetBrains Mono',ui-monospace,monospace;outline:none"/>
+        </div>
+        <sc-if value="{{ joinLinkHint }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:2px 22px 0;font-size:11.5px;color:{{ joinLinkHintColor }}">{{ joinLinkHint }}</div>
+        </sc-if>
+        <div style="display:flex;gap:10px;justify-content:flex-end;padding:10px 14px;border-top:1px solid var(--bd,rgba(0,0,0,.09))">
+          <button onClick="{{ closeDialog }}" style="height:34px;padding:0 14px;border:none;border-radius:9px;background:var(--chip,rgba(0,0,0,.08));font-size:13px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))">Cancel</button>
+          <button onClick="{{ onJoinLinkGo }}" style="height:34px;padding:0 18px;border:none;border-radius:9px;background:{{ joinBtnBg }};color:{{ joinBtnFg }};font-size:13px;font-weight:700;cursor:pointer">Join</button>
         </div>
       </sc-if>
 
@@ -1018,6 +1861,88 @@ a{color:#1b8c72}a:hover{color:#147a63}
 const LIGHT = {bg:'#fafafa',hdr:'#ffffff',side:'#ebebeb',chat:'#ffffff',bd:'rgba(0,0,0,.08)',bd2:'rgba(0,0,0,.13)',tx:'rgba(0,0,0,.85)',dim:'rgba(0,0,0,.55)',dim2:'rgba(0,0,0,.45)',inb:'rgba(0,0,0,.06)',pop:'#ffffff',hov:'rgba(0,0,0,.06)',sel:'rgba(0,0,0,.1)',chip:'rgba(0,0,0,.08)'};
 const DARK = {bg:'#242424',hdr:'#303030',side:'#2c2c2c',chat:'#242424',bd:'rgba(255,255,255,.09)',bd2:'rgba(255,255,255,.16)',tx:'#ffffff',dim:'rgba(255,255,255,.6)',dim2:'rgba(255,255,255,.45)',inb:'rgba(255,255,255,.09)',pop:'#383838',hov:'rgba(255,255,255,.07)',sel:'rgba(255,255,255,.13)',chip:'rgba(255,255,255,.1)'};
 
+// The location picker's map is real OpenStreetMap raster imagery: three
+// pre-cropped 700×420 windows of central Porto (zoom 16/17/18) that share one
+// centre point. MAP_CROPS records each crop's top-left corner in that zoom's
+// global tile pixels, so the picker converts between screen pixels and WGS84
+// with the real Web-Mercator maths — every coordinate it reports is the true
+// one for the point the user picked, at any zoom.
+const MAP_CROPS = {
+  16: {src: './map-porto-z16.png', ox: 7986956, oy: 6280970},
+  17: {src: './map-porto-z17.png', ox: 15974262, oy: 12562150},
+  18: {src: './map-porto-z18.png', ox: 31948874, oy: 25124510}
+};
+const MAP_IMG_W = 700, MAP_IMG_H = 420;    // each crop
+// Viewer zoom rungs, as multiples of fit-to-window. Index 0 is Fit.
+const ZOOM_STEPS = [1, 1.5, 2, 3, 5];
+const MAP_VIEW_W = 600, MAP_VIEW_H = 264;  // the picker's map stage
+const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const mapPx = (lat, lon, z) => {
+  const w = Math.pow(2, z) * 256, c = MAP_CROPS[z], s = Math.sin(lat * Math.PI / 180);
+  return {x: (lon + 180) / 360 * w - c.ox,
+          y: (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * w - c.oy};
+};
+const mapLL = (x, y, z) => {
+  const w = Math.pow(2, z) * 256, c = MAP_CROPS[z];
+  const t = Math.PI * (1 - 2 * (c.oy + y) / w);
+  return {lat: Math.atan(Math.sinh(t)) * 180 / Math.PI, lon: (c.ox + x) / w * 360 - 180};
+};
+// Metres per pixel, so the accuracy halo is drawn at its true radius instead
+// of a decorative one — a desktop fix is coarse and the design has to show it.
+const mapMPP = (lat, z) => 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z);
+const mapDist = (a, b) => {
+  const R = 6371000, r = Math.PI / 180;
+  const s1 = Math.sin((b.lat - a.lat) * r / 2), s2 = Math.sin((b.lon - a.lon) * r / 2);
+  const h = s1 * s1 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * s2 * s2;
+  const d = 2 * R * Math.asin(Math.sqrt(h));
+  return d < 950 ? Math.round(d / 5) * 5 + ' m' : (d / 1000).toFixed(1) + ' km';
+};
+const coord = v => (v < 0 ? '-' : '') + Math.abs(v).toFixed(5);
+// The crop centre doubles as the simulated positioning fix.
+const MAP_FIX = mapLL(MAP_IMG_W / 2, MAP_IMG_H / 2, 17);
+// Real OSM places inside the crop, with the coordinates Nominatim returns for
+// them — the picker's search field stands in for that same lookup.
+const MAP_PLACES = [
+  {name: 'Praça da Liberdade', addr: 'Praça da Liberdade, Baixa do Porto', lat: 41.1464565, lon: -8.6113286},
+  {name: 'Estação de São Bento', addr: 'Rua do Loureiro, Porto', lat: 41.1454799, lon: -8.6105220},
+  {name: 'Igreja de Santo António dos Congregados', addr: 'Rua de Sá da Bandeira 11, Porto', lat: 41.1463196, lon: -8.6106933},
+  {name: 'Palácio das Cardosas', addr: 'Praça da Liberdade 25, Porto', lat: 41.1458255, lon: -8.6115944}
+];
+const mapNorm = t => (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const LIVE_DURS = ['15 minutes', '1 hour', '8 hours'];
+const liveUntil = dur => {
+  const mins = dur === '15 minutes' ? 15 : dur === '8 hours' ? 480 : 60;
+  const d = new Date(Date.now() + mins * 60000);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+};
+// A location bubble's preview is the same real imagery, windowed on the point
+// the message carries; a message whose point falls outside the crop keeps the
+// hatched placeholder rather than showing the wrong streets.
+const LOC_THUMB_W = 270, LOC_THUMB_H = 86;
+const locThumb = (lat, lon) => {
+  if (lat == null || lon == null) return null;
+  const p = mapPx(lat, lon, 17);
+  const left = clampN(LOC_THUMB_W / 2 - p.x, LOC_THUMB_W - MAP_IMG_W, 0);
+  const top = clampN(LOC_THUMB_H / 2 - p.y, LOC_THUMB_H - MAP_IMG_H, 0);
+  const px = p.x + left, py = p.y + top;
+  if (px < 10 || px > LOC_THUMB_W - 10 || py < 10 || py > LOC_THUMB_H - 10) return null;
+  return {src: MAP_CROPS[17].src, left: left + 'px', top: top + 'px', pinX: px + 'px', pinY: py + 'px'};
+};
+
+// The attachment viewer needs the same real-tile window at other sizes: the
+// filmstrip thumb (52²) and the viewer's map card (up to 700×420). mapWindow
+// centres the requested point in a W×H window of the real crop, clamped to the
+// crop's bounds, and reports where the pin lands inside that window.
+const mapWindow = (lat, lon, z, W, H) => {
+  if (lat == null || lon == null) return null;
+  const zz = MAP_CROPS[z] ? z : 17;
+  const p = mapPx(lat, lon, zz);
+  const left = clampN(W / 2 - p.x, W - MAP_IMG_W, 0);
+  const top = clampN(H / 2 - p.y, H - MAP_IMG_H, 0);
+  return {src: MAP_CROPS[zz].src, left: left + 'px', top: top + 'px',
+          pinX: (p.x + left) + 'px', pinY: (p.y + top) + 'px'};
+};
+
 const PEOPLE = [
   {name:'Alex Rivera',color:'#5a7ab5',status:'Busy shipping'},
   {name:'Priya Raman',color:'#9c5b8a',status:'At the studio'},
@@ -1039,6 +1964,109 @@ const ACCOUNTS = [
   {id:'bakery',label:'Bakery (business)',phone:'+351 913 552 900',color:'#b58a4a',initial:'B',state:'reconnecting',business:true},
   {id:'test',label:'Test line',phone:'+351 910 000 111',color:'rgba(120,120,120,.55)',initial:'T',state:'loggedout'}
 ];
+
+const STATUS_FEED = [
+  {key:'priya', name:'Priya Raman', color:'#9c5b8a', time:'23:02', viewed:false, items:[
+    {kind:'photo', bg:'#3f5a72', glyph:'🌇', caption:'Studio window, 23:02. We ship tomorrow.', time:'23:02'},
+    {kind:'text', bg:'#9c5b8a', text:'Two more takes and the record is done.', time:'22:41'}
+  ]},
+  {key:'alex', name:'Alex Rivera', color:'#5a7ab5', time:'22:15', viewed:false, items:[
+    {kind:'text', bg:'#5a7ab5', text:'Deploy 2.1 is green. Going to sleep.', time:'22:15'}
+  ]},
+  {key:'nina', name:'Nina Costa', color:'#b58a4a', time:'19:40', viewed:true, items:[
+    {kind:'photo', bg:'#7a6a4a', glyph:'🍝', caption:'Out of office, into dinner.', time:'19:40'},
+    {kind:'photo', bg:'#4f6a5a', glyph:'🌿', caption:'', time:'18:02'},
+    {kind:'text', bg:'#b58a4a', text:'Back Monday.', time:'17:20'}
+  ]},
+  {key:'marco', name:'Marco Bianchi', color:'#7a8b5a', time:'Yesterday', viewed:true, items:[
+    {kind:'photo', bg:'#8b6a4a', glyph:'🥖', caption:'First bake of the day.', time:'Yesterday'}
+  ]}
+];
+
+const CHANNELS = [
+  {key:'releases', created:'Created 8 Jan 2024', link:'chat.ot/c/releases-8ka2', name:'chatot releases', color:'#427677', verified:true, followers:'4,218 followers', time:'23:11', unread:2, muted:false, following:true, cat:'Technology', pop:4218,
+   about:'Release notes, nightly builds and breakage warnings for the chatot desktop client.',
+   posts:[
+     {text:'v2.1 — Channels, Communities and a rebuilt sidebar navigation. Update from your package manager.', time:'23:11', views:'1,204 views', reacts:[{e:'👍',n:64},{e:'🎉',n:22}]},
+     {kind:'photo', bg:'#3f5a72', glyph:'🖼', text:'The new bottom navigation, side by side with 2.0.', time:'23:04', views:'1,180 views', reacts:[{e:'👍',n:31}]},
+     {text:'Nightly builds now ship arm64 for Linux.', time:'Mon', views:'986 views', reacts:[{e:'👍',n:18},{e:'🐦',n:4}]}
+   ]},
+  {key:'alerts', created:'Created 3 Nov 2022', link:'chat.ot/c/lisboa-alerts-3rv7', name:'Lisboa Alerts', color:'#c26b5c', verified:true, followers:'182K followers', time:'21:04', unread:0, muted:true, following:true, cat:'News', pop:182000,
+   about:'Transit, weather and civil protection notices for the Lisbon metropolitan area.',
+   posts:[
+     {text:'Yellow line back to normal service. Delays cleared at Campo Grande.', time:'21:04', views:'96K views', reacts:[{e:'🙏',n:820}]},
+     {text:'Yellow line suspended between Odivelas and Campo Grande — signalling fault.', time:'19:38', views:'104K views', reacts:[{e:'😮',n:311}]}
+   ]},
+  {key:'books', created:'Created 21 Jun 2023', link:'chat.ot/c/ada-books-9qt4', name:"Ada's Book Club", color:'#6a6a8c', verified:false, followers:'1,904 followers', time:'Tue', unread:0, muted:false, following:true, cat:'Entertainment', pop:1904,
+   about:'One book a month, one thread a week. Run by Ada and three very opinionated moderators.',
+   posts:[
+     {text:'October pick: a short one for once. Discussion thread opens Friday.', time:'Tue', views:'1,411 views', reacts:[{e:'📚',n:96},{e:'❤️',n:40}]}
+   ]},
+  {key:'meteo', created:'Created 14 Feb 2023', link:'chat.ot/c/ipma-6mz1', name:'IPMA Meteorologia', color:'#4a7fa8', verified:true, followers:'244K followers', time:'22:50', unread:0, muted:false, following:false, cat:'News', pop:244000,
+   about:'Official forecasts, sea state and weather warnings for mainland Portugal and the islands.',
+   posts:[
+     {text:'Aviso amarelo para o distrito de Lisboa: chuva forte entre as 03h e as 09h de quinta.', time:'22:50', views:'88K views', reacts:[{e:'\u{1F44D}',n:412}]},
+     {text:'Fim de semana estável, máximas de 24 graus no litoral.', time:'Mon', views:'71K views', reacts:[{e:'\u2600\uFE0F',n:190}]}
+   ]},
+  {key:'futebol', created:'Created 2 Aug 2021', link:'chat.ot/c/futebol-pt-2wd8', name:'Futebol PT', color:'#3f7a52', verified:true, followers:'612K followers', time:'21:35', unread:0, muted:false, following:false, cat:'Sports', pop:612000,
+   about:'Resultados ao minuto, escalações e mercado de transferências da Primeira Liga.',
+   posts:[
+     {text:'Intervalo. 1–0, golo aos 38 minutos de grande penalidade.', time:'21:35', views:'310K views', reacts:[{e:'\u{1F389}',n:2100},{e:'\u{1F62E}',n:640}]}
+   ]},
+  {key:'gnomedesign', created:'Created 30 Apr 2024', link:'chat.ot/c/gnome-design-5pe3', name:'GNOME Design', color:'#5a7ab5', verified:true, followers:'38.4K followers', time:'Tue', unread:0, muted:false, following:false, cat:'Technology', pop:38400,
+   about:'Mockups, pattern changes and release themes from the GNOME design team.',
+   posts:[
+     {kind:'photo', bg:'#44567a', glyph:'\u{1F5BC}', text:'Adaptive dialogs landed in libadwaita. Same dialog, three breakpoints.', time:'Tue', views:'22K views', reacts:[{e:'\u{1F44D}',n:980}]},
+     {text:'The bottom sheet pattern is now documented in the HIG.', time:'Sun', views:'19K views', reacts:[{e:'\u{1F44D}',n:604}]}
+   ]},
+  {key:'cozinha', created:'Created 17 Sep 2024', link:'chat.ot/c/cozinha-rapida-7bn0', name:'Cozinha Rápida', color:'#c08a3e', verified:false, followers:'27.1K followers', time:'Mon', unread:0, muted:false, following:false, cat:'Food', pop:27100,
+   about:'Uma receita por dia, sempre em menos de trinta minutos. Sem vídeos de dez minutos.',
+   posts:[
+     {kind:'photo', bg:'#7a5a34', glyph:'\u{1F35C}', text:'Massa com grão e limão — 18 minutos, uma panela só.', time:'Mon', views:'14K views', reacts:[{e:'\u{1F60B}',n:730}]}
+   ]},
+  {key:'vinyl', created:'Created 5 Mar 2025', link:'chat.ot/c/vinyl-fridays-1xu5', name:'Vinyl Fridays', color:'#8c5a7a', verified:false, followers:'9,860 followers', time:'Fri', unread:0, muted:false, following:false, cat:'Entertainment', pop:9860,
+   about:'One record every Friday, with a short note on why it still holds up.',
+   posts:[
+     {text:'This week: a live album recorded in a room far too small for it.', time:'Fri', views:'7,204 views', reacts:[{e:'\u2764\uFE0F',n:288}]}
+   ]}
+];
+
+const COMMUNITIES = [
+  {key:'blocob', name:'Bloco B — Residents', color:'#5a7ab5', members:'128 members', admin:true, muted:false,
+   about:'Everything for Bloco B in one place: building notices, works, and the groups neighbours run themselves.',
+   created:'Created 12 Mar 2024 by Priya Raman', link:'chat.ot/bloco-b-4f2a9c',
+   people:[
+     {name:'Priya Raman', color:'#9c5b8a', role:'admin'}, {name:'Sezar', color:'#427677', role:'admin'},
+     {name:'Sam Okafor', color:'#4f8a8b', role:''}, {name:'Nina Costa', color:'#b58a4a', role:''},
+     {name:'Marco Bianchi', color:'#7a8b5a', role:''}, {name:'Tomás Leal', color:'#6a6a8c', role:''}
+   ],
+   groups:[
+     {name:'Announcements', announce:true, sub:'Only admins can post · 128 members', unread:3, color:'#5a7ab5'},
+     {name:'Bloco B — Geral', sub:'Priya: the lift is fixed', unread:12, color:'#4f8a8b', joined:true},
+     {name:'Garagem & obras', sub:'Sam: parking closed Saturday', unread:0, color:'#b58a4a', joined:true},
+     {name:'Piscina', sub:'34 members', unread:0, color:'#7a8b5a', joined:false},
+     {name:'Churrasco de verão', sub:'19 members', unread:0, color:'#c26b5c', joined:false}
+   ]},
+  {key:'escola', name:'Escola Primária 4B', color:'#7a8b5a', members:'61 members', admin:false, muted:false,
+   about:'Turma do 4.º B — avisos da escola, reuniões de pais e as visitas de estudo do ano lectivo.',
+   created:'Created 4 Sep 2025 by Ana Vaz', link:'chat.ot/escola-4b-77d1e0',
+   people:[
+     {name:'Ana Vaz', color:'#c26b5c', role:'admin'}, {name:'Nina Costa', color:'#b58a4a', role:''},
+     {name:'Sezar', color:'#427677', role:''}, {name:'Rui Matos', color:'#5a7ab5', role:''}
+   ],
+   groups:[
+     {name:'Announcements', announce:true, sub:'Only admins can post · 61 members', unread:0, color:'#7a8b5a'},
+     {name:'Pais e mães 4B', sub:'Nina: reunião dia 12', unread:0, color:'#9c5b8a', joined:true},
+     {name:'Visita de estudo', sub:'22 members', unread:0, color:'#6a6a8c', joined:false}
+   ]}
+];
+
+const NAVICON = {
+  chats: {d1:'M4 11.8C4 7.5 7.6 4 12 4s8 3.5 8 7.8-3.6 7.8-8 7.8c-1.2 0-2.4-.2-3.5-.7L4.2 20l1.1-3.4A7.6 7.6 0 0 1 4 11.8Z', d2:'', dash:'none'},
+  status: {d1:'M12 3.6a8.4 8.4 0 1 1 0 16.8 8.4 8.4 0 0 1 0-16.8Z', d2:'M12 9.4a2.6 2.6 0 1 1 0 5.2 2.6 2.6 0 0 1 0-5.2Z', dash:'14.6 3.1'},
+  channels: {d1:'M4 10v4a1.6 1.6 0 0 0 1.6 1.6h2.1l5.8 3.9V4.5L7.7 8.4H5.6A1.6 1.6 0 0 0 4 10Z', d2:'M16.6 9.3a3.9 3.9 0 0 1 0 5.4M19.2 6.9a7.4 7.4 0 0 1 0 10.2', dash:'none'},
+  communities: {d1:'M3.6 19.6v-1a3.5 3.5 0 0 1 3.5-3.5h2.8a3.5 3.5 0 0 1 3.5 3.5v1M8.5 6.3a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z', d2:'M16.8 19.6v-1a4.4 4.4 0 0 0-1.4-3.2M15.3 6.6a3 3 0 0 1 0 5.4', dash:'none'}
+};
 
 const FILES = [
   {kind:'image',icon:'🌅',name:'sunset.jpg',meta:'2.1 MB · JPG'},
@@ -1064,12 +2092,15 @@ function seed() {
       {id:id(),side:'in',type:'text',text:'Did you get the keys from the landlord?',time:'18:20'},
       {id:id(),side:'out',type:'text',text:'Picked them up this morning',time:'18:22',ticks:'✓✓',read:true,reacts:[{e:'👍',n:1},{e:'❤️',n:1}]},
       {id:id(),type:'system',text:'Today'},
-      {id:id(),side:'in',type:'loc',locTitle:'Rua das Flores 210',locSub:'Porto · click to open in Maps',time:'09:14'},
+      {id:id(),side:'in',type:'loc',locTitle:'Estação de São Bento',locSub:'Rua do Loureiro, Porto',locLat:41.1454799,locLon:-8.6105220,time:'09:14'},
       {id:id(),side:'out',type:'text',text:'Two streets from the bakery',time:'09:20',ticks:'✓✓',read:true,edited:true,reply:'📍 Rua das Flores 210'},
       {id:id(),side:'in',type:'viewonce',time:'09:30'},
       {id:id(),side:'in',type:'contact',cardName:'Nina Costa',cardPhone:'+351 912 004 118',cardColor:'#b58a4a',time:'09:41'},
-      {id:id(),side:'in',type:'image',dl:'pending',mediaLabel:'📷 Photo · 840 KB',text:'New place, first look',time:'15:40'},
-      {id:id(),side:'in',type:'image',media:'video',dl:'pending',mediaLabel:'🎥 Video · 0:34 · 4.1 MB',mediaLen:'0:34',time:'15:41'}
+      {id:id(),side:'in',type:'image',imgIcon:'🏠',dim:'2268 × 4032',bytes:'2.1 MB',mediaLabel:'📷 Photo · 2.1 MB',text:'Balcony faces the river',time:'15:38',reacts:[{e:'❤️',n:1}]},
+      {id:id(),side:'in',type:'image',dl:'pending',dim:'3024 × 4032',bytes:'840 KB',mediaLabel:'📷 Photo · 840 KB',text:'New place, first look',time:'15:40'},
+      {id:id(),side:'in',type:'image',media:'video',dl:'pending',dim:'1920 × 1080',bytes:'4.1 MB',mediaLabel:'🎥 Video · 0:34 · 4.1 MB',mediaLen:'0:34',time:'15:41'},
+      {id:id(),side:'in',type:'doc',docName:'lease-2026-signed.pdf',docMeta:'PDF · 1.2 MB',bytes:'1.2 MB',pages:8,time:'15:42'},
+      {id:id(),side:'in',type:'doc',docName:'inventory-checklist.ods',docMeta:'Spreadsheet · 84 KB',bytes:'84 KB',time:'15:43'}
     ]},
     {key:'trip',name:'Weekend Trip 🏔️',color:'#7a8b5a',group:true,time:'14:05',unread:7,presence:'Alex, Priya, Sam, Nina, you',msgs:[
       {id:id(),type:'system',text:'Priya added Nina Costa'},
@@ -1096,7 +2127,7 @@ function seed() {
       {id:id(),side:'out',type:'emoji',text:'🎉😂',time:'19:45',ticks:'✓✓',read:true}
     ]},
     {key:'dad',name:'Dad',color:'#4f8a8b',fav:true,time:'02/01',unread:0,presence:'last seen yesterday',msgs:[
-      {id:id(),side:'in',type:'doc',docName:'lease-2026.pdf',docMeta:'PDF · 1.2 MB',dl:'pending',time:'10:04'},
+      {id:id(),side:'in',type:'doc',docName:'lease-2026.pdf',docMeta:'PDF · 1.2 MB',bytes:'1.2 MB',pages:8,dl:'pending',time:'10:04'},
       {id:id(),side:'in',type:'doc',docName:'inventory.ods',docMeta:'Spreadsheet · 84 KB',dl:'failed',time:'10:06'},
       {id:id(),side:'out',type:'text',text:'Got it, reading tonight',time:'10:30',ticks:'✓✓',read:true}
     ]},
@@ -1127,11 +2158,21 @@ class Component extends DCLogic {
     menu: null, attach: false, picker: false, pickerTab: 'Emoji', hover: null,
     dialog: null, prefTab: 'Appearance', pane: 'chat', mediaTab: 'Media',
     sidebar: 'chats', peopleQuery: '', picked: [], groupName: '',
+    tab: 'chats', statusFeed: STATUS_FEED.map(x => Object.assign({}, x)), myStatus: null,
+    statusOpen: null, statusSeg: 0, statusReply: '',
+    channels: CHANNELS.map(x => Object.assign({}, x)), channel: null,
+    discover: false, discoverQuery: '', discoverCat: 'All',
+    commTab: 'Members', memberQuery: '', linkPick: [], joinLink: '',
+    reportChan: null, reportReason: '', reportUnfollow: false, linkChan: null, infoChan: null,
+    communities: COMMUNITIES.map(c => Object.assign({}, c, {groups: c.groups.map(g => Object.assign({}, g))})), community: null,
     chatSearch: false, chatQuery: '', hit: 0, toast: null, toastAction: null,
     linking: false, dark: false, multi: true, windowControls: true,
     accounts: ACCOUNTS.slice(), account: 'personal', merged: false, accountOpen: false,
     newAcctLabel: '', perAcctNotif: true, keepConnected: true,
     tray: null, traySel: 0, fileCursor: 0,
+    locServices: true, locMode: 'gps', locStatus: 'locating', locZoom: 17,
+    locLat: MAP_FIX.lat, locLon: MAP_FIX.lon, locCLat: MAP_FIX.lat, locCLon: MAP_FIX.lon,
+    locAcc: 38, locName: '', locQuery: '', locPlace: null, locPinned: false, locLive: false, locDur: '1 hour',
     labels: [
       {name: 'Family', ci: 0, acct: 'personal'}, {name: 'Landlord', ci: 3, acct: 'personal'},
       {name: 'Deploys', ci: 2, acct: 'work'},
@@ -1140,7 +2181,9 @@ class Component extends DCLogic {
     labelsOpen: null, labelFilter: null,
     notifSound: true, readReceipts: true, proxy: 'None', autoDownload: 'Wi-Fi only',
     pollQ: '', pollDraft: ['', ''], pollMulti: false, forwardPick: [], forwardMsg: null,
-    alert: null, playing: null
+    alert: null, playing: null,
+    viewer: null, viewZoom: 0, viewInfo: false, viewPage: 1, viewPlay: false,
+    viewMute: false, viewSpeed: 1, viewMapZoom: 17, viewW: 560, viewH: 620
   };
 
   scrollRef = React.createRef();
@@ -1151,8 +2194,58 @@ class Component extends DCLogic {
     const key = this.state.active + ':' + this.chat().msgs.length;
     if (key !== this._lastKey) { this._lastKey = key; el.scrollTop = el.scrollHeight; }
   }
-  componentDidUpdate() { this.scrollToEnd(); }
-  componentDidMount() { this._lastKey = null; this.scrollToEnd(); }
+  componentDidUpdate() { this.scrollToEnd(); this.measureStage(); }
+  componentDidMount() {
+    this._lastKey = null; this.scrollToEnd(); this.measureStage();
+    window.addEventListener('keydown', this.onViewerKey);
+    window.addEventListener('resize', this.measureStage);
+  }
+  componentWillUnmount() {
+    window.removeEventListener('keydown', this.onViewerKey);
+    window.removeEventListener('resize', this.measureStage);
+    clearInterval(this._rec);
+  }
+
+  // Fit-to-window has to be true fit, so the stage measures itself rather than
+  // assuming a pane width: the details sidebar, the control bar and the
+  // caption row all change how much room the attachment actually gets.
+  viewStageRef = React.createRef();
+  measureStage = () => {
+    const el = this.viewStageRef.current;
+    if (!el) return;
+    const w = Math.max(120, el.clientWidth - 48), h = Math.max(120, el.clientHeight - 48);
+    if (w !== this.state.viewW || h !== this.state.viewH) this.setState({viewW: w, viewH: h});
+  };
+
+  postStatus = () => {
+    const t = this.now();
+    this.setState({myStatus: {time: t, views: 0, items: [
+      {kind: 'text', bg: '#427677', text: 'Shipping 2.1 tonight. Channels and Communities are in.', caption: '', time: t}
+    ]}});
+    this.toast('Status posted · visible for 24 hours');
+  };
+  postPhotoStatus = () => {
+    const t = this.now();
+    this.setState({myStatus: {time: t, views: 0, items: [
+      {kind: 'photo', bg: '#3f5a72', glyph: '🌇', caption: 'Late one at the desk.', time: t}
+    ]}});
+    this.toast('Photo status posted · visible for 24 hours');
+  };
+  reactChannel = (pi, emoji) => this.setState(st => ({
+    channels: st.channels.map(c => c.key !== st.channel ? c : Object.assign({}, c, {
+      posts: c.posts.map((p, i) => {
+        if (i !== pi) return p;
+        const reacts = (p.reacts || []).slice();
+        const j = reacts.findIndex(r => r.e === emoji);
+        if (j > -1) {
+          const r = reacts[j];
+          if (r.mine) { if (r.n <= 1) reacts.splice(j, 1); else reacts[j] = Object.assign({}, r, {n: r.n - 1, mine: false}); }
+          else reacts[j] = Object.assign({}, r, {n: r.n + 1, mine: true});
+        } else reacts.push({e: emoji, n: 1, mine: true});
+        return Object.assign({}, p, {reacts});
+      })
+    }))
+  }));
 
   set = (o) => this.setState(o);
   toast = (msg, action) => {
@@ -1206,6 +2299,89 @@ class Component extends DCLogic {
     }), 1600);
   };
 
+  // Location picker --------------------------------------------------------
+  // Opening it asks the system for a fix (the portal call the GTK4 client will
+  // make); with location access off it opens straight on the manual fallback.
+  openLoc = () => {
+    const on = this.state.locServices !== false;
+    this.setState({
+      dialog: 'loc', locMode: 'gps', locStatus: on ? 'locating' : 'denied', locZoom: 17,
+      locLat: MAP_FIX.lat, locLon: MAP_FIX.lon, locCLat: MAP_FIX.lat, locCLon: MAP_FIX.lon,
+      locAcc: 38, locName: '', locQuery: '', locPlace: null, locPinned: false, locLive: false, locDur: '1 hour'
+    });
+    if (on) this.locFix();
+  };
+
+  locFix = () => {
+    clearTimeout(this._locT);
+    this._locT = setTimeout(() => {
+      if (this.state.dialog === 'loc' && this.state.locStatus === 'locating') this.setState({locStatus: 'fix'});
+    }, 1500);
+  };
+
+  // Centring is clamped so the crop always fills the stage — the map never
+  // shows a bare edge, and a pin picked near the border stays visible.
+  locCentre = (lat, lon, z) => {
+    const p = mapPx(lat, lon, z);
+    const c = mapLL(clampN(p.x, MAP_VIEW_W / 2, MAP_IMG_W - MAP_VIEW_W / 2),
+                    clampN(p.y, MAP_VIEW_H / 2, MAP_IMG_H - MAP_VIEW_H / 2), z);
+    return {locCLat: c.lat, locCLon: c.lon, locZoom: z};
+  };
+
+  locUseGps = () => {
+    const s = this.state;
+    if (s.locServices === false) { this.setState({locMode: 'gps', locStatus: 'denied'}); return; }
+    this.setState(Object.assign(
+      {locMode: 'gps', locStatus: s.locStatus === 'fix' ? 'fix' : 'locating', locPlace: null, locQuery: '', locName: '',
+       locLat: MAP_FIX.lat, locLon: MAP_FIX.lon},
+      this.locCentre(MAP_FIX.lat, MAP_FIX.lon, s.locZoom)));
+    if (s.locStatus !== 'fix') this.locFix();
+  };
+
+  // Clicking the map drops the pin on that point and reports its real
+  // coordinates — the same gesture that refines a coarse Wi-Fi fix by hand.
+  locPoint = (e) => {
+    const s = this.state;
+    if (s.locStatus === 'locating' && s.locMode === 'gps') return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const c = mapPx(s.locCLat, s.locCLon, s.locZoom);
+    const g = mapLL(c.x - MAP_VIEW_W / 2 + (e.clientX - r.left),
+                    c.y - MAP_VIEW_H / 2 + (e.clientY - r.top), s.locZoom);
+    this.setState({locMode: 'manual', locPinned: true, locLat: g.lat, locLon: g.lon, locPlace: null, locQuery: ''});
+  };
+
+  locSelect = (p) => this.setState(Object.assign(
+    {locMode: 'manual', locPinned: true, locPlace: p, locLat: p.lat, locLon: p.lon, locQuery: '', locName: p.name},
+    this.locCentre(p.lat, p.lon, this.state.locZoom)));
+
+  locZoomBy = (d) => this.setState(st => this.locCentre(st.locCLat, st.locCLon, clampN(st.locZoom + d, 16, 18)));
+
+  locSend = () => {
+    const s = this.state;
+    const coords = coord(s.locLat) + ', ' + coord(s.locLon);
+    const where = s.locPlace ? s.locPlace.addr : coords;
+    this.setState({dialog: null});
+    if (s.locLive) {
+      const until = liveUntil(s.locDur);
+      this.push({type: 'loc', locLive: true, locUntil: until, locLat: s.locLat, locLon: s.locLon,
+        locTitle: 'Live location · until ' + until, locSub: where + ' · updating every 15 s'});
+      this.toast('Sharing live location for ' + s.locDur);
+      return;
+    }
+    this.push({type: 'loc', locLat: s.locLat, locLon: s.locLon,
+      locTitle: s.locName.trim() || (s.locPlace ? s.locPlace.name : 'Location'),
+      locSub: where + ' · click to open in Maps'});
+  };
+
+  locStop = (mid) => {
+    this.patch(c => {
+      const i = c.msgs.findIndex(x => x.id === mid);
+      if (i > -1) c.msgs[i] = Object.assign({}, c.msgs[i], {locLive: false, locEnded: true,
+        locTitle: 'Live location ended', locSub: 'Stopped sharing at ' + this.now()});
+    });
+    this.toast('Stopped sharing live location');
+  };
+
   send = () => {
     const t = this.state.draft.trim();
     if (this.state.tray) { this.setState({draft: ''}); this.traySend(); if (t) this.push({type: 'text', text: t}); return; }
@@ -1250,6 +2426,27 @@ class Component extends DCLogic {
     attach: false, picker: false, accountOpen: false, reactPick: null
   }));
 
+  joinByLink = () => {
+    const raw = this.state.joinLink.trim().replace(/^https?:\/\//, '');
+    if (!raw) return this.toast('Paste an invite link first');
+    const known = this.state.communities.find(c => c.link === raw);
+    if (known) { this.setState({dialog: null, tab: 'communities', community: known.key, pane: 'community'}); return this.toast('You are already in ' + known.name); }
+    if (!/^chat\.ot\/[a-z0-9-]{4,}$/i.test(raw)) return this.toast('That link is not a chatot invite');
+    const key = 'inv' + Math.random().toString(36).slice(2, 7);
+    const name = 'Invited community';
+    this.setState(st => ({
+      dialog: null, joinLink: '', tab: 'communities', community: key, pane: 'community',
+      communities: st.communities.concat([{
+        key, name, color: '#6a6a8c', members: '1 member', admin: false, muted: false,
+        about: 'You joined this community from an invite link. Its groups appear here as admins link them.',
+        created: 'Joined just now', link: raw,
+        people: [{name: 'Sezar', color: '#427677', role: ''}],
+        groups: [{name: 'Announcements', announce: true, sub: 'Only admins can post · 1 member', unread: 0, color: '#6a6a8c'}]
+      }])
+    }));
+    this.toast('Joined via invite link');
+  };
+
   menuDef() {
     const m = this.state.menu;
     if (!m) return [];
@@ -1268,11 +2465,84 @@ class Component extends DCLogic {
       I('⏻', 'Unlink this device', close(() => this.setState({linking: true})), danger),
       I('✕', 'Quit', close(() => this.toast('chatot keeps running in the tray')), {accel: 'Ctrl+Q'})
     ];
+    if (m.kind === 'plus' && this.state.tab === 'status') return [
+      I('📷', 'Photo status', close(() => this.postPhotoStatus())),
+      I('✎', 'Text status', close(() => this.postStatus())),
+      SEP,
+      I('🔒', 'Status privacy…', close(() => this.setState({dialog: 'prefs', prefTab: 'Privacy'})))
+    ];
+    if (m.kind === 'plus' && this.state.tab === 'channels') return [
+      I('⌕', 'Find channels', close(() => this.setState({discover: true, discoverQuery: '', discoverCat: 'All'}))),
+      I('🔗', 'Follow with a link', close(() => this.toast('Paste a whatsapp.com/channel link'))),
+      SEP,
+      I('📣', 'Create a channel', close(() => this.toast('Channel creation is not in this mockup')))
+    ];
+    if (m.kind === 'plus' && this.state.tab === 'communities') return [
+      I('🏘', 'New community', close(() => this.setState({tab: 'chats', sidebar: 'groupname', newKind: 'community', groupName: '', picked: [], pane: 'chat'}))),
+      I('🔗', 'Join with a link', close(() => this.setState({dialog: 'joinlink', joinLink: ''})))
+    ];
     if (m.kind === 'plus') return [
       I('💬', 'New chat', close(() => this.setState({sidebar: 'newchat', picked: []}))),
       I('👥', 'New group', close(() => this.setState({sidebar: 'newgroup', newKind: 'group', picked: []}))),
       I('🏘', 'New community', close(() => this.setState({sidebar: 'groupname', newKind: 'community', groupName: '', picked: []})))
     ];
+    if (m.kind === 'statusrow') {
+      const x = this.state.statusFeed.find(y => y.key === m.row) || {};
+      return [
+        I('👁', 'View updates', close(() => this.setState(st => ({statusOpen: m.row, statusSeg: 0, pane: 'status', statusFeed: st.statusFeed.map(y => y.key === m.row ? Object.assign({}, y, {viewed: true}) : y)})))),
+        I('↩', 'Reply privately', close(() => this.toast('Replying to ' + x.name))),
+        SEP,
+        I('🔇', 'Mute ' + String(x.name || '').split(' ')[0], close(() => this.toast(x.name + " won't appear at the top"))),
+        I('🚫', 'Hide my status from them', close(() => this.toast(x.name + ' can no longer see your status')), danger)
+      ];
+    }
+    if (m.kind === 'mystatus') return [
+      I('👁', 'Who viewed my status', close(() => this.toast('Seen by ' + (this.state.myStatus ? this.state.myStatus.views : 0) + ' contacts'))),
+      I('🔒', 'Status privacy…', close(() => this.setState({dialog: 'prefs', prefTab: 'Privacy'}))),
+      SEP,
+      I('🗑', 'Delete my status', close(() => { this.setState({myStatus: null, statusOpen: null, pane: 'tabempty'}); this.toast('Status deleted'); }), danger)
+    ];
+    if (m.kind === 'statusview') return [
+      I('↩', 'Reply privately', close(() => this.toast('Reply sent'))),
+      I('⤴', 'Forward this update', close(() => this.setState({dialog: 'forward', forwardPick: [], forwardMsg: {id: 'st', type: 'text', text: 'Status update'}}))),
+      SEP,
+      I('🔇', 'Mute this contact', close(() => this.toast('Status updates muted'))),
+      I('🚩', 'Report update', close(() => this.toast('Reported')), danger)
+    ];
+    if (m.kind === 'chanrow' || m.kind === 'chan') {
+      const ck = m.kind === 'chanrow' ? m.row : this.state.channel;
+      const c = this.state.channels.find(x => x.key === ck) || {};
+      return [
+        I('ℹ', 'Channel info', close(() => this.setState({dialog: 'chaninfo', infoChan: ck}))),
+        I('⤴', 'Share channel link', close(() => this.setState({dialog: 'chanlink', linkChan: ck, copied: false}))),
+        SEP,
+        I(c.muted ? '🔔' : '🔇', c.muted ? 'Unmute updates' : 'Mute updates', close(() => {
+          this.setState(st => ({channels: st.channels.map(x => x.key === ck ? Object.assign({}, x, {muted: !x.muted}) : x)}));
+          this.toast(c.muted ? 'Updates unmuted' : 'Updates muted');
+        })),
+        I('🚩', 'Report channel', close(() => this.setState({dialog: 'report', reportChan: ck, reportReason: '', reportUnfollow: false})), danger),
+        // the pane header already carries a Follow/Following button; the sidebar row has no other way out
+        m.kind === 'chanrow' ? I('✕', 'Unfollow', close(() => this.setState({dialog: 'alert', alert: 'unfollow', unfollowKey: ck})), danger) : null
+      ].filter(Boolean);
+    }
+    if (m.kind === 'commrow' || m.kind === 'comm') {
+      const mk = m.kind === 'commrow' ? m.row : this.state.community;
+      const c = this.state.communities.find(x => x.key === mk) || {};
+      const open = extra => this.setState(Object.assign({community: mk, pane: 'community'}, extra));
+      return [
+        I('ℹ', 'Community info', close(() => open({dialog: 'comminfo', commTab: 'Members', memberQuery: ''}))),
+        I('🔗', 'Invite link', close(() => open({dialog: 'comminvite', copied: false}))),
+        SEP,
+        I(c.muted ? '🔔' : '🔇', c.muted ? 'Unmute announcements' : 'Mute announcements', close(() => {
+          this.setState(st => ({communities: st.communities.map(x => x.key === mk ? Object.assign({}, x, {muted: !x.muted}) : x)}));
+          this.toast(c.muted ? 'Announcements unmuted' : 'Announcements muted');
+        })),
+        I('⤓', 'Leave community', close(() => {
+          this.setState(st => ({communities: st.communities.filter(x => x.key !== mk), community: null, pane: 'tabempty'}));
+          this.toast('Left ' + c.name);
+        }), danger)
+      ];
+    }
     if (m.kind === 'chat') {
       const c = this.chat();
       return [
@@ -1347,6 +2617,55 @@ class Component extends DCLogic {
       revoked: 'This message was deleted', system: m.text})[m.type] || m.text || '';
   }
 
+  // ---- attachment viewer -------------------------------------------------
+  // Every attachment opens in the same pane, so one vocabulary covers them
+  // all: kind decides the stage, the primary action and the filmstrip thumb.
+  // Nothing else in the pane branches on the raw message type.
+  attKind(m) {
+    if (!m) return null;
+    if (m.type === 'image') return m.media === 'video' ? 'video' : m.media === 'gif' ? 'gif' : 'photo';
+    if (m.type === 'doc') return /\.pdf$/i.test(m.docName || '') ? 'pdf' : 'file';
+    if (m.type === 'voice') return 'audio';
+    if (m.type === 'loc') return 'location';
+    return null;
+  }
+
+  openViewer = (mid) => this.setState({
+    pane: 'viewer', viewer: mid, viewZoom: 0, viewPage: 1, viewPlay: false,
+    viewMapZoom: 17, hover: null, menu: null, attach: false, picker: false
+  });
+
+  closeViewer = () => this.setState({pane: 'chat', viewer: null, viewPlay: false});
+
+  viewStep = (d) => {
+    const list = this.chat().msgs.filter(m => this.attKind(m));
+    const i = list.findIndex(m => m.id === this.state.viewer);
+    const next = list[i + d];
+    if (next) this.openViewer(next.id);
+  };
+
+  viewZoomBy = (d) => this.setState(st => ({viewZoom: clampN(st.viewZoom + d, 0, ZOOM_STEPS.length - 1)}));
+
+  fetchAtt = (mid) => {
+    this.patch(c => { const i = c.msgs.findIndex(x => x.id === mid); if (i > -1) c.msgs[i] = Object.assign({}, c.msgs[i], {dl: 'loading'}); });
+    setTimeout(() => this.patch(c => { const i = c.msgs.findIndex(x => x.id === mid); if (i > -1) c.msgs[i] = Object.assign({}, c.msgs[i], {dl: 'ready'}); }), 1300);
+  };
+
+  // The viewer is a pane, not a window, so it answers the keys a GTK4 viewer
+  // is expected to answer — and only while it is the visible pane.
+  onViewerKey = (e) => {
+    if (this.state.pane !== 'viewer') return;
+    const hit = () => { e.preventDefault(); e.stopPropagation(); };
+    const k = e.key;
+    if (k === 'Escape') { hit(); this.closeViewer(); }
+    else if (k === 'ArrowRight') { hit(); this.viewStep(1); }
+    else if (k === 'ArrowLeft') { hit(); this.viewStep(-1); }
+    else if (k === '+' || k === '=') { hit(); this.viewZoomBy(1); }
+    else if (k === '-' || k === '_') { hit(); this.viewZoomBy(-1); }
+    else if (k === '0') { hit(); this.setState({viewZoom: 0}); }
+    else if (k === ' ') { hit(); this.setState(st => ({viewPlay: !st.viewPlay})); }
+  };
+
   renderVals() {
     const s = this.state;
     const T = s.dark ? DARK : LIGHT;
@@ -1419,6 +2738,7 @@ class Component extends DCLogic {
       const bubBg = out ? ac : T.inb;
       const bubFg = out ? '#fff' : T.tx;
       const sub = out ? 'rgba(255,255,255,.78)' : T.dim;
+      const thumb = m.type === 'loc' ? locThumb(m.locLat, m.locLon) : null;
       const o = {
         isSystem: sys, isBubble: !sys, justify: sys ? 'center' : (out ? 'flex-end' : 'flex-start'),
         gap: sys ? '8px' : '0px', text: m.text || '', time: m.time || '', edited: !!m.edited,
@@ -1443,8 +2763,16 @@ class Component extends DCLogic {
         trackBg: out ? 'rgba(255,255,255,.3)' : 'rgba(128,128,128,.28)', fillFg: out ? '#fff' : ac,
         voicePct: s.playing === m.id ? '62%' : '34%',
         onOpenDoc: () => this.toast('Opening ' + m.docName),
+        onOpenAtt: e => { if (e && e.stopPropagation) e.stopPropagation(); this.openViewer(m.id); },
         imgIcon: m.imgIcon || '📷', imgBg: dark ? 'linear-gradient(135deg,#3a4a52,#2b3238)' : 'linear-gradient(135deg,#cfd8dc,#aab6bd)',
-        locTitle: m.locTitle, locSub: m.locSub,
+        locTitle: m.locTitle, locSub: m.locSub, locLive: !!m.locLive, locEnded: !!m.locEnded,
+        locHasMap: !!thumb, locMapSrc: thumb ? thumb.src : '', locMapLeft: thumb ? thumb.left : '0px',
+        locMapTop: thumb ? thumb.top : '0px', locPinX: thumb ? thumb.pinX : '135px', locPinY: thumb ? thumb.pinY : '43px',
+        locPinBg: m.locEnded ? 'rgba(90,90,90,.9)' : '#c01c28',
+        locPinHalo: m.locEnded ? 'rgba(90,90,90,.22)' : 'rgba(192,28,40,.22)',
+        mapFilter: dark ? 'invert(1) hue-rotate(180deg) saturate(.86) brightness(.94)' : 'none',
+        mapAttrBg: dark ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.82)', mapAttrFg: dark ? 'rgba(255,255,255,.85)' : 'rgba(0,0,0,.66)',
+        onStopLive: e => { e.stopPropagation(); this.locStop(m.id); },
         cardName: m.cardName, cardPhone: m.cardPhone, cardInitial: (m.cardName || '?')[0], cardColor: m.cardColor || ac,
         docName: m.docName, docMeta: m.docMeta,
         voTitle: m.opened ? 'Photo · opened' : 'Photo · view once', voSub: m.opened ? 'No longer available' : 'Click to open · closes after',
@@ -1455,6 +2783,7 @@ class Component extends DCLogic {
         reacts: (m.reacts || []).map(r => ({e: r.e, n: r.n > 1 ? r.n : null, onClick: () => this.react(m.id, r.e)})),
         hasReacts: !!(m.reacts && m.reacts.length),
         reactSide: out ? 'right:8px' : 'left:8px',
+        reactPad: (m.reacts && m.reacts.length) ? '14px' : '0',
         hover: s.hover === m.id && !sys,
         onEnter: () => this.setState({hover: m.id}),
         onLeave: () => this.setState(st => st.hover === m.id ? {hover: null} : null),
@@ -1552,6 +2881,10 @@ class Component extends DCLogic {
         sw(s.readReceipts, () => this.setState(st => ({readReceipts: !st.readReceipts})), 'Send read receipts'),
         sw(true, () => this.toast('Typing indicator on'), 'Share typing status')
       ])},
+      {title: 'Location', rows: seal([
+        sw(s.locServices !== false, () => this.setState(st => ({locServices: st.locServices === false})), 'Location access',
+           'Ask the system for a position when you send a location. Off leaves only the map picker.')
+      ])},
       {title: 'Security', rows: seal([
         btn('Blocked contacts', '2 blocked', () => this.toast('2 blocked contacts')),
         btn('Encryption keys', 'View', () => this.toast('Keys verified for 6 chats'))
@@ -1611,6 +2944,98 @@ class Component extends DCLogic {
          {icon: '📄', title: 'trip-budget.ods', sub: 'Spreadsheet · 48 KB · Priya', date: 'Sun'},
          {icon: '📄', title: 'cabin-rules.txt', sub: 'Text · 3 KB · Nina', date: 'Sat'}];
 
+    // ---- attachment viewer -----------------------------------------------
+    // One list per chat, in message order: the filmstrip, the counter and the
+    // ←/→ keys all read it, so photos, videos, PDFs, files, voice notes and
+    // locations navigate as one sequence instead of one modal per type.
+    const attList = chat.msgs.filter(m => this.attKind(m));
+    const vm = attList.find(m => m.id === s.viewer) || attList[0] || null;
+    const vKind = this.attKind(vm);
+    const vIdx = vm ? attList.findIndex(m => m.id === vm.id) : -1;
+    const vDark = vKind === 'photo' || vKind === 'video' || vKind === 'gif';
+    const vState = vm ? (vm.dl || 'ready') : 'ready';
+    const vReady = vState === 'ready';
+    const vFrom = !vm ? '' : vm.side === 'out' ? 'You' : (vm.author || chat.name);
+    const vExt = ((vm && vm.docName) || '').split('.').pop().toUpperCase().slice(0, 4);
+    const vDay = (chat.time || '').indexOf('/') > -1 ? chat.time : 'Today';
+    const vDims = (vm && vm.dim) ? vm.dim.split('×').map(x => parseFloat(x)) : null;
+    const vKindLabel = {photo: 'Photo', video: 'Video', gif: 'GIF', pdf: 'PDF document',
+      file: vExt === 'ODS' ? 'Spreadsheet' : 'File', audio: 'Voice message', location: 'Location'}[vKind] || '';
+    const vSize = (vm && vm.bytes) || (vKind === 'audio' ? '48 KB' : '');
+    const vLen = vm && (vm.mediaLen || vm.voiceLen || '0:24');
+
+    const vStageW = s.viewW, vStageH = s.viewH;
+    const vZoomMul = ZOOM_STEPS[s.viewZoom] || 1;
+    const vPixW = vDims ? vDims[0] : (vKind === 'photo' ? 3024 : 1920);
+    const vPixH = vDims ? vDims[1] : (vKind === 'photo' ? 4032 : 1080);
+    const vFit = Math.min(vStageW / vPixW, vStageH / vPixH);
+    const vShown = vFit * vZoomMul;
+    const vPgFit = Math.min(vStageW / 595, vStageH / 842) * vZoomMul;
+    const vPgW = Math.round(595 * vPgFit), vPgH = Math.round(842 * vPgFit);
+    const vRule = dark ? 'rgba(0,0,0,.16)' : 'rgba(0,0,0,.15)';
+    const vPageLines = [{h: Math.max(7, Math.round(vPgH * .026)) + 'px', w: '58%', bg: 'rgba(0,0,0,.4)'}]
+      .concat(Array.from({length: 24}, (_, i) => ({
+        h: Math.max(3, Math.round(vPgH * .011)) + 'px',
+        w: (i % 8 === 7 ? 34 : 84 + (i * 13) % 14) + '%',
+        bg: i % 8 === 0 ? 'rgba(0,0,0,.3)' : vRule
+      })));
+    // 60px shy of the crop's own height, so mapWindow has room to bring the
+    // shared point to the middle of the card instead of wherever the crop put it.
+    const vMapW = Math.min(MAP_IMG_W, vStageW), vMapH = Math.min(MAP_IMG_H - 60, vStageH);
+    const vWin = vKind === 'location' ? mapWindow(vm.locLat, vm.locLon, s.viewMapZoom, vMapW, vMapH) : null;
+    const vHatch = 'repeating-linear-gradient(45deg,' + (vDark
+      ? 'rgba(255,255,255,.07) 0 9px,rgba(255,255,255,.13) 9px 18px'
+      : dark ? 'rgba(255,255,255,.06) 0 9px,rgba(255,255,255,.11) 9px 18px'
+             : 'rgba(0,0,0,.05) 0 9px,rgba(0,0,0,.09) 9px 18px') + ')';
+    const vTileBg = {PDF: '#a3382f', ODS: '#3d7a4e', XLSX: '#3d7a4e', TXT: '#5a6570'}[vExt] || '#5a6570';
+    const vPrimary = !vReady ? 'Download'
+      : vKind === 'pdf' || vKind === 'file' ? 'Open'
+      : vKind === 'location' ? 'Open in Maps' : 'Save…';
+    const vInfoActions = (!vReady ? [['Download now', 'Downloading…']] :
+      vKind === 'location' ? [['Copy coordinates', 'Coordinates copied'], ['Copy map link', 'Link copied'], ['Open in Maps', 'Opening in Maps…']]
+      : vKind === 'pdf' || vKind === 'file' ? [['Save as…', 'Saved to ~/Documents'], ['Open with…', 'Choose an application'], ['Show in Files', 'Revealing in Files…']]
+      : vKind === 'audio' ? [['Save as…', 'Saved to ~/Music'], ['Open with…', 'Choose an application']]
+      : vKind === 'video' || vKind === 'gif' ? [['Save as…', 'Saved to ~/Videos'], ['Copy still frame', 'Frame copied to clipboard'], ['Open with…', 'Choose an application']]
+      : [['Copy image', 'Copied to clipboard'], ['Save as…', 'Saved to ~/Pictures'], ['Open with…', 'Choose an application']]
+    ).map(([label, msg]) => ({label, onClick: () => (!vReady ? this.fetchAtt(vm.id) : this.toast(msg))}));
+    const vFacts = !vm ? [] : (
+      vKind === 'location'
+        ? [['Kind', 'Location'], ['Point', vm.locLat.toFixed(5) + ', ' + vm.locLon.toFixed(5)],
+           ['Zoom', 'z' + s.viewMapZoom], ['Chat', chat.name]]
+      : vKind === 'pdf' ? [['Kind', 'PDF · ' + (vm.pages || 1) + ' pages'], ['Size', vSize], ['Chat', chat.name]]
+      : vKind === 'file' ? [['Kind', vKindLabel + ' · ' + vExt], ['Size', vSize], ['Chat', chat.name]]
+      : vKind === 'audio' ? [['Kind', 'Opus · mono'], ['Length', vLen], ['Size', vSize], ['Chat', chat.name]]
+      : vKind === 'video' || vKind === 'gif'
+        ? [['Kind', vKind === 'gif' ? 'GIF · loop' : 'MP4 · H.264'], ['Pixels', vm.dim || '1920 × 1080'],
+           ['Length', vLen], ['Size', vSize], ['Chat', chat.name]]
+        : [['Kind', 'JPEG'], ['Pixels', vm.dim || '3024 × 4032'], ['Size', vSize], ['Chat', chat.name]]
+    ).filter(r => r[1]).map(([k, v]) => ({k, v}));
+    const vStrip = attList.map(m => {
+      const k = this.attKind(m), cur = !!vm && m.id === vm.id;
+      const w = k === 'location' ? mapWindow(m.locLat, m.locLon, 17, 52, 52) : null;
+      const ext = (m.docName || '').split('.').pop().toUpperCase().slice(0, 4);
+      const isExt = k === 'pdf' || k === 'file';
+      return {
+        onClick: () => this.openViewer(m.id),
+        title: ({photo: 'Photo', video: 'Video', gif: 'GIF', audio: 'Voice message'}[k]
+          || m.docName || m.locTitle || 'Attachment') + ' · ' + (m.time || ''),
+        bg: isExt ? ({PDF: '#a3382f', ODS: '#3d7a4e', XLSX: '#3d7a4e', TXT: '#5a6570'}[ext] || '#5a6570')
+          : k === 'audio' ? T.chip
+          : k === 'location' ? T.inb
+          : 'repeating-linear-gradient(45deg,' + (dark ? 'rgba(255,255,255,.08) 0 6px,rgba(255,255,255,.15) 6px 12px' : 'rgba(0,0,0,.07) 0 6px,rgba(0,0,0,.13) 6px 12px') + ')',
+        ring: cur ? '0 0 0 2px ' + ac : 'inset 0 0 0 1px ' + T.bd2,
+        dim: cur ? '1' : '.92',
+        isExt, ext,
+        isGlyph: !isExt && k !== 'location',
+        glyph: k === 'audio' ? '🎤' : k === 'video' ? '🎥' : k === 'gif' ? '🎞' : (m.imgIcon || '📷'),
+        hasMap: !!w, mapSrc: w ? w.src : '', mapLeft: w ? w.left : '0px', mapTop: w ? w.top : '0px',
+        pinX: w ? w.pinX : '26px', pinY: w ? w.pinY : '26px',
+        mapFilter: dark ? 'invert(1) hue-rotate(180deg) saturate(.86) brightness(.94)' : 'none',
+        badge: m.dl && m.dl !== 'ready' ? '⬇'
+          : k === 'video' ? (m.mediaLen || '0:34') : k === 'gif' ? 'GIF' : k === 'audio' ? (m.voiceLen || '0:24') : null
+      };
+    });
+
     // dialogs
     const starred = [];
     s.chats.forEach((c, ci) => c.msgs.forEach(m => {
@@ -1623,13 +3048,33 @@ class Component extends DCLogic {
       });
     }));
 
+    const ac0 = s.communities.find(x => x.key === s.community) || null;
     const alertMap = {
       clear: {title: 'Clear this chat?', body: 'Messages are removed from chatot on this device. They stay on your phone and on ' + chat.name + '’s device.', confirm: 'Clear chat', color: '#c01c28',
         options: [{label: 'Also delete downloaded media', on: s.clearMedia !== false, onClick: () => this.setState(st => ({clearMedia: st.clearMedia === false}))}],
         run: () => { this.patch(c => { c.msgs = []; }); this.toast('Chat cleared'); }},
       block: {title: 'Block ' + chat.name + '?', body: 'Blocked contacts can’t message or call you, and won’t see when you are online. You can unblock at any time.', confirm: 'Block', color: '#c01c28',
         options: [{label: 'Also report this contact', on: !!s.blockReport, onClick: () => this.setState(st => ({blockReport: !st.blockReport}))}],
-        run: () => { this.patch(c => { c.blocked = true; }); this.toast(chat.name + ' blocked'); }}
+        run: () => { this.patch(c => { c.blocked = true; }); this.toast(chat.name + ' blocked'); }},
+      joingroup: {
+        title: 'Join ' + ((ac0 && ac0.groups.find(x => x.name === s.joinGroup) || {}).name || 'this group') + '?', confirm: 'Join',
+        body: !ac0 ? '' : ((ac0.groups.find(x => x.name === s.joinGroup) || {}).sub || '') + ' · part of ' + ac0.name + '. Members of the community can see that you joined.',
+        run: () => this.setState(st => ({communities: st.communities.map(c => c.key !== st.community ? c : Object.assign({}, c, {
+          groups: c.groups.map(x => x.name === st.joinGroup ? Object.assign({}, x, {joined: true, sub: 'You joined · ' + x.sub}) : x)
+        }))}), () => this.toast('Joined ' + s.joinGroup))},
+      unfollow: (() => { const uc = s.channels.find(x => x.key === s.unfollowKey) || {name: 'this channel'}; return {
+        title: 'Unfollow ' + uc.name + '?', confirm: 'Unfollow', color: '#c01c28',
+        body: 'You will stop getting its updates and it leaves your Channels list. You can follow it again from Find channels.',
+        run: () => { this.setState(st => ({
+          channels: st.channels.map(x => x.key === s.unfollowKey ? Object.assign({}, x, {following: false, unread: 0}) : x),
+          channel: st.channel === s.unfollowKey ? null : st.channel,
+          pane: st.channel === s.unfollowKey ? 'tabempty' : st.pane
+        })); this.toast('Unfollowed ' + uc.name); }}; })(),
+      resetlink: {title: 'Reset the invite link?', confirm: 'Reset', color: '#c01c28',
+        body: 'The current link stops working immediately. Anyone you already shared it with will not be able to join.',
+        run: () => this.setState(st => ({communities: st.communities.map(c => c.key !== st.community ? c : Object.assign({}, c, {
+          link: 'chat.ot/' + c.key + '-' + Math.random().toString(36).slice(2, 8)
+        }))}), () => this.toast('Invite link reset'))}
     };
     const al = alertMap[s.alert] || {};
 
@@ -1667,6 +3112,16 @@ class Component extends DCLogic {
       {icon: '🚫', label: 'Block ' + chat.name, onClick: () => { this.setState({dialog: null}); this.toast('Blocked'); }, color: '#c01c28'}
     ]).map(r => Object.assign({color: T.tx, value: null}, r));
 
+    // location picker: stage origin, and the point/fix in stage pixels
+    const lz = s.locZoom || 17;
+    const lCentre = mapPx(s.locCLat, s.locCLon, lz);
+    const lOx = lCentre.x - MAP_VIEW_W / 2, lOy = lCentre.y - MAP_VIEW_H / 2;
+    const lPoint = mapPx(s.locLat, s.locLon, lz), lFix = mapPx(MAP_FIX.lat, MAP_FIX.lon, lz);
+    const lQuery = (s.locQuery || '').trim();
+    const lHits = lQuery ? MAP_PLACES.filter(p => mapNorm(p.name + ' ' + p.addr).indexOf(mapNorm(lQuery)) > -1) : MAP_PLACES;
+    const lFixState = s.locMode === 'gps' && s.locStatus === 'fix';
+    const lCanSend = s.locMode === 'manual' || lFixState;
+
     const menuPos = s.menu && s.menu.top != null
       ? 'top:' + s.menu.top + 'px;left:' + s.menu.left + 'px'
       : ({app: 'top:52px;left:250px', plus: 'top:52px;left:214px', chat: 'top:52px;right:16px'})[s.menu && s.menu.kind] || 'top:52px;left:250px';
@@ -1676,7 +3131,7 @@ class Component extends DCLogic {
       ['🎬', 'Video', '#9c5b8a', () => this.openTray('image')],
       ['📄', 'Document', '#4f8a8b', () => this.openTray('file')],
       ['👤', 'Contact', '#b58a4a', () => this.setState({dialog: 'contacts', peopleQuery: '', contactPick: []})],
-      ['📍', 'Location', '#c26b5c', () => this.push({type: 'loc', locTitle: 'Praça da Liberdade', locSub: 'Porto · click to open in Maps'})],
+      ['📍', 'Location', '#c26b5c', () => this.openLoc()],
       ['📊', 'Poll', '#7a8b5a', () => this.setState({dialog: 'poll', pollQ: '', pollDraft: ['', ''], pollMulti: false})],
       ['🎵', 'Audio file', '#6a6a8c', () => this.openTray('file')]
     ].map(([icon, label, bg, fn]) => ({icon, label, bg: bg + '33', onClick: () => { this.setState({attach: false}); fn(); }}));
@@ -1742,12 +3197,389 @@ class Component extends DCLogic {
       onRemove: e => { e.stopPropagation(); this.setState(st => { const next = st.tray.filter((_, j) => j !== i); return {tray: next.length ? next : null, traySel: Math.max(0, Math.min(st.traySel, next.length - 1))}; }); }
     }));
 
+    // ---- Status / Channels / Communities tabs ----
+    const initialOf = n => (n || '?').trim().charAt(0).toUpperCase();
+    const ringOf = (n, color) => {
+      if (n <= 1) return color;
+      const step = 360 / n, gapDeg = 9, stops = [];
+      for (let i = 0; i < n; i++) {
+        const a = i * step, b = a + step - gapDeg;
+        stops.push(color + ' ' + a + 'deg ' + b + 'deg');
+        stops.push('transparent ' + b + 'deg ' + (a + step) + 'deg');
+      }
+      return 'conic-gradient(from -90deg,' + stops.join(',') + ')';
+    };
+    const viewedRing = dark ? 'rgba(255,255,255,.26)' : 'rgba(0,0,0,.2)';
+    const acHi = dark ? '#48c4a3' : ac2;
+    const tabUnread = {
+      chats: s.chats.filter(c => (s.merged || c.acct === s.account) && !c.archived && c.unread).length,
+      status: s.statusFeed.filter(x => !x.viewed).length,
+      channels: s.channels.filter(c => c.following && c.unread).length,
+      communities: s.communities.reduce((a, c) => a + c.groups.filter(g => g.unread).length, 0)
+    };
+    const goTab = tid => this.setState({
+      tab: tid, sidebar: 'chats', menu: null, attach: false, picker: false, accountOpen: false,
+      reactPick: null, labelsOpen: null, query: '', labelFilter: null, chatSearch: false,
+      statusOpen: null, channel: null, community: null,
+      pane: tid === 'chats' ? 'chat' : 'tabempty'
+    });
+    const tabs = [
+      {id: 'chats', label: 'Chats', title: 'Chats'},
+      {id: 'status', label: 'Status', title: 'Status updates · 24h'},
+      {id: 'channels', label: 'Channels', title: 'Channels you follow'},
+      {id: 'communities', label: 'Communities', title: 'Communities'}
+    ].map(t => {
+      const on = s.tab === t.id, n = tabUnread[t.id];
+      return Object.assign({}, NAVICON[t.id], {
+        label: t.label, title: t.title, onClick: () => goTab(t.id),
+        bg: on ? (dark ? 'rgba(255,255,255,.055)' : 'rgba(0,0,0,.032)') : 'transparent',
+        fg: on ? acHi : T.dim, bar: on ? ac : 'transparent',
+        stroke: on ? '2' : '1.6', weight: on ? '700' : '400',
+        badge: n ? String(n > 99 ? '99+' : n) : ''
+      });
+    });
+
+    // status
+    const openStatus = key => this.setState(st => ({
+      statusOpen: key, statusSeg: 0, statusReply: '', pane: 'status',
+      statusFeed: st.statusFeed.map(x => x.key === key ? Object.assign({}, x, {viewed: true}) : x)
+    }));
+    const statusRows = [];
+    const statusGroup = (label, arr) => {
+      if (!arr.length) return;
+      statusRows.push({isHeader: true, isRow: false, label});
+      arr.forEach(x => statusRows.push({
+        isHeader: false, isRow: true, name: x.name, initial: initialOf(x.name), color: x.color,
+        sub: x.items.length + (x.items.length === 1 ? ' update · ' : ' updates · ') + x.time,
+        ring: ringOf(x.items.length, x.viewed ? viewedRing : ac),
+        weight: x.viewed ? '400' : '700',
+        onClick: () => openStatus(x.key),
+        onContext: e => { e.preventDefault(); this.openMenu('statusrow', Object.assign({row: x.key}, this.anchor(e, 240, 190))); }
+      }));
+    };
+    statusGroup('Recent updates', s.statusFeed.filter(x => !x.viewed));
+    statusGroup('Viewed updates', s.statusFeed.filter(x => x.viewed));
+
+    const my = s.myStatus;
+    const statusSrc = s.statusOpen === 'me' ? (my ? {name: 'My status', color: acct.color, items: my.items, mine: true} : null)
+      : s.statusFeed.find(x => x.key === s.statusOpen) || null;
+    const seg = statusSrc ? Math.min(s.statusSeg, statusSrc.items.length - 1) : 0;
+    const item = statusSrc ? statusSrc.items[seg] : {};
+    const stepStatus = d => this.setState(st => {
+      const src = st.statusOpen === 'me' ? st.myStatus : st.statusFeed.find(x => x.key === st.statusOpen);
+      const len = src ? src.items.length : 1, next = st.statusSeg + d;
+      if (next < 0) return {statusSeg: 0};
+      if (next >= len) return {statusOpen: null, statusSeg: 0, pane: 'tabempty'};
+      return {statusSeg: next};
+    });
+
+    // channels
+    const chan = s.channels.find(c => c.key === s.channel) || null;
+    const rchan = s.channels.find(c => c.key === s.reportChan) || null;
+    const lchan = s.channels.find(c => c.key === s.linkChan) || null;
+    const ichan = s.channels.find(c => c.key === s.infoChan) || null;
+    const channelRows = s.channels.filter(c => c.following).map(c => ({
+      name: c.name, initial: initialOf(c.name), color: c.color, verified: c.verified, muted: c.muted,
+      preview: (c.posts[0] || {}).text || 'No updates yet',
+      time: c.time, timeColor: c.unread ? acHi : T.dim2, unread: c.unread ? String(c.unread) : '',
+      bg: s.channel === c.key ? T.sel : 'transparent',
+      onClick: () => this.setState(st => ({
+        channel: c.key, pane: 'channel',
+        channels: st.channels.map(x => x.key === c.key ? Object.assign({}, x, {unread: 0}) : x)
+      })),
+      onContext: e => { e.preventDefault(); this.openMenu('chanrow', Object.assign({row: c.key}, this.anchor(e, 240, 200))); }
+    }));
+    const dq = s.discoverQuery.trim().toLowerCase();
+    const discoverCats = ['All', 'Technology', 'News', 'Sports', 'Food', 'Entertainment'].map(label => {
+      const on = s.discoverCat === label;
+      return {label, weight: on ? '700' : '400', bg: on ? ac : T.chip, fg: on ? '#fff' : T.tx,
+        onClick: () => this.setState({discoverCat: label})};
+    });
+    const discoverRows = s.channels
+      .filter(c => s.discoverCat === 'All' || c.cat === s.discoverCat)
+      .filter(c => !dq || c.name.toLowerCase().includes(dq) || (c.about || '').toLowerCase().includes(dq))
+      .sort((a, b) => (b.pop || 0) - (a.pop || 0))
+      .map(c => ({
+        name: c.name, initial: initialOf(c.name), color: c.color, verified: c.verified,
+        meta: c.followers,
+        bg: s.channel === c.key ? T.sel : 'transparent',
+        btnLabel: c.following ? 'Following' : 'Follow',
+        btnTitle: (c.following ? 'Unfollow ' : 'Follow ') + c.name,
+        btnBg: 'transparent',
+        btnFg: c.following ? T.dim : acHi,
+        btnBorder: '1px solid ' + (c.following ? T.bd2 : acHi),
+        onOpen: () => this.setState(st => ({
+          channel: c.key, pane: 'channel', discover: false,
+          channels: st.channels.map(x => x.key === c.key ? Object.assign({}, x, {unread: 0}) : x)
+        })),
+        onFollow: e => {
+          e.stopPropagation();
+          if (c.following) { this.setState({dialog: 'alert', alert: 'unfollow', unfollowKey: c.key}); return; }
+          this.setState(st => ({channels: st.channels.map(x => x.key === c.key ? Object.assign({}, x, {following: true}) : x)}));
+          this.toast('Following ' + c.name);
+        }
+      }));
+    const discoverHeader = dq ? discoverRows.length + (discoverRows.length === 1 ? ' result' : ' results')
+      : s.discoverCat === 'All' ? 'Most followed' : s.discoverCat;
+    const chanPosts = !chan ? [] : chan.posts.map((p, pi) => ({
+      isPhoto: p.kind === 'photo', bg: p.bg || T.chip, glyph: p.glyph || '🖼', text: p.text,
+      meta: p.time + ' · ' + p.views,
+      reacts: (p.reacts || []).map(r => ({
+        e: r.e, n: String(r.n), title: (r.mine ? 'Remove your ' : 'React with ') + r.e,
+        border: r.mine ? ac : T.bd2,
+        bg: r.mine ? (dark ? 'rgba(27,140,114,.24)' : 'rgba(27,140,114,.1)') : 'transparent',
+        fg: r.mine ? acHi : T.dim,
+        onClick: () => this.reactChannel(pi, r.e)
+      })),
+      onReact: e => { const a = this.anchor(e, 322, 218); this.setState({reactPick: {chan: pi, top: a.top, left: a.left}, menu: null}); },
+      onForward: () => this.setState({dialog: 'forward', forwardPick: [], forwardMsg: {id: 'chan' + pi, type: 'text', text: p.text}})
+    }));
+
+    // communities
+    const comm = s.communities.find(c => c.key === s.community) || null;
+    const communityRows = s.communities.map(c => ({
+      name: c.name, initial: initialOf(c.name), color: c.color,
+      sub: c.groups.filter(g => !g.announce).length + ' groups · ' + c.members,
+      unread: (() => { const n = c.groups.reduce((a, g) => a + (g.unread || 0), 0); return n ? String(n) : ''; })(),
+      bg: s.community === c.key ? T.sel : 'transparent',
+      onClick: () => this.setState({community: c.key, pane: 'community'}),
+      onContext: e => { e.preventDefault(); this.openMenu('commrow', Object.assign({row: c.key}, this.anchor(e, 240, 170))); }
+    }));
+    const openCommGroup = g => this.setState(st => {
+      const i = st.chats.findIndex(c => c.name === g.name);
+      if (i > -1) return {tab: 'chats', sidebar: 'chats', active: i, pane: 'chat'};
+      const chats = st.chats.concat([{
+        key: 'cg_' + g.name, name: g.name, color: g.color, group: true, acct: st.account,
+        time: this.now(), unread: 0, presence: (comm ? comm.name : 'Community') + ' · group',
+        msgs: [{id: id(), type: 'system', text: 'You joined ' + g.name}]
+      }]);
+      return {chats, tab: 'chats', sidebar: 'chats', active: chats.length - 1, pane: 'chat'};
+    });
+    const commPatch = (key, fn) => this.setState(st => ({communities: st.communities.map(c => { if (c.key !== key) return c; const n = Object.assign({}, c, {groups: c.groups.map(g => Object.assign({}, g))}); fn(n); return n; })}));
+    const mq = s.memberQuery.trim().toLowerCase();
+    const commPeople = !comm ? [] : (comm.people || [])
+      .filter(p => !mq || p.name.toLowerCase().includes(mq))
+      .map(p => ({name: p.name, initial: initialOf(p.name), color: p.color, role: p.role === 'admin' ? 'admin' : ''}));
+    const commInfoGroups = !comm ? [] : comm.groups.map(g => ({
+      name: g.name, sub: g.sub, initial: g.announce ? '📣' : initialOf(g.name),
+      radius: g.announce ? '10px' : '999px',
+      color: g.announce ? (dark ? 'rgba(27,140,114,.28)' : 'rgba(27,140,114,.16)') : g.color,
+      state: g.announce ? 'announcements' : g.joined ? 'joined' : 'not joined'
+    }));
+    const linkedNames = s.communities.reduce((acc, c) => acc.concat(c.groups.map(g => g.name)), []);
+    const linkable = s.chats.filter(c => c.group && !c.archived && linkedNames.indexOf(c.name) === -1);
+    const linkableGroups = linkable.map(c => ({
+      name: c.name, initial: initialOf(c.name), color: c.color,
+      sub: c.presence || 'Group',
+      bg: s.linkPick.indexOf(c.name) > -1 ? T.sel : 'transparent',
+      tick: s.linkPick.indexOf(c.name) > -1 ? '✓' : '',
+      boxBg: s.linkPick.indexOf(c.name) > -1 ? ac : 'transparent',
+      boxBorder: s.linkPick.indexOf(c.name) > -1 ? 'none' : '1px solid ' + T.bd2,
+      onClick: () => this.setState(st => ({linkPick: st.linkPick.indexOf(c.name) > -1 ? st.linkPick.filter(n => n !== c.name) : st.linkPick.concat([c.name])}))
+    }));
+    const knownLink = s.communities.find(c => s.joinLink.trim() && c.link.indexOf(s.joinLink.trim().replace(/^https?:\/\//, '')) > -1);
+    const joinHint = !s.joinLink.trim() ? {text: '', color: T.dim}
+      : knownLink ? {text: 'You are already in ' + knownLink.name, color: T.dim}
+      : /^(https?:\/\/)?chat\.ot\/[a-z0-9-]{4,}$/i.test(s.joinLink.trim()) ? {text: 'Link looks valid', color: acHi}
+      : {text: 'That does not look like a chatot invite link', color: '#c01c28'};
+    const commRows = [];
+    if (comm) {
+      const ann = comm.groups.filter(g => g.announce), mine = comm.groups.filter(g => !g.announce && g.joined), other = comm.groups.filter(g => !g.announce && !g.joined);
+      const commGroup = (label, arr, join) => {
+        if (!arr.length) return;
+        commRows.push({isHeader: true, isRow: false, label});
+        arr.forEach(g => commRows.push({
+          isHeader: false, isRow: true, name: g.name, sub: g.sub,
+          initial: g.announce ? '📣' : initialOf(g.name),
+          radius: g.announce ? '12px' : '999px', glyphSize: g.announce ? '17px' : '14px',
+          color: g.announce ? (dark ? 'rgba(27,140,114,.28)' : 'rgba(27,140,114,.16)') : g.color,
+          unread: g.unread ? String(g.unread) : '', canJoin: !!join, joinFg: acHi,
+          onClick: () => join ? this.setState({dialog: 'alert', alert: 'joingroup', joinGroup: g.name}) : openCommGroup(g),
+          onJoin: e => {
+            e.stopPropagation();
+            this.setState(st => ({communities: st.communities.map(c => c.key !== comm.key ? c : Object.assign({}, c, {
+              groups: c.groups.map(x => x.name === g.name ? Object.assign({}, x, {joined: true, sub: 'You joined · ' + x.sub}) : x)
+            }))}));
+            this.toast('Joined ' + g.name);
+          }
+        }));
+      };
+      commGroup('Announcement group', ann, false);
+      commGroup("Groups you're in", mine, false);
+      commGroup('Other groups in this community', other, true);
+    }
+
+    const tabEmpty = ({
+      status: {icon: '◌', title: 'Status updates', text: 'Pick an update on the left to view it. Everything you post disappears after 24 hours.'},
+      channels: {icon: '📣', title: 'Channels', text: 'Channels are one-way broadcasts. Choose one to read its updates, or find new ones to follow.'},
+      communities: {icon: '🏘', title: 'Communities', text: 'A community groups related chats under one announcement group. Pick one to see its groups.'}
+    })[s.tab] || {icon: '💬', title: 'Chats', text: ''};
+
+    const NAV = {
+      tabs, showTabs: (s.tab !== 'chats' || s.sidebar === 'chats') && !s.discover,
+      sidebarIsStatus: s.tab === 'status', sidebarIsChannels: s.tab === 'channels' && !s.discover, sidebarIsCommunities: s.tab === 'communities',
+
+      statusRows,
+      myColor: acct.color, myInitial: acct.initial, myPlus: !my,
+      myRing: my ? ringOf(my.items.length, ac) : (dark ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.12)'),
+      myStatusPosted: !!my,
+      myStatusSub: my ? ('Today, ' + my.time + ' · ' + my.views + (my.views === 1 ? ' view' : ' views')) : 'Add to my status — it disappears after 24h',
+      onMyStatus: () => my ? this.setState({statusOpen: 'me', statusSeg: 0, pane: 'status'}) : this.postStatus(),
+      onMyStatusMenu: e => { e.stopPropagation(); this.openMenu('mystatus', this.anchor(e, 240, 160)); },
+
+      paneIsStatus: s.pane === 'status' && !!statusSrc,
+      statusName: statusSrc ? statusSrc.name : '', statusColor: statusSrc ? statusSrc.color : ac,
+      statusInitial: statusSrc ? initialOf(statusSrc.name === 'My status' ? acct.initial : statusSrc.name) : '',
+      statusMeta: statusSrc ? (item.time + ' · ' + (seg + 1) + ' of ' + statusSrc.items.length) : '',
+      statusSegs: statusSrc ? statusSrc.items.map((_, i) => ({fill: i < seg ? '100%' : i === seg ? '58%' : '0%'})) : [],
+      statusIsPhoto: item.kind === 'photo', statusIsText: item.kind === 'text',
+      statusBg: item.bg || ac, statusGlyph: item.glyph || '', statusText: item.text || '',
+      statusCaption: item.caption || '',
+      statusIsMine: !!(statusSrc && statusSrc.mine), statusCanReply: !!(statusSrc && !statusSrc.mine),
+      statusViewers: my ? ('Viewed by ' + my.views) : 'Viewed by 0',
+      statusReply: s.statusReply, statusReplyPh: statusSrc ? ('Reply to ' + statusSrc.name.split(' ')[0]) : 'Reply',
+      onStatusReplyChange: e => this.setState({statusReply: e.target.value}),
+      onStatusReplyKey: e => { if (e.key === 'Enter' && s.statusReply.trim()) { this.setState({statusReply: ''}); this.toast('Reply sent to ' + (statusSrc ? statusSrc.name : '')); } },
+      statusQuick: ['❤️', '😂', '😮', '👍'].map(e => ({e, title: 'React ' + e, onClick: () => this.toast('Reacted ' + e + ' to ' + (statusSrc ? statusSrc.name : '') + "'s status")})),
+      onStatusPrev: () => stepStatus(-1), onStatusNext: () => stepStatus(1),
+      onStatusClose: () => this.setState({statusOpen: null, statusSeg: 0, pane: 'tabempty'}),
+      onStatusMenu: e => this.openMenu('statusview', this.anchor(e, 240, 190)),
+      onStatusViewers: () => this.toast(my ? ('Seen by ' + my.views + ' contacts') : 'No views yet'),
+
+      channelRows, channelsHeader: 'Following · ' + s.channels.filter(c => c.following).length,
+      onFindChannels: () => this.setState({discover: true, discoverQuery: '', discoverCat: 'All'}),
+      sidebarIsDiscover: s.tab === 'channels' && s.discover,
+      discoverQuery: s.discoverQuery, hasDiscoverQuery: !!s.discoverQuery,
+      onDiscoverQuery: e => this.setState({discoverQuery: e.target.value}),
+      onClearDiscoverQuery: () => this.setState({discoverQuery: ''}),
+      onDiscoverReset: () => this.setState({discoverQuery: '', discoverCat: 'All'}),
+      discoverCats, discoverRows, discoverHeader,
+      discoverEmpty: discoverRows.length === 0,
+      discoverEmptyText: dq ? 'No channels match “' + s.discoverQuery + '”' : 'Nothing in ' + s.discoverCat + ' yet',
+      paneIsChannel: s.pane === 'channel' && !!chan,
+      chanName: chan ? chan.name : '', chanInitial: chan ? initialOf(chan.name) : '',
+      chanColor: chan ? chan.color : ac, chanVerified: !!(chan && chan.verified), chanMuted: !!(chan && chan.muted),
+      chanFollowers: chan ? chan.followers : '', chanAbout: chan ? chan.about : '', chanPosts,
+      chanFollowLabel: chan && chan.following ? 'Following' : 'Follow',
+      chanFollowBg: chan && chan.following ? 'transparent' : ac,
+      chanFollowFg: chan && chan.following ? acHi : '#fff',
+      chanFollowBorder: chan && chan.following ? '1px solid ' + T.bd2 : 'none',
+      chanFooter: chan && chan.following ? 'Only the channel owner can post here. You can react to and forward updates.' : 'Follow this channel to get its updates.',
+      onChanFollow: () => { if (!chan) return; if (chan.following) { this.setState({dialog: 'alert', alert: 'unfollow', unfollowKey: chan.key}); return; } this.setState(st => ({channels: st.channels.map(x => x.key === chan.key ? Object.assign({}, x, {following: true}) : x)})); this.toast('Following ' + chan.name); },
+      onChanMenu: e => this.openMenu('chan', this.anchor(e, 250, 230)),
+
+      communityRows, noCommunities: !s.communities.length,
+      onNewCommunity: () => this.setState({tab: 'chats', sidebar: 'groupname', newKind: 'community', groupName: '', picked: [], pane: 'chat'}),
+      paneIsCommunity: s.pane === 'community' && !!comm, commRows,
+      commName: comm ? comm.name : '', commInitial: comm ? initialOf(comm.name) : '',
+      commColor: comm ? comm.color : ac,
+      commSub: comm ? (comm.members + ' · ' + comm.groups.filter(g => !g.announce).length + ' groups' + (comm.admin ? ' · you are an admin' : '') + (comm.muted ? ' · muted' : '')) : '',
+      onCommInfo: () => this.setState({dialog: 'comminfo', commTab: 'Members', memberQuery: ''}),
+      onCommMenu: e => this.openMenu('comm', this.anchor(e, 250, 260)),
+      onCommAddGroup: () => { if (comm && comm.admin) this.setState({dialog: 'commaddgroup', linkPick: []}); },
+      addGroupAllowed: !!(comm && comm.admin), addGroupDisabled: !(comm && comm.admin),
+      onCommInvite: () => this.setState({dialog: 'comminvite', copied: false}),
+
+      dlgIsChanInfo: s.dialog === 'chaninfo',
+      infoChanName: ichan ? ichan.name : '', infoChanInitial: ichan ? initialOf(ichan.name) : '',
+      infoChanColor: ichan ? ichan.color : ac, infoChanVerified: !!(ichan && ichan.verified),
+      infoChanAbout: ichan ? ichan.about : '',
+      infoChanMeta: ichan ? (ichan.followers + (ichan.cat ? ' · ' + ichan.cat : '')) : '',
+      infoChanRows: !ichan ? [] : [
+        {icon: '📣', label: 'Updates', value: ichan.posts.length + (ichan.posts.length === 1 ? ' update' : ' updates'), cursor: 'default'},
+        {icon: '📅', label: 'Created', value: (ichan.created || '').replace('Created ', ''), cursor: 'default'},
+        {icon: '🔗', label: 'Channel link', value: ichan.link, cursor: 'pointer',
+          onClick: () => this.setState({dialog: 'chanlink', linkChan: ichan.key, copied: false})},
+        {icon: ichan.muted ? '🔇' : '🔔', label: 'Notifications', value: ichan.muted ? 'Muted' : 'On', cursor: 'pointer',
+          onClick: () => {
+            this.setState(st => ({channels: st.channels.map(x => x.key === ichan.key ? Object.assign({}, x, {muted: !x.muted}) : x)}));
+            this.toast(ichan.muted ? 'Updates unmuted' : 'Updates muted');
+          }}
+      ].map((r, i) => Object.assign({sep: i ? '1px solid ' + T.bd : '0', valueColor: T.dim}, r)),
+
+      dlgIsChanLink: s.dialog === 'chanlink',
+      linkChanName: lchan ? lchan.name : '', linkChanUrl: lchan ? lchan.link : '',
+      onCopyChanLink: () => { this.setState({copied: true}); this.toast('Channel link copied to the clipboard'); },
+      onSendChanLink: () => this.setState({dialog: 'forward', forwardPick: [], forwardMsg: {type: 'text', text: lchan ? lchan.link : ''}}),
+
+      dlgIsReport: s.dialog === 'report', reportName: rchan ? rchan.name : '',
+      reportReasons: ['Spam or repetitive posts', 'Scam or fraud', 'Violence or hate speech', 'Nudity or sexual content', 'False information', 'Something else'].map(label => {
+        const on = s.reportReason === label;
+        return {label, bg: on ? T.sel : 'transparent',
+          dotBorder: on ? 'none' : '1px solid ' + T.bd2, dotBg: on ? ac : 'transparent',
+          dotFill: on ? '#fff' : 'transparent',
+          onClick: () => this.setState({reportReason: label})};
+      }),
+      reportUnfollowTick: s.reportUnfollow ? '✓' : '',
+      reportUnfollowBg: s.reportUnfollow ? ac : 'transparent',
+      reportUnfollowBorder: s.reportUnfollow ? 'none' : '1px solid ' + T.bd2,
+      onToggleReportUnfollow: () => this.setState(st => ({reportUnfollow: !st.reportUnfollow})),
+      reportBtnBg: s.reportReason ? '#c01c28' : T.chip, reportBtnFg: s.reportReason ? '#fff' : T.dim2,
+      onSubmitReport: () => {
+        if (!s.reportReason) return this.toast('Pick a reason first');
+        const name = rchan ? rchan.name : 'channel', key = s.reportChan, drop = s.reportUnfollow;
+        this.setState(st => ({
+          dialog: null, reportReason: '', reportUnfollow: false, reportChan: null,
+          channels: drop ? st.channels.map(x => x.key === key ? Object.assign({}, x, {following: false, unread: 0}) : x) : st.channels,
+          channel: drop && st.channel === key ? null : st.channel,
+          pane: drop && st.channel === key ? 'tabempty' : st.pane
+        }));
+        this.toast(drop ? 'Reported and unfollowed ' + name : 'Reported ' + name);
+      },
+
+      dlgIsCommInfo: s.dialog === 'comminfo',
+      commAbout: comm ? comm.about : '', commCreated: comm ? comm.created : '', commLink: comm ? comm.link : '',
+      commTabs: ['Members', 'Groups'].map(label => {
+        const on = s.commTab === label;
+        return {label, weight: on ? '700' : '400', bg: on ? T.sel : 'transparent', fg: on ? T.tx : T.dim,
+          onClick: () => this.setState({commTab: label})};
+      }),
+      commTabIsMembers: s.commTab === 'Members', commTabIsGroups: s.commTab === 'Groups',
+      commPeople, commPeopleEmpty: commPeople.length === 0, commInfoGroups,
+      memberQuery: s.memberQuery, onMemberQuery: e => this.setState({memberQuery: e.target.value}),
+
+      dlgIsCommInvite: s.dialog === 'comminvite',
+      copyLabel: s.copied ? 'Copied' : 'Copy',
+      onCopyLink: () => { this.setState({copied: true}); this.toast('Invite link copied to the clipboard'); },
+      onShareLink: () => { this.setState({dialog: 'forward', forwardPick: [], forwardMsg: {type: 'text', text: comm ? comm.link : ''}}); },
+      onResetLink: () => this.setState({dialog: 'alert', alert: 'resetlink'}),
+
+      dlgIsCommAddGroup: s.dialog === 'commaddgroup',
+      linkableGroups, noLinkable: linkableGroups.length === 0,
+      addGroupBody: 'Linked groups keep their own members and history. Everyone in them can see the community announcements.',
+      linkPickLabel: s.linkPick.length ? s.linkPick.length + (s.linkPick.length === 1 ? ' group selected' : ' groups selected') : 'Pick one or more groups',
+      linkBtnBg: s.linkPick.length ? ac : T.chip, linkBtnFg: s.linkPick.length ? '#fff' : T.dim2,
+      onLinkGroups: () => {
+        if (!comm || !s.linkPick.length) return this.toast('Pick at least one group');
+        const picked = s.linkPick.slice();
+        commPatch(comm.key, c => {
+          c.groups = c.groups.concat(picked.map(n => {
+            const src = s.chats.find(x => x.name === n) || {};
+            return {name: n, sub: 'Linked just now', unread: 0, color: src.color || ac, joined: true};
+          }));
+        });
+        this.setState({dialog: null, linkPick: []});
+        this.toast(picked.length === 1 ? picked[0] + ' added to ' + comm.name : picked.length + ' groups added to ' + comm.name);
+      },
+
+      dlgIsJoinLink: s.dialog === 'joinlink',
+      joinLink: s.joinLink, onJoinLinkChange: e => this.setState({joinLink: e.target.value}),
+      onJoinLinkKey: e => { if (e.key === 'Enter') this.joinByLink(); },
+      onJoinLinkGo: () => this.joinByLink(),
+      joinLinkHint: joinHint.text, joinLinkHintColor: joinHint.color,
+      joinBtnBg: s.joinLink.trim() ? ac : T.chip, joinBtnFg: s.joinLink.trim() ? '#fff' : T.dim2,
+
+      paneIsTabEmpty: s.pane === 'tabempty',
+      tabEmptyIcon: tabEmpty.icon, tabEmptyTitle: tabEmpty.title, tabEmptyText: tabEmpty.text
+    };
+
     return {
+      ...NAV,
       themeVars, multi: s.accounts.length > 1, windowControls: s.windowControls, isLinking: s.linking,
 
       sidebarHeadWidth: s.accounts.length > 1 ? '388px' : '334px',
-      showAccountButton: s.sidebar === 'chats',
-      showPlainTitle: s.sidebar !== 'chats',
+      showAccountButton: s.sidebar === 'chats' && !s.discover,
+      showPlainTitle: s.sidebar !== 'chats' || s.discover,
       emptyIsArchive: archiveMode,
       acctLabel: s.merged ? 'All accounts' : acct.label, acctPhone: s.merged ? s.accounts.length + ' accounts · merged list' : acct.phone,
       acctColor: s.merged ? ac : acct.color, acctInitial: s.merged ? '🗂' : acct.initial,
@@ -1795,10 +3627,10 @@ class Component extends DCLogic {
       onScanned: () => { this.setState({linking: false}); this.toast('Linked · syncing recent chats'); },
       onLinkPhone: () => this.toast('Enter your number on the phone screen'),
 
-      sidebarTitle: s.sidebar === 'newchat' ? 'New chat' : s.sidebar === 'newgroup' ? 'Add people' : s.sidebar === 'groupname' ? (s.newKind === 'community' ? 'New community' : 'New group') : s.sidebar === 'archived' ? 'Archived · ' + s.chats.filter(c => c.archived).length : 'Chats',
-      sidebarBack: s.sidebar !== 'chats',
-      onSidebarBack: () => this.setState(st => ({sidebar: st.sidebar === 'groupname' && st.newKind !== 'community' ? 'newgroup' : 'chats'})),
-      sidebarIsChats: s.sidebar === 'chats' || archiveMode, sidebarIsPeople: s.sidebar === 'newchat' || s.sidebar === 'newgroup',
+      sidebarTitle: s.discover ? 'Find channels' : s.sidebar === 'newchat' ? 'New chat' : s.sidebar === 'newgroup' ? 'Add people' : s.sidebar === 'groupname' ? (s.newKind === 'community' ? 'New community' : 'New group') : s.sidebar === 'archived' ? 'Archived · ' + s.chats.filter(c => c.archived).length : 'Chats',
+      sidebarBack: s.sidebar !== 'chats' || s.discover,
+      onSidebarBack: () => this.setState(st => st.discover ? {discover: false} : ({sidebar: st.sidebar === 'groupname' && st.newKind !== 'community' ? 'newgroup' : 'chats'})),
+      sidebarIsChats: s.tab === 'chats' && (s.sidebar === 'chats' || archiveMode), sidebarIsPeople: s.sidebar === 'newchat' || s.sidebar === 'newgroup',
       sidebarIsGroupName: s.sidebar === 'groupname', pickingGroup: s.sidebar === 'newgroup',
       togglePlus: e => this.openMenu('plus', this.anchor(e, 230, 200)),
       toggleAppMenu: e => this.openMenu('app', this.anchor(e, 250, 430)),
@@ -1887,7 +3719,7 @@ class Component extends DCLogic {
       activeName: chat.name, activeInitial: chat.name[0] === '+' ? '+' : chat.name[0].toUpperCase(), activeColor: chat.color,
       activePresence: chat.blocked ? 'Blocked' : chat.typing ? 'typing…' : chat.presence,
       presenceColor: chat.blocked ? '#c01c28' : chat.typing ? ac2 : T.dim,
-      showConvTitle: !s.chatSearch, onOpenInfo: () => this.setState({dialog: 'info'}),
+      showConvTitle: !s.chatSearch && s.tab === 'chats', showChatMenuBtn: s.tab === 'chats', onOpenInfo: () => this.setState({dialog: 'info'}),
 
       chatSearchOn: s.chatSearch, chatQuery: s.chatQuery,
       onChatQuery: e => this.setState({chatQuery: e.target.value, hit: 0}),
@@ -1896,6 +3728,143 @@ class Component extends DCLogic {
       onChatSearchClose: () => this.setState({chatSearch: false, chatQuery: ''}),
 
       paneIsChat: s.pane === 'chat', paneIsMedia: s.pane === 'media',
+
+      paneIsViewer: s.pane === 'viewer' && !!vm,
+      onCloseViewer: this.closeViewer,
+      viewGlyph: {photo: '🖼', video: '🎥', gif: '🎞', pdf: '📄', file: '📄', audio: '🎤', location: '📍'}[vKind] || '🖼',
+      viewGlyphBg: T.chip,
+      viewTitle: !vm ? '' : vKind === 'location' ? (vm.locTitle || 'Shared location')
+        : vm.docName ? vm.docName
+        : vKind === 'audio' ? 'Voice message'
+        : vKind === 'video' ? 'Video' : vKind === 'gif' ? 'Animated GIF' : 'Photo',
+      viewSub: !vm ? '' : [vFrom, vDay + ' at ' + vm.time, vKind === 'location'
+        ? (vm.locLive ? 'live location' : 'static point')
+        : [vSize, vKind === 'pdf' && vm.pages ? vm.pages + ' pages' : '',
+           vKind === 'video' || vKind === 'gif' || vKind === 'audio' ? vLen : '',
+           vKind === 'photo' && vm.dim ? vm.dim : ''].filter(Boolean).join(' · ')].filter(Boolean).join(' · '),
+      viewCounter: attList.length > 1 ? (vIdx + 1) + ' / ' + attList.length : '',
+
+      onViewReply: () => this.setState({pane: 'chat', viewer: null, reply: {name: vFrom, text: this.preview(vm)}}),
+      onViewForward: () => this.setState({dialog: 'forward', forwardMsg: vm.id, forwardPick: []}),
+      onViewStar: () => {
+        const on = !(vm && vm.starred);
+        this.patch(c => { const i = c.msgs.findIndex(x => x.id === vm.id); c.msgs[i] = Object.assign({}, c.msgs[i], {starred: on}); });
+        this.toast(on ? 'Attachment starred' : 'Unstarred');
+      },
+      viewStarIcon: vm && vm.starred ? '⭐' : '☆',
+      viewStarTitle: vm && vm.starred ? 'Unstar' : 'Star',
+      viewStarFg: vm && vm.starred ? ac2 : T.dim,
+      onViewInfo: () => this.setState(st => ({viewInfo: !st.viewInfo})),
+      viewInfoOpen: s.viewInfo, viewInfoBg: s.viewInfo ? T.chip : 'transparent',
+      viewInfoFg: s.viewInfo ? T.tx : T.dim,
+      onViewMenu: e => this.openMenu('msg', Object.assign({mid: vm.id}, this.anchor(e, 250, 330))),
+      viewPrimaryLabel: vPrimary,
+      onViewPrimary: () => {
+        if (!vReady) return this.fetchAtt(vm.id);
+        if (vKind === 'pdf' || vKind === 'file') return this.toast('Opening ' + vm.docName + ' in your default app');
+        if (vKind === 'location') return this.toast('Opening ' + (vm.locTitle || 'the point') + ' in Maps');
+        this.toast('Saved to ' + (vKind === 'audio' ? '~/Music' : '~/Pictures'));
+      },
+
+      viewStageRef: this.viewStageRef,
+      viewStageBg: vDark ? '#141414' : T.bg,
+      viewStageFg: vDark ? '#fff' : T.tx,
+      viewStageDim: vDark ? 'rgba(255,255,255,.62)' : T.dim,
+      viewNeedsFetch: !!vm && (vState === 'pending' || vState === 'failed'),
+      viewIsLoading: vState === 'loading',
+      onViewFetch: () => this.fetchAtt(vm.id),
+      viewFetchIcon: vState === 'failed' ? '↻' : '⬇',
+      viewFetchBg: vState === 'failed' ? '#c01c28' : ac,
+      viewFetchTitle: vState === 'failed' ? 'Download failed' : (vKindLabel + (vSize ? ' · ' + vSize : '')),
+      viewFetchSub: vState === 'failed' ? 'Click to retry — the sender may need to be online'
+        : vState === 'loading' ? 'Downloading… 1.4 / ' + (vSize || '4.1 MB')
+        : 'Not downloaded yet · click to fetch it into this view',
+
+      viewShowsPhoto: vReady && vKind === 'photo',
+      viewShowsVideo: vReady && (vKind === 'video' || vKind === 'gif'),
+      viewShowsAudio: vReady && vKind === 'audio',
+      viewShowsPdf: vReady && vKind === 'pdf',
+      viewShowsFile: vReady && vKind === 'file',
+      viewShowsLoc: vKind === 'location',
+      viewPhotoW: Math.round(vPixW * vShown) + 'px', viewPhotoH: Math.round(vPixH * vShown) + 'px',
+      viewPhotoBg: vHatch,
+      viewPhotoGlyph: (vm && vm.imgIcon) || (vKind === 'photo' ? '📷' : '🎬'),
+      viewPhotoGlyphSize: Math.round(clampN(vPixW * vShown * .26, 34, 104)) + 'px',
+      viewIsGif: vKind === 'gif',
+      onViewPlay: () => this.setState(st => ({viewPlay: !st.viewPlay})),
+      viewPlayIcon: s.viewPlay ? '❚❚' : '▶',
+      viewPlayTitle: (s.viewPlay ? 'Pause' : 'Play') + ' · Space',
+
+      viewFromName: vFrom, viewFromInitial: (vFrom === 'You' ? 'Y' : vFrom[0] || '?').toUpperCase(),
+      viewFromColor: vm && vm.side === 'out' ? ac : chat.color,
+      viewAudioSub: 'Voice message · ' + (vSize || '48 KB'), viewAudioTotal: vLen,
+      viewWave: Array.from({length: 44}, (_, i) => ({
+        h: (6 + Math.round(30 * Math.abs(Math.sin(i * .68)) * (.5 + .5 * Math.abs(Math.cos(i * .21))))) + 'px',
+        bg: s.viewPlay && i / 44 < .42 ? ac : (dark ? 'rgba(255,255,255,.32)' : 'rgba(0,0,0,.24)')
+      })),
+
+      viewPageW: vPgW + 'px', viewPageH: vPgH + 'px',
+      viewPagePad: Math.round(vPgW * .11) + 'px', viewPageGap: Math.max(3, Math.round(vPgH * .014)) + 'px',
+      viewPageLines: vPageLines,
+
+      viewFileExt: vExt, viewFileTileBg: vTileBg,
+      viewCardActions: !s.viewInfo,
+      viewFileMeta: [vKindLabel, vSize, vFrom].filter(Boolean).join(' · '),
+      onViewSave: () => this.toast('Saved to ~/Documents'),
+      onViewReveal: () => this.toast('Revealing in Files…'),
+
+      viewMapW: vMapW + 'px', viewMapH: vMapH + 'px',
+      viewMapSrc: vWin ? vWin.src : '', viewMapLeft: vWin ? vWin.left : '0px', viewMapTop: vWin ? vWin.top : '0px',
+      viewMapPinX: vWin ? vWin.pinX : '50%', viewMapPinY: vWin ? vWin.pinY : '50%',
+      viewMapPinBg: vm && vm.locEnded ? 'rgba(90,90,90,.9)' : '#c01c28',
+      viewMapPinHalo: vm && vm.locEnded ? 'rgba(90,90,90,.22)' : 'rgba(192,28,40,.24)',
+      viewMapFilter: dark ? 'invert(1) hue-rotate(180deg) saturate(.86) brightness(.94)' : 'none',
+      viewMapAttrBg: dark ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.82)',
+      viewMapAttrFg: dark ? 'rgba(255,255,255,.85)' : 'rgba(0,0,0,.66)',
+      viewLocLive: !!(vm && vm.locLive), viewLocFresh: 'updated 12 s ago',
+      viewLocCardBg: dark ? 'rgba(48,48,48,.92)' : 'rgba(255,255,255,.93)',
+      viewLocTitle: vm && (vm.locTitle || 'Shared location'),
+      viewLocSub: vm && vKind === 'location' ? (vm.locSub || '').replace(' · click to open in Maps', '') : '',
+      viewLocCoords: vKind === 'location' ? vm.locLat.toFixed(5) + ', ' + vm.locLon.toFixed(5) + ' · z' + s.viewMapZoom : '',
+      onViewMapIn: () => this.setState(st => ({viewMapZoom: clampN(st.viewMapZoom + 1, 16, 18)})),
+      onViewMapOut: () => this.setState(st => ({viewMapZoom: clampN(st.viewMapZoom - 1, 16, 18)})),
+
+      viewHasPrev: vIdx > 0, viewHasNext: vIdx > -1 && vIdx < attList.length - 1,
+      onViewPrev: () => this.viewStep(-1), onViewNext: () => this.viewStep(1),
+      viewNavBg: vDark ? 'rgba(20,20,20,.6)' : T.pop, viewNavFg: vDark ? '#fff' : T.tx,
+      viewNavBd: vDark ? 'rgba(255,255,255,.22)' : T.bd2,
+      viewNavHov: vDark ? 'rgba(20,20,20,.85)' : T.hov,
+
+      viewHasZoomBar: vReady && (vKind === 'photo' || vKind === 'pdf'),
+      viewHasPages: vKind === 'pdf',
+      viewPageLabel: vm && vKind === 'pdf' ? s.viewPage + ' / ' + (vm.pages || 1) : '',
+      onViewPagePrev: () => this.setState(st => ({viewPage: Math.max(1, st.viewPage - 1)})),
+      onViewPageNext: () => this.setState(st => ({viewPage: Math.min((vm && vm.pages) || 1, st.viewPage + 1)})),
+      onViewZoomOut: () => this.viewZoomBy(-1), onViewZoomIn: () => this.viewZoomBy(1),
+      onViewZoomFit: () => this.setState({viewZoom: 0}),
+      viewFitBg: s.viewZoom === 0 ? T.chip : 'transparent',
+      viewZoomLabel: vKind === 'pdf' ? Math.round(vPgFit * 100) + '%' : Math.round(vShown * 100) + '%',
+
+      viewHasTransport: vReady && (vKind === 'video' || vKind === 'gif' || vKind === 'audio'),
+      viewElapsed: s.viewPlay ? '0:12' : '0:00', viewProgress: s.viewPlay ? '35%' : '0%',
+      viewDuration: vLen, viewSpeed: s.viewSpeed + '×',
+      onViewSpeed: () => this.setState(st => ({viewSpeed: st.viewSpeed === 1 ? 1.5 : st.viewSpeed === 1.5 ? 2 : 1})),
+      onViewMute: () => this.setState(st => ({viewMute: !st.viewMute})),
+      viewMuteIcon: s.viewMute ? '🔇' : '🔊', viewMuteTitle: s.viewMute ? 'Unmute' : 'Mute',
+      viewCanFullscreen: vKind === 'video' || vKind === 'gif',
+      onViewFullscreen: () => this.toast('Fullscreen · press Esc to come back'),
+
+      viewHasCaption: !!(vm && (vm.text || (vm.reacts && vm.reacts.length))),
+      viewCaption: (vm && vm.text) || '',
+      viewHasReacts: !!(vm && vm.reacts && vm.reacts.length),
+      viewReacts: ((vm && vm.reacts) || []).map(r => ({e: r.e, n: r.n > 1 ? r.n : null})),
+
+      viewStrip: vStrip, viewStripLabel: attList.length + (attList.length === 1 ? ' attachment' : ' attachments') + ' in this chat',
+      viewSentAt: vm ? vDay + ' at ' + vm.time : '',
+      viewFacts: vFacts, viewInfoActions: vInfoActions,
+      onViewGoToMessage: () => { this.setState({pane: 'chat', viewer: null, hover: vm.id}); this.toast('Jumped to the message'); },
+      viewKeys: [{key: 'Esc', act: 'Back to chat'}, {key: '← →', act: 'Previous / next'},
+        {key: '+ − 0', act: 'Zoom in, out, fit'}, {key: 'Space', act: 'Play or pause'}],
       onCloseMedia: () => this.setState({pane: 'chat'}), mediaTabs, mediaItems, mediaRows,
       mediaIsGrid: s.mediaTab === 'Media', mediaIsList: s.mediaTab !== 'Media',
 
@@ -1931,12 +3900,12 @@ class Component extends DCLogic {
       reactPickOpen: !!s.reactPick,
       reactPickPos: s.reactPick ? 'top:' + s.reactPick.top + 'px;left:' + s.reactPick.left + 'px' : '',
       reactEmojis: '👍👎❤️🔥🎉😂🙂😉😍🥰😘🤩😎🤔😐😴😢😭😤😡🙏💪👏✨🥳🤝☕🎵🐦🏔️📌✅'.match(/./gu).map(c => ({
-        c, onClick: () => { const mid = s.reactPick.mid; this.setState({reactPick: null}); this.react(mid, c); }
+        c, onClick: () => { const rp = s.reactPick; this.setState({reactPick: null}); if (rp.chan != null) this.reactChannel(rp.chan, c); else this.react(rp.mid, c); }
       })),
       anyPopover: !!(s.menu || s.attach || s.picker || s.accountOpen || s.reactPick || s.labelsOpen), closeAll: this.closeAll,
 
       dialog: !!s.dialog, closeDialog: () => this.setState({dialog: null}), stop: e => e.stopPropagation(),
-      dialogWidth: ({prefs: '720px', forward: '440px', poll: '420px', about: '380px', info: '400px', alert: '340px', addaccount: '380px', accounts: '420px', labels: '420px', contacts: '400px', export: '380px', choice: '360px', devices: '420px'})[s.dialog] || '420px',
+      dialogWidth: ({loc: '600px', prefs: '720px', forward: '440px', poll: '420px', about: '380px', info: '400px', alert: '340px', addaccount: '380px', accounts: '420px', labels: '420px', contacts: '400px', export: '380px', choice: '360px', devices: '420px', comminfo: '400px', report: '400px', chanlink: '420px', chaninfo: '400px', comminvite: '420px', commaddgroup: '400px', joinlink: '400px'})[s.dialog] || '420px',
       dlgIsAlert: s.dialog === 'alert', dlgIsForward: s.dialog === 'forward', dlgIsPoll: s.dialog === 'poll',
       dlgIsPrefs: s.dialog === 'prefs', dlgIsAbout: s.dialog === 'about', dlgIsInfo: s.dialog === 'info',
       alertTitle: al.title, alertBody: al.body, alertConfirm: al.confirm, alertColor: al.color,
@@ -1955,6 +3924,58 @@ class Component extends DCLogic {
       exportPath: '~/Documents/' + chat.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + (s.exportFormat === 'JSON' ? '.json' : s.exportFormat === 'HTML' ? '.html' : '.txt'),
       onExportChoose: () => this.toast('Portal file chooser opens here'),
       onExportRun: () => { this.setState({dialog: null}); this.toast('Exported ' + chat.msgs.length + ' messages'); },
+
+      dlgIsLoc: s.dialog === 'loc',
+      locTabs: ['Current location', 'Pick on map'].map((label, i) => {
+        const on = s.locMode === (i ? 'manual' : 'gps');
+        return {label, weight: on ? 700 : 400, bg: on ? (dark ? '#4a4a4a' : '#fff') : 'transparent',
+          onClick: () => (i ? this.setState({locMode: 'manual', locQuery: ''}) : this.locUseGps())};
+      }),
+      locMapSrc: MAP_CROPS[lz].src, locMapLeft: (-lOx) + 'px', locMapTop: (-lOy) + 'px',
+      locMapBg: dark ? '#1e1e1e' : '#e9e5dd',
+      mapAttrBg: dark ? 'rgba(0,0,0,.62)' : 'rgba(255,255,255,.84)', mapAttrFg: dark ? 'rgba(255,255,255,.86)' : 'rgba(0,0,0,.68)',
+      locMapCursor: s.locMode === 'gps' && s.locStatus !== 'fix' ? 'default' : 'crosshair',
+      onLocMapClick: this.locPoint,
+      mapFilter: dark ? 'invert(1) hue-rotate(180deg) saturate(.86) brightness(.94)' : 'none',
+      locIsLocating: s.locMode === 'gps' && s.locStatus === 'locating',
+      locIsDenied: s.locMode === 'gps' && s.locStatus === 'denied',
+      locIsFix: lFixState, locIsManual: s.locMode === 'manual',
+      locScrim: dark ? 'rgba(24,24,24,.74)' : 'rgba(250,250,250,.8)',
+      locFixX: (lFix.x - lOx) + 'px', locFixY: (lFix.y - lOy) + 'px',
+      locHaloSize: Math.max(28, Math.round(2 * s.locAcc / mapMPP(s.locLat, lz))) + 'px',
+      locHaloBg: ac + '2b', locHaloBd: ac + '7a',
+      locPinX: (lPoint.x - lOx) + 'px', locPinY: (lPoint.y - lOy) + 'px',
+      locAcc: s.locAcc, locZoomLabel: 'z' + lz,
+      locQuery: s.locQuery, onLocQuery: e => this.setState({locQuery: e.target.value}),
+      onLocClearQuery: () => this.setState({locQuery: ''}), locHasQuery: lQuery.length > 0,
+      locResults: lHits.map((p, i) => ({name: p.name, addr: p.addr, dist: mapDist(MAP_FIX, p),
+        sep: i ? '1px solid ' + T.bd : '0', onClick: () => this.locSelect(p)})),
+      locNoResults: lHits.length === 0,
+      locName: s.locName, onLocName: e => this.setState({locName: e.target.value}),
+      locNameHint: 'Add a name (optional)',
+      locPlaceLabel: s.locPlace ? s.locPlace.addr
+        : lFixState ? 'Approximate position — click the map to place it exactly'
+        : s.locMode !== 'manual' ? 'No position yet'
+        : s.locPinned ? 'Dropped pin' : 'Click the map to move the pin',
+      locCoords: coord(s.locLat) + ', ' + coord(s.locLon) + (lFixState ? '  ±' + s.locAcc + ' m' : ''),
+      onLocCopy: () => this.toast('Coordinates copied'), locHasPoint: lCanSend,
+      locLive: s.locLive, onLocLive: () => this.setState(st => ({locLive: !st.locLive})),
+      locLiveBg: s.locLive ? ac : T.sel, locLiveKnob: s.locLive ? '20px' : '2px',
+      locLiveSub: s.locLive ? 'Recipients see you move until it expires; you can stop from the message.'
+                            : 'Sends one fixed point that never updates.',
+      locDurs: LIVE_DURS.map(d => ({label: d, weight: s.locDur === d ? 700 : 400,
+        bg: s.locDur === d ? (dark ? '#4a4a4a' : '#fff') : 'transparent', onClick: () => this.setState({locDur: d})})),
+      locSourceNote: s.locMode === 'manual' ? 'Pin · © OpenStreetMap'
+        : lFixState ? 'Wi-Fi fix · GeoClue' : s.locStatus === 'denied' ? 'Location access off' : 'Asking the location portal…',
+      locSendLabel: s.locLive ? 'Share live location' : 'Send location',
+      locSendBg: lCanSend ? ac : T.chip, locSendFg: lCanSend ? '#fff' : T.dim2,
+      locSendCursor: lCanSend ? 'pointer' : 'default',
+      onLocSend: () => { if (lCanSend) this.locSend(); },
+      onLocSettings: () => this.toast('Opens Settings → Privacy → Location'),
+      onLocManual: () => this.setState({locMode: 'manual'}),
+      onLocZoomIn: () => this.locZoomBy(1), onLocZoomOut: () => this.locZoomBy(-1),
+      locZoomInOp: lz >= 18 ? '.4' : '1', locZoomOutOp: lz <= 16 ? '.4' : '1',
+      onLocRecentre: this.locUseGps,
 
       dlgIsDevices: s.dialog === 'devices',
       deviceRows: [
