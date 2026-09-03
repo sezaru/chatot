@@ -29,6 +29,18 @@
         config.allowUnfree = true;
       };
     in {
+      # `nix build` / `nix profile install .` — the desktop app (see
+      # .nix/package.nix for what the wrapper provides).
+      packages = {
+        chatot = pkgs.callPackage ./.nix/package.nix {};
+        default = inputs.self.packages.${system}.chatot;
+      };
+
+      apps.default = {
+        type = "app";
+        program = "${inputs.self.packages.${system}.chatot}/bin/chatot";
+      };
+
       devShells.default = devenv.lib.mkShell {
         inherit inputs pkgs;
         modules = [
