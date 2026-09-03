@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 
 	"chatot/internal/store"
 )
@@ -18,6 +19,23 @@ type locationPayload struct {
 	Longitude float64 `json:"long"`
 	IsLive    bool    `json:"live,omitempty"`
 	LiveUntil int64   `json:"live_until,omitempty"`
+	Thumbnail []byte  `json:"thumb,omitempty"`
+}
+
+// endLivePayload rewrites a stored location payload so its live share ends
+// at endTS: IsLive stays set (the bubble still says it was a live share)
+// while LiveUntil moves to the stop time, which the view reads as "ended".
+func endLivePayload(payload string, endTS int64) (string, error) {
+	var p locationPayload
+	if err := json.Unmarshal([]byte(payload), &p); err != nil {
+		return "", fmt.Errorf("chatot/client: location payload: %w", err)
+	}
+	p.LiveUntil = endTS
+	b, err := json.Marshal(p)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // contactPayload is the JSON shape stored in a message row's opaque payload
@@ -83,6 +101,7 @@ func storeMessageRow(m *Message) store.MessageRow {
 			Name: m.Location.Name, Address: m.Location.Address,
 			Latitude: m.Location.Latitude, Longitude: m.Location.Longitude,
 			IsLive: m.Location.IsLive, LiveUntil: m.Location.LiveUntil,
+			Thumbnail: m.Location.Thumbnail,
 		}); err == nil {
 			row.Payload = string(b)
 		}
@@ -126,6 +145,7 @@ func storeMediaRow(chatJID, msgID string, a *Attachment) store.MediaRow {
 		Kind: a.Kind, Filename: a.Filename, Caption: a.Caption,
 		MimeType: a.MimeType, LocalPath: a.LocalPath, ProtoBlob: a.ProtoBlob,
 		Thumbnail: a.Thumbnail, IsGif: a.IsGIF, ViewOnce: a.ViewOnce,
+		FileSize: a.Size, DurationSecs: a.DurationSecs,
 	}
 }
 
@@ -156,7 +176,7 @@ func linkItemFromStore(l store.LinkItem) LinkItem {
 
 func chatFromStore(c store.Chat) Chat {
 	return Chat{
-		JID: c.JID, Name: c.Name, Preview: c.Preview,
+		JID: c.JID, Name: c.Name, Phone: c.Phone, Preview: c.Preview,
 		UnreadCount: c.UnreadCount, LastMessageTS: c.LastMessageTS,
 		Pinned: c.Pinned, Muted: c.Muted, Archived: c.Archived, IsGroup: c.IsGroup,
 	}
@@ -180,6 +200,7 @@ func messageFromStore(m store.Message, selfJID string) Message {
 			MimeType: m.Attachment.MimeType, LocalPath: m.Attachment.LocalPath,
 			Caption: m.Attachment.Caption, Thumbnail: m.Attachment.Thumbnail,
 			IsGIF: m.Attachment.IsGif, ViewOnce: m.Attachment.ViewOnce, Viewed: m.Attachment.Viewed,
+			Size: m.Attachment.FileSize, DurationSecs: m.Attachment.DurationSecs,
 		}
 	}
 	switch m.Kind {
@@ -190,6 +211,7 @@ func messageFromStore(m store.Message, selfJID string) Message {
 				Name: p.Name, Address: p.Address,
 				Latitude: p.Latitude, Longitude: p.Longitude,
 				IsLive: p.IsLive, LiveUntil: p.LiveUntil,
+				Thumbnail: p.Thumbnail,
 			}
 		}
 	case "contact":

@@ -91,19 +91,20 @@ func (s *Store) MessageByID(chatJID, msgID string) (m Message, ok bool, err erro
 // and surfaced on its own via Statuses.
 const statusBroadcastJID = "status@broadcast"
 
-// Statuses returns recent status ("stories") updates — messages whose chat
-// is statusBroadcastJID — newest first, with the same media/reaction
-// enrichment as Messages. Each row's ChatJID is statusBroadcastJID and its
-// FromJID is the poster.
-func (s *Store) Statuses(limit int) ([]Message, error) {
+// Statuses returns status ("stories") updates posted at or after since —
+// messages whose chat is statusBroadcastJID — newest first, with the same
+// media/reaction enrichment as Messages. Each row's ChatJID is
+// statusBroadcastJID and its FromJID is the poster. WhatsApp expires a
+// status after a day; the caller passes that cutoff (0 keeps everything).
+func (s *Store) Statuses(since int64, limit int) ([]Message, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	rows, err := s.db.Query(messageSelect+`
-		WHERE m.chat_jid = ?
+		WHERE m.chat_jid = ? AND m.ts >= ?
 		ORDER BY m.ts DESC, m.rowid DESC
 		LIMIT ?
-	`, statusBroadcastJID, limit)
+	`, statusBroadcastJID, since, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +126,7 @@ const messageSelect = `
 	SELECT
 		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
 		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status, m.starred, m.forwarded,
-		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, COALESCE(md.is_gif, 0), COALESCE(md.view_once, 0), COALESCE(md.viewed, 0)
+		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, COALESCE(md.is_gif, 0), COALESCE(md.view_once, 0), COALESCE(md.viewed, 0), COALESCE(md.file_size, 0), COALESCE(md.duration_secs, 0)
 	FROM messages m
 	LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id`
 
@@ -186,10 +187,12 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 		var mediaKind, mediaFilename, mediaCaption, mediaMime, mediaLocal string
 		var mediaThumb []byte
 		var mediaIsGif, mediaViewOnce, mediaViewed int
+		var mediaSize int64
+		var mediaSecs int
 		if err := rows.Scan(
 			&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID,
 			&m.Kind, &m.Payload, &edited, &deleted, &m.Status, &starred, &forwarded,
-			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb, &mediaIsGif, &mediaViewOnce, &mediaViewed,
+			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb, &mediaIsGif, &mediaViewOnce, &mediaViewed, &mediaSize, &mediaSecs,
 		); err != nil {
 			return nil, err
 		}
@@ -204,6 +207,7 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 				Kind: mediaKind, Filename: mediaFilename, Caption: mediaCaption,
 				MimeType: mediaMime, LocalPath: mediaLocal, Thumbnail: mediaThumb, IsGif: mediaIsGif != 0,
 				ViewOnce: mediaViewOnce != 0, Viewed: mediaViewed != 0,
+				FileSize: mediaSize, DurationSecs: mediaSecs,
 			}
 		}
 		out = append(out, m)
@@ -251,7 +255,7 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 	return out, nil
 }
 
-func (s *Store) reactionsFor(chatJID string, msgIDs []string) (map[string]map[string]string, error) {
+func (s *Store) reactionsFor(chatJID string, msgIDs []string) (map[string]map[string][]string, error) {
 	if len(msgIDs) == 0 {
 		return nil, nil
 	}
@@ -271,16 +275,16 @@ func (s *Store) reactionsFor(chatJID string, msgIDs []string) (map[string]map[st
 	}
 	defer rows.Close()
 
-	out := make(map[string]map[string]string)
+	out := make(map[string]map[string][]string)
 	for rows.Next() {
 		var msgID, reactor, emoji string
 		if err := rows.Scan(&msgID, &reactor, &emoji); err != nil {
 			return nil, err
 		}
 		if out[msgID] == nil {
-			out[msgID] = make(map[string]string)
+			out[msgID] = make(map[string][]string)
 		}
-		out[msgID][emoji] = reactor
+		out[msgID][emoji] = append(out[msgID][emoji], reactor)
 	}
 	return out, rows.Err()
 }
@@ -298,7 +302,7 @@ func (s *Store) StarredMessages(limit int) ([]Message, error) {
 		SELECT
 			m.chat_jid, m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
 			m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status,
-			COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, COALESCE(md.is_gif, 0), COALESCE(md.view_once, 0), COALESCE(md.viewed, 0)
+			COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, COALESCE(md.is_gif, 0), COALESCE(md.view_once, 0), COALESCE(md.viewed, 0), COALESCE(md.file_size, 0), COALESCE(md.duration_secs, 0)
 		FROM messages m
 		LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id
 		WHERE m.starred = 1
@@ -317,10 +321,12 @@ func (s *Store) StarredMessages(limit int) ([]Message, error) {
 		var mediaKind, mediaFilename, mediaCaption, mediaMime, mediaLocal string
 		var mediaThumb []byte
 		var mediaIsGif, mediaViewOnce, mediaViewed int
+		var mediaSize int64
+		var mediaSecs int
 		if err := rows.Scan(
 			&m.ChatJID, &m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID,
 			&m.Kind, &m.Payload, &edited, &deleted, &m.Status,
-			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb, &mediaIsGif, &mediaViewOnce, &mediaViewed,
+			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb, &mediaIsGif, &mediaViewOnce, &mediaViewed, &mediaSize, &mediaSecs,
 		); err != nil {
 			return nil, err
 		}
@@ -333,6 +339,7 @@ func (s *Store) StarredMessages(limit int) ([]Message, error) {
 				Kind: mediaKind, Filename: mediaFilename, Caption: mediaCaption,
 				MimeType: mediaMime, LocalPath: mediaLocal, Thumbnail: mediaThumb, IsGif: mediaIsGif != 0,
 				ViewOnce: mediaViewOnce != 0, Viewed: mediaViewed != 0,
+				FileSize: mediaSize, DurationSecs: mediaSecs,
 			}
 		}
 		out = append(out, m)
@@ -427,4 +434,25 @@ func (s *Store) ClearChat(jid string, alsoMedia bool) (mediaPaths []string, err 
 		return nil, err
 	}
 	return mediaPaths, nil
+}
+
+// RemoveMessage drops a message and everything hanging off it (media,
+// reactions, votes, receipts): WhatsApp's "delete for me", which leaves no
+// tombstone. Unlike MarkMessageDeleted the row is gone, so a redelivery of
+// the original would bring it back; WhatsApp does not redeliver.
+func (s *Store) RemoveMessage(chatJID, msgID string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, table := range []string{"messages", "media", "reactions", "read_receipts"} {
+		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE chat_jid = ? AND msg_id = ?`, chatJID, msgID); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM poll_votes WHERE chat_jid = ? AND poll_msg_id = ?`, chatJID, msgID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

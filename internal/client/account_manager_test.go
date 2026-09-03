@@ -215,3 +215,22 @@ func TestSetAccountProxyUnknown(t *testing.T) {
 		t.Errorf("AccountProxy = %q, want %q", got, "socks5://x")
 	}
 }
+
+func TestAccountDisplayNameFallsBackToProfile(t *testing.T) {
+	a := &Account{ID: "default", c: NewFake()}
+	if got := a.displayName(0); got != "Sezar" {
+		t.Fatalf("no label: got %q, want the profile name", got)
+	}
+	a.Name = "Work"
+	if got := a.displayName(0); got != "Work" {
+		t.Fatalf("label wins: got %q", got)
+	}
+	m := NewAccountManager()
+	m.AddAccount("default", "", NewFake())
+	if got := m.ActiveName(); got != "Sezar" {
+		t.Fatalf("ActiveName = %q", got)
+	}
+	if metas := m.Accounts(); metas[0].Name != "Sezar" {
+		t.Fatalf("Accounts()[0].Name = %q", metas[0].Name)
+	}
+}

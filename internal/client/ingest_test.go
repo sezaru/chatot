@@ -3,6 +3,7 @@ package client
 import (
 	"testing"
 
+	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
 	"chatot/internal/store"
@@ -182,7 +183,7 @@ func TestIngestReactionStored(t *testing.T) {
 
 	msgs, err := w.store.Messages("1234567890@s.whatsapp.net", 50)
 	must(t, err)
-	if got := msgs[0].Reactions["👍"]; got != "friend@s.whatsapp.net" {
+	if got := msgs[0].Reactions["👍"]; len(got) != 1 || got[0] != "friend@s.whatsapp.net" {
 		t.Errorf("got reactions %+v, want 👍 from friend", msgs[0].Reactions)
 	}
 }
@@ -196,5 +197,94 @@ func TestIngestRevokeMarksMessageDeleted(t *testing.T) {
 	must(t, err)
 	if len(msgs) != 1 || !msgs[0].Deleted {
 		t.Fatalf("got %+v, want the message marked deleted", msgs)
+	}
+}
+
+func TestIngestGroupReadReceiptNeedsEveryMember(t *testing.T) {
+	w := newIngestFixture(t)
+	const group = "g1@g.us"
+	must(t, w.ingestMessage(&Message{ID: "m1", ChatJID: group, FromMe: true, Text: "hi", TS: 100}))
+	must(t, w.store.UpsertGroup(store.GroupRow{JID: group, Name: "G"}))
+	must(t, w.store.SetGroupParticipants(group, []store.GroupParticipant{
+		{JID: "111@s.whatsapp.net"}, {JID: "222@s.whatsapp.net"},
+	}))
+	status := func() int {
+		msgs, err := w.store.Messages(group, 10)
+		must(t, err)
+		return msgs[0].Status
+	}
+	must(t, w.ingestReceipt(&Receipt{ChatJID: group, MsgIDs: []string{"m1"}, Read: true, Status: MessageStatusRead, ReaderJID: "111@s.whatsapp.net", TS: 101}))
+	if got := status(); got != MessageStatusDelivered {
+		t.Fatalf("after one of two readers status = %d, want delivered (%d)", got, MessageStatusDelivered)
+	}
+	must(t, w.ingestReceipt(&Receipt{ChatJID: group, MsgIDs: []string{"m1"}, Read: true, Status: MessageStatusRead, ReaderJID: "222@s.whatsapp.net", TS: 102}))
+	if got := status(); got != MessageStatusRead {
+		t.Fatalf("after every reader status = %d, want read (%d)", got, MessageStatusRead)
+	}
+}
+
+func TestIngestGroupReadStateReconciledWhenMembersArrive(t *testing.T) {
+	w := newIngestFixture(t)
+	const group = "g2@g.us"
+	must(t, w.ingestMessage(&Message{ID: "a", ChatJID: group, FromMe: true, Text: "1", TS: 100}))
+	must(t, w.ingestMessage(&Message{ID: "b", ChatJID: group, FromMe: true, Text: "2", TS: 101}))
+	// Receipts before the membership is known: nothing may be claimed read.
+	must(t, w.ingestReceipt(&Receipt{ChatJID: group, MsgIDs: []string{"a", "b"}, Read: true, Status: MessageStatusRead, ReaderJID: "111@s.whatsapp.net", TS: 102}))
+	msgs, err := w.store.Messages(group, 10)
+	must(t, err)
+	for _, m := range msgs {
+		if m.Status != MessageStatusDelivered {
+			t.Fatalf("%s before membership: status %d, want delivered", m.ID, m.Status)
+		}
+	}
+	w.persistGroupInfo(&GroupInfo{JID: group, Name: "G", Participants: []GroupParticipant{{JID: "111@s.whatsapp.net"}}})
+	msgs, err = w.store.Messages(group, 10)
+	must(t, err)
+	for _, m := range msgs {
+		if m.Status != MessageStatusRead {
+			t.Errorf("%s after membership: status %d, want read", m.ID, m.Status)
+		}
+	}
+}
+
+func TestIngestPeerReadReceiptKeepsOurUnread(t *testing.T) {
+	w := newIngestFixture(t)
+	const chat = "2@s.whatsapp.net"
+	must(t, w.ingestMessage(&Message{ID: "A", ChatJID: chat, FromJID: chat, Text: "hi", TS: 10}))
+	must(t, w.ingestMessage(&Message{ID: "B", ChatJID: chat, FromJID: "1@s.whatsapp.net", FromMe: true, Text: "yo", TS: 11}))
+	if c, _ := chatByJID(t, w, chat); c.UnreadCount != 1 {
+		t.Fatalf("unread before = %d, want 1", c.UnreadCount)
+	}
+	// They read our message: our badge is untouched.
+	must(t, w.ingestReceipt(&Receipt{ChatJID: chat, MsgIDs: []string{"B"}, Read: true, Status: MessageStatusRead, ReaderJID: chat, TS: 12}))
+	if c, _ := chatByJID(t, w, chat); c.UnreadCount != 1 {
+		t.Fatalf("unread after peer read = %d, want 1", c.UnreadCount)
+	}
+	// Our other device read the chat: it clears.
+	must(t, w.ingestReceipt(&Receipt{ChatJID: chat, MsgIDs: []string{"A"}, Read: true, Status: MessageStatusRead, TS: 13}))
+	if c, _ := chatByJID(t, w, chat); c.UnreadCount != 0 {
+		t.Fatalf("unread after self read = %d, want 0", c.UnreadCount)
+	}
+}
+
+func TestApplyMarkChatAsReadHonoursRange(t *testing.T) {
+	w := newIngestFixture(t)
+	const chat = "2@s.whatsapp.net"
+	must(t, w.ingestMessage(&Message{ID: "A", ChatJID: chat, FromJID: chat, Text: "hi", TS: 100}))
+	read := true
+	old := int64(50)
+	must(t, w.applyMarkChatAsRead(chat, &waSyncAction.MarkChatAsReadAction{Read: &read, MessageRange: &waSyncAction.SyncActionMessageRange{LastMessageTimestamp: &old}}))
+	if c, _ := chatByJID(t, w, chat); c.UnreadCount != 1 {
+		t.Fatalf("a read from before the message cleared the badge (unread=%d)", c.UnreadCount)
+	}
+	now := int64(100)
+	must(t, w.applyMarkChatAsRead(chat, &waSyncAction.MarkChatAsReadAction{Read: &read, MessageRange: &waSyncAction.SyncActionMessageRange{LastMessageTimestamp: &now}}))
+	if c, _ := chatByJID(t, w, chat); c.UnreadCount != 0 {
+		t.Fatalf("a read covering the message left unread=%d", c.UnreadCount)
+	}
+	unread := false
+	must(t, w.applyMarkChatAsRead(chat, &waSyncAction.MarkChatAsReadAction{Read: &unread}))
+	if c, _ := chatByJID(t, w, chat); c.UnreadCount != 1 {
+		t.Fatalf("mark unread left unread=%d", c.UnreadCount)
 	}
 }

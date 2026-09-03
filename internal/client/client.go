@@ -5,8 +5,14 @@ package client
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrUnsupported is returned by a backend for a call it has no transport
+// for (whatsmeow has no channel directory, for one); the UI explains rather
+// than fails.
+var ErrUnsupported = errors.New("chatot/client: not supported by this backend")
 
 // EventKind identifies the payload carried by an Event.
 type EventKind int
@@ -34,12 +40,19 @@ const (
 	// associations changed (possibly from another device); the label filter
 	// and chat list should refresh.
 	EventLabelUpdate
+	// EventNewsletterUpdate signals a channel changed: a new post arrived or
+	// a live update moved its view/reaction counts. Newsletter names it.
+	EventNewsletterUpdate
 )
 
 // Event is a normalized notification pushed on Client.Events(). Only the
 // field matching Kind is populated; the rest are zero.
 type Event struct {
-	Kind         EventKind
+	Kind EventKind
+	// Synced marks a message that arrived as catch-up (the server replaying
+	// what this device missed, or a stale-stamped backlog item) rather than
+	// live news; the notifier leaves those alone.
+	Synced       bool
 	Message      *Message
 	Receipt      *Receipt
 	Presence     *Presence
@@ -52,6 +65,12 @@ type Event struct {
 	Revoke       *Revoke
 	Avatar       *Avatar
 	ChatUpdate   *ChatUpdate
+	Newsletter   *NewsletterUpdate
+}
+
+// NewsletterUpdate names the channel an EventNewsletterUpdate is about.
+type NewsletterUpdate struct {
+	JID string
 }
 
 // Receipt is a delivery/read acknowledgement for previously sent messages.
@@ -63,6 +82,18 @@ type Receipt struct {
 	// delivered, 2 for read (see MessageStatus* constants). 0 means "don't
 	// touch status" (kept only for older callers that never set it).
 	Status int
+	// ReaderJID is who sent a read receipt for our message ("" when the
+	// receipt isn't a read by someone else); TS is when. For a status view
+	// ChatJID is status@broadcast and ReaderJID the viewer.
+	ReaderJID string
+	TS        int64
+}
+
+// StatusViewer is one contact who viewed an update of ours, from the read
+// receipt they sent.
+type StatusViewer struct {
+	JID string
+	TS  int64
 }
 
 // Outgoing message delivery/read states, mirrored 1:1 in the store's
@@ -112,8 +143,11 @@ type HistorySync struct {
 
 // Chat is a single conversation (1:1 or group) as shown in the chat list.
 type Chat struct {
-	JID           string
-	Name          string
+	JID  string
+	Name string
+	// Phone is the contact's number without the plus, "" when unknown (a
+	// group, or a LID chat whose number hasn't been learned yet).
+	Phone         string
 	Preview       string
 	UnreadCount   int
 	LastMessageTS int64
@@ -125,14 +159,17 @@ type Chat struct {
 
 // Message is a single chat message as shown in the conversation view.
 type Message struct {
-	ID         string
-	ChatJID    string
-	FromJID    string // sender within a group; equals ChatJID for 1:1
-	FromMe     bool
-	Text       string
-	TS         int64
-	ReplyTo    *MsgRef
-	Reactions  map[string]string // emoji -> reactor JID (last wins)
+	ID      string
+	ChatJID string
+	FromJID string // sender within a group; equals ChatJID for 1:1
+	FromMe  bool
+	Text    string
+	TS      int64
+	ReplyTo *MsgRef
+	// Reactions maps an emoji to the JIDs that reacted with it, oldest
+	// first. WhatsApp allows one reaction per person, so a JID appears under
+	// at most one emoji.
+	Reactions  map[string][]string
 	Attachment *Attachment
 	// Location is non-nil for a (live) location message. It's the first rich
 	// non-text/media body carried through the store's kind/payload seam.
@@ -200,6 +237,10 @@ type Location struct {
 	Longitude float64
 	IsLive    bool
 	LiveUntil int64
+	// Thumbnail is the small JPEG map preview the sender's WhatsApp embeds in
+	// a location message, so the bubble can show the map without any tile
+	// fetch of its own. Empty when the sender didn't attach one.
+	Thumbnail []byte
 }
 
 // EventInvite is a scheduled event posted in a chat (WhatsApp's
@@ -266,6 +307,59 @@ type Newsletter struct {
 	Name        string
 	Description string
 	Muted       bool
+	// Verified is WhatsApp's verified-channel mark.
+	Verified bool
+	// Subscribers is the follower count the server reports (0 if unknown).
+	Subscribers int
+	// InviteCode is the bare key of the channel's whatsapp.com/channel/<key>
+	// link ("" if unknown); see NewsletterLink.
+	InviteCode string
+	// Created is the channel's creation time (Unix seconds, 0 if unknown).
+	Created int64
+	// Following is true for a channel this account subscribes to. Always
+	// true from Newsletters; DiscoverNewsletters sets it per result.
+	Following bool
+	// Category is the directory category a discovered channel is filed
+	// under ("" for a subscribed channel).
+	Category string
+}
+
+// NewsletterLink is the shareable link for a channel, or "" without a key.
+func NewsletterLink(n Newsletter) string {
+	if n.InviteCode == "" {
+		return ""
+	}
+	return "https://whatsapp.com/channel/" + n.InviteCode
+}
+
+// Community is a WhatsApp community: a parent group whose members share an
+// announcement group and a set of linked sub-groups. Groups lists every
+// linked group, joined or not.
+type Community struct {
+	JID         string
+	Name        string
+	Description string
+	CreatorJID  string
+	Created     int64 // Unix seconds, 0 if unknown
+	// Muted reflects the announcement group's mute state.
+	Muted bool
+	// IsAdmin is true when this account administers the community.
+	IsAdmin     bool
+	MemberCount int
+	Members     []GroupParticipant
+	Groups      []CommunityGroup
+}
+
+// CommunityGroup is one group linked to a community. Preview and
+// UnreadCount are only meaningful for a joined group.
+type CommunityGroup struct {
+	JID          string
+	Name         string
+	Announcement bool
+	Joined       bool
+	MemberCount  int
+	Preview      string
+	UnreadCount  int
 }
 
 // NewsletterMessage is a single post in a channel. ServerID (whatsmeow's
@@ -278,6 +372,12 @@ type NewsletterMessage struct {
 	TS        int64
 	Views     int
 	Reactions map[string]int // emoji -> count
+	// MyReaction is the emoji we reacted with ("" for none). The server only
+	// reports counts, so the backend remembers what it sent.
+	MyReaction string
+	// Attachment is the post's media, if any; Text then carries the caption.
+	// It downloads through DownloadMedia like a chat attachment.
+	Attachment *Attachment
 }
 
 // MsgRef points at a message being replied to or reacted to.
@@ -300,8 +400,13 @@ type Attachment struct {
 	ProtoBlob []byte
 	// Thumbnail is the small JPEG/PNG preview WhatsApp embeds directly in
 	// the message proto, shown instantly while the full media downloads.
-	// Never set outbound.
+	// Outbound, the composer fills it from the attach tray's preview (poster
+	// frame, rendered PDF page, scaled photo) so recipients get one too.
 	Thumbnail []byte
+	// Width and Height are the pixel size of an outbound picture or video,
+	// sent in the message so the other side can size the bubble before the
+	// download. Zero when unknown; never set inbound.
+	Width, Height int
 	// IsGIF marks a "video" attachment WhatsApp flags gifPlayback: it plays
 	// looped and muted. Inline looping playback is deferred (F37 ships only
 	// the badge); this just tags the kind.
@@ -313,6 +418,14 @@ type Attachment struct {
 	// spent attachment renders a tombstone-style placeholder and can't be
 	// re-downloaded through the UI.
 	Viewed bool
+	// Size is the byte length WhatsApp reported for the attachment, used for
+	// the "· 1.2 MB" subline on document and voice rows. 0 when the sender
+	// omitted it (and on every row stored before this field existed), in
+	// which case the subline simply drops that segment.
+	Size int64
+	// DurationSecs is the playback length of an audio or video attachment,
+	// shown as "0:12". 0 when unknown.
+	DurationSecs int
 }
 
 // MediaItem is one image/video attachment in a chat, for the media/links/docs
@@ -388,6 +501,10 @@ type Client interface {
 	Start(ctx context.Context) error
 	QRCodes() <-chan string
 	LoggedIn() bool
+	// Paired reports whether a device is linked at all, connected or not:
+	// the startup screen shows the loading mark (not the QR page) while a
+	// paired account is still bringing its socket up.
+	Paired() bool
 	Logout(ctx context.Context) error
 	Events() <-chan Event
 	// PairPhone requests a phone-number pairing code as an alternative to
@@ -419,6 +536,9 @@ type Client interface {
 	// sharing periodically re-sends the position for the whole duration,
 	// which is a follow-up (needs a background ticker + a way to cancel it).
 	SendLiveLocation(ctx context.Context, jid string, lat, lon float64, durationSecs int) (string, error)
+	// StopLiveLocation ends an own live share early: the bubble flips to
+	// "Live location ended" locally and the open chat reloads.
+	StopLiveLocation(ctx context.Context, chatJID, msgID string) error
 	// SendContact shares a vCard built from contact's name/phone(s).
 	SendContact(ctx context.Context, jid string, contact Contact, replyTo *MsgRef) (string, error)
 	// ForwardMessage re-sends msg's content to toJID, marked as forwarded.
@@ -444,8 +564,15 @@ type Client interface {
 	// DeleteMessage revokes ("delete for everyone") an own message; reflected
 	// optimistically in the store + open chat.
 	DeleteMessage(ctx context.Context, chatJID, msgID string) error
+	// DeleteMessageForMe removes any message from this account only (the
+	// other side keeps it): synced to the phone through app state and
+	// dropped from the store, no tombstone.
+	DeleteMessageForMe(ctx context.Context, chatJID, msgID string) error
 	React(ctx context.Context, jid, msgID, emoji string) error // "" clears
 	MarkRead(ctx context.Context, jid string, msgIDs []string) error
+	// ClearUnread zeroes jid's local unread badge without sending a read
+	// receipt (MarkRead does both).
+	ClearUnread(jid string) error
 	// CheckOnWhatsApp looks up an E.164 phone number and reports its canonical
 	// JID and whether it's registered on WhatsApp. onWhatsApp is false (with a
 	// nil error) for a well-formed but unregistered number; err is reserved
@@ -462,11 +589,18 @@ type Client interface {
 	// EventChatUpdate.
 	PinChat(ctx context.Context, jid string, pin bool) error
 	MuteChat(ctx context.Context, jid string, mute bool) error
+	// MuteChatFor mutes jid for d (WhatsApp's 8-hour and 1-week options);
+	// MuteChat(true) is the "always" form.
+	MuteChatFor(ctx context.Context, jid string, d time.Duration) error
 	ArchiveChat(ctx context.Context, jid string, archive bool) error
 	MarkChatUnread(ctx context.Context, jid string, unread bool) error
 	// StarMessage stars/unstars msgID via app-state; reflected optimistically
 	// in the store and via a refresh event for the open thread.
 	StarMessage(ctx context.Context, chatJID, msgID string, starred bool) error
+	// PinMessage pins (or unpins) msgID at the top of chatJID for everyone in
+	// it, the way the ⋮ menu's "Pin in chat" row reads. WhatsApp keeps a pin
+	// for a bounded time (chatot asks for 7 days).
+	PinMessage(ctx context.Context, chatJID, msgID string, pin bool) error
 	// StarredMessages returns starred messages across every chat, newest
 	// first, for the starred-messages sidebar view.
 	StarredMessages(limit int) ([]Message, error)
@@ -520,6 +654,14 @@ type Client interface {
 	// OwnJID returns this device's own user JID ("" if not logged in), so the
 	// UI can decide whether the current user is a group admin/owner.
 	OwnJID() string
+	// ContactName resolves a participant or contact JID (phone-number or LID
+	// form) to its display name: the address book / push name, else a
+	// "+number" for a phone-number JID, else "". Used for group senders and
+	// @mentions, which point at people who need not be chats of their own.
+	ContactName(jid string) string
+	// OwnName returns this account's own profile (push) name, "" if unknown,
+	// for the account header and switcher.
+	OwnName() string
 	// CreateGroup creates a group named name with the given participant JIDs
 	// (self is added implicitly); the new group is persisted as a chat and its
 	// JID returned.
@@ -538,6 +680,9 @@ type Client interface {
 	SetGroupAnnounce(ctx context.Context, jid string, announce bool) error
 	// SetGroupLocked toggles locked mode (true = only admins can edit info).
 	SetGroupLocked(ctx context.Context, jid string, locked bool) error
+	// SetGroupPhoto replaces jid's group picture with jpeg (a JPEG, ideally
+	// square; WhatsApp rejects other formats).
+	SetGroupPhoto(ctx context.Context, jid string, jpeg []byte) error
 	// SetGroupDisappearingTimer sets jid's disappearing-message timer in
 	// seconds (0 disables it).
 	SetGroupDisappearingTimer(ctx context.Context, jid string, seconds int64) error
@@ -575,9 +720,46 @@ type Client interface {
 	// NewsletterReact reacts to a channel post identified by messageID +
 	// serverID with emoji ("" clears the reaction).
 	NewsletterReact(ctx context.Context, jid, messageID string, serverID int64, emoji string) error
+	// NewsletterMarkViewed reports the posts with serverIDs as viewed, which
+	// is what feeds a channel's view counts.
+	NewsletterMarkViewed(ctx context.Context, jid string, serverIDs []int64) error
+	// NewsletterSubscribeLive asks for live view/reaction updates on jid for
+	// a while; they arrive as EventNewsletterUpdate.
+	NewsletterSubscribeLive(ctx context.Context, jid string) error
 	// FollowNewsletterByLink resolves a whatsapp.com/channel/<key> link to a
 	// channel and follows it, returning the followed channel's JID.
 	FollowNewsletterByLink(ctx context.Context, link string) (jid string, err error)
+	// DiscoverNewsletters searches WhatsApp's channel directory; query ""
+	// lists the most followed channels. Backends without a directory return
+	// ErrUnsupported.
+	DiscoverNewsletters(ctx context.Context, query string) ([]Newsletter, error)
+
+	// Communities lists the communities this account belongs to, each with
+	// its linked groups.
+	Communities(ctx context.Context) ([]Community, error)
+	// JoinCommunityGroup joins a linked group of a community this account is
+	// already in. Backends without the call return ErrUnsupported.
+	JoinCommunityGroup(ctx context.Context, community, group string) error
+	// ReactToStatus reacts to poster's status update msgID ("" clears).
+	ReactToStatus(ctx context.Context, poster, msgID, emoji string) error
+	// MarkStatusViewed records poster's updates msgIDs as viewed (they show
+	// as read in Statuses) and, when notify is set, sends the poster the
+	// read receipt WhatsApp counts as a view.
+	MarkStatusViewed(ctx context.Context, poster string, msgIDs []string, notify bool) error
+	// StatusViewers lists who viewed our update msgID, earliest first, as
+	// assembled from their read receipts.
+	StatusViewers(msgID string) ([]StatusViewer, error)
+	// MuteStatus hides (or restores) poster's updates from the top of the
+	// feed, synced through app-state where the backend supports it.
+	MuteStatus(ctx context.Context, poster string, mute bool) error
+	// MutedStatusPosters lists the posters muted with MuteStatus.
+	MutedStatusPosters() ([]string, error)
+	// HideStatusFrom stops jid from seeing our status updates, by adding
+	// them to the status privacy exclusion list.
+	HideStatusFrom(ctx context.Context, jid string) error
+	// SetPrivacySetting changes one account privacy setting; name is a key
+	// of PrivacySettings and value one of PrivacySettingOptions(name).
+	SetPrivacySetting(ctx context.Context, name, value string) error
 
 	// media
 	DownloadMedia(ctx context.Context, msgID string) (localPath string, err error)

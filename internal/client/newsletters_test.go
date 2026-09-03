@@ -31,14 +31,14 @@ func TestFakeNewsletters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Newsletters: %v", err)
 	}
-	if len(ns) != 2 {
-		t.Fatalf("want 2 seeded channels, got %d", len(ns))
+	if len(ns) != 3 {
+		t.Fatalf("want 3 seeded channels, got %d", len(ns))
 	}
-	// Sorted by name: "Chatot News" before "Weather Alerts".
-	if ns[0].Name != "Chatot News" || ns[1].Name != "Weather Alerts" {
-		t.Errorf("unexpected channel order: %q, %q", ns[0].Name, ns[1].Name)
+	// Sorted by name: the book club, then "Chatot News", then "Weather Alerts".
+	if ns[0].Name != "Ada's Book Club" || ns[1].Name != "Chatot News" || ns[2].Name != "Weather Alerts" {
+		t.Errorf("unexpected channel order: %q, %q, %q", ns[0].Name, ns[1].Name, ns[2].Name)
 	}
-	if !ns[1].Muted {
+	if !ns[2].Muted {
 		t.Errorf("expected Weather Alerts to be muted")
 	}
 
@@ -46,12 +46,15 @@ func TestFakeNewsletters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewsletterMessages: %v", err)
 	}
-	if len(msgs) != 2 {
-		t.Fatalf("want 2 posts, got %d", len(msgs))
+	if len(msgs) != 3 {
+		t.Fatalf("want 3 posts, got %d", len(msgs))
 	}
-	// Newest first.
+	// Newest first, and the photo post carries its attachment.
 	if msgs[0].TS < msgs[1].TS {
 		t.Errorf("posts not newest-first")
+	}
+	if msgs[0].ID != "n2b" || msgs[0].Attachment == nil || msgs[0].Attachment.Kind != "image" {
+		t.Errorf("photo post = %+v, want n2b with an image attachment", msgs[0])
 	}
 }
 
@@ -101,13 +104,33 @@ func TestFakeNewsletterMutate(t *testing.T) {
 func TestFakeNewsletterReact(t *testing.T) {
 	f := NewFake()
 	ctx := context.Background()
+	count := func(emoji string) int {
+		msgs, _ := f.NewsletterMessages(ctx, "111111@newsletter", 20)
+		for _, m := range msgs {
+			if m.ID == "n2" {
+				return m.Reactions[emoji]
+			}
+		}
+		return -1
+	}
 	if err := f.NewsletterReact(ctx, "111111@newsletter", "n2", 2, "🔥"); err != nil {
 		t.Fatalf("React: %v", err)
 	}
-	msgs, _ := f.NewsletterMessages(ctx, "111111@newsletter", 20)
-	for _, m := range msgs {
-		if m.ID == "n2" && m.Reactions["🔥"] != 1 {
-			t.Errorf("reaction not recorded, got %v", m.Reactions)
-		}
+	if count("🔥") != 1 {
+		t.Errorf("reaction not recorded, 🔥 = %d", count("🔥"))
+	}
+	// One reaction per post: the same emoji again must not pile up, and a
+	// different one replaces it.
+	_ = f.NewsletterReact(ctx, "111111@newsletter", "n2", 2, "🔥")
+	if count("🔥") != 1 {
+		t.Errorf("repeat react drifted, 🔥 = %d", count("🔥"))
+	}
+	_ = f.NewsletterReact(ctx, "111111@newsletter", "n2", 2, "❤️")
+	if count("🔥") != 0 || count("❤️") != 1 {
+		t.Errorf("switch: 🔥 = %d ❤️ = %d", count("🔥"), count("❤️"))
+	}
+	_ = f.NewsletterReact(ctx, "111111@newsletter", "n2", 2, "")
+	if count("❤️") != 0 {
+		t.Errorf("withdraw: ❤️ = %d", count("❤️"))
 	}
 }

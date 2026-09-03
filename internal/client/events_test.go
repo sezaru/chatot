@@ -396,7 +396,7 @@ func TestTranslateContactMessage(t *testing.T) {
 	if c.DisplayName != "Alan Turing" {
 		t.Errorf("DisplayName = %q", c.DisplayName)
 	}
-	if len(c.Phones) != 1 || c.Phones[0] != "+44 7900 000000" {
+	if len(c.Phones) != 1 || c.Phones[0] != "+447900000000" {
 		t.Errorf("Phones = %v", c.Phones)
 	}
 	if e.Message.ReplyTo == nil || e.Message.ReplyTo.MsgID != "quoted-id" {
@@ -455,6 +455,7 @@ func TestParseVCardPhones(t *testing.T) {
 	}{
 		{"single", "BEGIN:VCARD\nTEL;type=CELL:+123\nEND:VCARD", []string{"+123"}},
 		{"multiple", "BEGIN:VCARD\nTEL;type=CELL:+123\nTEL;type=HOME:+456\nEND:VCARD", []string{"+123", "+456"}},
+		{"waid", "BEGIN:VCARD\nTEL;type=CELL;waid=554899010873:+55 48\u00a09901\u20110873\nEND:VCARD", []string{"+554899010873"}},
 		{"none", "BEGIN:VCARD\nFN:No Phone\nEND:VCARD", nil},
 		{"empty", "", nil},
 	}
@@ -905,5 +906,26 @@ func TestTranslateRevoke(t *testing.T) {
 	// would produce a blank EventMessage instead of an EventRevoke.
 	if e.Message != nil {
 		t.Error("Message is non-nil; a revoke must not also be routed as a message")
+	}
+}
+
+func TestTranslateMessageStoresBareSender(t *testing.T) {
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{
+				Chat:   mustJID(t, "554884131986-1482356741@g.us"),
+				Sender: mustJID(t, "257157073207386:27@lid"),
+			},
+			ID:        "DEV1",
+			Timestamp: time.Unix(1700000000, 0),
+		},
+		Message: &waProto.Message{Conversation: proto.String("oi")},
+	}
+	e := translate(evt)
+	if e == nil || e.Message == nil {
+		t.Fatal("translate returned no message")
+	}
+	if e.Message.FromJID != "257157073207386@lid" {
+		t.Errorf("FromJID = %q, want the sender without its device part", e.Message.FromJID)
 	}
 }

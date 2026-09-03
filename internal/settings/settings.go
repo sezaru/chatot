@@ -27,19 +27,23 @@ type Settings struct {
 	// KeepInactiveConnected keeps every linked account connected in the
 	// background; when false only the account currently shown stays connected.
 	KeepInactiveConnected bool `json:"keepInactiveConnected"`
+	// LocationAccess lets the Send-location sheet ask the system (the XDG
+	// location portal) for a position; off leaves only the map picker.
+	LocationAccess bool `json:"locationAccess"`
 }
 
 // Default returns the preferences a fresh install starts with: chatot
-// stays privacy-conservative (no read receipts) but otherwise matches
-// WhatsApp's own defaults.
+// matches WhatsApp's own defaults (read receipts on, as the mockup's Privacy
+// page shows them).
 func Default() Settings {
 	return Settings{
-		SendReadReceipts:        false,
+		SendReadReceipts:        true,
 		SendTypingIndicators:    true,
 		ShowNotifications:       true,
 		Theme:                   "system",
 		NotificationsPerAccount: true,
 		KeepInactiveConnected:   true,
+		LocationAccess:          true,
 	}
 }
 

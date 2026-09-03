@@ -1,8 +1,12 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"sort"
 	"strings"
@@ -23,9 +27,13 @@ type Fake struct {
 	events   *eventBus
 	qrCodes  chan string
 	loggedIn bool
-	nextID   int
-	blocked  map[string]bool
-	labels   []Label
+	// pairing marks a demo account that never links: Start emits a demo QR
+	// instead of flipping loggedIn, so the add-account and relink dialogs
+	// have a code to render in CHATOT_FAKE=1 builds.
+	pairing bool
+	nextID  int
+	blocked map[string]bool
+	labels  []Label
 	// labelChats maps a labelID to the set of chat JIDs it's associated with.
 	labelChats map[string]map[string]bool
 	// groups holds mutable in-memory group state keyed by JID, so F27's
@@ -43,6 +51,24 @@ type Fake struct {
 	// persisted); newsletterMsgs holds a few seeded posts per channel.
 	newsletters    map[string]*Newsletter
 	newsletterMsgs map[string][]NewsletterMessage
+	// newsletterMine is our current reaction per "jid/messageID" post.
+	newsletterMine map[string]string
+	// statusMuted is the set of muted status posters; statusViewers the
+	// read receipts on our own updates by message ID; statusHidden who we
+	// hid our status from; privacy the account privacy settings.
+	statusMuted   map[string]bool
+	statusViewers map[string][]StatusViewer
+	statusHidden  map[string]bool
+	privacy       map[string]string
+	// newsletterViewed is the set of "jid/messageID" posts already counted
+	// as viewed.
+	newsletterViewed map[string]bool
+	// directory is the channel directory DiscoverNewsletters searches:
+	// channels this account may or may not follow, keyed by JID.
+	directory map[string]*Newsletter
+	// communities holds mutable in-memory community state, seeded like the
+	// mockup's two communities (see seedTabs).
+	communities []Community
 }
 
 // fakeOwnJID is the Fake's own user JID. It matches the canned group's owner
@@ -73,6 +99,8 @@ func NewFake() *Fake {
 				Participants: []GroupParticipant{
 					{JID: fakeOwnJID, IsAdmin: true, IsSuperAdmin: true},
 					{JID: "1112223333@s.whatsapp.net"},
+					{JID: "4445556666@s.whatsapp.net"},
+					{JID: "7778889999@s.whatsapp.net"},
 				},
 			},
 		},
@@ -83,13 +111,17 @@ func NewFake() *Fake {
 			},
 		},
 		newsletters: map[string]*Newsletter{
-			"111111@newsletter": {ID: "111111@newsletter", Name: "Chatot News", Description: "Release notes and updates", Muted: false},
-			"222222@newsletter": {ID: "222222@newsletter", Name: "Weather Alerts", Description: "Daily local forecast", Muted: true},
+			"111111@newsletter": {ID: "111111@newsletter", Name: "Chatot News", Description: "Release notes and updates", Muted: false,
+				Verified: true, Subscribers: 4218, InviteCode: "releases8ka2", Created: now - 400*86400, Following: true, Category: "Technology"},
+			"222222@newsletter": {ID: "222222@newsletter", Name: "Weather Alerts", Description: "Daily local forecast", Muted: true,
+				Verified: true, Subscribers: 182000, InviteCode: "alerts3rv7", Created: now - 900*86400, Following: true, Category: "News"},
 		},
 		newsletterMsgs: map[string][]NewsletterMessage{
 			"111111@newsletter": {
 				{ID: "n1", ServerID: 1, Text: "Welcome to the channel!", TS: now - 7200, Views: 120, Reactions: map[string]int{"👍": 8, "❤️": 3}},
 				{ID: "n2", ServerID: 2, Text: "v2.0 is out with channels support.", TS: now - 3600, Views: 64, Reactions: map[string]int{"🎉": 5}},
+				{ID: "n2b", ServerID: 3, Text: "The new tab bar, straight from the mockup.", TS: now - 1200, Views: 31, Reactions: map[string]int{"🔥": 2},
+					Attachment: &Attachment{Kind: "image", MimeType: "image/png", Caption: "The new tab bar, straight from the mockup.", Thumbnail: fakeMapThumbnail()}},
 			},
 			"222222@newsletter": {
 				{ID: "n3", ServerID: 1, Text: "Rain expected this afternoon.", TS: now - 1800, Views: 42, Reactions: map[string]int{}},
@@ -105,13 +137,17 @@ func NewFake() *Fake {
 
 	f.messages["1234567890@s.whatsapp.net"] = []Message{
 		{ID: "m1", ChatJID: "1234567890@s.whatsapp.net", FromJID: "1234567890@s.whatsapp.net", FromMe: false, Text: "Hey, are we still on for tomorrow?", TS: now - 120},
-		{ID: "m2", ChatJID: "1234567890@s.whatsapp.net", FromJID: "me", FromMe: true, Text: "Yep!", TS: now - 90, Status: MessageStatusRead},
+		{ID: "m2", ChatJID: "1234567890@s.whatsapp.net", FromJID: "me", FromMe: true, Text: "Yep!", TS: now - 90, Status: MessageStatusRead,
+			Reactions: map[string][]string{"❤️": {"1234567890@s.whatsapp.net"}}},
 		{ID: "m3", ChatJID: "1234567890@s.whatsapp.net", FromJID: "1234567890@s.whatsapp.net", FromMe: false, Text: "See you tomorrow!", TS: now - 60, Forwarded: true},
 	}
 	f.messages["1112223333@s.whatsapp.net"] = []Message{
-		{ID: "m4", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, Text: "Bug found in the relay", TS: now - 3600},
+		// Two people on 👍 (a counted pill) beside a lone 😮: the mockup's
+		// multi-reaction row, with one of the 👍s being ours so it toggles.
+		{ID: "m4", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, Text: "Bug found in the relay", TS: now - 3600,
+			Reactions: map[string][]string{"👍": {"1112223333@s.whatsapp.net", fakeOwnJID}, "😮": {"4445556666@s.whatsapp.net"}}},
 		{ID: "m5", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 3000,
-			Location: &Location{Name: "Bletchley Park", Address: "Sherwood Dr, Bletchley, Milton Keynes", Latitude: 51.9976, Longitude: -0.7406}},
+			Location: &Location{Name: "Bletchley Park", Address: "Sherwood Dr, Bletchley, Milton Keynes", Latitude: 51.9976, Longitude: -0.7406, Thumbnail: fakeMapThumbnail()}},
 		{ID: "m6", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2900,
 			Contact: &Contact{DisplayName: "Alan Turing", Phones: []string{"+44 20 7946 0958"}}},
 		{ID: "m7", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2800,
@@ -121,30 +157,34 @@ func NewFake() *Fake {
 				{Name: "Salad"},
 			}}},
 		{ID: "m8", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2700,
-			Attachment: &Attachment{Kind: "video", MimeType: "video/mp4", IsGIF: true}},
+			Attachment: &Attachment{Kind: "video", MimeType: "video/mp4", IsGIF: true, Size: 860160, DurationSecs: 34}},
 		// No LocalPath: renders via the tap-to-load placeholder path, exercising
 		// the no-bubble sticker render without needing a bundled webp asset.
 		{ID: "m9", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2600,
-			Attachment: &Attachment{Kind: "sticker", MimeType: "image/webp"}},
+			Attachment: &Attachment{Kind: "sticker", MimeType: "image/webp", Size: 24576}},
 		// m10-m12 seed the Media/Links/Docs page (F43): an image (Media tab,
 		// alongside m8's video), a document (Docs tab) and a URL-bearing text
 		// message (Links tab).
 		{ID: "m10", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2500,
-			Attachment: &Attachment{Kind: "image", MimeType: "image/jpeg"}},
+			Attachment: &Attachment{Kind: "image", MimeType: "image/jpeg", Size: 860160}},
 		{ID: "m11", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2400,
-			Attachment: &Attachment{Kind: "document", Filename: "lease-2026.pdf", MimeType: "application/pdf"}},
+			Attachment: &Attachment{Kind: "document", Filename: "lease-2026.pdf", MimeType: "application/pdf", Size: 1258291}},
 		{ID: "m12", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2300,
 			Text: "Cabin listing — 3 bedrooms: https://stay.example.com/cabin/4412"},
 		// m13 seeds F49's view-once bubble: unopened, so it renders the
 		// "Click to open · closes after viewing" placeholder.
 		{ID: "m13", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2200,
-			Attachment: &Attachment{Kind: "image", MimeType: "image/jpeg", ViewOnce: true}},
+			Attachment: &Attachment{Kind: "image", MimeType: "image/jpeg", ViewOnce: true, Size: 512000}},
 		// m14 seeds F50's live-location bubble, sharing until an hour from now.
 		{ID: "m14", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2100,
 			Location: &Location{Latitude: 51.5007, Longitude: -0.1246, IsLive: true, LiveUntil: now + 3600}},
 		// m15 seeds F52's event bubble: a group-style scheduled event a week out.
 		{ID: "m15", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2000,
 			EventInvite: &EventInvite{Name: "Team offsite", Location: "Bletchley Park", StartTS: now + 7*86400}},
+		// m16 seeds the voice-note bubble, which had no fake coverage at all:
+		// undownloaded, so it renders the "🎤 Voice message · 0:12" row.
+		{ID: "m16", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 1900,
+			Attachment: &Attachment{Kind: "audio", MimeType: "audio/ogg", Size: 49152, DurationSecs: 12}},
 	}
 
 	f.messages[statusBroadcastJID] = []Message{
@@ -153,17 +193,42 @@ func NewFake() *Fake {
 			Attachment: &Attachment{Kind: "image"}},
 	}
 
+	f.seedGroupThread(now)
+	if dir := os.Getenv("CHATOT_FAKE_MEDIA"); dir != "" {
+		f.seedDevMedia(dir, now)
+	}
+	f.seedTabs(now)
 	return f
 }
 
 func (f *Fake) Start(ctx context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.pairing {
+		select {
+		case f.qrCodes <- "chatot-demo-pairing-code":
+		default:
+		}
+		return nil
+	}
 	f.loggedIn = true
 	return nil
 }
 
+// NewPairingFake is an empty, logged-out Fake that only produces demo QR
+// codes — what AddPairingAccount hands out in the demo build.
+func NewPairingFake() *Fake {
+	f := NewFake()
+	f.chats = nil
+	f.messages = make(map[string][]Message)
+	f.loggedIn = false
+	f.pairing = true
+	return f
+}
+
 func (f *Fake) QRCodes() <-chan string { return f.qrCodes }
+
+func (f *Fake) Paired() bool { return true }
 
 func (f *Fake) LoggedIn() bool {
 	f.mu.Lock()
@@ -173,8 +238,11 @@ func (f *Fake) LoggedIn() bool {
 
 func (f *Fake) Logout(ctx context.Context) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.loggedIn = false
+	f.mu.Unlock()
+	// The real client reports the logout as an event; the window relies on
+	// it to fall back to the pairing screen.
+	f.events.Publish(Event{Kind: EventLoggedOut})
 	return nil
 }
 
@@ -351,6 +419,26 @@ func (f *Fake) appendOutbound(jid string, msg Message) {
 	}
 }
 
+// Receive delivers an inbound text from sender into jid as if the peer had
+// just sent it: the thread grows, the row's badge counts it and the message
+// event goes out. A dev/screenshot aid for the "arrived while away" states.
+func (f *Fake) Receive(jid, sender, text string) {
+	f.mu.Lock()
+	id := f.nextMsgID()
+	msg := Message{ID: id, ChatJID: jid, FromJID: sender, Text: text, TS: time.Now().Unix()}
+	f.messages[jid] = append(f.messages[jid], msg)
+	for i := range f.chats {
+		if f.chats[i].JID == jid {
+			f.chats[i].Preview = text
+			f.chats[i].LastMessageTS = msg.TS
+			f.chats[i].UnreadCount++
+			break
+		}
+	}
+	f.mu.Unlock()
+	f.PushEvent(Event{Kind: EventMessage, Message: &msg})
+}
+
 func (f *Fake) SendText(ctx context.Context, jid, text string, replyTo *MsgRef) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -499,7 +587,7 @@ func (f *Fake) SendSticker(ctx context.Context, jid, path string) (string, error
 	f.messages[jid] = append(f.messages[jid], msg)
 	for i := range f.chats {
 		if f.chats[i].JID == jid {
-			f.chats[i].Preview = "🎨 Sticker"
+			f.chats[i].Preview = "🙂 Sticker"
 			f.chats[i].LastMessageTS = msg.TS
 			break
 		}
@@ -520,7 +608,7 @@ func (f *Fake) CreatePoll(ctx context.Context, jid, name string, options []strin
 	f.messages[jid] = append(f.messages[jid], msg)
 	for i := range f.chats {
 		if f.chats[i].JID == jid {
-			f.chats[i].Preview = "📊 Poll"
+			f.chats[i].Preview = "📊 " + name
 			f.chats[i].LastMessageTS = msg.TS
 			break
 		}
@@ -529,6 +617,16 @@ func (f *Fake) CreatePoll(ctx context.Context, jid, name string, options []strin
 }
 
 func (f *Fake) VotePoll(ctx context.Context, chatJID, pollMsgID string, options []string) error {
+	if err := f.votePollLocked(chatJID, pollMsgID, options); err != nil {
+		return err
+	}
+	// The real client emits the tally update it recorded; so does the fake,
+	// so the open chat refreshes the bubble the same way.
+	f.PushEvent(Event{Kind: EventPollVote, PollVote: &PollVote{ChatJID: chatJID, PollMsgID: pollMsgID}})
+	return nil
+}
+
+func (f *Fake) votePollLocked(chatJID, pollMsgID string, options []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	chosen := make(map[string]bool, len(options))
@@ -540,8 +638,14 @@ func (f *Fake) VotePoll(ctx context.Context, chatJID, pollMsgID string, options 
 			if msgs[i].ID != pollMsgID || msgs[i].Poll == nil {
 				continue
 			}
-			for j := range msgs[i].Poll.Options {
-				opt := &msgs[i].Poll.Options[j]
+			// Copy on write: snapshots handed out by Messages share the
+			// old poll pointer and must keep the old tally, or the view
+			// sees no change to redraw.
+			poll := *msgs[i].Poll
+			poll.Options = append([]PollOption(nil), poll.Options...)
+			msgs[i].Poll = &poll
+			for j := range poll.Options {
+				opt := &poll.Options[j]
 				want := chosen[opt.Name]
 				if want && !opt.Voted {
 					opt.Count++
@@ -595,32 +699,63 @@ func (f *Fake) React(ctx context.Context, jid, msgID, emoji string) error {
 	msgs := f.messages[jid]
 	for i := range msgs {
 		if msgs[i].ID == msgID {
-			if emoji == "" {
-				for k, v := range msgs[i].Reactions {
-					if v == "me" {
-						delete(msgs[i].Reactions, k)
-					}
-				}
-				return nil
-			}
-			if msgs[i].Reactions == nil {
-				msgs[i].Reactions = make(map[string]string)
-			}
-			msgs[i].Reactions[emoji] = "me"
+			// One reaction per person: picking a new emoji replaces the old
+			// one, and "" just removes it.
+			msgs[i].Reactions = withReaction(msgs[i].Reactions, fakeOwnJID, emoji)
 			return nil
 		}
 	}
 	return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, jid)
 }
 
-func (f *Fake) MarkRead(ctx context.Context, jid string, msgIDs []string) error {
+func (f *Fake) DeleteMessageForMe(ctx context.Context, chatJID, msgID string) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	msgs := f.messages[chatJID]
+	for i := range msgs {
+		if msgs[i].ID == msgID {
+			f.messages[chatJID] = append(msgs[:i:i], msgs[i+1:]...)
+			f.mu.Unlock()
+			f.events.Publish(Event{Kind: EventRevoke, Revoke: &Revoke{ChatJID: chatJID, MsgID: msgID, TS: time.Now().Unix()}})
+			f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: chatJID}})
+			return nil
+		}
+	}
+	f.mu.Unlock()
+	return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, chatJID)
+}
+
+func (f *Fake) MarkRead(ctx context.Context, jid string, msgIDs []string) error {
+	return f.ClearUnread(jid)
+}
+
+func (f *Fake) StopLiveLocation(ctx context.Context, chatJID, msgID string) error {
+	f.mu.Lock()
+	msgs := f.messages[chatJID]
+	for i := range msgs {
+		if msgs[i].ID == msgID && msgs[i].Location != nil {
+			loc := *msgs[i].Location
+			loc.LiveUntil = time.Now().Unix()
+			msgs[i].Location = &loc
+		}
+	}
+	f.mu.Unlock()
+	f.PushEvent(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: chatJID, MsgID: msgID}})
+	return nil
+}
+
+func (f *Fake) ClearUnread(jid string) error {
+	f.mu.Lock()
+	changed := false
 	for i := range f.chats {
 		if f.chats[i].JID == jid {
+			changed = f.chats[i].UnreadCount != 0
 			f.chats[i].UnreadCount = 0
 			break
 		}
+	}
+	f.mu.Unlock()
+	if changed {
+		f.PushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
 	}
 	return nil
 }
@@ -645,6 +780,12 @@ func (f *Fake) MuteChat(ctx context.Context, jid string, mute bool) error {
 	}
 	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
 	return nil
+}
+
+// MuteChatFor is MuteChat(true): the fake keeps no timer, so a timed mute
+// simply mutes.
+func (f *Fake) MuteChatFor(ctx context.Context, jid string, d time.Duration) error {
+	return f.MuteChat(ctx, jid, true)
 }
 
 func (f *Fake) ArchiveChat(ctx context.Context, jid string, archive bool) error {
@@ -733,8 +874,13 @@ func (f *Fake) Statuses(limit int) ([]Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	src := f.messages[statusBroadcastJID]
-	out := make([]Message, len(src))
-	copy(out, src)
+	out := make([]Message, 0, len(src))
+	for _, m := range src {
+		// A deleted status is gone, not a tombstone in the feed.
+		if !m.Deleted {
+			out = append(out, m)
+		}
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].TS > out[j].TS })
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
@@ -836,6 +982,9 @@ func (f *Fake) NewsletterMessages(ctx context.Context, jid string, count int) ([
 	if count > 0 && len(out) > count {
 		out = out[:count]
 	}
+	for i := range out {
+		out[i].MyReaction = f.newsletterMine[jid+"/"+out[i].ID]
+	}
 	return out, nil
 }
 
@@ -844,7 +993,13 @@ func (f *Fake) NewsletterMessages(ctx context.Context, jid string, count int) ([
 func (f *Fake) FollowNewsletter(ctx context.Context, jid string) error {
 	f.mu.Lock()
 	if _, ok := f.newsletters[jid]; !ok {
-		f.newsletters[jid] = &Newsletter{ID: jid, Name: jid, Description: ""}
+		if d, ok := f.directory[jid]; ok {
+			n := *d
+			n.Following = true
+			f.newsletters[jid] = &n
+		} else {
+			f.newsletters[jid] = &Newsletter{ID: jid, Name: jid, Description: "", Following: true}
+		}
 	}
 	f.mu.Unlock()
 	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
@@ -872,11 +1027,16 @@ func (f *Fake) NewsletterSetMuted(ctx context.Context, jid string, mute bool) er
 	return nil
 }
 
-// NewsletterReact bumps the reaction count on the named post (a no-op if the
-// channel/post is unknown).
+// NewsletterReact sets our reaction on the named post the way the server
+// does: one per post, so a new emoji replaces the previous one's count and
+// "" withdraws it (a no-op if the channel/post is unknown).
 func (f *Fake) NewsletterReact(ctx context.Context, jid, messageID string, serverID int64, emoji string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.newsletterMine == nil {
+		f.newsletterMine = make(map[string]string)
+	}
+	key := jid + "/" + messageID
 	msgs := f.newsletterMsgs[jid]
 	for i := range msgs {
 		if msgs[i].ID != messageID {
@@ -885,8 +1045,18 @@ func (f *Fake) NewsletterReact(ctx context.Context, jid, messageID string, serve
 		if msgs[i].Reactions == nil {
 			msgs[i].Reactions = make(map[string]int)
 		}
+		if prev := f.newsletterMine[key]; prev != "" {
+			if msgs[i].Reactions[prev] <= 1 {
+				delete(msgs[i].Reactions, prev)
+			} else {
+				msgs[i].Reactions[prev]--
+			}
+		}
 		if emoji != "" {
 			msgs[i].Reactions[emoji]++
+			f.newsletterMine[key] = emoji
+		} else {
+			delete(f.newsletterMine, key)
 		}
 		return nil
 	}
@@ -903,7 +1073,7 @@ func (f *Fake) FollowNewsletterByLink(ctx context.Context, link string) (string,
 	jid := key + "@newsletter"
 	f.mu.Lock()
 	if _, ok := f.newsletters[jid]; !ok {
-		f.newsletters[jid] = &Newsletter{ID: jid, Name: "Channel " + key, Description: "Followed via link"}
+		f.newsletters[jid] = &Newsletter{ID: jid, Name: "Channel " + key, Description: "Followed via link", Following: true, InviteCode: key}
 	}
 	f.mu.Unlock()
 	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
@@ -943,18 +1113,44 @@ func (f *Fake) IsBlocked(jid string) bool {
 // PrivacySettings returns a canned settings map; the fake has no real
 // account to read privacy settings from.
 func (f *Fake) PrivacySettings(ctx context.Context) (map[string]string, error) {
-	return map[string]string{
-		"Group Add":     "all",
-		"Last Seen":     "contacts",
-		"Status":        "contacts",
-		"Profile Photo": "all",
-		"Read Receipts": "all",
-		"Calls":         "all",
-		"Online":        "match_last_seen",
-		"Messages":      "all",
-		"Defense Mode":  "off",
-		"Stickers":      "contacts",
-	}, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make(map[string]string, len(f.privacyLocked()))
+	for k, v := range f.privacyLocked() {
+		out[k] = v
+	}
+	return out, nil
+}
+
+// privacyLocked is the mutable privacy map, seeded on first use. Callers
+// hold f.mu.
+func (f *Fake) privacyLocked() map[string]string {
+	if f.privacy == nil {
+		f.privacy = map[string]string{
+			"Group Add":     "all",
+			"Last Seen":     "contacts",
+			"Status":        "contacts",
+			"Profile Photo": "all",
+			"Read Receipts": "all",
+			"Calls":         "all",
+			"Online":        "match_last_seen",
+			"Messages":      "all",
+			"Defense Mode":  "off",
+			"Stickers":      "contacts",
+		}
+	}
+	return f.privacy
+}
+
+// SetPrivacySetting validates the pair like the real client and stores it.
+func (f *Fake) SetPrivacySetting(ctx context.Context, name, value string) error {
+	if _, _, err := privacySettingType(name, value); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.privacyLocked()[name] = value
+	return nil
 }
 
 // GroupInfo returns the stored group for jid, seeding a canned one on first
@@ -999,6 +1195,30 @@ func cloneGroupInfo(g *GroupInfo) *GroupInfo {
 // OwnJID returns the Fake's own user JID.
 func (f *Fake) OwnJID() string { return fakeOwnJID }
 
+// ContactName resolves a fixture person: the chat list's names plus the
+// group participants the fixture threads mention.
+func (f *Fake) ContactName(jid string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.chats {
+		if c.JID == jid && !c.IsGroup {
+			return c.Name
+		}
+	}
+	return fakeParticipantNames[jid]
+}
+
+// fakeParticipantNames names people who appear in fixture groups without
+// being chats of their own.
+var fakeParticipantNames = map[string]string{
+	"4445556666@s.whatsapp.net": "Linus Torvalds",
+	"1998887777@s.whatsapp.net": "Ken Thompson",
+	"7778889999@s.whatsapp.net": "Dennis Ritchie",
+}
+
+// OwnName is the fixture's profile name.
+func (f *Fake) OwnName() string { return "Sezar" }
+
 func (f *Fake) CreateGroup(ctx context.Context, name string, participantJIDs []string) (string, error) {
 	if !validGroupName(name) {
 		return "", fmt.Errorf("chatot/client: invalid group name %q (1-25 chars)", name)
@@ -1027,6 +1247,13 @@ func (f *Fake) LeaveGroup(ctx context.Context, jid string) error {
 		}
 	}
 	f.chats = kept
+	keptComms := f.communities[:0]
+	for _, c := range f.communities {
+		if c.JID != jid {
+			keptComms = append(keptComms, c)
+		}
+	}
+	f.communities = keptComms
 	f.mu.Unlock()
 	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
 	return nil
@@ -1111,6 +1338,28 @@ func (f *Fake) SetGroupLocked(ctx context.Context, jid string, locked bool) erro
 	return nil
 }
 
+// PinMessage only validates in the demo: a pin has no rendering of its own
+// yet, so there is nothing to mutate.
+func (f *Fake) PinMessage(ctx context.Context, chatJID, msgID string, pin bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, m := range f.messages[chatJID] {
+		if m.ID == msgID {
+			return nil
+		}
+	}
+	return fmt.Errorf("chatot/client: message %s not found in chat %s", msgID, chatJID)
+}
+
+// SetGroupPhoto accepts any non-empty image for the demo group.
+func (f *Fake) SetGroupPhoto(ctx context.Context, jid string, jpeg []byte) error {
+	if len(jpeg) == 0 {
+		return fmt.Errorf("chatot/client: empty group photo")
+	}
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
 func (f *Fake) SetGroupDisappearingTimer(ctx context.Context, jid string, seconds int64) error {
 	f.mu.Lock()
 	f.ensureGroupLocked(jid).DisappearingTimer = uint32(seconds)
@@ -1129,6 +1378,16 @@ func (f *Fake) GroupInviteLink(ctx context.Context, jid string, reset bool) (str
 
 func (f *Fake) JoinGroupWithLink(ctx context.Context, code string) (string, error) {
 	c := parseInviteCode(code)
+	// Community invites ("…/comm…") land in Communities, not just Chats.
+	if strings.HasPrefix(strings.ToLower(c), "comm") {
+		f.mu.Lock()
+		f.nextGroupN++
+		cjid := fmt.Sprintf("fake-community-%d@g.us", f.nextGroupN)
+		f.addCommunityLocked(cjid, "Invited community", "You joined this community from an invite link. Its groups appear here as admins link them.", "1112223333@s.whatsapp.net", false)
+		f.mu.Unlock()
+		f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: cjid}})
+		return cjid, nil
+	}
 	jid := "joined-" + c + "@g.us"
 	f.mu.Lock()
 	if _, ok := f.groups[jid]; !ok {
@@ -1155,16 +1414,7 @@ func (f *Fake) CreateCommunity(ctx context.Context, name, description string) (s
 	f.mu.Lock()
 	f.nextGroupN++
 	jid := fmt.Sprintf("fake-community-%d@g.us", f.nextGroupN)
-	f.groups[jid] = &GroupInfo{
-		JID:      jid,
-		Name:     name,
-		Topic:    description,
-		OwnerJID: fakeOwnJID,
-		Participants: []GroupParticipant{
-			{JID: fakeOwnJID, IsAdmin: true, IsSuperAdmin: true},
-		},
-	}
-	f.chats = append(f.chats, Chat{JID: jid, Name: name, IsGroup: true, LastMessageTS: time.Now().Unix()})
+	f.addCommunityLocked(jid, name, description, fakeOwnJID, true)
 	f.mu.Unlock()
 	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
 	return jid, nil
@@ -1176,9 +1426,24 @@ func (f *Fake) LinkGroupToCommunity(ctx context.Context, community, group string
 	if _, ok := f.groups[community]; !ok {
 		return fmt.Errorf("chatot/client: unknown community %q", community)
 	}
-	if _, ok := f.groups[group]; !ok {
+	g, ok := f.groups[group]
+	if !ok {
 		return fmt.Errorf("chatot/client: unknown group %q", group)
 	}
+	for i := range f.communities {
+		if f.communities[i].JID != community {
+			continue
+		}
+		for _, cg := range f.communities[i].Groups {
+			if cg.JID == group {
+				return nil
+			}
+		}
+		f.communities[i].Groups = append(f.communities[i].Groups, CommunityGroup{
+			JID: group, Name: g.Name, Joined: true, MemberCount: len(g.Participants), Preview: "Linked just now",
+		})
+	}
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: community}})
 	return nil
 }
 
@@ -1364,4 +1629,66 @@ func (f *Fake) MarkViewOnceOpened(ctx context.Context, chatJID, msgID string) er
 // avatar images to serve.
 func (f *Fake) Avatar(ctx context.Context, jid string) (string, error) {
 	return "", nil
+}
+
+// fakeMapThumbnail draws a stand-in for the map preview a real WhatsApp
+// location message embeds: a pale tile with a couple of "roads" and a strip of
+// water, so the location bubble's map rendering can be exercised without a
+// live message. Rendered at 2x the bubble's 270×86 tile for HiDPI.
+func fakeMapThumbnail() []byte {
+	const w, h = 540, 172
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	land := color.RGBA{0xe8, 0xec, 0xe4, 0xff}
+	road := color.RGBA{0xff, 0xff, 0xff, 0xff}
+	water := color.RGBA{0xbf, 0xd9, 0xea, 0xff}
+	block := color.RGBA{0xdc, 0xe2, 0xd6, 0xff}
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			c := land
+			switch {
+			case y > 120 && y < 172 && x > 300:
+				c = water
+			case (x/70)%2 == 1 && (y/50)%2 == 0:
+				c = block
+			}
+			// Two horizontal and three vertical roads.
+			if (y > 40 && y < 48) || (y > 100 && y < 106) || (x > 120 && x < 128) || (x > 260 && x < 268) || (x > 420 && x < 426) {
+				c = road
+			}
+			img.Set(x, y, c)
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
+
+// withReaction returns reactions with reactor's reaction set to emoji (or
+// removed when emoji is ""), dropping whatever reactor had before. Emojis
+// left with no reactors disappear, and a nil map stays nil when nothing was
+// added.
+func withReaction(reactions map[string][]string, reactor, emoji string) map[string][]string {
+	for e, who := range reactions {
+		kept := who[:0:0]
+		for _, j := range who {
+			if j != reactor {
+				kept = append(kept, j)
+			}
+		}
+		if len(kept) == 0 {
+			delete(reactions, e)
+		} else {
+			reactions[e] = kept
+		}
+	}
+	if emoji == "" {
+		return reactions
+	}
+	if reactions == nil {
+		reactions = make(map[string][]string)
+	}
+	reactions[emoji] = append(reactions[emoji], reactor)
+	return reactions
 }

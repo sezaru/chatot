@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
+	"time"
 )
 
 var _ Client = (*AccountManager)(nil)
@@ -52,7 +55,25 @@ type AccountMeta struct {
 	ID     string
 	Name   string
 	Status string
+	Phone  string
 	Unread int
+}
+
+// phoneFromJID extracts the dialable number from a user JID
+// ("1234567890@s.whatsapp.net" → "+1234567890"); "" when not logged in.
+func phoneFromJID(jid string) string {
+	user, _, ok := strings.Cut(jid, "@")
+	if !ok || user == "" {
+		return ""
+	}
+	// Drop any device/agent suffix (":<n>" or ".<n>").
+	if i := strings.IndexAny(user, ":."); i >= 0 {
+		user = user[:i]
+	}
+	if user == "" {
+		return ""
+	}
+	return "+" + user
 }
 
 // accountStatusLine is the pure status subline for an account, given whether
@@ -198,8 +219,9 @@ func (m *AccountManager) Accounts() []AccountMeta {
 		}
 		out[i] = AccountMeta{
 			ID:     a.ID,
-			Name:   a.Name,
+			Name:   a.displayName(i),
 			Status: accountStatusLine(a.c.LoggedIn()),
+			Phone:  phoneFromJID(a.c.OwnJID()),
 			Unread: unread,
 		}
 	}
@@ -316,9 +338,9 @@ func (m *AccountManager) stopAccount(a *Account) {
 func (m *AccountManager) ActiveName() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for _, a := range m.accounts {
+	for i, a := range m.accounts {
 		if a.ID == m.activeID {
-			return a.Name
+			return a.displayName(i)
 		}
 	}
 	return ""
@@ -440,7 +462,19 @@ func (m *AccountManager) LoadRoster() error {
 // mode (no base dir) rather than pretending to pair.
 func (m *AccountManager) AddPairingAccount(label string) (*Account, error) {
 	if m.baseDir == "" {
-		return nil, errors.New("chatot/client: adding accounts needs a real WhatsApp connection")
+		// No state dir means the demo build (CHATOT_FAKE=1): there is no
+		// WhatsApp to pair with, so the new account is a Fake that only ever
+		// emits demo QR codes. The dialog renders the same as for a real one.
+		if _, ok := m.active().(*Fake); !ok {
+			return nil, errors.New("chatot/client: adding accounts needs a real WhatsApp connection")
+		}
+		id := m.uniqueID(label)
+		m.AddAccount(id, label, NewPairingFake())
+		a := m.accountByID(id)
+		if err := m.startAccount(context.Background(), a); err != nil {
+			return nil, err
+		}
+		return a, nil
 	}
 	id := m.uniqueID(label)
 	c, err := NewWhatsmeow(m.accountDir(id))
@@ -466,6 +500,25 @@ func (m *AccountManager) AddPairingAccount(label string) (*Account, error) {
 	// won't survive a restart), so don't fail the add over it.
 	_ = m.persistRoster()
 	return a, nil
+}
+
+// RenameAccount changes the label shown for id in the switcher, rail and
+// notifications, and persists it with the roster.
+func (m *AccountManager) RenameAccount(id, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("chatot/client: account label cannot be empty")
+	}
+	m.mu.Lock()
+	a := m.findLocked(id)
+	if a == nil {
+		m.mu.Unlock()
+		return fmt.Errorf("chatot/client: no account %q", id)
+	}
+	a.Name = name
+	m.mu.Unlock()
+	m.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{}})
+	return m.persistRoster()
 }
 
 // RemoveAccount drops id from the roster and disconnects its client. It refuses
@@ -579,6 +632,9 @@ func (m *AccountManager) QRCodes() <-chan string { return m.qrCodes }
 func (m *AccountManager) Events() <-chan Event { return m.events.Subscribe() }
 
 func (m *AccountManager) LoggedIn() bool { return m.active().LoggedIn() }
+func (m *AccountManager) Paired() bool   { return m.active().Paired() }
+
+func (m *AccountManager) ContactName(jid string) string { return m.active().ContactName(jid) }
 
 func (m *AccountManager) Logout(ctx context.Context) error { return m.active().Logout(ctx) }
 
@@ -660,12 +716,22 @@ func (m *AccountManager) DeleteMessage(ctx context.Context, chatJID, msgID strin
 	return m.active().DeleteMessage(ctx, chatJID, msgID)
 }
 
+func (m *AccountManager) DeleteMessageForMe(ctx context.Context, chatJID, msgID string) error {
+	return m.active().DeleteMessageForMe(ctx, chatJID, msgID)
+}
+
 func (m *AccountManager) React(ctx context.Context, jid, msgID, emoji string) error {
 	return m.active().React(ctx, jid, msgID, emoji)
 }
 
 func (m *AccountManager) MarkRead(ctx context.Context, jid string, msgIDs []string) error {
 	return m.active().MarkRead(ctx, jid, msgIDs)
+}
+
+func (m *AccountManager) ClearUnread(jid string) error { return m.active().ClearUnread(jid) }
+
+func (m *AccountManager) StopLiveLocation(ctx context.Context, chatJID, msgID string) error {
+	return m.active().StopLiveLocation(ctx, chatJID, msgID)
 }
 
 func (m *AccountManager) CheckOnWhatsApp(ctx context.Context, phone string) (string, bool, error) {
@@ -688,6 +754,10 @@ func (m *AccountManager) PinChat(ctx context.Context, jid string, pin bool) erro
 	return m.active().PinChat(ctx, jid, pin)
 }
 
+func (m *AccountManager) MuteChatFor(ctx context.Context, jid string, d time.Duration) error {
+	return m.active().MuteChatFor(ctx, jid, d)
+}
+
 func (m *AccountManager) MuteChat(ctx context.Context, jid string, mute bool) error {
 	return m.active().MuteChat(ctx, jid, mute)
 }
@@ -702,6 +772,10 @@ func (m *AccountManager) MarkChatUnread(ctx context.Context, jid string, unread 
 
 func (m *AccountManager) StarMessage(ctx context.Context, chatJID, msgID string, starred bool) error {
 	return m.active().StarMessage(ctx, chatJID, msgID, starred)
+}
+
+func (m *AccountManager) PinMessage(ctx context.Context, chatJID, msgID string, pin bool) error {
+	return m.active().PinMessage(ctx, chatJID, msgID, pin)
 }
 
 func (m *AccountManager) StarredMessages(limit int) ([]Message, error) {
@@ -774,6 +848,24 @@ func (m *AccountManager) GroupInfo(ctx context.Context, jid string) (*GroupInfo,
 
 func (m *AccountManager) OwnJID() string { return m.active().OwnJID() }
 
+func (m *AccountManager) OwnName() string { return m.active().OwnName() }
+
+// displayName is the label the UI shows for a: the user-given roster label
+// when there is one, else the account's WhatsApp profile name, else its
+// phone number, else a numbered placeholder.
+func (a *Account) displayName(index int) string {
+	if a.Name != "" {
+		return a.Name
+	}
+	if n := a.c.OwnName(); n != "" {
+		return n
+	}
+	if p := phoneFromJID(a.c.OwnJID()); p != "" {
+		return p
+	}
+	return fmt.Sprintf("Account %d", index+1)
+}
+
 func (m *AccountManager) CreateGroup(ctx context.Context, name string, participantJIDs []string) (string, error) {
 	return m.active().CreateGroup(ctx, name, participantJIDs)
 }
@@ -796,6 +888,10 @@ func (m *AccountManager) SetGroupTopic(ctx context.Context, jid, topic string) e
 
 func (m *AccountManager) SetGroupAnnounce(ctx context.Context, jid string, announce bool) error {
 	return m.active().SetGroupAnnounce(ctx, jid, announce)
+}
+
+func (m *AccountManager) SetGroupPhoto(ctx context.Context, jid string, jpeg []byte) error {
+	return m.active().SetGroupPhoto(ctx, jid, jpeg)
 }
 
 func (m *AccountManager) SetGroupLocked(ctx context.Context, jid string, locked bool) error {
@@ -858,6 +954,22 @@ func (m *AccountManager) FollowNewsletterByLink(ctx context.Context, link string
 	return m.active().FollowNewsletterByLink(ctx, link)
 }
 
+func (m *AccountManager) DiscoverNewsletters(ctx context.Context, query string) ([]Newsletter, error) {
+	return m.active().DiscoverNewsletters(ctx, query)
+}
+
+func (m *AccountManager) Communities(ctx context.Context) ([]Community, error) {
+	return m.active().Communities(ctx)
+}
+
+func (m *AccountManager) JoinCommunityGroup(ctx context.Context, community, group string) error {
+	return m.active().JoinCommunityGroup(ctx, community, group)
+}
+
+func (m *AccountManager) ReactToStatus(ctx context.Context, poster, msgID, emoji string) error {
+	return m.active().ReactToStatus(ctx, poster, msgID, emoji)
+}
+
 func (m *AccountManager) DownloadMedia(ctx context.Context, msgID string) (string, error) {
 	return m.active().DownloadMedia(ctx, msgID)
 }
@@ -869,3 +981,95 @@ func (m *AccountManager) MarkViewOnceOpened(ctx context.Context, chatJID, msgID 
 func (m *AccountManager) Avatar(ctx context.Context, jid string) (string, error) {
 	return m.active().Avatar(ctx, jid)
 }
+
+// MergedChat is one row of the merged "All accounts" list: a chat plus which
+// account it belongs to, so the sidebar can stripe and label it.
+type MergedChat struct {
+	Chat
+	AccountID   string
+	AccountName string
+}
+
+// MergedChats returns every account's chats in one list, newest-first across
+// accounts, for the sidebar's merged mode. An account whose Chats read fails
+// is skipped rather than failing the whole list — one disconnected account
+// shouldn't blank the others.
+func (m *AccountManager) MergedChats(limit int) []MergedChat {
+	m.mu.Lock()
+	accounts := make([]*Account, len(m.accounts))
+	copy(accounts, m.accounts)
+	m.mu.Unlock()
+
+	var out []MergedChat
+	for i, a := range accounts {
+		chats, err := a.c.Chats(limit)
+		if err != nil {
+			continue
+		}
+		for _, ch := range chats {
+			out = append(out, MergedChat{Chat: ch, AccountID: a.ID, AccountName: a.displayName(i)})
+		}
+	}
+	// Pinned chats first (matching each account's own ordering), then newest.
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Pinned != out[j].Pinned {
+			return out[i].Pinned
+		}
+		return out[i].LastMessageTS > out[j].LastMessageTS
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+// ClientFor returns the Client backing account id, nil when unknown.
+//
+// Every AccountManager method forwards to the ACTIVE account, which is right
+// for the app's normal single-account-at-a-time view but wrong for the merged
+// "all accounts" list: a row from an inactive account has to be looked up
+// (avatar, blocked state, labels) against its own client, not the active one.
+func (m *AccountManager) ClientFor(id string) Client {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if a := m.findLocked(id); a != nil {
+		return a.c
+	}
+	return nil
+}
+
+func (m *AccountManager) NewsletterMarkViewed(ctx context.Context, jid string, serverIDs []int64) error {
+	return m.active().NewsletterMarkViewed(ctx, jid, serverIDs)
+}
+
+func (m *AccountManager) NewsletterSubscribeLive(ctx context.Context, jid string) error {
+	return m.active().NewsletterSubscribeLive(ctx, jid)
+}
+
+func (m *AccountManager) MarkStatusViewed(ctx context.Context, poster string, msgIDs []string, notify bool) error {
+	return m.active().MarkStatusViewed(ctx, poster, msgIDs, notify)
+}
+
+func (m *AccountManager) StatusViewers(msgID string) ([]StatusViewer, error) {
+	return m.active().StatusViewers(msgID)
+}
+
+func (m *AccountManager) MuteStatus(ctx context.Context, poster string, mute bool) error {
+	return m.active().MuteStatus(ctx, poster, mute)
+}
+
+func (m *AccountManager) MutedStatusPosters() ([]string, error) {
+	return m.active().MutedStatusPosters()
+}
+
+func (m *AccountManager) HideStatusFrom(ctx context.Context, jid string) error {
+	return m.active().HideStatusFrom(ctx, jid)
+}
+
+func (m *AccountManager) SetPrivacySetting(ctx context.Context, name, value string) error {
+	return m.active().SetPrivacySetting(ctx, name, value)
+}
+
+// ActiveClient is the account currently driving the UI, as its own Client
+// (dev hooks poke the fake behind it).
+func (m *AccountManager) ActiveClient() Client { return m.active() }

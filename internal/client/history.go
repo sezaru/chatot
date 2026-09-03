@@ -26,6 +26,16 @@ func (w *Whatsmeow) applyHistorySync(data *waHistorySync.HistorySync) {
 	for _, conv := range data.GetConversations() {
 		w.applyHistoryConversation(conv)
 	}
+	for _, pn := range data.GetPushnames() {
+		if pn.GetID() != "" && pn.GetPushname() != "" {
+			w.upsertContact(store.ContactRow{JID: pn.GetID(), PushName: pn.GetPushname()})
+		}
+	}
+	for _, m := range data.GetPhoneNumberToLidMappings() {
+		if m.GetLidJID() != "" && m.GetPnJID() != "" {
+			w.upsertContact(store.ContactRow{JID: m.GetLidJID(), PNJID: m.GetPnJID()})
+		}
+	}
 }
 
 func (w *Whatsmeow) applyHistoryConversation(conv *waHistorySync.Conversation) {
@@ -33,7 +43,16 @@ func (w *Whatsmeow) applyHistoryConversation(conv *waHistorySync.Conversation) {
 	if jid == "" {
 		return
 	}
+	// A LID-addressed DM carries its phone-number twin (and vice versa):
+	// record the mapping so the chat resolves to "+number" until a name
+	// arrives, and file the conversation under the number.
 	isGroup := strings.HasSuffix(jid, "@g.us")
+	if strings.HasSuffix(jid, "@lid") && conv.GetPnJID() != "" {
+		w.upsertContact(store.ContactRow{JID: jid, PNJID: conv.GetPnJID()})
+	} else if !isGroup && conv.GetLidJID() != "" {
+		w.upsertContact(store.ContactRow{JID: conv.GetLidJID(), PNJID: jid})
+	}
+	jid = w.canonicalChatJID(jid)
 	if err := w.store.UpsertChat(store.ChatRow{
 		JID:           jid,
 		IsGroup:       isGroup,
@@ -44,6 +63,13 @@ func (w *Whatsmeow) applyHistoryConversation(conv *waHistorySync.Conversation) {
 		LastMessageTS: int64(conv.GetConversationTimestamp()),
 	}); err != nil {
 		w.log.Warnf("history: upsert chat %s: %v", jid, err)
+	}
+	// The phone's archive flag rides on the conversation itself; the
+	// app-state Archive event only covers changes made after linking.
+	if conv.Archived != nil {
+		if err := w.store.SetChatArchived(jid, conv.GetArchived()); err != nil {
+			w.log.Warnf("history: archive chat %s: %v", jid, err)
+		}
 	}
 	if isGroup {
 		if err := w.store.UpsertGroup(store.GroupRow{
@@ -75,7 +101,21 @@ func (w *Whatsmeow) applyHistoryMessage(chatJID string, wmi *waWeb.WebMessageInf
 	if msg.FromJID == "" && !msg.FromMe {
 		msg.FromJID = chatJID // DM: the only other participant is the chat peer
 	}
-	extractText(wmi.GetMessage(), &msg)
+	switch wmi.GetMessageStubType() {
+	case waWeb.WebMessageInfo_REVOKE:
+		// History keeps a deleted message as a content-less REVOKE stub; keep
+		// the "This message was deleted" tombstone the live path would leave.
+		msg.Deleted = true
+	case waWeb.WebMessageInfo_UNKNOWN:
+		extractText(wmi.GetMessage(), &msg)
+		if !hasContent(&msg) {
+			return
+		}
+	default:
+		// Group/system stubs (participant added, subject changed, ...) have
+		// no body chatot renders yet.
+		return
+	}
 	if err := w.ingestMessage(&msg); err != nil {
 		w.log.Warnf("history: ingest message %s/%s: %v", chatJID, msg.ID, err)
 	}
