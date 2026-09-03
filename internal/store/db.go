@@ -45,6 +45,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: apply schema: %w", err)
 	}
+	if err := migrateLabelsPredefined(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
+	}
 	if err := migrateAddColumn(db, "media", "proto_blob", "BLOB"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
@@ -81,11 +85,23 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
 	}
+	if err := migrateAddColumn(db, "contacts", "pn_jid", "TEXT"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
+	}
 	if err := migrateAddColumn(db, "media", "thumbnail", "BLOB"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
 	}
 	if err := migrateAddColumn(db, "media", "is_gif", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
+	}
+	if err := migrateAddColumn(db, "media", "file_size", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
+	}
+	if err := migrateAddColumn(db, "media", "duration_secs", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
 	}
@@ -104,6 +120,10 @@ func Open(path string) (*Store, error) {
 	if err := backfillFTS(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: fts backfill: %w", err)
+	}
+	if err := pruneEmptyMessages(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("chatot/store: prune empty messages: %w", err)
 	}
 	return &Store{db: db}, nil
 }
@@ -132,9 +152,18 @@ func backfillFTS(db *sql.DB) error {
 // TABLE IF NOT EXISTS in schema.sql only covers fresh databases; existing
 // dev databases need this to pick up new columns.
 func migrateAddColumn(db *sql.DB, table, column, ddlType string) error {
+	has, err := hasColumn(db, table, column)
+	if err != nil || has {
+		return err
+	}
+	_, err = db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, ddlType))
+	return err
+}
+
+func hasColumn(db *sql.DB, table, column string) (bool, error) {
 	rows, err := db.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer rows.Close()
 
@@ -144,17 +173,32 @@ func migrateAddColumn(db *sql.DB, table, column, ddlType string) error {
 		var notNull, pk int
 		var dflt sql.NullString
 		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
-			return err
+			return false, err
 		}
 		if name == column {
-			return rows.Err()
+			return true, rows.Err()
 		}
 	}
-	if err := rows.Err(); err != nil {
+	return false, rows.Err()
+}
+
+// migrateLabelsPredefined adds labels.predefined and, the one time it
+// does, flags the rows WhatsApp's built-in lists (Unread, Favorites,
+// Groups, Communities) left behind from before the column existed: they
+// were stored as plain labels, and only the fixed ids and names WhatsApp
+// gives them tell them apart now.
+func migrateLabelsPredefined(db *sql.DB) error {
+	has, err := hasColumn(db, "labels", "predefined")
+	if err != nil || has {
 		return err
 	}
-
-	_, err = db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, ddlType))
+	if _, err := db.Exec(`ALTER TABLE labels ADD COLUMN predefined INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	_, err = db.Exec(`
+		UPDATE labels SET predefined = 1
+		WHERE name IN ('Unread', 'Favorites', 'Groups', 'Communities')
+		  AND CAST(label_id AS INTEGER) BETWEEN 1 AND 4`)
 	return err
 }
 
@@ -181,4 +225,18 @@ func scanIDs(rows *sql.Rows) ([]string, error) {
 		out = append(out, id)
 	}
 	return out, rows.Err()
+}
+
+// pruneEmptyMessages drops rows that have nothing to render: no text, no
+// rich kind, no attachment and not a deletion tombstone. Earlier builds
+// stored WhatsApp's protocol bookkeeping (key shares, sync notifications)
+// as blank bubbles; the ingest path no longer does, and this clears what an
+// existing database still carries. Idempotent and cheap on a clean store.
+func pruneEmptyMessages(db *sql.DB) error {
+	_, err := db.Exec(`
+		DELETE FROM messages
+		WHERE COALESCE(text, '') = '' AND kind = '' AND deleted = 0
+			AND NOT EXISTS (SELECT 1 FROM media WHERE media.chat_jid = messages.chat_jid AND media.msg_id = messages.msg_id)
+	`)
+	return err
 }

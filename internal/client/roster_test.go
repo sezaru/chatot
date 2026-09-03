@@ -55,11 +55,42 @@ func TestLoadRosterMissingFile(t *testing.T) {
 	}
 }
 
-func TestAddPairingAccountFakeModeRefuses(t *testing.T) {
+func TestAddPairingAccountFakeModeAddsDemoAccount(t *testing.T) {
+	// Without a state dir there is no WhatsApp to pair with; in the demo build
+	// (a Fake active client) the manager hands out a logged-out pairing Fake
+	// that emits a demo QR, so the add-account card has something to render.
 	m := NewAccountManager()
 	m.AddAccount("default", "Default", NewFake())
-	if _, err := m.AddPairingAccount("Work"); err == nil {
-		t.Fatal("AddPairingAccount without a base dir should error, got nil")
+	a, err := m.AddPairingAccount("Work")
+	if err != nil {
+		t.Fatalf("AddPairingAccount in fake mode: %v", err)
+	}
+	if a.LoggedIn() {
+		t.Error("a pairing account should start logged out")
+	}
+	select {
+	case code := <-a.QRCodes():
+		if code == "" {
+			t.Error("empty demo QR")
+		}
+	default:
+		t.Error("pairing fake emitted no QR on start")
+	}
+	if got := m.Count(); got != 2 {
+		t.Errorf("Count() = %d, want 2", got)
+	}
+	// It is the demo's only escape hatch: a manager whose active client is not
+	// a Fake still refuses without a base dir.
+	if err := m.RenameAccount(a.ID, "Renamed"); err != nil {
+		t.Errorf("RenameAccount: %v", err)
+	}
+	if err := m.RenameAccount(a.ID, "  "); err == nil {
+		t.Error("RenameAccount accepted a blank label")
+	}
+	for _, meta := range m.Accounts() {
+		if meta.ID == a.ID && meta.Name != "Renamed" {
+			t.Errorf("renamed account shows %q", meta.Name)
+		}
 	}
 }
 

@@ -100,9 +100,9 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		SELECT
 			c.jid, c.is_group, COALESCE(c.name, ''), c.pinned, c.muted, c.archived, c.unread_count, c.last_message_ts,
 			COALESCE(g.name, ''), COALESCE(g.is_parent, 0), COALESCE(g.linked_parent_jid, ''),
-			COALESCE(ct.business_name, ''), COALESCE(ct.full_name, ''), COALESCE(ct.push_name, ''), COALESCE(ct.system_name, ''),
-			COALESCE(lm.from_me, 0), COALESCE(lm.text, ''), COALESCE(lm.kind, ''),
-			COALESCE(md.kind, ''), COALESCE(md.caption, ''), COALESCE(md.filename, '')
+			COALESCE(ct.business_name, ''), COALESCE(ct.full_name, ''), COALESCE(ct.push_name, ''), COALESCE(ct.system_name, ''), COALESCE(ct.pn_jid, ''),
+			COALESCE(lm.from_me, 0), COALESCE(lm.text, ''), COALESCE(lm.kind, ''), COALESCE(lm.payload, ''),
+			COALESCE(md.kind, ''), COALESCE(md.caption, ''), COALESCE(md.filename, ''), COALESCE(md.duration_secs, 0), COALESCE(md.is_gif, 0)
 		FROM chats c
 		LEFT JOIN groups g ON g.jid = c.jid
 		LEFT JOIN contacts ct ON ct.jid = c.jid
@@ -118,6 +118,7 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		LEFT JOIN media md ON md.chat_jid = lm.chat_jid AND md.msg_id = lm.msg_id
 		WHERE COALESCE(g.is_parent, 0) = 0 AND COALESCE(g.linked_parent_jid, '') = ''
 			AND c.jid != 'status@broadcast'
+			AND c.jid NOT LIKE '%@newsletter'
 	`)
 	if err != nil {
 		return nil, err
@@ -129,14 +130,15 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		var c Chat
 		var isGroup, pinned, muted, archived, groupIsParent, fromMe int
 		var chatName, groupName, groupLinkedParent string
-		var business, full, push, system string
-		var lastText, lastKind, mediaKind, mediaCaption, mediaFilename string
+		var business, full, push, system, pnJID string
+		var lastText, lastKind, lastPayload, mediaKind, mediaCaption, mediaFilename string
+		var mediaSecs, mediaGIF int
 		if err := rows.Scan(
 			&c.JID, &isGroup, &chatName, &pinned, &muted, &archived, &c.UnreadCount, &c.LastMessageTS,
 			&groupName, &groupIsParent, &groupLinkedParent,
-			&business, &full, &push, &system,
-			&fromMe, &lastText, &lastKind,
-			&mediaKind, &mediaCaption, &mediaFilename,
+			&business, &full, &push, &system, &pnJID,
+			&fromMe, &lastText, &lastKind, &lastPayload,
+			&mediaKind, &mediaCaption, &mediaFilename, &mediaSecs, &mediaGIF,
 		); err != nil {
 			return nil, err
 		}
@@ -144,8 +146,19 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		c.Pinned = pinned != 0
 		c.Muted = muted != 0
 		c.Archived = archived != 0
-		c.Name = resolveChatName(chatName, groupName, business, full, push, system, c.JID)
-		c.Preview = buildPreview(fromMe != 0, lastKind, lastText, mediaKind, mediaCaption, mediaFilename)
+		c.Name = resolveChatName(chatName, groupName, business, full, push, system, pnJID, c.JID)
+		if !c.IsGroup {
+			if p, ok := phoneFromJID(pnJID); ok {
+				c.Phone = p
+			} else if p, ok := phoneFromJID(c.JID); ok {
+				c.Phone = p
+			}
+		}
+		c.Preview = buildPreview(previewInput{
+			FromMe: fromMe != 0, Kind: lastKind, Text: lastText, Payload: lastPayload,
+			MediaKind: mediaKind, MediaCaption: mediaCaption, MediaFilename: mediaFilename,
+			MediaSeconds: mediaSecs, MediaIsGIF: mediaGIF != 0,
+		})
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -171,11 +184,17 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 // resolveChatName implements the reference name-resolution fix: prefer an
 // explicit chat name, then the group name, then contact business/full/push/
 // system name (in that order), then a "+<number>" fallback derived from a
-// DM JID, and finally the raw JID as a last resort.
-func resolveChatName(chatName, groupName, business, full, push, system, jid string) string {
+// DM JID (for a LID-addressed chat, from its known phone-number JID pnJID
+// rather than the opaque LID), and finally the raw JID as a last resort.
+func resolveChatName(chatName, groupName, business, full, push, system, pnJID, jid string) string {
 	for _, n := range []string{chatName, groupName, business, full, push, system} {
 		if n != "" {
 			return n
+		}
+	}
+	if strings.HasSuffix(jid, "@lid") && pnJID != "" {
+		if number, ok := phoneFromJID(pnJID); ok {
+			return "+" + number
 		}
 	}
 	if number, ok := phoneFromJID(jid); ok {
@@ -184,9 +203,11 @@ func resolveChatName(chatName, groupName, business, full, push, system, jid stri
 	return jid
 }
 
+// phoneFromJID returns the all-digit user part of a phone-number JID. A LID
+// ("123@lid") is numeric too but is not a phone number, so it is rejected.
 func phoneFromJID(jid string) (string, bool) {
 	at := strings.IndexByte(jid, '@')
-	if at <= 0 {
+	if at <= 0 || jid[at+1:] == "lid" {
 		return "", false
 	}
 	user := jid[:at]
@@ -198,34 +219,117 @@ func phoneFromJID(jid string) (string, bool) {
 	return user, true
 }
 
-// buildPreview implements the reference preview fix: media messages show
-// their caption, else filename, else a "[kind]" placeholder; rich messages
-// (msgKind, e.g. "location") show a labelled placeholder; text messages show
-// their text; either way a from-me message is prefixed.
-func buildPreview(fromMe bool, msgKind, text, mediaKind, mediaCaption, mediaFilename string) string {
-	body := text
-	switch msgKind {
-	case "location":
-		body = "📍 Location"
-	case "contact":
-		body = "👤 Contact"
-	case "poll":
-		body = "📊 Poll"
+// chatKeyedTables are the tables whose rows belong to a chat by chat_jid.
+var chatKeyedTables = []string{"messages", "reactions", "poll_votes", "label_chats", "media", "read_receipts"}
+
+// MergeChat files everything recorded under chat from under chat to and
+// drops from: its messages, reactions, votes, labels, media and receipts
+// move (a row to already has is kept), and the chat rows fold into one
+// (newest activity, the unread count of the row active most recently — the
+// other's is stale, its reads landed on the live row — pinned/muted/archived
+// if either was, a name from either). It reports whether from had anything
+// to merge.
+func (s *Store) MergeChat(from, to string) (bool, error) {
+	if from == "" || to == "" || from == to {
+		return false, nil
 	}
-	if mediaKind == "sticker" {
-		body = "🎨 Sticker"
-	} else if mediaKind != "" {
-		switch {
-		case mediaCaption != "":
-			body = mediaCaption
-		case mediaFilename != "":
-			body = mediaFilename
-		default:
-			body = "[" + mediaKind + "]"
+	// Every DM message creates its chat row, so no row means nothing to
+	// move; this runs on the per-message path once a mapping is known.
+	var exists int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM chats WHERE jid = ?`, from).Scan(&exists); err != nil {
+		return false, err
+	}
+	if exists == 0 {
+		return false, nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var moved int64
+	for _, table := range chatKeyedTables {
+		res, err := tx.Exec(`UPDATE OR IGNORE `+table+` SET chat_jid = ? WHERE chat_jid = ?`, to, from)
+		if err != nil {
+			return false, err
+		}
+		n, _ := res.RowsAffected()
+		moved += n
+		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE chat_jid = ?`, from); err != nil {
+			return false, err
 		}
 	}
-	if fromMe && body != "" {
-		return "You: " + body
+	// Renames from outright when to has no row; otherwise the rows fold.
+	res, err := tx.Exec(`UPDATE OR IGNORE chats SET jid = ? WHERE jid = ?`, to, from)
+	if err != nil {
+		return false, err
 	}
-	return body
+	n, _ := res.RowsAffected()
+	moved += n
+	if _, err := tx.Exec(`
+		UPDATE chats SET
+			name = COALESCE(chats.name, src.name),
+			pinned = MAX(chats.pinned, src.pinned),
+			muted = MAX(chats.muted, src.muted),
+			archived = MAX(chats.archived, src.archived),
+			unread_count = CASE WHEN src.last_message_ts > chats.last_message_ts
+				THEN src.unread_count ELSE chats.unread_count END,
+			last_message_ts = MAX(chats.last_message_ts, src.last_message_ts)
+		FROM (SELECT * FROM chats WHERE jid = ?) AS src
+		WHERE chats.jid = ?
+	`, from, to); err != nil {
+		return false, err
+	}
+	res, err = tx.Exec(`DELETE FROM chats WHERE jid = ?`, from)
+	if err != nil {
+		return false, err
+	}
+	n, _ = res.RowsAffected()
+	moved += n
+	return moved > 0, tx.Commit()
+}
+
+// LIDChatJIDs lists the chats filed under a LID rather than a phone number.
+func (s *Store) LIDChatJIDs() ([]string, error) {
+	rows, err := s.db.Query(`SELECT jid FROM chats WHERE jid LIKE '%@lid'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var jid string
+		if err := rows.Scan(&jid); err != nil {
+			return nil, err
+		}
+		out = append(out, jid)
+	}
+	return out, rows.Err()
+}
+
+// RepairUnreadCounts caps every unread count at what the stored thread can
+// support: the messages from the other side newer than the account's own
+// last message (a reply means everything before it was read). History sync
+// wrote counts as of linking that reads addressed to the chat's other JID
+// never cleared. Chats with no stored messages are left alone, and so is a
+// count of exactly 1: that is what "mark as unread" sets, with no message
+// behind it. Returns how many chats changed.
+func (s *Store) RepairUnreadCounts() (int64, error) {
+	res, err := s.db.Exec(`
+		WITH caps AS (
+			SELECT c.jid, (
+				SELECT COUNT(*) FROM messages m
+				WHERE m.chat_jid = c.jid AND m.from_me = 0 AND m.ts > COALESCE(
+					(SELECT MAX(o.ts) FROM messages o WHERE o.chat_jid = c.jid AND o.from_me = 1), 0)
+			) AS cap
+			FROM chats c
+			WHERE c.unread_count > 1 AND EXISTS (SELECT 1 FROM messages WHERE chat_jid = c.jid)
+		)
+		UPDATE chats SET unread_count = caps.cap
+		FROM caps WHERE chats.jid = caps.jid AND chats.unread_count > caps.cap
+	`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }

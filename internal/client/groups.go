@@ -352,6 +352,11 @@ func (w *Whatsmeow) persistGroupInfo(gi *GroupInfo) {
 	if err := w.store.UpsertGroup(store.GroupRow{JID: gi.JID, Name: gi.Name, Topic: gi.Topic}); err != nil {
 		w.log.Warnf("chatot/client: persist group %s: %v", gi.JID, err)
 	}
+	defer func() {
+		if err := w.reconcileGroupReadState(gi.JID); err != nil {
+			w.log.Warnf("chatot/client: reconcile read state of %s: %v", gi.JID, err)
+		}
+	}()
 	parts := make([]store.GroupParticipant, len(gi.Participants))
 	for i, p := range gi.Participants {
 		parts[i] = store.GroupParticipant{JID: p.JID, IsAdmin: p.IsAdmin, IsSuperAdmin: p.IsSuperAdmin}
@@ -374,4 +379,18 @@ func (w *Whatsmeow) refreshGroupInfo(jid string) {
 		}
 		w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
 	}()
+}
+
+// SetGroupPhoto uploads jpeg as jid's picture, then refreshes the cached
+// info so the avatar cache is invalidated on the next EventChatUpdate.
+func (w *Whatsmeow) SetGroupPhoto(ctx context.Context, jid string, jpeg []byte) error {
+	j, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse group jid: %w", err)
+	}
+	if _, err := w.wa.SetGroupPhoto(ctx, j, jpeg); err != nil {
+		return fmt.Errorf("chatot/client: set group photo: %w", err)
+	}
+	w.refreshGroupInfo(jid)
+	return nil
 }

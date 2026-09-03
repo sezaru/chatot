@@ -60,7 +60,7 @@ func TestMessagesReactionsAttached(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("got %d messages, want 1", len(msgs))
 	}
-	if got := msgs[0].Reactions["😂"]; got != "friend@s.whatsapp.net" {
+	if got := msgs[0].Reactions["😂"]; len(got) != 1 || got[0] != "friend@s.whatsapp.net" {
 		t.Fatalf("got reactions %+v, want 😂 from friend@s.whatsapp.net", msgs[0].Reactions)
 	}
 }
@@ -472,5 +472,69 @@ func TestClearChatWithoutAlsoMediaReturnsNoPaths(t *testing.T) {
 	}
 	if len(paths) != 0 {
 		t.Fatalf("got paths %+v, want none when alsoMedia is false", paths)
+	}
+}
+
+func TestPruneEmptyMessagesKeepsRenderableRows(t *testing.T) {
+	s := newTestStore(t)
+	chat := "1@s.whatsapp.net"
+	rows := []MessageRow{
+		{ChatJID: chat, MsgID: "blank", TS: 1},
+		{ChatJID: chat, MsgID: "text", Text: "hi", TS: 2},
+		{ChatJID: chat, MsgID: "gone", Deleted: true, TS: 3},
+		{ChatJID: chat, MsgID: "loc", Kind: "location", Payload: "{}", TS: 4},
+		{ChatJID: chat, MsgID: "pic", TS: 5},
+	}
+	for _, r := range rows {
+		if err := s.UpsertMessage(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.UpsertMedia(MediaRow{ChatJID: chat, MsgID: "pic", Kind: "image"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pruneEmptyMessages(s.db); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := s.Messages(chat, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, m := range msgs {
+		ids = append(ids, m.ID)
+	}
+	if len(ids) != 4 || ids[0] == "blank" {
+		t.Fatalf("after prune: %v, want text/gone/loc/pic only", ids)
+	}
+	for _, id := range ids {
+		if id == "blank" {
+			t.Fatalf("blank row survived: %v", ids)
+		}
+	}
+}
+
+func TestRemoveMessageDropsRowAndAttachments(t *testing.T) {
+	s := newTestStore(t)
+	const chat = "1@s.whatsapp.net"
+	must(t, s.UpsertMessage(MessageRow{ChatJID: chat, MsgID: "A", Text: "gone", TS: 1}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: chat, MsgID: "B", Text: "stays", TS: 2}))
+	must(t, s.UpsertReaction(ReactionRow{ChatJID: chat, MsgID: "A", ReactorJID: "2@lid", Emoji: "👍", TS: 1}))
+	must(t, s.UpsertReadReceipt(chat, "A", "2@lid", 3))
+	must(t, s.RemoveMessage(chat, "A"))
+	if _, ok, _ := s.MessageByID(chat, "A"); ok {
+		t.Fatal("A still stored")
+	}
+	if _, ok, _ := s.MessageByID(chat, "B"); !ok {
+		t.Fatal("B removed too")
+	}
+	var n int
+	must(t, s.db.QueryRow(`SELECT COUNT(*) FROM reactions WHERE msg_id = 'A'`).Scan(&n))
+	if n != 0 {
+		t.Fatalf("%d reactions left for A", n)
+	}
+	must(t, s.db.QueryRow(`SELECT COUNT(*) FROM read_receipts WHERE msg_id = 'A'`).Scan(&n))
+	if n != 0 {
+		t.Fatalf("%d receipts left for A", n)
 	}
 }

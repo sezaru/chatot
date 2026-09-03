@@ -12,8 +12,10 @@ func TestFakeChatsReturnsSeeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chats: %v", err)
 	}
-	if len(chats) != 3 {
-		t.Fatalf("got %d chats, want 3", len(chats))
+	// Three canned chats plus the community groups seedTabs joins (two
+	// announcement groups, three linked groups).
+	if len(chats) != 8 {
+		t.Fatalf("got %d chats, want 8", len(chats))
 	}
 	if chats[0].Name != "Ada Lovelace" {
 		t.Errorf("chats[0].Name = %q, want Ada Lovelace", chats[0].Name)
@@ -250,7 +252,7 @@ func TestFakeReactAndClear(t *testing.T) {
 		t.Fatalf("React: %v", err)
 	}
 	msgs, _ := f.Messages(jid, 0)
-	if msgs[0].Reactions["👍"] != "me" {
+	if got := msgs[0].Reactions["👍"]; len(got) != 1 || got[0] != fakeOwnJID {
 		t.Fatalf("reaction not recorded: %+v", msgs[0].Reactions)
 	}
 
@@ -685,5 +687,29 @@ func TestFakeChatMediaDocsLinksEmptyForUnknownChat(t *testing.T) {
 	}
 	if links, _ := f.ChatLinks("nobody@s.whatsapp.net"); len(links) != 0 {
 		t.Errorf("ChatLinks for unknown chat = %+v, want empty", links)
+	}
+}
+
+func TestWithReactionOnePerPerson(t *testing.T) {
+	r := map[string][]string{"👍": {"a@s", "me"}, "😮": {"b@s"}}
+	// A new pick replaces our old reaction rather than adding a second one.
+	r = withReaction(r, "me", "❤️")
+	if got := r["👍"]; len(got) != 1 || got[0] != "a@s" {
+		t.Fatalf("👍 after replacing = %v, want just a@s", got)
+	}
+	if got := r["❤️"]; len(got) != 1 || got[0] != "me" {
+		t.Fatalf("❤️ = %v, want me", got)
+	}
+	// Clearing removes ours and drops an emoji nobody holds any more.
+	r = withReaction(r, "me", "")
+	if _, ok := r["❤️"]; ok {
+		t.Fatalf("❤️ still present after clearing: %v", r)
+	}
+	if len(r["😮"]) != 1 {
+		t.Fatalf("someone else's reaction was touched: %v", r)
+	}
+	// Nothing to add to nothing stays nil.
+	if got := withReaction(nil, "me", ""); got != nil {
+		t.Fatalf("clearing a nil map made %v", got)
 	}
 }

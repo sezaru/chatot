@@ -1,6 +1,10 @@
 package client
 
-import "testing"
+import (
+	"testing"
+
+	"go.mau.fi/whatsmeow"
+)
 
 func TestAvatarCacheName(t *testing.T) {
 	cases := []struct {
@@ -21,5 +25,18 @@ func TestAvatarCacheName(t *testing.T) {
 func TestAvatarCacheNameNoPathSeparators(t *testing.T) {
 	if got := avatarCacheName("a/b@c.d"); got != "a_b_c.d.jpg" {
 		t.Errorf("avatarCacheName(%q) = %q, want no '/' left in it", "a/b@c.d", got)
+	}
+}
+
+func TestAvatarDefinitelyMissingOnlyForFinalAnswers(t *testing.T) {
+	for _, err := range []error{whatsmeow.ErrProfilePictureNotSet, whatsmeow.ErrProfilePictureUnauthorized, whatsmeow.ErrNotInGroup} {
+		if !avatarDefinitelyMissing(err) {
+			t.Errorf("%v: want missing", err)
+		}
+	}
+	for _, err := range []error{whatsmeow.ErrNotConnected, whatsmeow.ErrNotLoggedIn, whatsmeow.ErrIQTimedOut} {
+		if avatarDefinitelyMissing(err) {
+			t.Errorf("%v: transient, must not be memoized", err)
+		}
 	}
 }

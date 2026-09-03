@@ -48,19 +48,17 @@ func (w *Whatsmeow) Labels() ([]Label, error) {
 // CreateLabel allocates the next unused numeric id, sends a LabelEdit
 // app-state patch and optimistically stores the label.
 func (w *Whatsmeow) CreateLabel(ctx context.Context, name string, color int) (string, error) {
-	rows, err := w.store.Labels()
+	// Every id ever used counts, deleted and WhatsApp's own lists included:
+	// an edit under a taken id would rename that label everywhere.
+	ids, err := w.store.LabelIDs()
 	if err != nil {
 		return "", fmt.Errorf("chatot/client: list labels: %w", err)
-	}
-	ids := make([]string, len(rows))
-	for i, l := range rows {
-		ids[i] = l.ID
 	}
 	id := nextLabelID(ids)
 	if err := w.wa.SendAppState(ctx, appstate.BuildLabelEdit(id, name, int32(color), false)); err != nil {
 		return "", fmt.Errorf("chatot/client: send label-edit app-state: %w", err)
 	}
-	if err := w.store.UpsertLabel(id, name, color, false); err != nil {
+	if err := w.store.UpsertLabel(id, name, color, false, false); err != nil {
 		w.log.Warnf("chatot/client: optimistic label create failed: %v", err)
 	}
 	w.pushEvent(Event{Kind: EventLabelUpdate})
@@ -72,7 +70,7 @@ func (w *Whatsmeow) EditLabel(ctx context.Context, id, name string, color int) e
 	if err := w.wa.SendAppState(ctx, appstate.BuildLabelEdit(id, name, int32(color), false)); err != nil {
 		return fmt.Errorf("chatot/client: send label-edit app-state: %w", err)
 	}
-	if err := w.store.UpsertLabel(id, name, color, false); err != nil {
+	if err := w.store.UpsertLabel(id, name, color, false, false); err != nil {
 		w.log.Warnf("chatot/client: optimistic label edit failed: %v", err)
 	}
 	w.pushEvent(Event{Kind: EventLabelUpdate})
@@ -94,7 +92,7 @@ func (w *Whatsmeow) DeleteLabel(ctx context.Context, id string) error {
 	if err := w.wa.SendAppState(ctx, appstate.BuildLabelEdit(id, name, int32(color), true)); err != nil {
 		return fmt.Errorf("chatot/client: send label-delete app-state: %w", err)
 	}
-	if err := w.store.UpsertLabel(id, name, color, true); err != nil {
+	if err := w.store.UpsertLabel(id, name, color, true, false); err != nil {
 		w.log.Warnf("chatot/client: optimistic label delete failed: %v", err)
 	}
 	w.pushEvent(Event{Kind: EventLabelUpdate})

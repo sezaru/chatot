@@ -116,7 +116,8 @@ CREATE TABLE IF NOT EXISTS labels (
     label_id TEXT PRIMARY KEY,
     name TEXT NOT NULL DEFAULT '',
     color INTEGER NOT NULL DEFAULT 0,
-    deleted INTEGER NOT NULL DEFAULT 0
+    deleted INTEGER NOT NULL DEFAULT 0,
+    predefined INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS label_chats (
@@ -145,5 +146,48 @@ CREATE TABLE IF NOT EXISTS media (
     view_once INTEGER NOT NULL DEFAULT 0,
     -- true once a view_once attachment has been opened locally.
     viewed INTEGER NOT NULL DEFAULT 0,
+    -- byte length WhatsApp reports for the attachment (0 when unknown), shown
+    -- in the document/voice sublines.
+    file_size INTEGER NOT NULL DEFAULT 0,
+    -- playback length in seconds for audio/video (0 when unknown).
+    duration_secs INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat_jid, msg_id)
+);
+
+-- Our own reaction on a channel post. The server only ever reports
+-- aggregate counts per emoji, so this is the only record of which pill is
+-- ours; NewsletterReact writes it, NewsletterMessages reads it back.
+CREATE TABLE IF NOT EXISTS newsletter_reactions (
+    newsletter_jid TEXT NOT NULL,
+    msg_id TEXT NOT NULL,
+    emoji TEXT NOT NULL,
+    PRIMARY KEY (newsletter_jid, msg_id)
+);
+
+-- Read receipts other people sent for our messages, one row per reader.
+-- WhatsApp has no "who viewed my status" query: the list is only ever
+-- assembled from these receipts as they arrive (chat_jid = status@broadcast
+-- for status views).
+CREATE TABLE IF NOT EXISTS read_receipts (
+    chat_jid TEXT NOT NULL,
+    msg_id TEXT NOT NULL,
+    reader_jid TEXT NOT NULL,
+    ts INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (chat_jid, msg_id, reader_jid)
+);
+
+-- Status posters whose updates are muted (WhatsApp's userStatusMute
+-- app-state), mirrored locally so the feed can file them under Muted
+-- updates without a round trip.
+CREATE TABLE IF NOT EXISTS status_mutes (
+    jid TEXT PRIMARY KEY
+);
+
+CREATE INDEX IF NOT EXISTS idx_read_receipts_msg ON read_receipts(msg_id);
+
+-- meta is a small key/value bag for one-off bookkeeping flags (e.g. that an
+-- app-state resync has already run for this store).
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );

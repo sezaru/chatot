@@ -70,7 +70,7 @@ func (s *Store) searchMessages(query string, limit int) ([]SearchHit, error) {
 			m.chat_jid, m.msg_id, m.ts,
 			snippet(messages_fts, 0, '[', ']', '…', 10),
 			COALESCE(c.name, ''), COALESCE(g.name, ''),
-			COALESCE(ct.business_name, ''), COALESCE(ct.full_name, ''), COALESCE(ct.push_name, ''), COALESCE(ct.system_name, '')
+			COALESCE(ct.business_name, ''), COALESCE(ct.full_name, ''), COALESCE(ct.push_name, ''), COALESCE(ct.system_name, ''), COALESCE(ct.pn_jid, '')
 		FROM messages_fts
 		JOIN messages m ON m.rowid = messages_fts.rowid
 		LEFT JOIN chats c ON c.jid = m.chat_jid
@@ -88,11 +88,11 @@ func (s *Store) searchMessages(query string, limit int) ([]SearchHit, error) {
 	var out []SearchHit
 	for rows.Next() {
 		var h SearchHit
-		var chatName, groupName, business, full, push, system string
-		if err := rows.Scan(&h.ChatJID, &h.MsgID, &h.TS, &h.Snippet, &chatName, &groupName, &business, &full, &push, &system); err != nil {
+		var chatName, groupName, business, full, push, system, pnJID string
+		if err := rows.Scan(&h.ChatJID, &h.MsgID, &h.TS, &h.Snippet, &chatName, &groupName, &business, &full, &push, &system, &pnJID); err != nil {
 			return nil, err
 		}
-		h.ChatName = resolveChatName(chatName, groupName, business, full, push, system, h.ChatJID)
+		h.ChatName = resolveChatName(chatName, groupName, business, full, push, system, pnJID, h.ChatJID)
 		out = append(out, h)
 	}
 	return out, rows.Err()
@@ -146,7 +146,7 @@ func (s *Store) searchChatNames(query string, limit int) ([]SearchHit, error) {
 	rows, err := s.db.Query(`
 		SELECT c.jid, c.last_message_ts,
 			COALESCE(c.name, ''), COALESCE(g.name, ''),
-			COALESCE(ct.business_name, ''), COALESCE(ct.full_name, ''), COALESCE(ct.push_name, ''), COALESCE(ct.system_name, '')
+			COALESCE(ct.business_name, ''), COALESCE(ct.full_name, ''), COALESCE(ct.push_name, ''), COALESCE(ct.system_name, ''), COALESCE(ct.pn_jid, '')
 		FROM chats c
 		LEFT JOIN groups g ON g.jid = c.jid
 		LEFT JOIN contacts ct ON ct.jid = c.jid
@@ -160,11 +160,11 @@ func (s *Store) searchChatNames(query string, limit int) ([]SearchHit, error) {
 	for rows.Next() {
 		var jid string
 		var ts int64
-		var chatName, groupName, business, full, push, system string
-		if err := rows.Scan(&jid, &ts, &chatName, &groupName, &business, &full, &push, &system); err != nil {
+		var chatName, groupName, business, full, push, system, pnJID string
+		if err := rows.Scan(&jid, &ts, &chatName, &groupName, &business, &full, &push, &system, &pnJID); err != nil {
 			return nil, err
 		}
-		name := resolveChatName(chatName, groupName, business, full, push, system, jid)
+		name := resolveChatName(chatName, groupName, business, full, push, system, pnJID, jid)
 		if !likeMatch(name, query) {
 			continue
 		}

@@ -44,12 +44,21 @@ func translate(evt interface{}) *Event {
 			// delivery/read state chatot tracks.
 			return nil
 		}
-		return &Event{Kind: EventReceipt, Receipt: &Receipt{
+		r := &Receipt{
 			ChatJID: v.Chat.String(),
 			MsgIDs:  append([]types.MessageID(nil), v.MessageIDs...),
 			Read:    status == MessageStatusRead,
 			Status:  status,
-		}}
+			TS:      v.Timestamp.Unix(),
+		}
+		// Someone else read our message (a self receipt is our other
+		// device catching up, not a reader). whatsmeow always fills Sender
+		// on a receipt (per-participant for grouped ones), and a status view
+		// arrives addressed from the viewer, so the sender is the reader.
+		if (v.Type == types.ReceiptTypeRead || v.Type == types.ReceiptTypePlayed) && !v.Sender.IsEmpty() {
+			r.ReaderJID = v.Sender.String()
+		}
+		return &Event{Kind: EventReceipt, Receipt: r}
 	case *events.Presence:
 		var lastSeen int64
 		if !v.LastSeen.IsZero() {
@@ -119,12 +128,18 @@ func translateMessage(v *events.Message) *Event {
 	msg := Message{
 		ID:      id,
 		ChatJID: v.Info.Chat.String(),
-		FromJID: v.Info.Sender.String(),
+		FromJID: v.Info.Sender.ToNonAD().String(),
 		FromMe:  v.Info.IsFromMe,
 		TS:      v.Info.Timestamp.Unix(),
 		Edited:  edited,
 	}
 	extractText(content, &msg)
+	if !hasContent(&msg) {
+		// Protocol bookkeeping (key shares, history-sync notifications, peer
+		// data requests, ...) arrives as a message too; there is nothing to
+		// show, so it never becomes a bubble.
+		return nil
+	}
 	return &Event{Kind: EventMessage, Message: &msg}
 }
 
@@ -146,6 +161,7 @@ func translateReaction(v *events.Message, r *waProto.ReactionMessage) *Event {
 // plain/quoted text, the common media kinds, (live) locations, contacts,
 // poll creation and scheduled events.
 func extractText(m *waProto.Message, msg *Message) {
+	m = unwrapContent(m)
 	if m == nil {
 		return
 	}
@@ -159,15 +175,20 @@ func extractText(m *waProto.Message, msg *Message) {
 		ctx = ext.GetContextInfo()
 	case m.GetImageMessage() != nil:
 		img := m.GetImageMessage()
-		msg.Attachment = &Attachment{Kind: "image", MimeType: img.GetMimetype(), Caption: img.GetCaption(), ProtoBlob: marshalMedia(img), Thumbnail: img.GetJPEGThumbnail(), ViewOnce: img.GetViewOnce()}
+		msg.Attachment = &Attachment{Kind: "image", MimeType: img.GetMimetype(), Caption: img.GetCaption(), ProtoBlob: marshalMedia(img), Thumbnail: img.GetJPEGThumbnail(), ViewOnce: img.GetViewOnce(), Size: int64(img.GetFileLength())}
 		ctx = img.GetContextInfo()
-	case m.GetVideoMessage() != nil:
+	case m.GetVideoMessage() != nil || m.GetPtvMessage() != nil:
+		// A PTV ("video note", the round one) is a VideoMessage in another
+		// field; it downloads and plays exactly like a video.
 		vid := m.GetVideoMessage()
-		msg.Attachment = &Attachment{Kind: "video", MimeType: vid.GetMimetype(), Caption: vid.GetCaption(), ProtoBlob: marshalMedia(vid), Thumbnail: vid.GetJPEGThumbnail(), IsGIF: vid.GetGifPlayback(), ViewOnce: vid.GetViewOnce()}
+		if vid == nil {
+			vid = m.GetPtvMessage()
+		}
+		msg.Attachment = &Attachment{Kind: "video", MimeType: vid.GetMimetype(), Caption: vid.GetCaption(), ProtoBlob: marshalMedia(vid), Thumbnail: vid.GetJPEGThumbnail(), IsGIF: vid.GetGifPlayback(), ViewOnce: vid.GetViewOnce(), Size: int64(vid.GetFileLength()), DurationSecs: int(vid.GetSeconds())}
 		ctx = vid.GetContextInfo()
 	case m.GetAudioMessage() != nil:
 		aud := m.GetAudioMessage()
-		msg.Attachment = &Attachment{Kind: "audio", MimeType: aud.GetMimetype(), ProtoBlob: marshalMedia(aud)}
+		msg.Attachment = &Attachment{Kind: "audio", MimeType: aud.GetMimetype(), ProtoBlob: marshalMedia(aud), Size: int64(aud.GetFileLength()), DurationSecs: int(aud.GetSeconds())}
 		ctx = aud.GetContextInfo()
 	case m.GetDocumentMessage() != nil:
 		doc := m.GetDocumentMessage()
@@ -175,17 +196,19 @@ func extractText(m *waProto.Message, msg *Message) {
 			Kind: "document", MimeType: doc.GetMimetype(),
 			Filename: doc.GetFileName(), Caption: doc.GetCaption(),
 			ProtoBlob: marshalMedia(doc), Thumbnail: doc.GetJPEGThumbnail(),
+			Size: int64(doc.GetFileLength()),
 		}
 		ctx = doc.GetContextInfo()
 	case m.GetStickerMessage() != nil:
 		sticker := m.GetStickerMessage()
-		msg.Attachment = &Attachment{Kind: "sticker", MimeType: sticker.GetMimetype(), ProtoBlob: marshalMedia(sticker), Thumbnail: sticker.GetPngThumbnail()}
+		msg.Attachment = &Attachment{Kind: "sticker", MimeType: sticker.GetMimetype(), ProtoBlob: marshalMedia(sticker), Thumbnail: sticker.GetPngThumbnail(), Size: int64(sticker.GetFileLength())}
 		ctx = sticker.GetContextInfo()
 	case m.GetLocationMessage() != nil:
 		loc := m.GetLocationMessage()
 		msg.Location = &Location{
 			Name: loc.GetName(), Address: loc.GetAddress(),
 			Latitude: loc.GetDegreesLatitude(), Longitude: loc.GetDegreesLongitude(),
+			Thumbnail: loc.GetJPEGThumbnail(),
 		}
 		ctx = loc.GetContextInfo()
 	case m.GetLiveLocationMessage() != nil:
@@ -228,8 +251,8 @@ func extractText(m *waProto.Message, msg *Message) {
 			Canceled: ev.GetIsCanceled(),
 		}
 		ctx = ev.GetContextInfo()
-	case m.GetPollCreationMessage() != nil:
-		poll := m.GetPollCreationMessage()
+	case pollCreation(m) != nil:
+		poll := pollCreation(m)
 		opts := poll.GetOptions()
 		options := make([]PollOption, len(opts))
 		for i, o := range opts {
@@ -241,6 +264,12 @@ func extractText(m *waProto.Message, msg *Message) {
 			SelectableCount: int(poll.GetSelectableOptionsCount()),
 		}
 		ctx = poll.GetContextInfo()
+	default:
+		var rich bool
+		ctx, rich = extractRichText(m, msg)
+		if !rich && hasPayload(m) {
+			msg.Text = unsupportedText
+		}
 	}
 	if ctx == nil {
 		return
@@ -265,8 +294,10 @@ func marshalMedia(m proto.Message) []byte {
 }
 
 // parseVCardPhones pulls phone numbers out of a vCard's TEL lines, e.g.
-// "TEL;type=CELL;waid=1234567890:+1 234-567-890". The number is whatever
-// follows the last ':' on the line; lines without one are skipped.
+// "TEL;type=CELL;waid=1234567890:+1 234-567-890". WhatsApp's waid
+// parameter is the account's number in canonical digits and wins over the
+// display text after the last ':' (which may carry non-breaking spaces or
+// typographic dashes); lines with neither are skipped.
 func parseVCardPhones(vcard string) []string {
 	var phones []string
 	for _, line := range strings.Split(strings.ReplaceAll(vcard, "\r\n", "\n"), "\n") {
@@ -275,7 +306,11 @@ func parseVCardPhones(vcard string) []string {
 			continue
 		}
 		idx := strings.LastIndex(line, ":")
-		if idx < 0 || idx == len(line)-1 {
+		if idx < 0 {
+			continue
+		}
+		if waid := vcardWAID(line[:idx]); waid != "" {
+			phones = append(phones, "+"+waid)
 			continue
 		}
 		if phone := strings.TrimSpace(line[idx+1:]); phone != "" {
@@ -283,6 +318,24 @@ func parseVCardPhones(vcard string) []string {
 		}
 	}
 	return phones
+}
+
+// vcardWAID is the digits of a TEL line's waid= parameter, "" when absent.
+func vcardWAID(params string) string {
+	for _, p := range strings.Split(params, ";") {
+		k, v, ok := strings.Cut(p, "=")
+		if !ok || !strings.EqualFold(strings.TrimSpace(k), "waid") {
+			continue
+		}
+		v = strings.TrimSpace(v)
+		for _, r := range v {
+			if r < '0' || r > '9' {
+				return ""
+			}
+		}
+		return v
+	}
+	return ""
 }
 
 // eventLocationText renders an event's attached location as a single display

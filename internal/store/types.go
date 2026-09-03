@@ -9,8 +9,12 @@ package store
 
 // Chat is a resolved chat-list entry, ready for display.
 type Chat struct {
-	JID           string
-	Name          string
+	JID  string
+	Name string
+	// Phone is the contact's number in E.164 without the plus ("5548…"),
+	// resolved through the LID→phone mapping when the chat is LID-keyed;
+	// "" for groups and for LIDs with no known number.
+	Phone         string
 	Preview       string
 	UnreadCount   int
 	LastMessageTS int64
@@ -29,7 +33,7 @@ type Message struct {
 	Text         string
 	TS           int64
 	ReplyToMsgID string
-	Reactions    map[string]string // emoji -> reactor JID (last wins)
+	Reactions    map[string][]string // emoji -> reactor JIDs, oldest first
 	Attachment   *Attachment
 	// Kind is "" for a plain text/media message or a rich-kind tag (e.g.
 	// "location"); Payload is the opaque JSON body only package client
@@ -85,6 +89,12 @@ type Attachment struct {
 	ViewOnce bool
 	// Viewed is true once a ViewOnce attachment has been opened locally.
 	Viewed bool
+	// FileSize is the byte length WhatsApp reported for the attachment, 0
+	// when unknown (older rows, or a sender that omitted it).
+	FileSize int64
+	// DurationSecs is the playback length of an audio/video attachment,
+	// 0 when unknown.
+	DurationSecs int
 }
 
 // SearchHit is a single Search result: either a message match (MsgID set,
@@ -139,6 +149,10 @@ type ContactRow struct {
 	FullName     string
 	PushName     string
 	SystemName   string
+	// PNJID is the phone-number JID behind a LID-addressed contact
+	// ("123@lid" → "5511999@s.whatsapp.net"), so a nameless LID chat can
+	// still fall back to a dialable "+number" instead of the opaque LID.
+	PNJID string
 }
 
 // GroupRow is the upsert seam for the groups table.
@@ -190,4 +204,10 @@ type MediaRow struct {
 	ViewOnce bool
 	// Viewed is true once a ViewOnce attachment has been opened locally.
 	Viewed bool
+	// FileSize is the byte length WhatsApp reported for the attachment, 0
+	// when unknown.
+	FileSize int64
+	// DurationSecs is the playback length of an audio/video attachment,
+	// 0 when unknown.
+	DurationSecs int
 }

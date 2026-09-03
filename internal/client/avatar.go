@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -47,12 +48,25 @@ func (w *Whatsmeow) Avatar(ctx context.Context, jid string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("chatot/client: avatar: parse jid %q: %w", jid, err)
 	}
+	// The picture lives on the phone-number identity; ask for that one when
+	// the chat is LID-addressed and the mapping is known.
+	if to.Server == types.HiddenUserServer {
+		if pn, err := w.wa.Store.LIDs.GetPNForLID(ctx, to); err == nil && !pn.IsEmpty() {
+			to = pn
+		}
+	}
 
 	info, err := w.wa.GetProfilePictureInfo(ctx, to, &whatsmeow.GetProfilePictureParams{Preview: true, ExistingID: entry.id})
 	if err != nil {
-		// No picture, privacy-restricted, not authorized, ... all normal.
-		w.memoAvatar(jid, avatarEntry{missing: true})
-		return "", nil
+		if avatarDefinitelyMissing(err) {
+			// No picture, privacy-restricted, not in the group: normal, and
+			// stable until an events.Picture says otherwise.
+			w.memoAvatar(jid, avatarEntry{missing: true})
+			return "", nil
+		}
+		// Not connected yet, IQ timeout, ...: transient. Not memoized, so the
+		// next list rebuild (the one on Connected, for instance) retries.
+		return "", fmt.Errorf("chatot/client: avatar %s: %w", jid, err)
 	}
 	if info == nil {
 		// (nil, nil) means "unchanged from ExistingID". We only ever call with
@@ -66,16 +80,20 @@ func (w *Whatsmeow) Avatar(ctx context.Context, jid string) (string, error) {
 		return "", nil
 	}
 
+	// WhatsApp says a picture exists; a failed download of it is transient
+	// (network blip, expired signed URL) and must not be remembered as
+	// "no picture" — leave the memo empty so the next rebuild retries.
 	resp, err := http.Get(info.URL)
 	if err != nil {
-		w.memoAvatar(jid, avatarEntry{missing: true})
-		return "", nil
+		return "", fmt.Errorf("chatot/client: avatar %s: download: %w", jid, err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		w.memoAvatar(jid, avatarEntry{missing: true})
-		return "", nil
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: avatar %s: read: %w", jid, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("chatot/client: avatar %s: download: HTTP %d", jid, resp.StatusCode)
 	}
 
 	path := filepath.Join(w.avatarDir, avatarCacheName(jid))
@@ -84,6 +102,14 @@ func (w *Whatsmeow) Avatar(ctx context.Context, jid string) (string, error) {
 	}
 	w.memoAvatar(jid, avatarEntry{id: info.ID, path: path})
 	return path, nil
+}
+
+// avatarDefinitelyMissing tells the "there is no picture to fetch" answers
+// apart from transport failures, which must not be remembered.
+func avatarDefinitelyMissing(err error) bool {
+	return errors.Is(err, whatsmeow.ErrProfilePictureNotSet) ||
+		errors.Is(err, whatsmeow.ErrProfilePictureUnauthorized) ||
+		errors.Is(err, whatsmeow.ErrNotInGroup)
 }
 
 func (w *Whatsmeow) memoAvatar(jid string, entry avatarEntry) {

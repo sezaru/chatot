@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -18,6 +20,7 @@ import (
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waMmsRetry"
+	waSyncAction "go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
@@ -40,6 +43,10 @@ var _ Client = (*Whatsmeow)(nil)
 // Search) and every write except lifecycle calls are owned by later
 // features; see the TODO on each stub method below.
 type Whatsmeow struct {
+	// lidMu serializes filing an event under its canonical chat against a
+	// merge that moves a LID chat under its number, so a message decided
+	// on before the mapping was known cannot re-create the LID chat.
+	lidMu     sync.Mutex
 	log       waLog.Logger
 	container *sqlstore.Container
 	device    *wastore.Device
@@ -59,6 +66,16 @@ type Whatsmeow struct {
 
 	blockMu sync.Mutex
 	blocked map[string]bool // jid -> blocked, warmed on connect and kept live by SetBlocked + inbound events
+
+	names contactNames
+
+	// syncing is true from (re)connect until the server says it has
+	// finished replaying what we missed (events.OfflineSyncCompleted), or a
+	// fallback timer runs out. Messages received in that window are marked
+	// Synced so the notifier stays quiet for catch-up traffic.
+	syncing   atomic.Bool
+	syncMu    sync.Mutex
+	syncTimer *time.Timer
 
 	// proxyOverride, when non-empty, is the per-account proxy applied at Start
 	// in preference to the global CHATOT_PROXY.
@@ -119,6 +136,10 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 
 	clientLog := waLog.Stdout("Client", "ERROR", false)
 	wa := whatsmeow.NewClient(device, clientLog)
+	// The first app-state sync after linking is a "full sync", and whatsmeow
+	// swallows its events by default — which is exactly where the phone's
+	// existing labels, archived/pinned/muted chats and stars come from.
+	wa.EmitAppStateEventsOnFullSync = true
 
 	avatarDir := filepath.Join(stateDir, "avatars")
 	if err := os.MkdirAll(avatarDir, 0o700); err != nil {
@@ -137,6 +158,9 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 		qrCodes:   make(chan string, 8),
 		blocked:   make(map[string]bool),
 	}
+	// Chats written before LID DMs were filed under their number.
+	w.mergeLIDChats()
+	w.repairUnreadOnce()
 	wa.AddEventHandler(w.handleRaw)
 	return w, nil
 }
@@ -160,8 +184,19 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 		w.handlePollVote(v)
 		return
 	}
+	if v, ok := evt.(*events.Message); ok {
+		w.learnFromMessage(&v.Info)
+	}
+	if w.handleContactEvent(evt) {
+		return
+	}
 	if hs, ok := evt.(*events.HistorySync); ok {
 		w.applyHistorySync(hs.Data)
+		go w.syncContacts(context.Background())
+	}
+	if _, ok := evt.(*events.OfflineSyncCompleted); ok {
+		w.endSyncWindow()
+		return
 	}
 	if mr, ok := evt.(*events.MediaRetry); ok {
 		w.handleMediaRetry(mr)
@@ -197,15 +232,20 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 	}
 	if r, ok := evt.(*events.MarkChatAsRead); ok {
 		w.applyChatUpdate(r.JID.String(), func(jid string) error {
-			return w.store.SetChatUnread(jid, !r.Action.GetRead())
+			return w.applyMarkChatAsRead(jid, r.Action)
 		})
+		return
+	}
+	// The phone (or another device) deleted a message for this account.
+	if df, ok := evt.(*events.DeleteForMe); ok {
+		w.removeMessageLocally(w.canonicalChatJID(df.ChatJID.String()), df.MessageID)
 		return
 	}
 	// Star is a per-message app-state event (not per-chat), so it can't reuse
 	// applyChatUpdate: it updates one message row and pushes the same
 	// reaction-style reload React/StarMessage use to refresh an open thread.
 	if st, ok := evt.(*events.Star); ok {
-		jid := st.ChatJID.String()
+		jid := w.canonicalChatJID(st.ChatJID.String())
 		if err := w.store.SetMessageStarred(jid, st.MessageID, st.Action.GetStarred()); err != nil {
 			w.log.Warnf("chatot/client: apply star app-state: %v", err)
 		}
@@ -216,14 +256,17 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 	// LabelAssociationChat toggles a chat's membership in a label. Both push
 	// an EventLabelUpdate so the sidebar's label filter and chat list refresh.
 	if le, ok := evt.(*events.LabelEdit); ok {
-		if err := w.store.UpsertLabel(le.LabelID, le.Action.GetName(), int(le.Action.GetColor()), le.Action.GetDeleted()); err != nil {
+		// A predefined id marks one of WhatsApp's own lists (Unread,
+		// Favorites, ...), which the sidebar's fixed chips already cover.
+		predefined := le.Action.GetPredefinedID() != 0
+		if err := w.store.UpsertLabel(le.LabelID, le.Action.GetName(), int(le.Action.GetColor()), le.Action.GetDeleted(), predefined); err != nil {
 			w.log.Warnf("chatot/client: apply label-edit app-state: %v", err)
 		}
 		w.pushEvent(Event{Kind: EventLabelUpdate})
 		return
 	}
 	if la, ok := evt.(*events.LabelAssociationChat); ok {
-		if err := w.store.SetChatLabel(la.LabelID, la.JID.String(), la.Action.GetLabeled()); err != nil {
+		if err := w.store.SetChatLabel(la.LabelID, w.canonicalChatJID(la.JID.String()), la.Action.GetLabeled()); err != nil {
 			w.log.Warnf("chatot/client: apply label-association app-state: %v", err)
 		}
 		w.pushEvent(Event{Kind: EventLabelUpdate})
@@ -242,7 +285,26 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 		w.refreshGroupInfo(gi.JID.String())
 		return
 	}
+	// A channel's live view/reaction counts moved: the pane re-fetches.
+	if lu, ok := evt.(*events.NewsletterLiveUpdate); ok {
+		w.pushEvent(Event{Kind: EventNewsletterUpdate, Newsletter: &NewsletterUpdate{JID: lu.JID.String()}})
+		return
+	}
+	// Another device muted or unmuted a status poster.
+	if um, ok := evt.(*events.UserStatusMute); ok {
+		jid := um.JID.String()
+		if err := w.store.SetStatusMuted(jid, um.Action.GetMuted()); err != nil {
+			w.log.Warnf("chatot/client: apply status-mute app-state: %v", err)
+		}
+		w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+		return
+	}
 	if _, ok := evt.(*events.Connected); ok {
+		w.beginSyncWindow()
+		// Names for people we already know (restart) or just synced (fresh
+		// link) live in whatsmeow's store; mirror them for the chat list.
+		go w.syncContacts(context.Background())
+		go w.resyncAppStateOnce(context.Background())
 		// whatsmeow only delivers other users' presence after we've sent our
 		// own at least once; do it on every (re)connect rather than tracking
 		// whether it already succeeded.
@@ -263,16 +325,101 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 	if e == nil {
 		return
 	}
+	if e.Kind == EventMessage && e.Message != nil {
+		e.Synced = w.syncing.Load() || time.Since(time.Unix(e.Message.TS, 0)) > syncedMessageAge
+	}
+	if r := e.Receipt; r != nil && r.ReaderJID != "" && jidUserIn(r.ReaderJID, w.ownUsers()) {
+		// Our own device reporting a read is us catching up, not a reader.
+		r.ReaderJID = ""
+	}
+	w.lidMu.Lock()
+	w.canonicalizeEvent(e)
 	w.ingestEvent(*e)
+	w.lidMu.Unlock()
 	w.pushEvent(*e)
+	// A channel post arrives as a plain message on the newsletter JID; the
+	// Channels tab listens for the channel, not the (hidden) chat row.
+	if e.Kind == EventMessage && e.Message != nil && strings.HasSuffix(e.Message.ChatJID, "@newsletter") {
+		w.pushEvent(Event{Kind: EventNewsletterUpdate, Newsletter: &NewsletterUpdate{JID: e.Message.ChatJID}})
+	}
 }
 
 func (w *Whatsmeow) pushEvent(e Event) { w.events.Publish(e) }
+
+// syncedMessageAge is how old a "live" message has to be before it is
+// treated as catch-up rather than news: the phone replaying a backlog hands
+// over messages stamped minutes or hours ago, a real-time one is seconds old.
+const syncedMessageAge = 5 * time.Minute
+
+// syncWindowFallback ends the post-connect sync window even if the server
+// never sends the offline-completed marker, so notifications cannot stay
+// muted for the whole session.
+const syncWindowFallback = 90 * time.Second
+
+// appStateResyncKey marks a store whose app state has been re-fetched in
+// full once, with events enabled, so labels/archive/pin/mute state that the
+// phone already held before this build reaches the local store.
+// v2: chats are keyed by phone number since LID chats merged, so the
+// phone's read state is replayed once more onto the rows that now count.
+const appStateResyncKey = "appstate_full_resync_v2"
+
+// unreadRepairKey marks a store whose unread counts were capped once (see
+// store.RepairUnreadCounts) after LID chats merged into their number chats.
+const unreadRepairKey = "unread_repair_v1"
+
+// resyncAppStateOnce re-pulls every app-state collection from scratch the
+// first time a store connects with this build. Stores linked before
+// EmitAppStateEventsOnFullSync was set never saw the phone's existing
+// labels, archived chats and so on: whatsmeow had swallowed them as part of
+// the initial full sync. Later connects skip it (the flag is written only
+// after every collection succeeds).
+func (w *Whatsmeow) resyncAppStateOnce(ctx context.Context) {
+	if w.store == nil {
+		return
+	}
+	if done, err := w.store.Meta(appStateResyncKey); err != nil || done != "" {
+		return
+	}
+	ok := true
+	for _, name := range appstate.AllPatchNames {
+		if err := w.wa.FetchAppState(ctx, name, true, false); err != nil {
+			w.log.Warnf("chatot/client: app-state resync %s: %v", name, err)
+			ok = false
+		}
+	}
+	if ok {
+		if err := w.store.SetMeta(appStateResyncKey, "1"); err != nil {
+			w.log.Warnf("chatot/client: record app-state resync: %v", err)
+		}
+	}
+	w.pushEvent(Event{Kind: EventLabelUpdate})
+}
+
+func (w *Whatsmeow) beginSyncWindow() {
+	w.syncing.Store(true)
+	w.syncMu.Lock()
+	defer w.syncMu.Unlock()
+	if w.syncTimer != nil {
+		w.syncTimer.Stop()
+	}
+	w.syncTimer = time.AfterFunc(syncWindowFallback, w.endSyncWindow)
+}
+
+func (w *Whatsmeow) endSyncWindow() {
+	w.syncing.Store(false)
+	w.syncMu.Lock()
+	defer w.syncMu.Unlock()
+	if w.syncTimer != nil {
+		w.syncTimer.Stop()
+		w.syncTimer = nil
+	}
+}
 
 // applyChatUpdate runs a store mutation for an inbound app-state
 // chat-organization event and pushes an EventChatUpdate so the chat list
 // refreshes, regardless of whether the store write succeeded.
 func (w *Whatsmeow) applyChatUpdate(jid string, mutate func(jid string) error) {
+	jid = w.canonicalChatJID(jid)
 	if err := mutate(jid); err != nil {
 		w.log.Warnf("chatot/client: apply chat-update app-state: %v", err)
 	}
@@ -333,6 +480,8 @@ func (w *Whatsmeow) pumpQR(qrChan <-chan whatsmeow.QRChannelItem) {
 
 func (w *Whatsmeow) QRCodes() <-chan string { return w.qrCodes }
 
+func (w *Whatsmeow) Paired() bool { return w.wa.Store.ID != nil }
+
 func (w *Whatsmeow) LoggedIn() bool {
 	if w.offline {
 		return w.wa.Store.ID != nil
@@ -355,8 +504,53 @@ func (w *Whatsmeow) Chats(limit int) ([]Chat, error) {
 	out := make([]Chat, len(rows))
 	for i, c := range rows {
 		out[i] = chatFromStore(c)
+		// The chat with oneself (WhatsApp's "message yourself") reads as
+		// "You", not as the account's own number.
+		if w.isSelfJID(out[i].JID) {
+			out[i].Name = "You"
+		}
 	}
 	return out, nil
+}
+
+// isSelfJID reports whether jid addresses this account, under either its
+// phone-number or its LID identity.
+func (w *Whatsmeow) isSelfJID(jid string) bool {
+	if w.wa == nil || w.wa.Store == nil {
+		return false
+	}
+	user := jidUser(jid)
+	if user == "" {
+		return false
+	}
+	if w.wa.Store.ID != nil && w.wa.Store.ID.User == user {
+		return true
+	}
+	return !w.wa.Store.LID.IsEmpty() && w.wa.Store.LID.User == user
+}
+
+// jidUser is the part of a JID before the @ (device suffix dropped).
+func jidUser(jid string) string {
+	if i := strings.IndexByte(jid, '@'); i > 0 {
+		jid = jid[:i]
+	}
+	if i := strings.IndexByte(jid, ':'); i > 0 {
+		jid = jid[:i]
+	}
+	return jid
+}
+
+// ContactName resolves a person's display name from the local contacts
+// table; see Client.ContactName.
+func (w *Whatsmeow) ContactName(jid string) string {
+	if w.store == nil {
+		return ""
+	}
+	name, err := w.store.ContactName(jid)
+	if err != nil {
+		return ""
+	}
+	return name
 }
 
 // Messages reads a conversation's messages from the local store. Opening a
@@ -497,13 +691,21 @@ func (w *Whatsmeow) SendText(ctx context.Context, jid, text string, replyTo *Msg
 	}
 
 	waMsg := &waE2E.Message{}
-	if replyTo == nil {
+	mentions := w.mentionedJIDs(ctx, text)
+	if replyTo == nil && len(mentions) == 0 {
 		waMsg.Conversation = proto.String(text)
 	} else {
-		waMsg.ExtendedTextMessage = &waE2E.ExtendedTextMessage{
-			Text:        proto.String(text),
-			ContextInfo: w.replyContextInfo(jid, *replyTo),
+		ext := &waE2E.ExtendedTextMessage{Text: proto.String(text)}
+		if replyTo != nil {
+			ext.ContextInfo = w.replyContextInfo(jid, *replyTo)
 		}
+		if len(mentions) > 0 {
+			if ext.ContextInfo == nil {
+				ext.ContextInfo = &waE2E.ContextInfo{}
+			}
+			ext.ContextInfo.MentionedJID = mentions
+		}
+		waMsg.ExtendedTextMessage = ext
 	}
 
 	id := w.wa.GenerateMessageID()
@@ -566,6 +768,121 @@ func (w *Whatsmeow) DeleteMessage(ctx context.Context, chatJID, msgID string) er
 	return nil
 }
 
+// DeleteMessageForMe publishes WhatsApp's deleteMessageForMe app-state
+// mutation (whatsmeow decodes it into events.DeleteForMe but has no
+// builder; the index is [name, chat, id, fromMe, sender-or-0]) so the
+// phone drops the message too, then removes it here.
+func (w *Whatsmeow) DeleteMessageForMe(ctx context.Context, chatJID, msgID string) error {
+	chat, err := types.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", chatJID, err)
+	}
+	m, ok, err := w.store.MessageByID(chatJID, msgID)
+	if err != nil {
+		return fmt.Errorf("chatot/client: delete for me: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("chatot/client: delete for me: message %s not found in %s", msgID, chatJID)
+	}
+	fromMe, sender := "0", "0"
+	if m.FromMe {
+		fromMe = "1"
+	} else if chat.Server == types.GroupServer && m.FromJID != "" {
+		sender = m.FromJID
+	}
+	ts := m.TS
+	patch := appstate.PatchInfo{
+		Type: appstate.WAPatchRegularHigh,
+		Mutations: []appstate.MutationInfo{{
+			Index:   []string{appstate.IndexDeleteMessageForMe, chat.String(), msgID, fromMe, sender},
+			Version: 3,
+			Value: &waSyncAction.SyncActionValue{
+				DeleteMessageForMeAction: &waSyncAction.DeleteMessageForMeAction{
+					DeleteMedia:      proto.Bool(false),
+					MessageTimestamp: proto.Int64(ts),
+				},
+			},
+		}},
+	}
+	if err := w.wa.SendAppState(ctx, patch); err != nil {
+		return fmt.Errorf("chatot/client: delete for me: %w", err)
+	}
+	w.removeMessageLocally(chatJID, msgID)
+	return nil
+}
+
+// removeMessageLocally drops a message deleted for this account (here or
+// on the phone) and tells the open chat and the chat list.
+func (w *Whatsmeow) removeMessageLocally(chatJID, msgID string) {
+	if err := w.store.RemoveMessage(chatJID, msgID); err != nil {
+		w.log.Warnf("chatot/client: remove message %s/%s: %v", chatJID, msgID, err)
+	}
+	w.pushEvent(Event{Kind: EventRevoke, Revoke: &Revoke{ChatJID: chatJID, MsgID: msgID, TS: time.Now().Unix()}})
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: chatJID}})
+}
+
+// applyMarkChatAsRead mirrors the phone's read state. A "read" action
+// covers the messages up to its range's last timestamp: newer ones the
+// phone hasn't seen keep the badge (a full app-state replay hands over the
+// last read of every chat, however old).
+func (w *Whatsmeow) applyMarkChatAsRead(jid string, a *waSyncAction.MarkChatAsReadAction) error {
+	if !a.GetRead() {
+		return w.store.SetChatUnread(jid, true)
+	}
+	last, err := w.store.ChatLastMessageTS(jid)
+	if err != nil {
+		return err
+	}
+	if !readCoversChat(a.GetMessageRange().GetLastMessageTimestamp(), last) {
+		return nil
+	}
+	return w.store.SetChatUnread(jid, false)
+}
+
+// pinDuration is how long a "Pin in chat" lasts: WhatsApp offers 24h, 7d and
+// 30d; the mockup's toast reads "Pinned for 7 days".
+const pinDuration = 7 * 24 * 60 * 60
+
+// PinMessage sends a PinInChatMessage add-on for msgID. WhatsApp models a pin
+// as its own message referencing the target's key, with the pin's lifetime in
+// the MessageContextInfo; there is no dedicated whatsmeow builder for it, so
+// the key comes from BuildMessageKey and the envelope is assembled here.
+func (w *Whatsmeow) PinMessage(ctx context.Context, chatJID, msgID string, pin bool) error {
+	chat, err := types.ParseJID(chatJID)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", chatJID, err)
+	}
+	target, ok, err := w.store.MessageByID(chatJID, msgID)
+	if err != nil {
+		return fmt.Errorf("chatot/client: lookup message %s: %w", msgID, err)
+	}
+	if !ok {
+		return fmt.Errorf("chatot/client: message %s not found in chat %s", msgID, chatJID)
+	}
+	sender, err := messageSenderJID(chat, target.FromMe, target.FromJID, w.ownJID())
+	if err != nil {
+		return err
+	}
+	kind := waE2E.PinInChatMessage_PIN_FOR_ALL
+	if !pin {
+		kind = waE2E.PinInChatMessage_UNPIN_FOR_ALL
+	}
+	msg := &waE2E.Message{
+		PinInChatMessage: &waE2E.PinInChatMessage{
+			Key:               w.wa.BuildMessageKey(chat, sender, msgID),
+			Type:              kind.Enum(),
+			SenderTimestampMS: proto.Int64(time.Now().UnixMilli()),
+		},
+		MessageContextInfo: &waE2E.MessageContextInfo{
+			MessageAddOnDurationInSecs: proto.Uint32(pinDuration),
+		},
+	}
+	if _, err := w.wa.SendMessage(ctx, chat, msg); err != nil {
+		return fmt.Errorf("chatot/client: send pin: %w", err)
+	}
+	return nil
+}
+
 // ClearChat wipes jid's messages from the local store only (never sent to
 // WhatsApp — the phone and the other party keep their own copy). If
 // alsoMedia, downloaded attachment files are removed from the local cache;
@@ -583,6 +900,39 @@ func (w *Whatsmeow) ClearChat(ctx context.Context, jid string, alsoMedia bool) e
 	}
 	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
 	return nil
+}
+
+// mentionUserRE is WhatsApp's wire form of an @mention: "@" then the
+// mentioned account's user part (a phone number or a LID).
+var mentionUserRE = regexp.MustCompile(`@(\d{5,20})`)
+
+// mentionedJIDs lists the accounts text @mentions, for ContextInfo: a user
+// the LID map knows is a LID, everything else a phone number. Without
+// this list WhatsApp shows the recipient the bare number, not a name.
+func (w *Whatsmeow) mentionedJIDs(ctx context.Context, text string) []string {
+	var out []string
+	for _, user := range mentionedUsers(text) {
+		jid := types.NewJID(user, types.DefaultUserServer)
+		lid := types.NewJID(user, types.HiddenUserServer)
+		if pn, err := w.wa.Store.LIDs.GetPNForLID(ctx, lid); err == nil && !pn.IsEmpty() {
+			jid = lid
+		}
+		out = append(out, jid.String())
+	}
+	return out
+}
+
+// mentionedUsers is the distinct user parts text @mentions, in order.
+func mentionedUsers(text string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, m := range mentionUserRE.FindAllStringSubmatch(text, -1) {
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			out = append(out, m[1])
+		}
+	}
+	return out
 }
 
 // replyContextInfo builds the ContextInfo for a reply, quoting the target
@@ -647,6 +997,10 @@ func (w *Whatsmeow) SendMedia(ctx context.Context, jid string, m Attachment, rep
 		ctxInfo = w.replyContextInfo(jid, *replyTo)
 	}
 	waMsg, mediaProto := buildMediaMessage(kind, mimeType, m, &resp, ctxInfo)
+	var thumb []byte
+	if len(m.Thumbnail) > 0 {
+		thumb = m.Thumbnail
+	}
 
 	id := w.wa.GenerateMessageID()
 	if _, err := w.wa.SendMessage(ctx, to, waMsg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
@@ -668,6 +1022,7 @@ func (w *Whatsmeow) SendMedia(ctx context.Context, jid string, m Attachment, rep
 		Attachment: &Attachment{
 			Kind: kind, Filename: attachmentFilename(m), MimeType: mimeType,
 			LocalPath: localPath, Caption: caption, ProtoBlob: marshalMedia(mediaProto),
+			Thumbnail: thumb, DurationSecs: m.DurationSecs, Size: int64(len(data)),
 		},
 	}
 	if err := w.ingestMessage(&out); err != nil {
@@ -1024,6 +1379,7 @@ func (w *Whatsmeow) handlePollVote(v *events.Message) {
 	if chatJID == "" {
 		chatJID = v.Info.Chat.String()
 	}
+	chatJID = w.canonicalChatJID(chatJID)
 	voter := v.Info.Sender.String()
 	if err := w.store.SetPollVotes(chatJID, pollMsgID, voter, vote.GetSelectedOptions()); err != nil {
 		w.log.Warnf("chatot/client: store poll vote: %v", err)
@@ -1075,12 +1431,27 @@ func attachmentFilename(m Attachment) string {
 // Dimensions/duration are left nil — deriving them would need decoding the
 // file, which SendMedia deliberately doesn't block on.
 func buildMediaMessage(kind, mimeType string, m Attachment, resp *whatsmeow.UploadResponse, ctxInfo *waE2E.ContextInfo) (*waE2E.Message, proto.Message) {
+	// Optional metadata is only written when known: a zero width or an
+	// empty thumbnail is better left unset than sent as a lie.
+	var thumb []byte
+	if len(m.Thumbnail) > 0 {
+		thumb = m.Thumbnail
+	}
+	var width, height *uint32
+	if m.Width > 0 && m.Height > 0 {
+		width, height = proto.Uint32(uint32(m.Width)), proto.Uint32(uint32(m.Height))
+	}
+	var seconds *uint32
+	if m.DurationSecs > 0 {
+		seconds = proto.Uint32(uint32(m.DurationSecs))
+	}
 	switch kind {
 	case "image":
 		img := &waE2E.ImageMessage{
 			URL: &resp.URL, DirectPath: &resp.DirectPath, MediaKey: resp.MediaKey,
 			FileEncSHA256: resp.FileEncSHA256, FileSHA256: resp.FileSHA256, FileLength: &resp.FileLength,
 			Mimetype: proto.String(mimeType), Caption: proto.String(m.Caption), ContextInfo: ctxInfo,
+			JPEGThumbnail: thumb, Width: width, Height: height,
 		}
 		return &waE2E.Message{ImageMessage: img}, img
 	case "video":
@@ -1088,13 +1459,14 @@ func buildMediaMessage(kind, mimeType string, m Attachment, resp *whatsmeow.Uplo
 			URL: &resp.URL, DirectPath: &resp.DirectPath, MediaKey: resp.MediaKey,
 			FileEncSHA256: resp.FileEncSHA256, FileSHA256: resp.FileSHA256, FileLength: &resp.FileLength,
 			Mimetype: proto.String(mimeType), Caption: proto.String(m.Caption), ContextInfo: ctxInfo,
+			JPEGThumbnail: thumb, Width: width, Height: height, Seconds: seconds,
 		}
 		return &waE2E.Message{VideoMessage: vid}, vid
 	case "audio":
 		aud := &waE2E.AudioMessage{
 			URL: &resp.URL, DirectPath: &resp.DirectPath, MediaKey: resp.MediaKey,
 			FileEncSHA256: resp.FileEncSHA256, FileSHA256: resp.FileSHA256, FileLength: &resp.FileLength,
-			Mimetype: proto.String(mimeType), ContextInfo: ctxInfo,
+			Mimetype: proto.String(mimeType), ContextInfo: ctxInfo, Seconds: seconds,
 		}
 		return &waE2E.Message{AudioMessage: aud}, aud
 	default:
@@ -1102,7 +1474,7 @@ func buildMediaMessage(kind, mimeType string, m Attachment, resp *whatsmeow.Uplo
 			URL: &resp.URL, DirectPath: &resp.DirectPath, MediaKey: resp.MediaKey,
 			FileEncSHA256: resp.FileEncSHA256, FileSHA256: resp.FileSHA256, FileLength: &resp.FileLength,
 			Mimetype: proto.String(mimeType), FileName: proto.String(attachmentFilename(m)),
-			Caption: proto.String(m.Caption), ContextInfo: ctxInfo,
+			Caption: proto.String(m.Caption), ContextInfo: ctxInfo, JPEGThumbnail: thumb,
 		}
 		return &waE2E.Message{DocumentMessage: doc}, doc
 	}
@@ -1270,7 +1642,40 @@ func (w *Whatsmeow) MarkRead(ctx context.Context, jid string, msgIDs []string) e
 	if err := w.wa.MarkRead(ctx, ids, time.Now(), chat, sender); err != nil {
 		return fmt.Errorf("chatot/client: mark read: %w", err)
 	}
-	return w.store.MarkChatRead(jid)
+	return w.ClearUnread(jid)
+}
+
+// StopLiveLocation marks an own live share as ended in the store (WhatsApp
+// has no separate "stop" message; recipients simply stop receiving updates)
+// and asks the open chat to redraw the bubble.
+func (w *Whatsmeow) StopLiveLocation(ctx context.Context, chatJID, msgID string) error {
+	kind, payload, err := w.store.MessagePayload(chatJID, msgID)
+	if err != nil {
+		return fmt.Errorf("chatot/client: stop live location: %w", err)
+	}
+	if kind != "location" || payload == "" {
+		return fmt.Errorf("chatot/client: stop live location: %s is not a location", msgID)
+	}
+	ended, err := endLivePayload(payload, time.Now().Unix())
+	if err != nil {
+		return err
+	}
+	if err := w.store.SetMessagePayload(chatJID, msgID, ended); err != nil {
+		return fmt.Errorf("chatot/client: stop live location: %w", err)
+	}
+	w.pushEvent(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: chatJID, MsgID: msgID}})
+	return nil
+}
+
+// ClearUnread zeroes jid's local unread count without sending any receipt,
+// and tells the chat list to redraw its badge. Opening a chat always does
+// this; MarkRead adds the receipt on top when the user allows them.
+func (w *Whatsmeow) ClearUnread(jid string) error {
+	if err := w.store.MarkChatRead(jid); err != nil {
+		return err
+	}
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
 }
 
 // PinChat pins/unpins jid via app-state, then optimistically updates the
@@ -1292,11 +1697,21 @@ func (w *Whatsmeow) PinChat(ctx context.Context, jid string, pin bool) error {
 
 // MuteChat mutes/unmutes jid indefinitely via app-state.
 func (w *Whatsmeow) MuteChat(ctx context.Context, jid string, mute bool) error {
+	return w.mute(ctx, jid, mute, 0)
+}
+
+// MuteChatFor mutes jid for d via app-state; WhatsApp unmutes it itself when
+// the time is up.
+func (w *Whatsmeow) MuteChatFor(ctx context.Context, jid string, d time.Duration) error {
+	return w.mute(ctx, jid, true, d)
+}
+
+func (w *Whatsmeow) mute(ctx context.Context, jid string, mute bool, d time.Duration) error {
 	target, err := types.ParseJID(jid)
 	if err != nil {
 		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
 	}
-	if err := w.wa.SendAppState(ctx, appstate.BuildMute(target, mute, 0)); err != nil {
+	if err := w.wa.SendAppState(ctx, appstate.BuildMute(target, mute, d)); err != nil {
 		return fmt.Errorf("chatot/client: send mute app-state: %w", err)
 	}
 	if err := w.store.SetChatMuted(jid, mute); err != nil {
@@ -1376,18 +1791,9 @@ func (w *Whatsmeow) StarMessage(ctx context.Context, jid, msgID string, starred 
 		return fmt.Errorf("chatot/client: message %s not found in chat %s", msgID, jid)
 	}
 
-	var sender types.JID
-	switch {
-	case target.FromMe:
-		if sender, err = types.ParseJID(w.ownJID()); err != nil {
-			return fmt.Errorf("chatot/client: parse own jid: %w", err)
-		}
-	case chat.Server == types.GroupServer:
-		if sender, err = types.ParseJID(target.FromJID); err != nil {
-			return fmt.Errorf("chatot/client: parse sender jid %q: %w", target.FromJID, err)
-		}
-	default:
-		sender = chat
+	sender, err := messageSenderJID(chat, target.FromMe, target.FromJID, w.ownJID())
+	if err != nil {
+		return err
 	}
 
 	patch := appstate.BuildStar(chat, sender, types.MessageID(msgID), target.FromMe, starred)
@@ -1419,7 +1825,7 @@ func (w *Whatsmeow) StarredMessages(limit int) ([]Message, error) {
 // Statuses reads recent status ("stories") updates from the store's
 // status@broadcast chat, newest first.
 func (w *Whatsmeow) Statuses(limit int) ([]Message, error) {
-	rows, err := w.store.Statuses(limit)
+	rows, err := w.store.Statuses(time.Now().Add(-statusTTL).Unix(), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1441,8 +1847,15 @@ func (w *Whatsmeow) PostStatus(ctx context.Context, text string) error {
 	msg := &waE2E.Message{
 		ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String(text)},
 	}
-	if _, err := w.wa.SendMessage(ctx, types.StatusBroadcastJID, msg); err != nil {
+	id := w.wa.GenerateMessageID()
+	if _, err := w.wa.SendMessage(ctx, types.StatusBroadcastJID, msg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
 		return fmt.Errorf("chatot/client: post status: %w", err)
+	}
+	// Our own update isn't echoed back, so file it under the broadcast
+	// ourselves: that is what "My status" and its viewer list read.
+	out := Message{ID: id, ChatJID: statusBroadcastJID, FromJID: w.ownJID(), FromMe: true, Text: text, TS: time.Now().Unix()}
+	if err := w.ingestMessage(&out); err != nil {
+		w.log.Warnf("chatot/client: persist own status: %v", err)
 	}
 	return nil
 }
@@ -1831,5 +2244,39 @@ func extForMime(mimeType string) string {
 		return ".pdf"
 	default:
 		return ""
+	}
+}
+
+// messageSenderJID resolves the sender whatsmeow's key builders want for a
+// stored message: our own JID for an own message, the participant for a
+// group message, and the chat itself for a received 1:1 message. That last
+// case matters: BuildMessageKey treats an empty sender as "from me", so a
+// received direct message keyed with a zero JID would silently target the
+// wrong side of the conversation.
+func messageSenderJID(chat types.JID, fromMe bool, fromJID, ownJID string) (types.JID, error) {
+	switch {
+	case fromMe:
+		// ParseJID("") yields the empty JID without complaint, which would
+		// again read as "from me" for the wrong reason; a logged-out client
+		// has no own JID and must fail loudly.
+		if ownJID == "" {
+			return types.EmptyJID, fmt.Errorf("chatot/client: not logged in")
+		}
+		own, err := types.ParseJID(ownJID)
+		if err != nil {
+			return types.EmptyJID, fmt.Errorf("chatot/client: parse own jid: %w", err)
+		}
+		return own, nil
+	case chat.Server == types.GroupServer:
+		if fromJID == "" {
+			return types.EmptyJID, fmt.Errorf("chatot/client: group message has no sender to key on")
+		}
+		sender, err := types.ParseJID(fromJID)
+		if err != nil {
+			return types.EmptyJID, fmt.Errorf("chatot/client: parse sender jid %q: %w", fromJID, err)
+		}
+		return sender, nil
+	default:
+		return chat, nil
 	}
 }
