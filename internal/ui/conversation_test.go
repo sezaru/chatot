@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -107,12 +108,34 @@ func TestBubbleVM_Reactions(t *testing.T) {
 		ID:        "1",
 		Text:      "funny",
 		TS:        now.Unix(),
-		Reactions: map[string]string{"👍": "a@s.whatsapp.net", "😂": "b@s.whatsapp.net"},
+		Reactions: map[string][]string{"👍": {"a@s.whatsapp.net", "c@s.whatsapp.net"}, "😂": {"b@s.whatsapp.net"}},
 	}
 
 	out := bubbleVM(m, nil, nil, now)
 	if len(out.Reactions) != 2 {
 		t.Fatalf("Reactions = %v, want 2 entries", out.Reactions)
+	}
+	// Emoji-sorted, with the count of people behind each pill.
+	if out.Reactions[0].Emoji != "👍" || out.Reactions[0].Count != 2 {
+		t.Errorf("first pill = %+v, want 👍 ×2", out.Reactions[0])
+	}
+	if out.Reactions[1].Emoji != "😂" || out.Reactions[1].Count != 1 {
+		t.Errorf("second pill = %+v, want 😂 ×1", out.Reactions[1])
+	}
+	// The mockup only prints a number past one reaction.
+	if got := reactionCountText(1); got != "" {
+		t.Errorf("reactionCountText(1) = %q, want empty", got)
+	}
+	if got := reactionCountText(3); got != "3" {
+		t.Errorf("reactionCountText(3) = %q", got)
+	}
+	// Our own reaction is found even when the reactor JID carries a device
+	// suffix, and never matches an empty own JID.
+	if !reactedBy([]string{"a@s.whatsapp.net", "1234567890:12@s.whatsapp.net"}, "1234567890@s.whatsapp.net") {
+		t.Error("reactedBy missed a device-suffixed own JID")
+	}
+	if reactedBy([]string{"a@s.whatsapp.net"}, "") {
+		t.Error("reactedBy matched an empty own JID")
 	}
 }
 
@@ -132,8 +155,8 @@ func TestBubbleVM_MediaMessage(t *testing.T) {
 	if !out.IsMedia {
 		t.Fatal("expected IsMedia=true for an attachment message")
 	}
-	if out.MediaChip != "[document] report.pdf" {
-		t.Errorf("MediaChip = %q, want %q", out.MediaChip, "[document] report.pdf")
+	if out.MediaChip != "📄 report.pdf" {
+		t.Errorf("MediaChip = %q, want %q", out.MediaChip, "📄 report.pdf")
 	}
 	if out.Text != "" {
 		t.Errorf("Text = %q, want empty for a media message", out.Text)
@@ -308,21 +331,51 @@ func TestNextHistoryAction(t *testing.T) {
 	}
 }
 
-func TestStarMenuLabel(t *testing.T) {
-	if got := starMenuLabel(true); got != "Unstar" {
-		t.Errorf("starMenuLabel(true) = %q, want %q", got, "Unstar")
+func TestCopyableText(t *testing.T) {
+	if got := copyableText(client.Message{Text: "hi"}); got != "hi" {
+		t.Errorf("text = %q", got)
 	}
-	if got := starMenuLabel(false); got != "Star" {
-		t.Errorf("starMenuLabel(false) = %q, want %q", got, "Star")
+	// Rich kinds copy a plain-text rendering, so "Copy text" is never inert
+	// on a location, contact or poll the way it was.
+	loc := copyableText(client.Message{Location: &client.Location{Name: "Bletchley Park", Address: "Sherwood Dr", Latitude: 1, Longitude: 2}})
+	if !strings.HasPrefix(loc, "Bletchley Park\nSherwood Dr\nhttps://www.openstreetmap.org/") {
+		t.Errorf("location = %q", loc)
+	}
+	if got := copyableText(client.Message{Contact: &client.Contact{DisplayName: "Ada", Phones: []string{"+1"}}}); got != "Ada\n+1" {
+		t.Errorf("contact = %q", got)
+	}
+	if got := copyableText(client.Message{Poll: &client.Poll{Name: "Lunch?", Options: []client.PollOption{{Name: "Pizza"}}}}); got != "Lunch?\n• Pizza" {
+		t.Errorf("poll = %q", got)
+	}
+	if got := copyableText(client.Message{Attachment: &client.Attachment{Kind: "image", Caption: "cap"}}); got != "cap" {
+		t.Errorf("caption = %q", got)
+	}
+	// Nothing to copy: a deleted message, or media with no caption.
+	if got := copyableText(client.Message{Text: "x", Deleted: true}); got != "" {
+		t.Errorf("deleted = %q", got)
+	}
+	if got := copyableText(client.Message{Attachment: &client.Attachment{Kind: "image"}}); got != "" {
+		t.Errorf("bare media = %q", got)
 	}
 }
 
-func TestUndoClipboardValue(t *testing.T) {
-	if got := undoClipboardValue("previous", true); got != "previous" {
-		t.Errorf("undoClipboardValue(%q, true) = %q, want %q", "previous", got, "previous")
+func TestMessageInfoRows(t *testing.T) {
+	now := time.Date(2026, 9, 2, 15, 0, 0, 0, time.UTC)
+	ts := time.Date(2026, 9, 2, 14, 30, 0, 0, time.UTC).Unix()
+	rows := messageInfoRows(client.Message{FromMe: true, TS: ts, Status: client.MessageStatusRead, Starred: true}, now)
+	want := [][2]string{{"Sent", "14:30"}, {"Delivered", "✓✓"}, {"Read", "✓✓"}, {"Starred", "Yes"}}
+	if len(rows) != len(want) {
+		t.Fatalf("rows = %v, want %v", rows, want)
 	}
-	if got := undoClipboardValue("previous", false); got != "" {
-		t.Errorf("undoClipboardValue(%q, false) = %q, want empty", "previous", got)
+	for i := range want {
+		if rows[i] != want[i] {
+			t.Errorf("row %d = %v, want %v", i, rows[i], want[i])
+		}
+	}
+	// A received message only says when; an older one carries the date.
+	old := messageInfoRows(client.Message{TS: ts - 86400*3}, now)
+	if len(old) != 1 || old[0][0] != "Received" || !strings.Contains(old[0][1], "/") {
+		t.Errorf("received = %v", old)
 	}
 }
 
@@ -337,7 +390,7 @@ func TestBubbleSigDetectsLiveChanges(t *testing.T) {
 	// Each live mutation must change the signature so the row re-renders.
 	cases := map[string]func(m client.Message) client.Message{
 		"read receipt": func(m client.Message) client.Message { m.Status = client.MessageStatusRead; return m },
-		"reaction":     func(m client.Message) client.Message { m.Reactions = map[string]string{"👍": "x@s"}; return m },
+		"reaction":     func(m client.Message) client.Message { m.Reactions = map[string][]string{"👍": {"x@s"}}; return m },
 		"revoke":       func(m client.Message) client.Message { m.Deleted = true; return m },
 		"edit":         func(m client.Message) client.Message { m.Edited = true; m.Text = "hello"; return m },
 		"star":         func(m client.Message) client.Message { m.Starred = true; return m },
@@ -349,6 +402,36 @@ func TestBubbleSigDetectsLiveChanges(t *testing.T) {
 	for name, mut := range cases {
 		if bubbleSig(base) == bubbleSig(mut(base)) {
 			t.Errorf("%s: signature unchanged, row would not refresh", name)
+		}
+	}
+}
+
+func TestAlignPopoverX(t *testing.T) {
+	// An incoming bubble's card starts at the bubble's left edge; an
+	// outgoing bubble's card ends at its right edge, so a card under a bubble
+	// hugging the pane's right margin grows inward rather than off-window.
+	if got := alignPopoverX(100, 80, 244, false); got != 100 {
+		t.Errorf("incoming x = %d, want 100", got)
+	}
+	if got := alignPopoverX(700, 80, 244, true); got != 700+80-244 {
+		t.Errorf("outgoing x = %d, want %d", got, 700+80-244)
+	}
+}
+
+func TestRowOnScreen(t *testing.T) {
+	cases := []struct {
+		y, h, viewport float64
+		want           bool
+	}{
+		{100, 40, 600, true},
+		{-20, 40, 600, true},  // partly above
+		{590, 40, 600, true},  // partly below
+		{-50, 40, 600, false}, // fully above
+		{600, 40, 600, false}, // fully below
+	}
+	for _, c := range cases {
+		if got := rowOnScreen(c.y, c.h, c.viewport); got != c.want {
+			t.Errorf("rowOnScreen(%v, %v, %v) = %v, want %v", c.y, c.h, c.viewport, got, c.want)
 		}
 	}
 }

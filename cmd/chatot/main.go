@@ -3,13 +3,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
-	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -22,7 +23,20 @@ import (
 const appID = "com.sezdm.chatot"
 
 func main() {
+	ensureComposeInput()
+	// GTK 4.16+ defaults to its Vulkan renderer, which logs a
+	// VK_SUBOPTIMAL_KHR warning whenever a popover surface first presents.
+	// The GL renderer ("gl"; "ngl" before 4.22) draws the same and stays quiet; an explicit
+	// GSK_RENDERER still wins.
+	if os.Getenv("GSK_RENDERER") == "" {
+		os.Setenv("GSK_RENDERER", "gl")
+	}
+
 	app := adw.NewApplication(appID, gio.ApplicationFlagsNone)
+
+	if err := installDesktopEntry(); err != nil {
+		log.Printf("chatot: install desktop entry: %v", err)
+	}
 
 	c := buildClient()
 
@@ -60,12 +74,8 @@ func buildClient() client.Client {
 			log.Fatalf("chatot: init offline client: %v", err)
 		}
 		c.SetOffline(true)
-		name := "Account 1"
-		if jid := c.OwnJID(); jid != "" {
-			name = jid
-		}
 		m.SetBaseDir(dir)
-		m.AddAccount("default", name, c)
+		m.AddAccount("default", "", c)
 		return m
 	}
 
@@ -78,11 +88,8 @@ func buildClient() client.Client {
 	if err != nil {
 		log.Fatalf("chatot: init whatsmeow client: %v", err)
 	}
-	name := "Account 1"
-	if jid := c.OwnJID(); jid != "" {
-		name = jid
-	}
-	m.AddAccount("default", name, c)
+	// No label: the manager shows the profile name (or number) instead.
+	m.AddAccount("default", "", c)
 	// Re-create every persisted pairing account (no-op for a fresh, single-
 	// account install, so behavior there is unchanged).
 	if err := m.LoadRoster(); err != nil {
@@ -160,6 +167,9 @@ func stateDir() string {
 
 func activate(app *adw.Application, c client.Client) {
 	loadCSS()
+	if os.Getenv("CHATOT_SHOT") != "" {
+		ui.EnableShotHooks()
+	}
 
 	prefs := settings.Load(settings.Dir())
 	applySettings(prefs)
@@ -197,22 +207,96 @@ func activate(app *adw.Application, c client.Client) {
 	contentBox.Append(conversation)
 	contentBox.Append(composer)
 
+	// Declared up here because the starred page needs it, and it in turn needs
+	// the conversation and composer that are built above.
+	var openChat func(jid string)
+
+	// Starred and Media/Links/Docs are pages of the content pane in the
+	// mockup, not separate windows, so the right side is a stack whose default
+	// page is the conversation.
+	rightPane := gtk.NewStack()
+	rightPane.SetVExpand(true)
+	rightPane.SetHExpand(true)
+	rightPane.AddNamed(contentBox, "chat")
+	showChat := func() { rightPane.SetVisibleChildName("chat") }
+
+	starredPage := ui.NewStarredPage(c, showChat, func(jid string) {
+		showChat()
+		openChat(jid)
+	})
+	rightPane.AddNamed(starredPage, "starred")
+
+	mediaPage := ui.NewMediaPage(c, showChat)
+	rightPane.AddNamed(mediaPage, "media")
+
+	// The attachment viewer is a page of the same pane (the mockup's
+	// pane === 'viewer'): every picture, clip, voice note, file and location
+	// in the open chat navigates as one sequence there.
+	viewer := ui.NewAttachmentViewer(c, showChat)
+	rightPane.AddNamed(viewer, "viewer")
+	conversation.OnOpenViewerRequested(func(msg client.Message) {
+		viewer.Open(chatByJIDOrEmpty(c, msg.ChatJID), conversation.Messages(), msg.ID)
+		rightPane.SetVisibleChildName("viewer")
+	})
+	viewer.OnMenu(conversation.MessageMenuItems)
+	viewer.OnReply(composer.StartReply)
+
+	chatList.OnStarredRequested(func() {
+		starredPage.Reload()
+		rightPane.SetVisibleChildName("starred")
+	})
+
+	// The attachment tray covers the whole conversation pane (thread and
+	// composer both), per the mockup, so it overlays contentBox rather than
+	// sitting inside the composer.
+	attachTray := ui.NewAttachTray(composer.SendTrayItems, composer.ReopenFilePicker)
+	composer.SetTray(attachTray)
+	paneOverlay := gtk.NewOverlay()
+	paneOverlay.SetChild(rightPane)
+	paneOverlay.AddOverlay(attachTray)
+
 	toastOverlay := adw.NewToastOverlay()
-	toastOverlay.SetChild(contentBox)
-	content := adw.NewNavigationPage(toastOverlay, "Conversation")
+	// The mockup's toast is a black pill with a green action, not Adwaita's
+	// default bar; the class is on the overlay so every toast picks it up.
+	toastOverlay.AddCSSClass("chatot-toast")
+	toastOverlay.SetChild(paneOverlay)
+	toastOverlay.SetVExpand(true)
+
+	// The conversation header (with the window controls) sits above the pane
+	// stack, so the media and starred pages open beneath it instead of
+	// replacing it — the mockup keeps the chat identity visible over both.
+	// On the Status, Channels and Communities tabs the mockup drops the chat
+	// identity and its ⋮ from that strip, leaving the window controls; the
+	// tabs' own panes carry their headers below it.
+	contentHeader := gtk.NewStack()
+	contentHeader.AddNamed(conversation.Header(), "chat")
+	contentHeader.AddNamed(ui.NewPlainHeader(), "plain")
+	contentCol := gtk.NewBox(gtk.OrientationVertical, 0)
+	contentCol.Append(contentHeader)
+	contentCol.Append(toastOverlay)
+	content := adw.NewNavigationPage(contentCol, "Conversation")
+
+	// The tabs' content panes: the per-tab placeholder, the status viewer,
+	// the channel reader and the community page.
+	panes := chatList.Panes()
+	rightPane.AddNamed(panes.Empty, "tabempty")
+	rightPane.AddNamed(panes.Status, "status")
+	rightPane.AddNamed(panes.Channel, "channel")
+	rightPane.AddNamed(panes.Community, "community")
+	chatList.OnPaneRequested(func(name string) {
+		rightPane.SetVisibleChildName(name)
+		if name == "chat" {
+			contentHeader.SetVisibleChildName("chat")
+		} else {
+			contentHeader.SetVisibleChildName("plain")
+		}
+	})
 
 	composer.OnSent(func(msg client.Message) {
 		conversation.AppendSentMessage(msg)
 	})
 	conversation.OnReplyRequested(composer.StartReply)
 	conversation.OnEditRequested(composer.StartEdit)
-	conversation.OnDeleteRequested(func(msg client.Message) {
-		go func() {
-			if err := c.DeleteMessage(context.Background(), msg.ChatJID, msg.ID); err != nil {
-				log.Printf("chatot: delete message failed: %v", err)
-			}
-		}()
-	})
 	conversation.OnReactRequested(func(msg client.Message, emoji string) {
 		go func() {
 			if err := c.React(context.Background(), msg.ChatJID, msg.ID, emoji); err != nil {
@@ -238,37 +322,102 @@ func activate(app *adw.Application, c client.Client) {
 	})
 	// openChat is the single "show this chat" path: the chat-list click and
 	// the notification's click-to-open action both funnel through it.
-	openChat := func(jid string) {
+	openChat = func(jid string) {
+		chatList.SetSelected(jid)
 		conversation.Load(jid)
 		composer.SetChat(jid)
+		composer.SetChatName(chatNameFor(c, jid))
+		composer.FocusInput()
 		go markReadOnOpen(c, jid, conversation.Messages())
 	}
 	chatList.OnChatSelected(openChat)
+	conversation.OnStopLiveRequested(composer.StopLiveLocation)
 
 	split := adw.NewNavigationSplitView()
 	split.SetSidebar(sidebar)
 	split.SetContent(content)
+	// Mockup proportions: the sidebar is the 54px account rail plus a 334px
+	// list column = 388px of the 1240px design canvas (31.3%). The clamps keep
+	// that usable at other window sizes without letting the sidebar drift far
+	// from the design width.
+	split.SetSidebarWidthFraction(388.0 / 1240.0)
+	split.SetMinSidebarWidth(340)
+	split.SetMaxSidebarWidth(420)
 
 	// The window flips between the QR pairing screen and the main UI via a
 	// stack keyed on login state; whatsmeow pairing/connection events switch it.
 	linking := ui.NewLinkingView()
 	stack := gtk.NewStack()
+	stack.AddNamed(ui.NewLoadingView(), "loading")
 	stack.AddNamed(linking, "linking")
 	stack.AddNamed(split, "main")
-	if c.LoggedIn() {
+	// The main view fades in over the loading mark once the socket is up.
+	stack.SetTransitionType(gtk.StackTransitionTypeCrossfade)
+	stack.SetTransitionDuration(350)
+	switch {
+	case c.LoggedIn():
 		stack.SetVisibleChildName("main")
-	} else {
+	case c.Paired():
+		// Linked, but the socket only comes up once Start runs below: show
+		// the mark rather than flashing the QR page at someone who has
+		// nothing to pair.
+		stack.SetVisibleChildName("loading")
+	default:
 		stack.SetVisibleChildName("linking")
+	}
+	// leaveLoading moves off the loading mark to the main view (the local
+	// store is usable offline) unless something already did.
+	leaveLoading := func() {
+		if stack.VisibleChildName() == "loading" {
+			stack.SetVisibleChildName("main")
+		}
 	}
 
 	win := adw.NewApplicationWindow(&app.Application)
 	win.SetTitle("chatot")
+	// The icon name resolves through the desktop entry installDesktopEntry
+	// keeps in place; on X11 GTK reads it from the window directly.
+	win.SetIconName(appID)
 	win.SetDefaultSize(1000, 700)
 	win.SetContent(stack)
 	composer.SetWindow(&win.Window)
 	chatList.SetWindow(&win.Window)
 	conversation.SetWindow(&win.Window)
+	// Seeing the pill is reading the chat: the badge clears and the sender
+	// gets the tick, as on open.
+	conversation.OnUnreadSeen(func(jid string, msgs []client.Message) {
+		go markReadOnOpen(c, jid, msgs)
+	})
+	conversation.OnDeleteRequested(func(msg client.Message) {
+		ui.ShowDeleteMessageDialog(&win.Window, c, msg)
+	})
 	conversation.SetToastOverlay(toastOverlay)
+	viewer.SetWindow(&win.Window)
+	viewer.SetToastOverlay(toastOverlay)
+	viewer.OnForward(func(msg client.Message) {
+		ui.ShowForwardDialog(&win.Window, c, msg, toastOverlay)
+	})
+	viewer.OnStar(func(msg client.Message) {
+		go func() {
+			if err := c.StarMessage(context.Background(), msg.ChatJID, msg.ID, !msg.Starred); err != nil {
+				log.Printf("chatot: star message failed: %v", err)
+			}
+		}()
+	})
+	// A chat row's right-click menu is the conversation's ⋮ menu for that
+	// chat; rows that act on the open thread open the chat first.
+	chatList.SetRowMenu(func(chat client.Chat) []ui.MenuItem {
+		jid := chat.JID
+		return conversation.MenuItemsForChat(jid, func() {
+			if conversation.CurrentJID() != jid {
+				openChat(jid)
+			}
+		})
+	})
+	chatList.SetToastOverlay(toastOverlay)
+	chatList.OnForwardRequested(func(msg client.Message) {
+		ui.ShowForwardDialog(&win.Window, c, msg, toastOverlay)
+	})
 
 	if hasAccounts {
 		refresh := func() { chatList.RefreshAccounts() }
@@ -284,11 +433,8 @@ func activate(app *adw.Application, c client.Client) {
 		ui.ShowForwardDialog(&win.Window, c, msg, toastOverlay)
 	})
 	conversation.OnShowMediaRequested(func(jid string) {
-		ui.ShowMediaPage(&win.Window, c, jid, chatNameFor(c, jid))
-	})
-	conversation.OnSearchAllChatsRequested(func(query string) {
-		split.SetShowContent(false) // reveal the sidebar when the split view is collapsed
-		chatList.OpenGlobalSearch(query)
+		mediaPage.Load(jid)
+		rightPane.SetVisibleChildName("media")
 	})
 	conversation.OnExportRequested(func(jid string) {
 		ui.ShowExportDialog(&win.Window, c, jid, chatNameFor(c, jid), toastOverlay)
@@ -327,7 +473,7 @@ func activate(app *adw.Application, c client.Client) {
 
 	preferencesAction := gio.NewSimpleAction("preferences", nil)
 	preferencesAction.ConnectActivate(func(_ *glib.Variant) {
-		ui.ShowPreferences(&win.Window, &prefs, func(updated settings.Settings) {
+		ui.ShowPreferences(&win.Window, &prefs, c, func(updated settings.Settings) {
 			prefs = updated
 			if err := settings.Save(settings.Dir(), prefs); err != nil {
 				log.Printf("chatot: save settings failed: %v", err)
@@ -336,6 +482,13 @@ func activate(app *adw.Application, c client.Client) {
 	})
 	app.AddAction(preferencesAction)
 	app.SetAccelsForAction("app.preferences", []string{"<Ctrl>comma"})
+
+	// The mockup's ⋮ menu ends in Quit (Ctrl+Q); GApplication provides no
+	// quit action of its own.
+	quitAction := gio.NewSimpleAction("quit", nil)
+	quitAction.ConnectActivate(func(_ *glib.Variant) { app.Quit() })
+	app.AddAction(quitAction)
+	app.SetAccelsForAction("app.quit", []string{"<Ctrl>q"})
 
 	var accountInfo func() (string, int)
 	if hasAccounts {
@@ -387,8 +540,23 @@ func activate(app *adw.Application, c client.Client) {
 				glib.IdleAdd(func() { stack.SetVisibleChildName("main") })
 			case ev.Kind == client.EventLoggedOut:
 				glib.IdleAdd(func() {
+					// Every account's events share this bus; a background
+					// account signing out must not hide the one in view.
+					if c.LoggedIn() {
+						return
+					}
 					stack.SetVisibleChildName("linking")
 					linking.SetStatus("Disconnected — scan to relink")
+				})
+			case ev.Kind == client.EventMessage && ev.Message != nil && !ev.Message.FromMe && !ev.Synced:
+				// A message landing in the chat on screen while the window
+				// has focus is read as it arrives: no badge, and a receipt
+				// if the user sends them.
+				msg := *ev.Message
+				glib.IdleAdd(func() {
+					if win.IsActive() && conversation.CurrentJID() == msg.ChatJID {
+						go ui.MarkReadOnArrival(context.Background(), c, msg)
+					}
 				})
 			}
 		}
@@ -401,25 +569,56 @@ func activate(app *adw.Application, c client.Client) {
 	go func() {
 		if err := c.Start(context.Background()); err != nil {
 			log.Printf("chatot: client start failed: %v", err)
+			// Offline or refused: the cached chats are still worth showing.
+			glib.IdleAdd(func() {
+				if c.Paired() {
+					leaveLoading()
+				} else {
+					stack.SetVisibleChildName("linking")
+				}
+			})
 		}
 	}()
+	// A connection that takes unusually long must not hold the whole app
+	// behind the mark; the header reports the connection state anyway.
+	glib.TimeoutAdd(loadingFallbackMS, func() bool {
+		leaveLoading()
+		return false
+	})
 
 	win.Present()
 	go sendPresence(c, true)
+	chatList.PreloadCommunities()
 
 	// Dev/screenshot hooks: CHATOT_SHOT_CHAT=<jid> opens that chat on launch;
 	// CHATOT_SHOT_MEDIA=1 then opens its Media/Links/Docs page. Both no-op unset.
 	if jid := os.Getenv("CHATOT_SHOT_CHAT"); jid != "" {
 		openChat(jid)
 		if os.Getenv("CHATOT_SHOT_MEDIA") == "1" {
-			ui.ShowMediaPage(&win.Window, c, jid, chatNameFor(c, jid))
+			mediaPage.Load(jid)
+			rightPane.SetVisibleChildName("media")
 		}
 	}
+	// CHATOT_SHOT=<state> reaches one named mockup state (see shotHook); most
+	// need the chat opened first via CHATOT_SHOT_CHAT and a realized thread,
+	// hence the delay. CHATOT_SHOT_MSG picks the message index (default -1 =
+	// newest) for the per-bubble states.
+	if state := os.Getenv("CHATOT_SHOT"); state != "" {
+		msgIdx := -1
+		if v := os.Getenv("CHATOT_SHOT_MSG"); v != "" {
+			fmt.Sscanf(v, "%d", &msgIdx)
+		}
+		glib.TimeoutAdd(1200, func() bool {
+			shotHook(state, msgIdx, shotDeps{chatList: chatList, conversation: conversation, composer: composer, viewer: viewer, stack: stack, linking: linking, win: &win.Window, c: c, am: am, prefs: &prefs, toasts: toastOverlay, saveSettings: saveSettings})
+			return false
+		})
+	}
+
 	if os.Getenv("CHATOT_SHOT_ATTACH") == "1" {
 		glib.TimeoutAdd(900, func() bool { composer.PopAttach(); return false })
 	}
 	if os.Getenv("CHATOT_SHOT_PREFS") == "1" {
-		ui.ShowPreferences(&win.Window, &prefs, func(updated settings.Settings) { prefs = updated })
+		ui.ShowPreferences(&win.Window, &prefs, c, func(updated settings.Settings) { prefs = updated })
 	}
 	if os.Getenv("CHATOT_SHOT_SWITCHER") == "1" {
 		glib.IdleAdd(func() { chatList.PopupAccountSwitcher() })
@@ -440,6 +639,7 @@ func activate(app *adw.Application, c client.Client) {
 func applySettings(s settings.Settings) {
 	ui.SendReadReceipts = s.SendReadReceipts
 	ui.SendTypingIndicators = s.SendTypingIndicators
+	ui.LocationAccess = s.LocationAccess
 	ui.NotificationsPerAccount = s.NotificationsPerAccount
 	ui.ApplyTheme(s.Theme)
 
@@ -515,8 +715,424 @@ func chatNameFor(c client.Client, jid string) string {
 	return jid
 }
 
-func loadCSS() {
-	provider := gtk.NewCSSProvider()
-	provider.LoadFromString(ui.StyleCSS)
-	gtk.StyleContextAddProviderForDisplay(gdk.DisplayGetDefault(), provider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+func loadCSS() { ui.InstallStyles() }
+
+// shotDeps bundles everything shotHook can poke; all dev/screenshot only.
+type shotDeps struct {
+	viewer       *ui.AttachmentViewer
+	chatList     *ui.ChatList
+	conversation *ui.ConversationView
+	composer     *ui.Composer
+	stack        *gtk.Stack
+	linking      *ui.LinkingView
+	win          *gtk.Window
+	c            client.Client
+	am           *client.AccountManager
+	prefs        *settings.Settings
+	toasts       *adw.ToastOverlay
+	saveSettings func()
+}
+
+// shotHook drives the window into one named mockup state for screenshots.
+// loadingFallbackMS bounds the startup mark: past this the main view shows
+// with whatever the local store holds, connected or not.
+const loadingFallbackMS = 12000
+
+func shotHook(state string, msgIdx int, d shotDeps) {
+	refresh := func() { d.chatList.RefreshAccounts() }
+	jid := d.conversation.CurrentJID()
+	name := chatNameFor(d.c, jid)
+	arg := os.Getenv("CHATOT_SHOT_ARG")
+	switch state {
+	case "plusmenu":
+		d.chatList.PopupPlusMenu()
+	// The bottom tabs: CHATOT_SHOT_ARG names a tab, a status poster, a
+	// channel or a community for the states that need one.
+	case "tab":
+		d.chatList.SelectTab(arg)
+	case "tabplus":
+		d.chatList.SelectTab(arg)
+		glib.TimeoutAdd(300, func() bool { d.chatList.PopupPlusMenu(); return false })
+	case "statusopen":
+		d.chatList.SelectTab("status")
+		d.chatList.ShowStatus(arg)
+	case "statuspause":
+		d.chatList.SelectTab("status")
+		d.chatList.ShowStatus(arg)
+		glib.TimeoutAdd(1500, func() bool { d.chatList.PauseStatus(); return false })
+	case "chanreactn":
+		d.chatList.SelectTab("channels")
+		d.chatList.OpenChannelJID(arg)
+		glib.TimeoutAdd(400, func() bool {
+			d.chatList.ReactChannelFirst(os.Getenv("CHATOT_SHOT_TEXT"), msgIdx)
+			return false
+		})
+	case "chanunfollow":
+		d.chatList.SelectTab("channels")
+		d.chatList.OpenChannelJID(arg)
+		glib.TimeoutAdd(300, func() bool { d.chatList.ConfirmUnfollow(arg); return false })
+	case "statusrowmenu":
+		d.chatList.SelectTab("status")
+		d.chatList.PopupStatusRowMenu(arg)
+	case "statusmute":
+		// Mute, then open the muted poster: the viewer must still reach
+		// the Muted updates section.
+		d.chatList.SelectTab("status")
+		d.chatList.MuteStatusNow(arg)
+		glib.TimeoutAdd(600, func() bool { d.chatList.ShowStatus(arg); return false })
+	case "statusviewers":
+		d.chatList.SelectTab("status")
+		d.chatList.PostTextStatusNow("Shipping 2.1 tonight. Channels and Communities are in.")
+		glib.TimeoutAdd(400, func() bool { d.chatList.ShowStatusViewersNow(); return false })
+	case "statusviewmenu":
+		d.chatList.SelectTab("status")
+		d.chatList.ShowStatus(arg)
+		glib.TimeoutAdd(300, func() bool { d.chatList.PopupStatusViewMenu(); return false })
+	case "mystatus":
+		d.chatList.SelectTab("status")
+		d.chatList.PostTextStatusNow("Shipping 2.1 tonight. Channels and Communities are in.")
+	case "mystatusopen":
+		d.chatList.SelectTab("status")
+		d.chatList.PostTextStatusNow("Shipping 2.1 tonight. Channels and Communities are in.")
+		glib.TimeoutAdd(400, func() bool { d.chatList.ShowStatus("me"); return false })
+	case "mystatusmenu":
+		d.chatList.SelectTab("status")
+		d.chatList.PostTextStatusNow("Shipping 2.1 tonight. Channels and Communities are in.")
+		glib.TimeoutAdd(400, func() bool { d.chatList.PopupMyStatusMenu(); return false })
+	case "textstatus":
+		d.chatList.SelectTab("status")
+		d.chatList.ShowTextStatus()
+	case "channelopen":
+		d.chatList.SelectTab("channels")
+		d.chatList.OpenChannelJID(arg)
+	case "chanmenu":
+		d.chatList.SelectTab("channels")
+		d.chatList.OpenChannelJID(arg)
+		glib.TimeoutAdd(300, func() bool { d.chatList.PopupChannelMenu(); return false })
+	case "chanrowmenu":
+		d.chatList.SelectTab("channels")
+		d.chatList.PopupChannelRowMenu(arg)
+	case "chaninfo":
+		d.chatList.SelectTab("channels")
+		d.chatList.OpenChannelJID(arg)
+		d.chatList.ShowChannelInfo(arg)
+	case "chanlink":
+		d.chatList.SelectTab("channels")
+		d.chatList.OpenChannelJID(arg)
+		d.chatList.ShowShareChannel(arg)
+	case "chanreport":
+		d.chatList.SelectTab("channels")
+		d.chatList.OpenChannelJID(arg)
+		d.chatList.ShowReportChannel(arg)
+	case "chanreact":
+		d.chatList.SelectTab("channels")
+		d.chatList.OpenChannelJID(arg)
+		glib.TimeoutAdd(400, func() bool { d.chatList.PopupChannelReactionPicker(); return false })
+	case "discover":
+		d.chatList.SelectTab("channels")
+		d.chatList.ShowDiscover(arg, os.Getenv("CHATOT_SHOT_CAT"))
+	case "followlink":
+		d.chatList.SelectTab("channels")
+		d.chatList.ShowFollowLink()
+	case "communityopen":
+		d.chatList.SelectTab("communities")
+		d.chatList.OpenCommunityJID(arg)
+	case "commmenu":
+		d.chatList.SelectTab("communities")
+		d.chatList.OpenCommunityJID(arg)
+		glib.TimeoutAdd(300, func() bool { d.chatList.PopupCommunityMenu(); return false })
+	case "commrowmenu":
+		d.chatList.SelectTab("communities")
+		d.chatList.PopupCommunityRowMenu(arg)
+	case "comminfo":
+		d.chatList.SelectTab("communities")
+		d.chatList.OpenCommunityJID(arg)
+		d.chatList.ShowCommunityInfo(arg, os.Getenv("CHATOT_SHOT_CAT"))
+	case "comminvite":
+		d.chatList.SelectTab("communities")
+		d.chatList.OpenCommunityJID(arg)
+		d.chatList.ShowCommunityInvite(arg)
+	case "commaddgroup":
+		d.chatList.SelectTab("communities")
+		d.chatList.OpenCommunityJID(arg)
+		d.chatList.ShowAddGroup(arg)
+	case "joinlink":
+		d.chatList.SelectTab("communities")
+		d.chatList.ShowJoinLink(os.Getenv("CHATOT_SHOT_TEXT"))
+	case "joingroup":
+		d.chatList.SelectTab("communities")
+		d.chatList.OpenCommunityJID(arg)
+		d.chatList.ConfirmFirstJoin(arg)
+	case "appmenu":
+		d.chatList.PopupAppMenu()
+	case "chatmenu":
+		d.conversation.PopupHeaderMenu()
+	case "hover":
+		d.conversation.ShowHoverActions(msgIdx)
+	case "tray":
+		// Two files so the thumbnail strip, its ✕ and the ＋ tile all render;
+		// CHATOT_SHOT_ARG=a.mp4:b.pdf queues those instead.
+		paths := []string{"internal/ui/tray_icon.png", "go.mod"}
+		if arg != "" {
+			paths = strings.Split(arg, ":")
+		}
+		d.composer.ShowTray(paths)
+	case "scrolltop":
+		// CHATOT_SHOT_MSG doubles as a percent here (0..100) so a capture can
+		// reach any point in a thread the newest-message auto-scroll hides.
+		pct := msgIdx
+		if pct < 0 {
+			pct = 0
+		}
+		d.conversation.ScrollThreadTo(float64(pct) / 100)
+	case "scrollpx":
+		// CHATOT_SHOT_MSG is an absolute offset in CSS px here.
+		d.conversation.ScrollThreadPx(float64(msgIdx))
+	case "msgmenu":
+		d.conversation.PopupMessageMenu(msgIdx)
+	case "reactpill":
+		d.conversation.PopupReactPill(msgIdx)
+	case "reactions":
+		if m, ok := d.conversation.MessageAt(msgIdx); ok {
+			go func() {
+				if err := d.composer.ReactTo(m, "👍"); err != nil {
+					log.Printf("chatot: shot react: %v", err)
+				}
+				glib.IdleAdd(func() { d.conversation.ApplyOwnReaction(m.ChatJID) })
+			}()
+		}
+	case "reply":
+		if m, ok := d.conversation.MessageAt(msgIdx); ok {
+			d.composer.StartReply(m)
+		}
+	case "emoji":
+		d.composer.PopEmoji()
+	case "gif":
+		d.composer.PopPicker("gif")
+	case "stickers":
+		d.composer.PopPicker("stickers")
+	case "recording":
+		d.composer.ShowRecordingUI()
+	case "draft":
+		d.composer.SetDraft("On my way, see you at noon")
+	case "search":
+		d.conversation.OpenSearch("relay")
+	case "starred":
+		d.chatList.ShowStarred()
+	case "archived":
+		d.chatList.ShowArchived()
+	case "newchat":
+		d.chatList.ShowNewChat()
+	case "newgroup":
+		d.chatList.ShowNewGroup()
+	case "newcommunity":
+		d.chatList.ShowNewCommunity()
+	case "joininvite":
+		d.chatList.ShowJoinInvite()
+	case "labelspop":
+		d.chatList.PopupLabelOverflow()
+	case "labelfilter":
+		d.chatList.FilterByLabel(arg)
+	case "compose":
+		// A draft in the pill; "\n" in CHATOT_SHOT_TEXT breaks the line.
+		d.composer.SetDraft(strings.ReplaceAll(os.Getenv("CHATOT_SHOT_TEXT"), `\n`, "\n"))
+	case "rowmenu":
+		d.chatList.PopupRowMenu(jid)
+	case "empty":
+		d.chatList.SetSearchText("zzz")
+	case "typing":
+		// The open chat's peer starts composing (fake only): the header
+		// subtitle, the chat-list row and the thread's dotted bubble.
+		var active client.Client = d.c
+		if d.am != nil {
+			active = d.am.ActiveClient()
+		}
+		if f, ok := active.(*client.Fake); ok && jid != "" {
+			f.PushEvent(client.Event{Kind: client.EventChatPresence, ChatPresence: &client.ChatPresence{ChatJID: jid, State: "composing"}})
+		}
+	case "bgarrive":
+		// The open chat's peer sends a message once the window has lost
+		// focus (fake only): the pill and the row's badge appear, and both
+		// must go when the window comes back and the pill has been seen.
+		var active client.Client = d.c
+		if d.am != nil {
+			active = d.am.ActiveClient()
+		}
+		f, ok := active.(*client.Fake)
+		if !ok || jid == "" {
+			return
+		}
+		deliver := func() { f.Receive(jid, "4445556666@s.whatsapp.net", "Arrived while you were away") }
+		if !d.win.IsActive() {
+			deliver()
+			return
+		}
+		var once bool
+		d.win.NotifyProperty("is-active", func() {
+			if once || d.win.IsActive() {
+				return
+			}
+			once = true
+			deliver()
+		})
+	case "vote":
+		// Scrolls the thread to its top, then votes CHATOT_SHOT_ARG on the
+		// poll at CHATOT_SHOT_MSG: the tally must land without the thread
+		// moving.
+		d.conversation.ScrollThreadTo(0.3)
+		glib.TimeoutAdd(600, func() bool { d.conversation.VoteAt(msgIdx, arg); return false })
+	case "mention":
+		// The composer holds "@" + CHATOT_SHOT_TEXT with the cursor after
+		// it, so the @ picker is up.
+		d.composer.ShowMentionPicker(os.Getenv("CHATOT_SHOT_TEXT"))
+	case "fullscreen":
+		// The viewer on CHATOT_SHOT_MSG, then its ⤢: the fullscreen clip.
+		if m, ok := d.conversation.MessageAt(msgIdx); ok {
+			d.conversation.OpenViewer(m)
+			glib.TimeoutAdd(400, func() bool { d.viewer.Fullscreen(); return false })
+		}
+	case "viewer":
+		// Opens the attachment viewer on the message at CHATOT_SHOT_MSG;
+		// CHATOT_SHOT_ARG=info also opens the details sidebar.
+		if m, ok := d.conversation.MessageAt(msgIdx); ok {
+			d.conversation.OpenViewer(m)
+			if arg == "info" {
+				glib.TimeoutAdd(300, func() bool { d.viewer.ToggleDetails(); return false })
+			}
+		}
+	case "deletedialog":
+		// WhatsApp's delete prompt for the message at CHATOT_SHOT_MSG.
+		if m, ok := d.conversation.MessageAt(msgIdx); ok {
+			ui.ShowDeleteMessageDialog(d.win, d.c, m)
+		}
+	case "imageviewer":
+		// CHATOT_SHOT_TEXT is the image file to show for the message at
+		// CHATOT_SHOT_MSG (the fake has no real picture bytes).
+		if m, ok := d.conversation.MessageAt(msgIdx); ok {
+			ui.ShowImageViewerNow(d.win, m, os.Getenv("CHATOT_SHOT_TEXT"))
+		}
+	case "forward":
+		if m, ok := d.conversation.MessageAt(msgIdx); ok {
+			if pick := os.Getenv("CHATOT_SHOT_TEXT"); pick != "" {
+				ui.ForwardInitialPick = strings.Split(pick, ",")
+			}
+			ui.ShowForwardDialog(d.win, d.c, m, d.toasts)
+		}
+	case "export":
+		ui.ShowExportDialog(d.win, d.c, jid, name, d.toasts)
+	case "clear":
+		ui.ShowClearChatDialog(d.win, d.c, d.conversation, jid, name)
+	case "groupinfo":
+		d.conversation.ShowGroupInfo()
+	case "groupinvite":
+		d.conversation.ShowGroupInvite()
+	case "timer":
+		d.conversation.ShowDisappearing()
+	case "contactinfo":
+		d.conversation.ShowContactInfo()
+	case "joinrequests":
+		d.conversation.ShowJoinRequests()
+	case "composersize":
+		d.composer.LogButtonSizes()
+	case "mute":
+		d.conversation.ShowMute()
+	case "blockconfirm":
+		d.conversation.ShowBlockConfirm(name)
+	case "about":
+		d.chatList.ShowAbout()
+	case "shortcuts":
+		d.chatList.ShowShortcuts()
+	case "blocked":
+		d.chatList.ShowBlocked()
+	case "privacy":
+		d.chatList.ShowPrivacy()
+	case "loading":
+		d.stack.SetVisibleChildName("loading")
+	case "location":
+		// CHATOT_SHOT_ARG=manual|denied picks the sheet's state (neither
+		// asks the system for a position); CHATOT_SHOT_TEXT=lat,lon drops
+		// a pin there on the manual tab.
+		d.composer.ShowLocationPicker(arg, os.Getenv("CHATOT_SHOT_TEXT"))
+	case "poll":
+		d.composer.ShowPollDialog()
+	case "contactpick":
+		d.composer.ShowContactPicker()
+	case "linking":
+		d.linking.SetQR("chatot-demo-pairing-code")
+		d.linking.SetStatus("Waiting for you to scan…")
+		d.stack.SetVisibleChildName("linking")
+	case "toast":
+		d.toasts.AddToast(adw.NewToast("Message copied to clipboard"))
+	case "reactpick":
+		d.conversation.PopupReactionPicker(msgIdx)
+	case "groupname":
+		d.chatList.ShowGroupName()
+	case "newgrouppicked":
+		d.chatList.ShowNewGroupPicked()
+	case "groupphoto":
+		d.chatList.ShowGroupName()
+		d.chatList.PickGroupPhotoNow(os.Getenv("CHATOT_SHOT_PHOTO"))
+	case "groupcreate":
+		// Drives the whole create path (the report was a crash on the
+		// Create click), landing in the new group's thread.
+		d.chatList.ShowGroupName()
+		d.chatList.CreateGroupNow("Shot group")
+	case "relink":
+		if d.am != nil {
+			d.chatList.ShowRelink(d.am)
+		}
+	case "join":
+		d.chatList.ShowJoinInvite()
+	case "msginfo":
+		if m, ok := d.conversation.MessageAt(msgIdx); ok {
+			ui.ShowMessageInfo(d.win, m)
+		}
+	case "merged":
+		d.chatList.ShowMerged()
+	case "switcher":
+		d.chatList.PopupAccountSwitcher()
+	case "addaccount":
+		if d.am != nil {
+			ui.ShowAddAccountDialog(d.win, d.am, refresh)
+		}
+	case "manage":
+		if d.am != nil {
+			ui.ShowManageAccountsDialog(d.win, d.am, d.prefs, refresh, d.saveSettings)
+		}
+	default:
+		log.Printf("chatot: unknown CHATOT_SHOT state %q", state)
+	}
+}
+
+// ensureComposeInput keeps dead keys and the Compose key working on Wayland.
+// GTK's Wayland input-method context hands key composition to the
+// compositor's input method; on a compositor with none attached (niri, sway,
+// ...) a Compose or dead-key sequence then types its raw characters
+// ("n~ao"). The simple context composes in-process. It is only forced when
+// nothing suggests a real input method (fcitx/ibus export XMODIFIERS or set
+// GTK_IM_MODULE themselves), so an IME user keeps theirs.
+func ensureComposeInput() {
+	if os.Getenv("WAYLAND_DISPLAY") == "" || os.Getenv("GTK_IM_MODULE") != "" {
+		return
+	}
+	for _, v := range []string{"XMODIFIERS", "INPUT_METHOD", "QT_IM_MODULE"} {
+		if os.Getenv(v) != "" {
+			return
+		}
+	}
+	os.Setenv("GTK_IM_MODULE", "gtk-im-context-simple")
+}
+
+// chatByJIDOrEmpty is the chat row for jid from the current chat list, or a
+// bare Chat carrying only the JID when it isn't listed.
+func chatByJIDOrEmpty(c client.Client, jid string) client.Chat {
+	chats, err := c.Chats(0)
+	if err == nil {
+		for _, ch := range chats {
+			if ch.JID == jid {
+				return ch
+			}
+		}
+	}
+	return client.Chat{JID: jid}
 }

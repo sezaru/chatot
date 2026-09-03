@@ -156,42 +156,6 @@ func TestNormalizePhone(t *testing.T) {
 	}
 }
 
-func TestChatActionLabels(t *testing.T) {
-	cases := []struct {
-		name string
-		chat client.Chat
-		want chatActionLabelsView
-	}{
-		{
-			"unpinned/unmuted/unarchived/read",
-			client.Chat{},
-			chatActionLabelsView{Pin: "Pin", Mute: "Mute", Archive: "Archive", Unread: "Mark as unread"},
-		},
-		{
-			"pinned/muted/archived/unread",
-			client.Chat{Pinned: true, Muted: true, Archived: true, UnreadCount: 3},
-			chatActionLabelsView{Pin: "Unpin", Mute: "Unmute", Archive: "Unarchive", Unread: "Mark as read"},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := chatActionLabels(tc.chat)
-			if got != tc.want {
-				t.Errorf("chatActionLabels(%+v) = %+v, want %+v", tc.chat, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestBlockActionLabel(t *testing.T) {
-	if got := blockActionLabel(false); got != "Block" {
-		t.Errorf("blockActionLabel(false) = %q, want %q", got, "Block")
-	}
-	if got := blockActionLabel(true); got != "Unblock" {
-		t.Errorf("blockActionLabel(true) = %q, want %q", got, "Unblock")
-	}
-}
-
 func TestPrivacySettingsRows(t *testing.T) {
 	got := privacySettingsRows(map[string]string{"Status": "contacts", "Last Seen": "all", "Online": "everyone"})
 	want := []privacySettingRow{
@@ -278,7 +242,7 @@ func TestStarredSnippet(t *testing.T) {
 		want string
 	}{
 		{"text", client.Message{Text: "hello there"}, "hello there"},
-		{"media falls back to media chip", client.Message{Attachment: &client.Attachment{Kind: "image", Caption: "trip"}}, "[image] trip"},
+		{"media falls back to media chip", client.Message{Attachment: &client.Attachment{Kind: "image", Caption: "trip"}}, "📷 trip"},
 		{"location", client.Message{Location: &client.Location{Name: "Home"}}, "📍 Location"},
 		{"contact", client.Message{Contact: &client.Contact{DisplayName: "Ada"}}, "👤 Contact"},
 		{"poll", client.Message{Poll: &client.Poll{Name: "Lunch?"}}, "📊 Lunch?"},
@@ -290,57 +254,6 @@ func TestStarredSnippet(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestStatusRowVM(t *testing.T) {
-	now := time.Date(2026, 8, 30, 15, 0, 0, 0, time.UTC)
-
-	t.Run("text status", func(t *testing.T) {
-		vm := statusRowVM(client.Message{
-			FromJID: "1234567890@s.whatsapp.net",
-			Text:    "Off to the mountains!",
-			TS:      now.Add(-2 * time.Hour).Unix(),
-		}, "Ada Lovelace", now)
-		if vm.PosterName != "Ada Lovelace" {
-			t.Errorf("PosterName = %q, want Ada Lovelace", vm.PosterName)
-		}
-		if vm.Snippet != "Off to the mountains!" {
-			t.Errorf("Snippet = %q, want the text", vm.Snippet)
-		}
-		if vm.Initial != "A" {
-			t.Errorf("Initial = %q, want A", vm.Initial)
-		}
-		if vm.TimeText != "13:00" {
-			t.Errorf("TimeText = %q, want 13:00", vm.TimeText)
-		}
-	})
-
-	t.Run("image status shows photo placeholder", func(t *testing.T) {
-		vm := statusRowVM(client.Message{
-			FromJID:    "1234567890@s.whatsapp.net",
-			Attachment: &client.Attachment{Kind: "image"},
-			TS:         now.Unix(),
-		}, "Grace", now)
-		if vm.Snippet != "📷 Photo" {
-			t.Errorf("Snippet = %q, want 📷 Photo", vm.Snippet)
-		}
-	})
-
-	t.Run("video status shows video placeholder", func(t *testing.T) {
-		vm := statusRowVM(client.Message{
-			Attachment: &client.Attachment{Kind: "video"},
-		}, "Grace", now)
-		if vm.Snippet != "🎥 Video" {
-			t.Errorf("Snippet = %q, want 🎥 Video", vm.Snippet)
-		}
-	})
-
-	t.Run("empty poster name falls back to jid", func(t *testing.T) {
-		vm := statusRowVM(client.Message{FromJID: "raw@jid"}, "", now)
-		if vm.PosterName != "raw@jid" {
-			t.Errorf("PosterName = %q, want raw@jid fallback", vm.PosterName)
-		}
-	})
 }
 
 func TestPosterName(t *testing.T) {
@@ -381,5 +294,49 @@ func TestIsValidInviteInput(t *testing.T) {
 				t.Errorf("isValidInviteInput(%q) = %v, want %v", tc.input, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestChatRowTimeClass(t *testing.T) {
+	t.Run("unread chats get the accent class", func(t *testing.T) {
+		if got := chatRowTimeClass(true); got != "chatot-chat-time-unread" {
+			t.Errorf("chatRowTimeClass(true) = %q, want chatot-chat-time-unread", got)
+		}
+	})
+
+	t.Run("read chats keep the plain dim timestamp", func(t *testing.T) {
+		if got := chatRowTimeClass(false); got != "" {
+			t.Errorf("chatRowTimeClass(false) = %q, want empty", got)
+		}
+	})
+}
+
+func TestPinnedFirst(t *testing.T) {
+	in := []client.Chat{{JID: "a"}, {JID: "b", Pinned: true}, {JID: "c"}, {JID: "d", Pinned: true}}
+	got := pinnedFirst(in)
+	want := []string{"b", "d", "a", "c"}
+	for i, jid := range want {
+		if got[i].JID != jid {
+			t.Fatalf("pinnedFirst order = %v, want %v", got, want)
+		}
+	}
+	if in[0].JID != "a" {
+		t.Error("pinnedFirst mutated its input")
+	}
+}
+
+func TestChipScrollDeltaScalesWheelNotches(t *testing.T) {
+	if got := chipScrollDelta(false, 0, 1); got != chipScrollStep {
+		t.Errorf("vertical notch = %v, want %v", got, chipScrollStep)
+	}
+	if got := chipScrollDelta(false, -2, 1); got != -2*chipScrollStep {
+		t.Errorf("sideways travel should win: %v", got)
+	}
+	if got := chipScrollDelta(false, 0, 0); got != 0 {
+		t.Errorf("no travel = %v", got)
+	}
+	// Surface pixels move the chips as they are.
+	if got := chipScrollDelta(true, 0, 37); got != 37 {
+		t.Errorf("touchpad pixels = %v, want 37", got)
 	}
 }

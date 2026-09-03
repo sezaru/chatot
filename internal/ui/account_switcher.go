@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 
 	"chatot/internal/client"
 )
@@ -53,13 +54,38 @@ func accountRowVM(m client.AccountMeta, activeID string) accountRowView {
 	return v
 }
 
-// buildAccountPopover builds the switcher popover: one row per account (active
-// one checked), a divider, then the Add/Manage account items. Rebuilt on each
-// open via the header MenuButton's create-popup func, so status/unread stay
-// fresh and switching the active account re-checks the right row.
+// accountStatusDot maps an account's status line to the mockup's status dot
+// and text colour classes: green for connected, red for a logged-out
+// account that needs a rescan.
+func accountStatusDot(status string) string {
+	if status == "Connected" {
+		return "chatot-status-ok"
+	}
+	return "chatot-status-bad"
+}
+
+// accountRowStatus is the switcher row's second line: the connection state,
+// then "· N unread" when the account has any.
+func accountRowStatus(vm accountRowView) string {
+	if vm.ShowUnread && vm.Status == "Connected" {
+		return vm.Status + " · " + vm.UnreadText + " unread"
+	}
+	return vm.Status
+}
+
+// buildAccountPopover builds the switcher: the mockup's 300px card with one
+// row per account (32px avatar, bold label, a status dot and line, an unread
+// pill or the active check), a hairline, then the three actions. Rebuilt on
+// each open via the header MenuButton's create-popup func, so status/unread
+// stay fresh and switching the active account re-checks the right row.
 func (cl *ChatList) buildAccountPopover() *gtk.Popover {
 	pop := gtk.NewPopover()
-	box := gtk.NewBox(gtk.OrientationVertical, 0)
+	// The same floating card as every other menu: no arrow, 12px radius, a
+	// hairline and a soft shadow.
+	pop.SetHasArrow(false)
+	pop.AddCSSClass("chatot-menu")
+	pop.AddCSSClass("chatot-account-menu")
+	box := gtk.NewBox(gtk.OrientationVertical, 1)
 	box.AddCSSClass("chatot-account-switcher")
 
 	activeID := cl.switcher.ActiveID()
@@ -67,13 +93,18 @@ func (cl *ChatList) buildAccountPopover() *gtk.Popover {
 		vm := accountRowVM(m, activeID)
 		id := vm.ID
 		btn := gtk.NewButton()
-		btn.AddCSSClass("flat")
+		btn.AddCSSClass("chatot-switcher-row")
+		if vm.Active && !cl.merged {
+			btn.AddCSSClass("chatot-switcher-row-current")
+		}
 		btn.SetChild(buildAccountRow(vm))
 		btn.ConnectClicked(func() {
 			pop.Popdown()
 			if id == cl.switcher.ActiveID() {
+				cl.setMerged(false)
 				return
 			}
+			cl.merged = false
 			if err := cl.switcher.SetActive(id); err != nil {
 				log.Printf("chatot: switch account %q failed: %v", id, err)
 				return
@@ -83,13 +114,26 @@ func (cl *ChatList) buildAccountPopover() *gtk.Popover {
 		box.Append(btn)
 	}
 
-	box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
-	box.Append(cl.buildAccountMenuItem("Add account…", func() {
+	sep := gtk.NewSeparator(gtk.OrientationHorizontal)
+	sep.AddCSSClass("chatot-menu-sep")
+	box.Append(sep)
+
+	// The mockup's 🗂 row: every account's chats in one list, with a coloured
+	// stripe and an account prefix on each row. It reads as selected while
+	// the merged list is showing.
+	merged := cl.buildAccountMenuItem("🗂", "All accounts in one list", func() {
+		cl.setMerged(true)
+	}, pop)
+	if cl.merged {
+		merged.AddCSSClass("chatot-switcher-row-current")
+	}
+	box.Append(merged)
+	box.Append(cl.buildAccountMenuItem("＋", "Add account…", func() {
 		if cl.onAddAccount != nil {
 			cl.onAddAccount()
 		}
 	}, pop))
-	box.Append(cl.buildAccountMenuItem("Manage accounts…", func() {
+	box.Append(cl.buildAccountMenuItem("⚙", "Manage accounts…", func() {
 		if cl.onManageAccounts != nil {
 			cl.onManageAccounts()
 		}
@@ -99,13 +143,24 @@ func (cl *ChatList) buildAccountPopover() *gtk.Popover {
 	return pop
 }
 
-// buildAccountMenuItem builds a flat, left-aligned popover action button that
-// pops the switcher down before running onClick.
-func (cl *ChatList) buildAccountMenuItem(label string, onClick func(), pop *gtk.Popover) *gtk.Button {
-	item := gtk.NewButtonWithLabel(label)
-	item.AddCSSClass("flat")
-	item.SetHAlign(gtk.AlignFill)
-	item.Child().(*gtk.Label).SetXAlign(0)
+// buildAccountMenuItem builds one of the switcher's action rows — a 16px
+// glyph column then the label, like every other menu row — that pops the
+// switcher down before running onClick.
+func (cl *ChatList) buildAccountMenuItem(icon, label string, onClick func(), pop *gtk.Popover) *gtk.Button {
+	row := gtk.NewBox(gtk.OrientationHorizontal, 10)
+	glyph := gtk.NewLabel(icon)
+	glyph.AddCSSClass("chatot-menu-icon")
+	glyph.SetSizeRequest(16, -1)
+	row.Append(glyph)
+	text := gtk.NewLabel(label)
+	text.SetXAlign(0)
+	text.SetHExpand(true)
+	row.Append(text)
+
+	item := gtk.NewButton()
+	item.SetChild(row)
+	item.AddCSSClass("chatot-menu-item")
+	item.AddCSSClass("chatot-account-action")
 	item.ConnectClicked(func() {
 		pop.Popdown()
 		onClick()
@@ -113,42 +168,73 @@ func (cl *ChatList) buildAccountMenuItem(label string, onClick func(), pop *gtk.
 	return item
 }
 
-// buildAccountRow constructs the widget tree for one switcher row: colored
-// initial avatar, name over a dim status line, an optional unread badge, and a
-// check on the active account.
+// buildAccountRow constructs the widget tree for one switcher row: 32px
+// palette avatar, the label over a status dot + line, then either an unread
+// pill (other accounts) or a check (the active one).
 func buildAccountRow(vm accountRowView) *gtk.Box {
-	row := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	row := gtk.NewBox(gtk.OrientationHorizontal, 10)
 
-	row.Append(newAvatarInitial(vm.ID, vm.Initial, 32))
+	avatar := newAvatarInitial(vm.ID, vm.Initial, 32)
+	avatar.AddCSSClass("chatot-account-row-avatar")
+	avatar.SetVAlign(gtk.AlignCenter)
+	row.Append(avatar)
 
-	textCol := gtk.NewBox(gtk.OrientationVertical, 0)
+	textCol := gtk.NewBox(gtk.OrientationVertical, 1)
 	textCol.SetHExpand(true)
 	textCol.SetVAlign(gtk.AlignCenter)
 
 	nameLabel := gtk.NewLabel(vm.Name)
 	nameLabel.SetXAlign(0)
-	nameLabel.AddCSSClass("chatot-chat-name")
+	nameLabel.SetEllipsize(pango.EllipsizeEnd)
+	nameLabel.AddCSSClass("chatot-account-row-name")
 	textCol.Append(nameLabel)
 
-	statusLabel := gtk.NewLabel(vm.Status)
+	statusRow := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	dot := gtk.NewBox(gtk.OrientationVertical, 0)
+	dot.AddCSSClass("chatot-status-dot")
+	dot.AddCSSClass(accountStatusDot(vm.Status))
+	dot.SetSizeRequest(6, 6)
+	dot.SetVAlign(gtk.AlignCenter)
+	statusRow.Append(dot)
+	statusLabel := gtk.NewLabel(accountRowStatus(vm))
 	statusLabel.SetXAlign(0)
-	statusLabel.AddCSSClass("chatot-account-status")
-	textCol.Append(statusLabel)
+	statusLabel.SetEllipsize(pango.EllipsizeEnd)
+	statusLabel.AddCSSClass("chatot-account-row-status")
+	statusLabel.AddCSSClass(accountStatusDot(vm.Status))
+	statusRow.Append(statusLabel)
+	textCol.Append(statusRow)
 
 	row.Append(textCol)
 
-	if vm.ShowUnread {
+	switch {
+	case vm.Active:
+		check := newCheckGlyph(14, true)
+		check.AddCSSClass("chatot-account-row-check")
+		row.Append(check)
+	case vm.ShowUnread:
 		badge := gtk.NewLabel(vm.UnreadText)
 		badge.AddCSSClass("chatot-unread-badge")
 		badge.SetVAlign(gtk.AlignCenter)
 		row.Append(badge)
 	}
 
-	if vm.Active {
-		check := gtk.NewImageFromIconName("object-select-symbolic")
-		check.SetVAlign(gtk.AlignCenter)
-		row.Append(check)
-	}
-
 	return row
+}
+
+// setMerged switches the sidebar between one account's chats and every
+// account's merged into one list, then repaints the header and the list.
+func (cl *ChatList) setMerged(on bool) {
+	if cl.merged == on {
+		return
+	}
+	cl.merged = on
+	cl.refreshAccountHeader()
+	cl.refresh()
+}
+
+// mergedSource is the account manager behind merged mode, nil when the
+// switcher isn't one (a single-account build, or a test double).
+func (cl *ChatList) mergedSource() *client.AccountManager {
+	m, _ := cl.switcher.(*client.AccountManager)
+	return m
 }

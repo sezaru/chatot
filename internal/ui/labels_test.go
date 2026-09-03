@@ -97,21 +97,21 @@ func TestBuildChips(t *testing.T) {
 		if !chips[0].Active {
 			t.Error(`"All" chip should be active`)
 		}
-		if chips[1].Text != "Unread 19" {
-			t.Errorf(`chips[1].Text = %q, want "Unread 19"`, chips[1].Text)
+		if chips[1].Text != "Unread" || chips[1].Count != 19 {
+			t.Errorf(`chips[1] = %q/%d, want "Unread"/19`, chips[1].Text, chips[1].Count)
 		}
-		if chips[3].Text != "Groups 7" {
-			t.Errorf(`chips[3].Text = %q, want "Groups 7"`, chips[3].Text)
+		if chips[3].Text != "Groups" || chips[3].Count != 7 {
+			t.Errorf(`chips[3] = %q/%d, want "Groups"/7`, chips[3].Text, chips[3].Count)
 		}
 	})
 
 	t.Run("zero counts omit the number", func(t *testing.T) {
 		chips := buildChips(chatCounts{}, chatFilter{Kind: filterAll}, nil, labels)
-		if chips[1].Text != "Unread" {
-			t.Errorf(`chips[1].Text = %q, want "Unread"`, chips[1].Text)
+		if chips[1].Count != 0 {
+			t.Errorf(`chips[1].Count = %d, want 0`, chips[1].Count)
 		}
-		if chips[3].Text != "Groups" {
-			t.Errorf(`chips[3].Text = %q, want "Groups"`, chips[3].Text)
+		if chips[3].Count != 0 {
+			t.Errorf(`chips[3].Count = %d, want 0`, chips[3].Count)
 		}
 	})
 
@@ -125,8 +125,8 @@ func TestBuildChips(t *testing.T) {
 		if !last.Active {
 			t.Error("inline label chip should be active")
 		}
-		if last.Text != "Work 3" {
-			t.Errorf("inline label chip Text = %q, want %q", last.Text, "Work 3")
+		if last.Text != "Work" || last.Count != 3 {
+			t.Errorf("inline label chip = %q/%d, want \"Work\"/3", last.Text, last.Count)
 		}
 		for _, c := range chips[:4] {
 			if c.Active {

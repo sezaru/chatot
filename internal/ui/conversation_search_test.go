@@ -99,10 +99,10 @@ func TestSearchHitStepWrapsForwardAndBackward(t *testing.T) {
 }
 
 func TestSearchHitCountText(t *testing.T) {
-	if got := searchHitCountText(0, 0); got != "No matches" {
-		t.Errorf("got %q, want %q", got, "No matches")
+	if got := searchHitCountText(0, 0); got != "0/0" {
+		t.Errorf("got %q, want %q", got, "0/0")
 	}
-	if got := searchHitCountText(2, 6); got != "3 of 6 matches in this chat" {
-		t.Errorf("got %q, want %q", got, "3 of 6 matches in this chat")
+	if got := searchHitCountText(2, 6); got != "3/6" {
+		t.Errorf("got %q, want %q", got, "3/6")
 	}
 }

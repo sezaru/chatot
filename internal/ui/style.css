@@ -16,6 +16,17 @@
 @define-color accent_bg_color #1b8c72;
 @define-color accent_fg_color #ffffff;
 
+/* Surface tokens. The mockup is light only; these are its values, and
+   style-dark.css redefines them (Adwaita dark neutrals) when the style
+   manager is dark. Everything else in this sheet is either an accent, a
+   palette colour, or an alpha of currentColor and reads right unchanged. */
+@define-color chatot_surface #ffffff;             /* header, account row, tab bar, cards */
+@define-color chatot_sidebar #ebebeb;             /* rail + chat list column */
+@define-color chatot_hairline rgba(0, 0, 0, 0.08);
+@define-color chatot_hairline_strong rgba(0, 0, 0, 0.13);
+@define-color chatot_wash rgba(0, 0, 0, 0.032);   /* active tab tint */
+@define-color chatot_ring_viewed rgba(0, 0, 0, 0.2);
+
 /* Cantarell is the mockup UI font; packaged separately, fallback covers dev.
    No root font-size here so the user's text scale is respected. */
 window {
@@ -85,17 +96,21 @@ window {
 	border-radius: 999px;
 }
 
-/* Sidebar chat rows: rounded, gentle hover, light-green selection tint (an
-   alpha of the brand green so it reads right in both schemes rather than the
-   solid accent selection Adwaita would otherwise paint). */
+/* Sidebar chat rows: rounded, gentle hover, and the mockup's neutral ink
+   selection (rgba(0,0,0,.1) on light — alpha(currentColor) reads right in
+   both schemes rather than the solid accent selection Adwaita would
+   otherwise paint). */
+/* Mockup row metrics: 53px tall, 8px inset from the list edge, a 1px gap
+   between rows, 8px radius. All of the row's own padding lives on the inner
+   box built by buildChatRow (7px 8px) so the two don't compound. */
 .navigation-sidebar > row {
 	border-radius: 8px;
-	margin: 1px 6px;
-	padding: 6px 8px;
+	margin: 1px 8px;
+	padding: 0;
 }
 
 .navigation-sidebar > row:selected {
-	background-color: alpha(#1b8c72, 0.16);
+	background-color: alpha(currentColor, 0.1);
 	color: inherit;
 }
 
@@ -103,49 +118,72 @@ window {
 	background-color: alpha(currentColor, 0.05);
 }
 
+/* Absolute sizes, not em multiples: the mockup pins these to 13.5/12.5/10.5px
+   and an em scale drifts as soon as the inherited font size changes. */
 .chatot-chat-name {
 	font-weight: bold;
+	font-size: 13.5px;
 }
 
 .chatot-chat-preview {
 	opacity: 0.55;
-	font-size: 0.9em;
+	font-size: 12.5px;
 }
 
 .chatot-chat-time {
 	opacity: 0.45;
-	font-size: 0.8em;
+	font-size: 10.5px;
+}
+
+/* Mockup: an unread chat's timestamp turns accent green (and drops the dim). */
+.chatot-chat-time-unread {
+	opacity: 1;
+	color: #147a63;
 }
 
 /* Brand green hard-coded, not @accent_bg_color: libadwaita's runtime accent
-   overrides that named colour (would render the system blue). */
+   overrides that named colour (would render the system blue). Mockup metrics:
+   a 19px circle for one digit, growing into a pill for two-plus. */
 .chatot-unread-badge {
 	background-color: #1b8c72;
 	color: #ffffff;
 	border-radius: 999px;
-	min-width: 1.4em;
-	padding: 0 0.35em;
-	font-size: 0.72em;
+	min-width: 7px;
+	min-height: 19px;
+	padding: 0 6px;
+	font-size: 10.5px;
 	font-weight: bold;
+}
+
+/* Pin/mute/block glyph beside the row timestamp (mockup: 9px, right side). */
+.chatot-chat-flag {
+	font-size: 9px;
 }
 
 .chatot-day-separator {
 	opacity: 0.55;
-	font-size: 0.8em;
+	font-size: 10.5px;
 	border-radius: 999px;
 	background-color: alpha(currentColor, 0.06);
-	padding: 2px 10px;
-	margin: 8px 0;
+	padding: 3px 11px;
+	margin: 8px 0 0 0;
 }
 
+/* 13.5px is set here rather than on the text label so every child of the
+   bubble (quote, caption, reactions) scales from the mockup's base size. */
 .chatot-bubble {
 	border-radius: 14px;
-	padding: 6px 11px;
+	padding: 7px 11px 5px 11px;
 	margin: 2px 0;
+	font-size: 13.5px;
 }
 
+/* A translucent ink wash, not @card_bg_color: the conversation surface is
+   the plain window bg, so a card-colored bubble disappears in light mode.
+   alpha(currentColor) reads correctly in both schemes (mockup: rgba(0,0,0,.06)
+   on white). */
 .chatot-bubble-in {
-	background-color: @card_bg_color;
+	background-color: alpha(currentColor, 0.06);
 }
 
 .chatot-bubble-out {
@@ -207,8 +245,8 @@ window {
 }
 
 .chatot-media-caption {
-	font-size: 0.8em;
-	opacity: 0.65;
+	font-size: 12px;
+	opacity: 0.55;
 }
 
 .chatot-media-dl {
@@ -235,28 +273,53 @@ window {
 }
 
 .chatot-media-row {
-	padding: 3px 2px;
-	min-width: 240px;
+	padding: 2px 0 3px 0;
+	min-width: 260px;
 }
 
 .chatot-media-row-title {
-	font-size: 0.92em;
+	font-size: 12.5px;
 }
 
 .chatot-media-row-sub {
-	font-size: 0.78em;
+	font-size: 10.5px;
 	opacity: 0.55;
 }
 
 .chatot-media-row-fail {
-	font-size: 0.78em;
-	color: #ff7b85;
+	font-size: 10.5px;
+	color: #c01c28;
+}
+
+.chatot-doc-glyph {
+	font-size: 15px;
+}
+
+.chatot-doc-name {
+	font-size: 13px;
 }
 
 .chatot-media-open {
 	border-radius: 7px;
-	padding: 2px 10px;
+	padding: 3px 9px;
+	margin-left: 6px;
+	font-size: 11.5px;
 	color: #147a63;
+	background: none;
+	border: 1px solid alpha(currentColor, 0.18);
+	box-shadow: none;
+	min-height: 0;
+}
+
+/* Cards that are one big click target (location, poll option) must not pick
+   up Adwaita's button padding/background — the card draws its own. */
+.chatot-card-btn {
+	padding: 0;
+	min-height: 0;
+	min-width: 0;
+	background: none;
+	box-shadow: none;
+	border: none;
 }
 
 .chatot-gif-badge {
@@ -269,26 +332,69 @@ window {
 }
 
 .chatot-viewonce {
-	padding: 4px 2px;
-	min-width: 160px;
+	padding: 2px 0 3px 0;
+	min-width: 240px;
+}
+
+.chatot-viewonce-btn {
+	padding: 0;
+	min-height: 0;
+	background: none;
+	box-shadow: none;
+	border: none;
+}
+
+/* The mockup's view-once marker: an outlined circle carrying a "1", not a
+   filled download disc. */
+.chatot-viewonce-disc {
+	min-width: 28px;
+	min-height: 28px;
+	font-size: 12px;
+	border-radius: 999px;
+	border: 2px solid #1b8c72;
+	color: #147a63;
 }
 
 .chatot-viewonce-title {
+	font-size: 12.5px;
 	font-weight: bold;
-	color: #1b8c72;
 }
 
 .chatot-viewonce-spent .chatot-viewonce-title {
-	color: inherit;
 	opacity: 0.6;
+}
+
+.chatot-viewonce-spent .chatot-viewonce-disc {
+	border-color: alpha(currentColor, 0.35);
+	color: alpha(currentColor, 0.5);
 }
 
 .chatot-viewonce-subtitle {
-	opacity: 0.6;
-	font-size: 0.85em;
+	opacity: 0.55;
+	font-size: 11px;
+}
+
+/* Location: a hatched 270x86 map tile with a red pin dot centred on it. */
+.chatot-location-tile {
+	border-radius: 10px;
+	margin: -2px 0 4px 0;
+	background-color: alpha(currentColor, 0.05);
+}
+
+.chatot-location-hatch {
+	background-image: repeating-linear-gradient(45deg,
+		alpha(currentColor, 0.05) 0px, alpha(currentColor, 0.05) 9px,
+		alpha(currentColor, 0.09) 9px, alpha(currentColor, 0.09) 18px);
+}
+
+.chatot-location-pin {
+	border-radius: 999px;
+	background-color: #c01c28;
+	box-shadow: 0 0 0 4px alpha(#c01c28, 0.22);
 }
 
 .chatot-location-title {
+	font-size: 12.5px;
 	font-weight: bold;
 }
 
@@ -296,9 +402,74 @@ window {
 	color: #1b8c72;
 }
 
-.chatot-location-coords {
-	opacity: 0.6;
-	font-size: 0.85em;
+.chatot-location-sub {
+	opacity: 0.55;
+	font-size: 11px;
+}
+
+/* Contact card: avatar + name/phone, hairline, centred accent action. */
+.chatot-bubble-contact {
+	min-width: 250px;
+}
+
+.chatot-contact-row {
+	padding: 2px 0 6px 0;
+}
+
+.chatot-contact-name {
+	font-size: 13px;
+	font-weight: bold;
+}
+
+.chatot-contact-phones {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-contact-action {
+	border-top: 1px solid alpha(currentColor, 0.18);
+	padding-top: 6px;
+	font-size: 12.5px;
+	font-weight: bold;
+	color: #147a63;
+}
+
+/* Poll: bold question, tickbox rows with a share bar, hairline footer. */
+.chatot-poll-question {
+	font-size: 13px;
+	font-weight: bold;
+}
+
+.chatot-poll-option {
+	font-size: 12.5px;
+}
+
+.chatot-poll-count {
+	font-size: 11px;
+	opacity: 0.7;
+}
+
+/* Poll tickbox: 16px overall with a 1.5px border (mockup); the check glyph
+   draws inside. */
+.chatot-poll-box {
+	min-width: 13px;
+	min-height: 13px;
+	font-size: 9px;
+	border-radius: 4px;
+	border: 1.5px solid alpha(currentColor, 0.28);
+}
+
+.chatot-poll-box-on {
+	background-color: #1b8c72;
+	border-color: #1b8c72;
+	color: #ffffff;
+}
+
+.chatot-poll-foot {
+	font-size: 11px;
+	opacity: 0.65;
+	border-top: 1px solid alpha(currentColor, 0.18);
+	padding-top: 5px;
 }
 
 .chatot-event-title {
@@ -323,13 +494,13 @@ window {
 }
 
 .chatot-bubble-time {
-	opacity: 0.5;
-	font-size: 0.7em;
+	opacity: 0.45;
+	font-size: 10px;
 }
 
 .chatot-bubble-tick {
-	opacity: 0.5;
-	font-size: 0.7em;
+	opacity: 0.45;
+	font-size: 10px;
 }
 
 /* Outgoing-bubble timestamp/tick sit on green: whiten them (mockup uses
@@ -340,68 +511,205 @@ window {
 	opacity: 1;
 }
 
-/* WhatsApp's canonical read-tick blue; own bubbles use @accent_bg_color as
-   their background so theming this off @accent_* would make it invisible. */
+/* Read ticks are the mockup's pale mint, not WhatsApp's blue: they sit on the
+   green outgoing bubble, where blue reads as a foreign accent. */
 .chatot-tick-read {
 	opacity: 1;
-	color: #34b7f1;
+	color: #cdece4;
+	font-weight: bold;
 }
 
+/* Reaction pills hang off the bubble's bottom edge (mockup bottom:-11px),
+   overlaying it rather than growing it. */
 .chatot-bubble-reactions {
-	font-size: 0.9em;
+	margin: 0 8px -11px 8px;
 }
 
-/* Hover affordances beside a bubble (mockup 1a showHoverActions): a floating
-   quick-react pill above a row of small icon buttons. */
-.chatot-bubble-actions {
-	margin: 0 6px 2px 6px;
+/* A row with reactions reserves the pills' hanging 11px plus a little air
+   below the bubble, so the pills sit in their own space (WhatsApp) instead
+   of over the next message. */
+.chatot-row-reacted {
+	margin-bottom: 14px;
 }
 
-.chatot-react-pill {
-	border-radius: 999px;
+/* A pill is a button (it toggles our reaction), so every Adwaita button
+   metric is reset to the mockup's 1px 6px white capsule. */
+button.chatot-reaction-pill {
+	background-image: none;
 	background-color: @popover_bg_color;
-	box-shadow: 0 4px 14px alpha(black, 0.28);
-	padding: 1px 3px;
+	border: 1px solid alpha(currentColor, 0.08);
+	box-shadow: 0 1px 3px alpha(black, 0.12);
+	border-radius: 999px;
+	padding: 1px 6px;
+	min-width: 0;
+	min-height: 0;
+	font-size: 11px;
+	color: @window_fg_color;
 }
 
-.chatot-react-emoji {
-	min-width: 26px;
-	min-height: 26px;
-	padding: 0 2px;
+button.chatot-reaction-pill:hover {
+	background-color: mix(@popover_bg_color, @window_fg_color, 0.06);
+}
+
+button.chatot-reaction-pill-mine {
+	border-color: alpha(#1b8c72, 0.55);
+}
+
+.chatot-reaction-emoji {
+	font-size: 11px;
+}
+
+.chatot-reaction-count {
+	font-size: 9.5px;
+	opacity: 0.6;
+}
+
+/* Hover affordances. Hovering a bubble reveals a 🙂 and a ⌄ beside it (both
+   outside the bubble, WhatsApp's layout at the user's request; the 🙂 is the
+   one nearest it). The reaction row and the menu they open are the design's
+   floating cards. */
+.chatot-hover-btn {
+	background-image: none;
+	background-color: alpha(currentColor, 0.06);
+	border: none;
+	box-shadow: none;
+	border-radius: 999px;
+	min-width: 28px;
+	min-height: 28px;
+	padding: 0;
+	font-size: 14px;
+}
+
+.chatot-hover-btn:hover {
+	background-color: alpha(currentColor, 0.12);
+}
+
+.chatot-hover-chevron {
+	color: alpha(@window_fg_color, 0.6);
+}
+
+.chatot-react-row {
+	padding: 2px 4px;
+}
+
+.chatot-hover-react,
+.chatot-hover-more-reacts {
+	background-image: none;
+	border: none;
+	box-shadow: none;
+	min-width: 30px;
+	min-height: 30px;
+	padding: 0;
 	border-radius: 999px;
 }
 
-.chatot-bubble-iconbtn {
-	min-width: 26px;
-	min-height: 26px;
-	padding: 0;
-	border-radius: 7px;
-	background-color: alpha(currentColor, 0.06);
+.chatot-hover-react {
+	background-color: transparent;
+	font-size: 16px;
 }
 
-.chatot-bubble-iconbtn:hover {
+.chatot-hover-react:hover {
+	background-color: alpha(currentColor, 0.08);
+}
+
+.chatot-hover-more-reacts {
+	background-color: alpha(currentColor, 0.08);
+	font-size: 13px;
+	color: alpha(@window_fg_color, 0.55);
+}
+
+.chatot-hover-more-reacts:hover {
 	background-color: alpha(currentColor, 0.14);
 }
 
+.chatot-react-picker > contents {
+	padding: 8px;
+	min-width: 322px;
+}
 /* Strip GtkListView's default row background/padding so the message bubbles
  * sit on the plain surface, and give the thread a little top/bottom margin. */
 .chatot-conv-list {
-	padding: 8px 4px;
+	padding: 10px 18px 14px 18px;
 }
 
+/* The mockup leaves 5px between bubbles; that gap is the bubbles' own
+   margin, so the list rows add none. */
 .chatot-conv-list > row {
-	padding: 2px 0;
+	padding: 0;
 	background: none;
 }
 
+/* The composer band sits on the conversation surface (white), separated from
+   the thread by a single hairline, and carries the strip's whole padding. */
 .chatot-composer {
-	border-top: 1px solid alpha(currentColor, 0.12);
-	padding: 4px;
+	background-color: @view_bg_color;
 }
 
-/* Rounded message entry to match the mockup's pill-ish composer input. */
-.chatot-composer entry {
-	border-radius: 8px;
+.chatot-composer-strip {
+	padding: 8px 12px;
+	border-top: 1px solid alpha(currentColor, 0.1);
+}
+
+/* 📎 and 🙂 are 32px squares in the mockup; the entry pill and 🎤/➤ are 34.
+   Adwaita's flat buttons default larger and would grow the 51px strip. */
+/* Exact 32px discs. Adwaita's button.text-button adds 16px side padding and
+   outranks a lone class, so the padding is pinned on the qualified selector. */
+button.chatot-composer-iconbtn,
+.chatot-composer-iconbtn > button {
+	min-width: 32px;
+	min-height: 32px;
+	padding: 0;
+	border-radius: 999px;
+	font-size: 14px;
+}
+
+button.chatot-composer-iconbtn.text-button,
+.chatot-composer-iconbtn > button.text-button {
+	padding-left: 0;
+	padding-right: 0;
+}
+
+.chatot-composer-micbtn {
+	min-width: 34px;
+	min-height: 34px;
+	padding: 0;
+	border-radius: 999px;
+	font-size: 14px;
+}
+
+/* The mockup's 34px pill: white on the chat surface with a hairline border,
+   fully rounded. It holds a text view (7px above and below one 18px line
+   plus the border is the 34px), which grows with the draft's lines. */
+.chatot-composer-pill {
+	border-radius: 17px;
+	background-color: @view_bg_color;
+	border: 1px solid alpha(currentColor, 0.15);
+	min-height: 32px;
+}
+
+.chatot-composer-text,
+.chatot-composer-text text {
+	background-color: transparent;
+	font-size: 13.5px;
+}
+
+.chatot-composer-placeholder {
+	font-size: 13.5px;
+	opacity: 0.55;
+}
+
+/* The pill's scrollbar must not set its height: Adwaita's 40px slider
+   would hold a one-line pill open at 70px. */
+.chatot-composer-pill scrollbar.vertical,
+.chatot-composer-pill scrollbar.vertical contents,
+.chatot-composer-pill scrollbar.vertical trough {
+	min-height: 0;
+	margin-top: 0;
+	margin-bottom: 0;
+}
+
+.chatot-composer-pill scrollbar.vertical slider {
+	min-height: 0;
 }
 
 /* Round, solid-green send button. Brand green hard-coded (not the accent
@@ -427,39 +735,212 @@ window {
 	background-color: #147a63;
 }
 
-/* Attach popover tiles (mockup 2c dark grid): big emoji over a short label. */
+/* Attach menu rows: a 28px tinted circle (its fill set per-row in Go) beside
+   the source name. */
 .chatot-attach-glyph {
-	font-size: 19px;
+	font-size: 13px;
+	border-radius: 999px;
 }
 
 .chatot-attach-label {
-	font-size: 11.5px;
-	opacity: 0.85;
+	font-size: 13px;
 }
 
-.chatot-attach-tile {
+/* Emoji | GIF | Stickers picker (mockup: a 360px card with a segmented pill). */
+.chatot-picker {
+	padding: 2px;
+}
+
+.chatot-segmented {
+	background-color: alpha(currentColor, 0.08);
 	border-radius: 9px;
-	padding: 10px 4px;
+	padding: 3px;
 }
 
+.chatot-segmented-tab {
+	border-radius: 7px;
+	padding: 5px 14px;
+	font-size: 12.5px;
+	min-height: 0;
+	background: none;
+	border: none;
+	box-shadow: none;
+}
+
+.chatot-segmented-tab:checked {
+	background-color: @view_bg_color;
+	font-weight: bold;
+}
+
+.chatot-picker-emoji {
+	border-radius: 6px;
+	font-size: 18px;
+	padding: 0;
+	min-width: 0;
+	min-height: 32px;
+}
+
+/* Reply bar: inset in the composer band, rounded top, 3px accent edge, the
+   author in accent bold over the quoted text. */
 .chatot-composer-quote {
-	padding: 4px 10px;
+	margin: 0 12px;
+	padding: 7px 10px;
+	border-radius: 9px 9px 0 0;
 	background-color: alpha(currentColor, 0.06);
 	border-left: 3px solid #1b8c72;
 }
 
+.chatot-composer-quote-name {
+	font-size: 11.5px;
+	font-weight: bold;
+	color: #147a63;
+}
+
+.chatot-composer-quote-text {
+	font-size: 12px;
+	opacity: 0.55;
+}
+
+.chatot-composer-quote-close {
+	font-size: 12px;
+	opacity: 0.55;
+	min-width: 22px;
+	min-height: 22px;
+	padding: 0;
+}
+
+/* Recording strip: 🗑, then the pill with the red dot, mono timer, dotted
+   track and ⏸, then the green send disc. */
+.chatot-record-discard {
+	color: alpha(@window_fg_color, 0.55);
+}
+
+.chatot-record-discard:hover {
+	color: #c01c28;
+}
+
+.chatot-record-track {
+	border-bottom: 2px dotted alpha(currentColor, 0.28);
+	margin: 0 4px;
+}
+
+.chatot-record-pause {
+	min-width: 26px;
+	min-height: 26px;
+	padding: 0;
+	border-radius: 999px;
+	font-size: 12px;
+	color: #c01c28;
+	background: none;
+	box-shadow: none;
+	border: none;
+}
+
+.chatot-record-pause:hover {
+	background-color: alpha(#c01c28, 0.1);
+}
+
+.chatot-record-dot-paused {
+	background-color: alpha(#c01c28, 0.4);
+}
+
+.chatot-record-pill {
+	min-height: 34px;
+	border-radius: 999px;
+	padding: 0 14px;
+	border: 1px solid alpha(currentColor, 0.09);
+	background-color: alpha(currentColor, 0.04);
+}
+
+.chatot-record-dot {
+	border-radius: 999px;
+	background-color: #c01c28;
+}
+
+.chatot-record-label {
+	font-size: 13px;
+	opacity: 0.55;
+}
+
+.chatot-record-time {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 12px;
+	opacity: 0.85;
+}
+
+.chatot-record-cancel {
+	font-size: 12px;
+	opacity: 0.55;
+	padding: 2px 6px;
+	min-height: 0;
+	background: none;
+	box-shadow: none;
+}
+
+.chatot-record-stop {
+	min-width: 34px;
+	min-height: 34px;
+	border-radius: 999px;
+	background-color: #c01c28;
+	color: #ffffff;
+	font-size: 12px;
+	padding: 0;
+	border: none;
+	box-shadow: none;
+}
+
+/* The mockup's conversation strip is the same 46px + 1px hairline as the
+   sidebar's. AdwHeaderBar carries its min-height on the inner windowhandle,
+   so both nodes have to be pinned or Adwaita's ~47px default plus button
+   metrics win. */
 .chatot-conv-header {
-	border-bottom: 1px solid alpha(currentColor, 0.12);
+	background-color: @chatot_surface;
+	background-image: none;
+	box-shadow: none;
+	border-bottom: 1px solid @chatot_hairline;
+	min-height: 46px;
+	padding: 0;
+}
+
+.chatot-conv-header > box {
+	min-height: 46px;
+	padding: 0 10px 0 14px;
 }
 
 .chatot-conv-title {
 	font-weight: bold;
+	font-size: 14px;
 }
 
 .chatot-conv-subtitle {
 	opacity: 0.55;
-	font-size: 0.85em;
+	font-size: 11.5px;
 	min-height: 1.2em;
+}
+
+/* Window controls: the mockup's 24px neutral circles, not Adwaita's larger
+   squares-with-icons. */
+.chatot-conv-header windowcontrols button {
+	min-width: 24px;
+	min-height: 24px;
+	padding: 0;
+	margin: 0 4px;
+	border-radius: 999px;
+	background-color: alpha(currentColor, 0.08);
+}
+
+/* Adwaita sizes these from the icon, not the button box, so the circle above
+   only shrinks once the glyph does. */
+.chatot-conv-header windowcontrols button image {
+	-gtk-icon-size: 12px;
+	opacity: 0.55;
+}
+
+/* The sidebar search glyph is a 12px dim mark in the mockup, not Adwaita's
+   full-size symbolic magnifier. */
+.chatot-search-entry image {
+	-gtk-icon-size: 12px;
+	opacity: 0.45;
 }
 
 .chatot-chat-typing {
@@ -468,13 +949,76 @@ window {
 	opacity: 1;
 }
 
+/* Sidebar search: the mockup's 34px pill on the chat surface with a hairline
+   border. */
 .chatot-search-entry {
-	margin: 2px 8px 6px 8px;
+	margin: 8px 8px 4px 8px;
+	border-radius: 999px;
+	min-height: 34px;
+	padding: 0 12px;
+	font-size: 13.5px;
+	background-color: @view_bg_color;
+	border: 1px solid alpha(currentColor, 0.13);
 }
 
-/* Sidebar account header row (avatar + name/phone + ＋/⋮ menus). */
+/* Sidebar account header row (avatar + name/phone + ＋/⋮ menus). Mockup: a
+   47px strip on the header surface with a hairline below, identity button
+   left, ＋ and ⋮ right. */
 .chatot-account-row {
-	padding: 8px 8px 4px 8px;
+	background-color: @chatot_surface;
+	border-bottom: 1px solid @chatot_hairline;
+	padding: 0 8px 0 10px;
+	min-height: 46px;
+}
+
+/* GtkMenuButton is two nodes, `menubutton > button`. The metrics go on the
+   inner button only: putting min-height + padding on both stacked them and
+   made this strip 54px against the conversation header's 46px. */
+.chatot-account-btn {
+	padding: 0;
+	min-height: 0;
+	border-radius: 8px;
+}
+
+.chatot-account-btn > button {
+	padding: 4px 8px 4px 4px;
+	border-radius: 8px;
+	min-height: 38px;
+}
+
+/* The ＋ and ⋮ affordances in either header strip: 28px squares with a 7px
+   radius and a dim 15px glyph. Adwaita's own button metrics are ~34px and
+   would push the 46px strip taller. */
+/* The `> button` half matters for GtkMenuButton: its CSS node is `menubutton`
+   wrapping a real `button`, and Adwaita's padding on that inner node is what
+   actually sets the width. */
+.chatot-hdr-icon,
+.chatot-hdr-icon > button {
+	min-width: 28px;
+	min-height: 28px;
+	padding: 0;
+	border-radius: 7px;
+	font-size: 15px;
+	font-weight: normal;
+	color: alpha(@window_fg_color, 0.55);
+}
+
+.chatot-hdr-icon:hover,
+.chatot-hdr-icon > button:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+/* Merged "All accounts": the header identity is a brand-green disc with the
+   🗂 glyph, not the active account's colour. */
+.chatot-account-avatar-merged {
+	background-color: #1b8c72;
+	color: #ffffff;
+	font-size: 13px;
+}
+
+.chatot-account-name {
+	font-weight: bold;
+	font-size: 13px;
 }
 
 /* Green initial-avatar for the account header; a plain label so the brand
@@ -482,6 +1026,13 @@ window {
 .chatot-account-avatar {
 	background-color: #1b8c72;
 	color: #ffffff;
+	font-size: 12px;
+}
+
+/* The identity button's dropdown caret (mockup: 9px dim ▾). */
+.chatot-account-caret {
+	font-size: 9px;
+	opacity: 0.6;
 }
 
 .chatot-account-phone {
@@ -489,15 +1040,82 @@ window {
 	font-size: 0.82em;
 }
 
-/* Account switcher popover: give it a comfortable min width and dim the
-   per-row status subline like the header's. */
-.chatot-account-switcher {
-	min-width: 240px;
+/* Monospace variant for the header's phone subline (mockup: JetBrains Mono
+   9.5px). */
+.chatot-account-phone.chatot-mono {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 9.5px;
 }
 
-.chatot-account-status {
-	opacity: 0.55;
-	font-size: 0.82em;
+/* Account switcher popover: give it a comfortable min width and dim the
+   per-row status subline like the header's. */
+.chatot-account-menu > contents {
+	min-width: 300px;
+}
+
+.chatot-account-switcher {
+	min-width: 288px;
+}
+
+/* The popover's account rows. Their own class, not .chatot-account-row: that
+   is the sidebar header strip, and sharing it turned the strip transparent
+   (so the sidebar grey showed through) and let it grow past 46px. */
+.chatot-switcher-row {
+	background-image: none;
+	background-color: transparent;
+	border: none;
+	box-shadow: none;
+	border-radius: 8px;
+	padding: 8px 9px;
+	min-height: 0;
+	font-weight: normal;
+}
+
+.chatot-switcher-row:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-switcher-row-current,
+.chatot-switcher-row-current:hover {
+	background-color: alpha(currentColor, 0.1);
+}
+
+.chatot-account-row-avatar {
+	font-size: 13px;
+}
+
+.chatot-account-row-name {
+	font-size: 13px;
+	font-weight: bold;
+}
+
+.chatot-account-row-status {
+	font-size: 11px;
+	color: alpha(@window_fg_color, 0.55);
+}
+
+.chatot-status-dot {
+	border-radius: 999px;
+	background-color: #1b8c72;
+}
+
+.chatot-status-bad.chatot-status-dot {
+	background-color: #c01c28;
+}
+
+.chatot-status-bad {
+	color: #c01c28;
+}
+
+.chatot-account-row-check {
+	font-size: 12px;
+	font-weight: bold;
+	color: #147a63;
+}
+
+.chatot-account-action {
+	font-size: 13.5px;
+	padding: 8px 9px;
 }
 
 .chatot-search-snippet {
@@ -511,8 +1129,48 @@ window {
 	margin: 12px;
 }
 
+/* In-header search (mockup 28): a 34px pill entry with the mono counter and
+   three 28px glyph buttons, all inside the 46px header strip. */
 .chatot-conv-searchbar {
-	padding-top: 4px;
+	padding: 0;
+}
+
+/* The mockup's pill: 32px, white, hairline, 12px text inset, 6px on the
+   button side. */
+.chatot-conv-searchpill {
+	min-height: 32px;
+	padding: 0 6px 0 12px;
+	border-radius: 999px;
+	background-color: @view_bg_color;
+	border: 1px solid alpha(currentColor, 0.13);
+}
+
+.chatot-conv-search-entry,
+.chatot-conv-search-entry text {
+	min-height: 0;
+	padding: 0;
+	margin: 0;
+	background: none;
+	border: none;
+	box-shadow: none;
+	outline: none;
+	font-size: 13.5px;
+}
+
+button.chatot-conv-search-btn {
+	min-width: 24px;
+	min-height: 24px;
+	padding: 0;
+	border-radius: 999px;
+	background: none;
+	border: none;
+	box-shadow: none;
+	font-size: 11px;
+	color: alpha(@window_fg_color, 0.55);
+}
+
+button.chatot-conv-search-btn:hover {
+	background-color: alpha(currentColor, 0.06);
 }
 
 .chatot-join-banner {
@@ -521,11 +1179,15 @@ window {
 }
 
 .chatot-conv-search-count {
-	opacity: 0.6;
-	font-size: 0.85em;
+	color: alpha(@window_fg_color, 0.45);
+	font-size: 11.5px;
 }
 
 .chatot-chip-row {
+	margin: 0 6px 6px 6px;
+}
+
+.chatot-chip-row-old {
 	margin: 0 8px 6px 8px;
 }
 
@@ -533,9 +1195,22 @@ window {
 	background-image: none;
 	background-color: alpha(currentColor, 0.08);
 	border-radius: 999px;
-	padding: 3px 12px;
-	font-size: 0.85em;
+	padding: 4px 11px;
+	font-size: 12px;
+	font-weight: normal;
 	min-height: 0;
+}
+
+/* Trailing count numeral inside a chip: accent-green bold, whitened when the
+   chip itself is filled green (mockup countColor). */
+.chatot-chip-count {
+	font-size: 10.5px;
+	font-weight: bold;
+	color: #1b8c72;
+}
+
+.chatot-chip-active .chatot-chip-count {
+	color: alpha(#ffffff, 0.85);
 }
 
 /* Brand green hard-coded, like .chatot-unread-badge/.chatot-send: the
@@ -544,8 +1219,2943 @@ window {
    buildChipButton (a class rule on the shared sheet loses to libadwaita's own
    button provider); this class only carries the shared pill shape below. */
 
+/* Account rail (mockup left strip): 38px rounded-square initial buttons with
+   a 10px gap inside an 8px inset, active account double-ringed in brand
+   green, unread pill hugging the avatar's top-right corner. */
+.chatot-account-rail {
+	padding: 10px 8px 8px 8px;
+	background-color: @chatot_sidebar;
+	border-right: 1px solid @chatot_hairline;
+}
+
+/* The sidebar column itself is the same grey, and the hairline between it
+   and the conversation is its right edge. */
+.chatot-sidebar {
+	background-color: @chatot_sidebar;
+	border-right: 1px solid @chatot_hairline;
+}
+
+.chatot-rail-avatar {
+	/* Clear Adwaita's button gradient so the palette class's fill shows. */
+	background-image: none;
+	border-radius: 12px;
+	min-width: 38px;
+	min-height: 38px;
+	padding: 0;
+	font-size: 14px;
+	font-weight: bold;
+	color: #ffffff;
+}
+
+/* Green ring first, gap second: GTK paints a later shadow over an earlier
+   one (the reverse of CSS), so the CSS order drew a solid 4px green ring
+   with no gap. The gap is the rail colour, as in the mockup. */
+.chatot-rail-active {
+	box-shadow: 0 0 0 4px #1b8c72, 0 0 0 2px @chatot_sidebar;
+}
+
+/* Mockup: a 17px pill ringed in the sidebar colour, hugging the tile's
+   top-right and overhanging it by 4px right / 3px up. */
+.chatot-rail-badge {
+	background-color: #1b8c72;
+	color: #ffffff;
+	border: 2px solid @chatot_sidebar;
+	border-radius: 999px;
+	font-size: 10px;
+	font-weight: bold;
+	padding: 0 5px;
+	min-width: 7px;
+	min-height: 17px;
+	margin: -3px -4px 0 0;
+}
+
+.chatot-rail-add {
+	background-image: none;
+	background-color: transparent;
+	border: 1px dashed alpha(@window_fg_color, 0.25);
+	border-radius: 12px;
+	min-width: 38px;
+	min-height: 38px;
+	padding: 0;
+	font-size: 15px;
+	color: alpha(@window_fg_color, 0.55);
+}
+
 .chatot-label-dot {
 	border-radius: 999px;
 	min-width: 10px;
 	min-height: 10px;
+}
+
+/* The mockup's 🙂 is a point larger than the 📎 beside it. */
+.chatot-composer-emojibtn {
+	font-size: 15px;
+}
+
+/* Mockup-style popover menu (see menu.go). A plain white card: 12px radius,
+   a hairline, a soft drop shadow and no arrow. GtkPopover paints its frame on
+   the `contents` node, so the card styling has to land there, not on the
+   popover itself. */
+.chatot-menu > contents {
+	background-color: @popover_bg_color;
+	border: 1px solid alpha(currentColor, 0.09);
+	border-radius: 12px;
+	box-shadow: 0 12px 34px alpha(black, 0.26);
+	padding: 6px;
+	min-width: 230px;
+}
+
+.chatot-menu-box {
+	min-width: 218px;
+}
+
+/* Rows are flat buttons; the explicit background-image reset stops Adwaita's
+   button gradient from showing through the transparent fill. */
+.chatot-menu-item {
+	background-image: none;
+	background-color: transparent;
+	border: none;
+	box-shadow: none;
+	border-radius: 7px;
+	padding: 7px 10px;
+	font-size: 13px;
+	font-weight: normal;
+	min-height: 0;
+	color: alpha(@window_fg_color, 0.85);
+}
+
+.chatot-menu-item:disabled {
+	color: alpha(@window_fg_color, 0.35);
+}
+
+.chatot-menu-item:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-menu-item-danger {
+	color: #c01c28;
+}
+
+/* A section caption, not an action: dimmed and never sensitive. */
+.chatot-menu-item-dim,
+.chatot-menu-item-dim:disabled {
+	color: alpha(@window_fg_color, 0.55);
+}
+
+.chatot-menu-icon {
+	font-size: 13px;
+	opacity: 0.85;
+}
+
+.chatot-menu-accel {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10.5px;
+	opacity: 0.45;
+}
+
+.chatot-menu-sep {
+	background-color: alpha(currentColor, 0.09);
+	margin: 4px 6px;
+	min-height: 1px;
+}
+
+/* The list/label variant of the menu card (chip-row overflow): narrower, and
+   its rows are a touch larger than a normal menu's. */
+.chatot-menu-lists > contents {
+	min-width: 202px;
+}
+
+.chatot-menu-lists .chatot-menu-item {
+	font-size: 13.5px;
+	padding: 7px 9px;
+}
+
+.chatot-menu-dot {
+	min-width: 9px;
+	min-height: 9px;
+}
+
+.chatot-menu-count {
+	font-size: 11px;
+	font-weight: bold;
+	color: #147a63;
+}
+
+/* Dialog cards (see card_dialog.go). The mockup's title row is 47px with a
+   left-aligned 14.5px bold title, a ✕ at the right, and a hairline below. */
+.chatot-dialog-header,
+.chatot-dialog-header > windowhandle {
+	min-height: 47px;
+	padding: 0;
+}
+
+.chatot-dialog-header {
+	border-bottom: 1px solid alpha(currentColor, 0.09);
+}
+
+.chatot-dialog-header > windowhandle > box {
+	padding: 0 8px 0 16px;
+}
+
+.chatot-dialog-title {
+	font-size: 14.5px;
+	font-weight: bold;
+}
+
+.chatot-dialog-header windowcontrols button {
+	min-width: 26px;
+	min-height: 26px;
+	padding: 0;
+	border-radius: 999px;
+	background-color: transparent;
+	color: alpha(@window_fg_color, 0.55);
+}
+
+/* The mockup's choice dialog (mute duration, disappearing-message timer):
+   an explanatory body over a bordered list of options, the current one
+   ticked in accent green. */
+.chatot-choice-body {
+	font-size: 12.5px;
+	opacity: 0.55;
+}
+
+.chatot-choice-list {
+	background-color: @view_bg_color;
+	border: 1px solid alpha(currentColor, 0.09);
+	border-radius: 11px;
+}
+
+.chatot-choice-row {
+	background-image: none;
+	background-color: transparent;
+	border-radius: 0;
+	padding: 11px 12px;
+	font-size: 13.5px;
+	font-weight: normal;
+	min-height: 0;
+}
+
+.chatot-choice-row:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-choice-tick {
+	color: #1b8c72;
+	font-size: 13px;
+}
+
+/* A contact card with no dialable number still shows the mockup's action row,
+   just inert. */
+.chatot-contact-action-off {
+	opacity: 0.4;
+}
+
+/* Attachment tray (mockup 27): a full-pane send preview with a Cancel / name /
+   Send header, a large preview, a caption entry, and a thumbnail strip. */
+.chatot-tray {
+	background-color: @window_bg_color;
+}
+
+.chatot-tray-header {
+	min-height: 47px;
+	padding: 0 8px;
+	background-color: @view_bg_color;
+	border-bottom: 1px solid alpha(currentColor, 0.08);
+}
+
+.chatot-tray-cancel {
+	border-radius: 8px;
+	padding: 6px 12px;
+	font-size: 13.5px;
+}
+
+.chatot-tray-name {
+	font-size: 14px;
+	font-weight: bold;
+}
+
+.chatot-tray-meta {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10px;
+	opacity: 0.55;
+}
+
+.chatot-tray-send {
+	border-radius: 8px;
+	padding: 7px 16px;
+	font-size: 13px;
+	font-weight: bold;
+	background-color: #1b8c72;
+	color: #ffffff;
+	border: none;
+	box-shadow: none;
+}
+
+.chatot-tray-stage {
+	padding: 16px;
+}
+
+.chatot-tray-image {
+	border-radius: 12px;
+	background-color: alpha(currentColor, 0.06);
+	padding: 8px;
+}
+
+.chatot-tray-thumb {
+	border-radius: 8px;
+}
+
+.chatot-tray-nopreview {
+	border-radius: 12px;
+	padding: 12px;
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-tray-glyph {
+	font-size: 48px;
+}
+
+.chatot-tray-noprev-label {
+	font-size: 14.5px;
+}
+
+.chatot-tray-captionrow {
+	padding: 0 16px 12px 16px;
+}
+
+.chatot-tray-caption {
+	min-height: 36px;
+	border-radius: 8px;
+	font-size: 13.5px;
+}
+
+.chatot-tray-strip {
+	padding: 10px 16px 14px 16px;
+	border-top: 1px solid alpha(currentColor, 0.08);
+	background-color: @view_bg_color;
+}
+
+.chatot-tray-tile {
+	border-radius: 8px;
+	font-size: 22px;
+	padding: 0;
+	background-color: alpha(currentColor, 0.06);
+	border: none;
+	box-shadow: none;
+}
+
+.chatot-tray-tile-on {
+	box-shadow: 0 0 0 2px #1b8c72;
+}
+
+/* Overhangs the tile's top-right corner, per the mockup's -6px offsets. */
+.chatot-tray-remove {
+	min-width: 19px;
+	min-height: 19px;
+	margin: -6px -6px 0 0;
+	padding: 0;
+	border-radius: 999px;
+	font-size: 9px;
+	background-color: @view_bg_color;
+	border: 1px solid alpha(currentColor, 0.09);
+	opacity: 0.75;
+}
+
+.chatot-tray-captioned {
+	font-size: 9px;
+	margin: 0 0 3px 4px;
+}
+
+.chatot-tray-add {
+	border-radius: 8px;
+	font-size: 18px;
+	padding: 0;
+	background: none;
+	box-shadow: none;
+	border: 1px dashed alpha(currentColor, 0.22);
+	opacity: 0.55;
+}
+
+/* Right-pane pages (Starred, Media/Links/Docs): a ← header with the title and
+   either a count or the segmented tab pill, then a scrolling body. */
+.chatot-pane-header {
+	padding: 10px 14px;
+	border-bottom: 1px solid alpha(currentColor, 0.08);
+}
+
+.chatot-pane-back {
+	min-width: 28px;
+	min-height: 28px;
+	border-radius: 7px;
+	padding: 0;
+	font-size: 15px;
+	opacity: 0.55;
+}
+
+.chatot-pane-title {
+	font-size: 14px;
+	font-weight: bold;
+}
+
+.chatot-pane-count {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-pane-body {
+	padding: 8px;
+}
+
+button.chatot-pane-row {
+	padding: 9px 10px;
+	border-radius: 9px;
+	background: none;
+	box-shadow: none;
+	border: none;
+}
+
+button.chatot-pane-row:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+button.chatot-pane-row:active {
+	background-color: alpha(currentColor, 0.1);
+}
+
+.chatot-starred-chat {
+	font-size: 12.5px;
+	font-weight: bold;
+}
+
+.chatot-starred-text {
+	font-size: 12.5px;
+	opacity: 0.55;
+}
+
+.chatot-starred-time {
+	font-size: 10.5px;
+	opacity: 0.45;
+}
+
+.chatot-starred-unstar {
+	min-width: 24px;
+	min-height: 24px;
+	padding: 0;
+	border-radius: 999px;
+	font-size: 12px;
+}
+
+/* Links/Docs rows: a 38px rounded icon square, bold title over a dim sub. */
+.chatot-pane-rowicon {
+	border-radius: 9px;
+	font-size: 15px;
+	background-color: alpha(currentColor, 0.08);
+}
+
+.chatot-pane-rowtitle {
+	font-size: 13px;
+	font-weight: bold;
+}
+
+.chatot-pane-rowsub {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-pane-rowdate {
+	font-size: 11px;
+	opacity: 0.45;
+}
+
+/* Media grid tiles: square, 9px radius, with the date burned into the
+   bottom-left corner over a shadow so it reads on any thumbnail. */
+.chatot-mediagrid-tile {
+	border-radius: 9px;
+}
+
+.chatot-mediagrid-placeholder {
+	background-color: alpha(currentColor, 0.08);
+}
+
+.chatot-mediagrid-glyph {
+	font-size: 20px;
+	opacity: 0.55;
+}
+
+/* Day section caption above each grid. */
+.chatot-mediagrid-day {
+	font-size: 11.5px;
+	font-weight: bold;
+	color: alpha(@window_fg_color, 0.55);
+	margin: 6px 0 8px 0;
+}
+
+.chatot-mediagrid-day:not(:first-child) {
+	margin-top: 14px;
+}
+
+.chatot-mediagrid-date {
+	font-size: 10.5px;
+	color: #ffffff;
+	margin: 0 0 6px 7px;
+	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+/* Empty states for both panes: a tinted disc over two lines of explanation. */
+.chatot-pane-empty {
+	padding: 60px 20px;
+}
+
+.chatot-pane-empty-disc {
+	border-radius: 999px;
+	background-color: alpha(currentColor, 0.06);
+	font-size: 22px;
+}
+
+.chatot-pane-empty-title {
+	font-size: 14px;
+	opacity: 0.55;
+}
+
+.chatot-pane-empty-hint {
+	font-size: 12px;
+	opacity: 0.45;
+}
+
+/* In-sidebar forms (New chat / New group / New community): a ← title row over
+   a body, with an optional full-width green action pinned at the foot. */
+.chatot-sidebar-formhead {
+	padding: 8px 8px 6px 8px;
+}
+
+.chatot-sidebar-formtitle {
+	font-size: 14px;
+	font-weight: bold;
+}
+
+.chatot-sidebar-formbody {
+	padding: 8px 10px;
+}
+
+.chatot-sidebar-formfoot {
+	padding: 10px 14px 14px 14px;
+}
+
+/* Group-name step body: the design's 18px/14px inset. */
+.chatot-sidebar-groupbody {
+	padding: 18px 14px 0 14px;
+}
+
+.chatot-sidebar-primary {
+	min-height: 38px;
+	border-radius: 9px;
+	font-size: 13.5px;
+	font-weight: bold;
+	background-color: #1b8c72;
+	color: #ffffff;
+	border: none;
+	box-shadow: none;
+}
+
+.chatot-sidebar-primary:disabled {
+	opacity: 0.45;
+}
+
+/* Contact rows inside a sidebar form. */
+.chatot-people-list {
+	padding: 2px 0 8px 0;
+}
+
+.chatot-people-row {
+	margin: 0 8px 1px 8px;
+	padding: 7px 8px;
+	border-radius: 8px;
+	background: none;
+	box-shadow: none;
+	border: none;
+}
+
+.chatot-people-name {
+	font-size: 13.5px;
+	font-weight: bold;
+}
+
+.chatot-people-status {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-people-check {
+	border-radius: 999px;
+	background-color: #1b8c72;
+	color: #ffffff;
+	font-size: 11px;
+}
+
+/* Picked-people chips above the group contact list. */
+/* Mockup: chips start flush with the search pill's left edge, 6px apart,
+   with 6px under the row. Adwaita pads every flowboxchild by 3px, which
+   read as a stray gutter around each chip. */
+.chatot-picked-row {
+	padding: 0 8px 6px 8px;
+}
+
+.chatot-picked-row > flowboxchild {
+	padding: 0;
+	margin: 0;
+}
+
+.chatot-picked-chip {
+	border-radius: 999px;
+	padding: 3px 8px 3px 4px;
+	min-height: 0;
+	background-color: alpha(currentColor, 0.08);
+	border: none;
+	box-shadow: none;
+}
+
+.chatot-picked-name {
+	font-size: 11.5px;
+}
+
+.chatot-picked-avatar {
+	font-size: 9px;
+}
+
+.chatot-picked-hint {
+	font-size: 11.5px;
+	opacity: 0.45;
+	padding: 4px 2px;
+}
+
+/* Group-name step. */
+/* Mockup: a 72px disc (rgba(0,0,0,.08)) with a 26px glyph that darkens on
+   hover. Explicit min sizes: Adwaita's button metrics plus the glyph's own
+   width made it a wide pill. */
+.chatot-group-photo {
+	border-radius: 999px;
+	min-width: 72px;
+	min-height: 72px;
+	font-size: 26px;
+	padding: 0;
+	transition: background-color 150ms ease;
+	background-image: none;
+	background-color: alpha(currentColor, 0.08);
+	border: none;
+	box-shadow: none;
+	color: alpha(@window_fg_color, 0.55);
+}
+
+.chatot-group-photo:hover {
+	background-color: alpha(currentColor, 0.12);
+}
+
+.chatot-group-photolabel {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-group-name {
+	min-height: 38px;
+	border-radius: 9px;
+	font-size: 13.5px;
+	background-color: @view_bg_color;
+	border: 1px solid alpha(currentColor, 0.13);
+	padding: 0 12px;
+}
+
+/* Field inside a settings-card row (join link, account label). */
+.chatot-card-entry {
+	min-height: 32px;
+	border-radius: 8px;
+	font-size: 13px;
+}
+
+.chatot-card-dropdown {
+	font-size: 12.5px;
+}
+
+/* The green pill in a dialog's title row (Accounts → Add…). */
+.chatot-dialog-headbtn {
+	min-height: 28px;
+	padding: 0 12px;
+	border-radius: 7px;
+	font-size: 12.5px;
+	margin-right: 2px;
+}
+
+/* Text link under a card ("Use a phone number instead"). */
+.chatot-link-btn {
+	font-size: 12.5px;
+	font-weight: normal;
+	color: #147a63;
+	padding: 4px 8px;
+	min-height: 0;
+}
+
+/* QR tile before a code arrives: the design's checker placeholder. */
+.chatot-qr-placeholder {
+	border-radius: 6px;
+	background-color: alpha(currentColor, 0.06);
+	background-image: repeating-linear-gradient(45deg,
+		alpha(currentColor, 0.04) 0px, alpha(currentColor, 0.04) 8px,
+		alpha(currentColor, 0.09) 8px, alpha(currentColor, 0.09) 16px);
+}
+
+.chatot-group-blurb {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-group-caption {
+	font-size: 11.5px;
+	font-weight: bold;
+	opacity: 0.55;
+}
+
+/* Shared settings card: a white, hairline-bordered container of rows split by
+   1px lines, under an uppercase caption. Preferences, Contact info, Linked
+   devices and Export are all built from this. */
+.chatot-card {
+	background-color: @view_bg_color;
+	border: 1px solid alpha(currentColor, 0.09);
+	border-radius: 11px;
+}
+
+.chatot-card-sep {
+	border-top: 1px solid alpha(currentColor, 0.07);
+}
+
+.chatot-card-caption {
+	font-size: 11.5px;
+	font-weight: bold;
+	opacity: 0.55;
+}
+
+.chatot-card-row {
+	padding: 11px 13px;
+}
+
+/* A whole row that is one click target: no Adwaita button chrome, just the
+   row padding and a hover wash. */
+button.chatot-card-btnrow {
+	padding: 11px 13px;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+	border: none;
+	transition: background-color 120ms ease;
+}
+
+button.chatot-card-btnrow:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+button.chatot-card-btnrow:active {
+	background-color: alpha(currentColor, 0.1);
+}
+
+.chatot-card-btnrow:first-child {
+	border-radius: 11px 11px 0 0;
+}
+
+.chatot-card-btnrow:last-child {
+	border-radius: 0 0 11px 11px;
+}
+
+.chatot-card-label {
+	font-size: 13px;
+}
+
+.chatot-card-sub {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-card-value {
+	font-size: 12.5px;
+	opacity: 0.55;
+}
+
+.chatot-card-action {
+	font-size: 12.5px;
+	font-weight: bold;
+	color: #147a63;
+}
+
+.chatot-card-action-danger {
+	color: #c01c28;
+}
+
+.chatot-dialog-body {
+	padding: 14px;
+}
+
+/* Outline buttons ("Choose…", "Unlink") inside a card row. */
+.chatot-outline-btn {
+	font-size: 12px;
+	padding: 5px 11px;
+	border-radius: 8px;
+	min-height: 0;
+	background: none;
+	box-shadow: none;
+	border: 1px solid alpha(currentColor, 0.15);
+}
+
+.chatot-outline-btn-danger {
+	color: #c01c28;
+}
+
+.chatot-device-icon {
+	border-radius: 8px;
+	font-size: 15px;
+	background-color: alpha(currentColor, 0.08);
+}
+
+.chatot-device-name {
+	font-size: 13.5px;
+	font-weight: bold;
+}
+
+.chatot-device-meta {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10.5px;
+	opacity: 0.55;
+}
+
+/* Contact info card header. */
+.chatot-info-head {
+	padding: 22px 22px 14px 22px;
+}
+
+.chatot-info-name {
+	font-size: 17px;
+	font-weight: bold;
+}
+
+.chatot-info-sub {
+	font-size: 12.5px;
+	opacity: 0.55;
+}
+
+/* Preferences: a 170px icon nav beside the scrolling page column. */
+.chatot-pref-nav {
+	padding: 8px;
+	border-right: 1px solid alpha(currentColor, 0.09);
+}
+
+.chatot-pref-navitem {
+	border-radius: 8px;
+	padding: 8px 10px;
+	font-size: 13px;
+	min-height: 0;
+	background: none;
+	box-shadow: none;
+	border: none;
+}
+
+.chatot-pref-navitem:checked {
+	background-color: alpha(currentColor, 0.1);
+	font-weight: bold;
+}
+
+.chatot-pref-page {
+	padding: 16px 18px;
+}
+
+/* About card. */
+.chatot-about {
+	padding: 26px 24px 18px 24px;
+}
+
+.chatot-about-mark {
+	border-radius: 20px;
+	background-color: #1b8c72;
+	color: #ffffff;
+	font-size: 38px;
+}
+
+.chatot-about-name {
+	font-size: 19px;
+	font-weight: bold;
+}
+
+.chatot-about-version {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-about-tagline {
+	font-size: 12.5px;
+	opacity: 0.55;
+}
+
+/* Neutral pill button (About's Website / Report an issue). */
+.chatot-chip-btn {
+	min-height: 32px;
+	padding: 0 14px;
+	border-radius: 8px;
+	font-size: 12.5px;
+	background-color: alpha(currentColor, 0.08);
+	border: none;
+	box-shadow: none;
+}
+
+/* The mockup's empty chat list: a reason line over a pill that undoes it. */
+.chatot-list-empty {
+	padding: 36px 22px;
+}
+
+.chatot-list-empty-text {
+	font-size: 13px;
+	opacity: 0.55;
+}
+
+.chatot-list-empty-action {
+	border-radius: 8px;
+	padding: 6px 13px;
+	font-size: 12.5px;
+	min-height: 0;
+	background-color: alpha(currentColor, 0.08);
+	border: none;
+	box-shadow: none;
+}
+
+/* Toast: the mockup's black pill at the bottom centre with a green Undo,
+   rather than Adwaita's default surface-coloured bar with a ✕. */
+/* Scoped to AdwToast's own `toast` node. A `.chatot-toast > widget` selector
+   also matches the overlay's MAIN child — the whole conversation pane — and
+   paints it with the toast's background. */
+.chatot-toast toast {
+	background-color: rgba(30, 30, 30, 0.94);
+	border-radius: 999px;
+	padding: 8px 8px 8px 16px;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.chatot-toast toast label {
+	color: #ffffff;
+	font-size: 13px;
+}
+
+.chatot-toast toast button {
+	border-radius: 999px;
+	background: none;
+	box-shadow: none;
+	border: none;
+	color: #6fd3ba;
+	font-size: 13px;
+	font-weight: bold;
+}
+
+/* Forward dialog: a search pill over rows of avatar + name + round tick,
+   closed by a footer carrying the count and one green Send. */
+.chatot-forward-search {
+	padding: 8px 10px 6px 10px;
+}
+
+.chatot-forward-list {
+	padding: 6px 2px;
+}
+
+.chatot-forward-name {
+	font-size: 13.5px;
+}
+
+.chatot-forward-check {
+	border-radius: 999px;
+	border: 2px solid alpha(currentColor, 0.25);
+	font-size: 10px;
+}
+
+.chatot-forward-check-on {
+	background-color: #1b8c72;
+	border-color: #1b8c72;
+	color: #ffffff;
+}
+
+.chatot-dialog-footer {
+	padding: 10px 14px;
+	border-top: 1px solid alpha(currentColor, 0.09);
+}
+
+/* The mockup's primary dialog action. */
+.chatot-primary-btn {
+	min-height: 34px;
+	padding: 0 18px;
+	border-radius: 9px;
+	font-size: 13px;
+	font-weight: bold;
+	background-color: #1b8c72;
+	color: #ffffff;
+	border: none;
+	box-shadow: none;
+}
+
+.chatot-primary-btn:disabled {
+	opacity: 0.45;
+}
+
+.chatot-export-path {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 11.5px;
+}
+
+/* Merged "All accounts" mode: a 3px account-coloured stripe leading each row.
+   It reuses the avatar palette classes, whose background-color is the fill. */
+.chatot-row-stripe {
+	border-radius: 999px;
+}
+
+/* Linking screen (mockup 64): heading, instruction paragraph, a bordered QR
+   card, then a dotted status line. */
+.chatot-linking {
+	padding: 30px;
+}
+
+.chatot-linking-title {
+	font-size: 22px;
+	font-weight: bold;
+}
+
+.chatot-linking-body {
+	font-size: 13.5px;
+	opacity: 0.55;
+}
+
+.chatot-linking-qr {
+	border-radius: 14px;
+	background-color: @chatot_surface;
+	border: 1px solid alpha(currentColor, 0.13);
+	padding: 14px;
+}
+
+.chatot-linking-dot {
+	border-radius: 999px;
+	background-color: #1b8c72;
+}
+
+.chatot-linking-status {
+	font-size: 12.5px;
+	opacity: 0.55;
+}
+
+/* Typing indicator: the mockup's small dotted bubble at the foot of the
+   thread, matching an incoming bubble's fill and radius. */
+.chatot-typing-row {
+	padding: 0 18px 8px 18px;
+}
+
+.chatot-typing-bubble {
+	border-radius: 14px;
+	padding: 10px 14px;
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-typing-dot {
+	border-radius: 999px;
+	background-color: alpha(currentColor, 0.4);
+}
+
+/* Join-request strip: the mockup renders group system notices as a centred
+   neutral pill, not a full-width green banner. The Review action stays — the
+   design's pill is informational only, and chatot can actually act on it. */
+.chatot-join-banner {
+	background-color: alpha(currentColor, 0.06);
+	border-radius: 999px;
+	padding: 3px 11px;
+	border: none;
+}
+
+.chatot-join-text {
+	font-size: 10.5px;
+	opacity: 0.55;
+}
+
+.chatot-account-status {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 11px;
+	opacity: 0.55;
+}
+
+/* Manage lists: colour swatches over a name field and Add. */
+.chatot-swatch-row {
+	padding: 0 2px;
+}
+
+.chatot-swatch {
+	border-radius: 999px;
+	padding: 0;
+	min-width: 20px;
+	min-height: 20px;
+	border: none;
+	box-shadow: none;
+}
+
+.chatot-swatch:checked {
+	box-shadow: 0 0 0 4px #1b8c72, 0 0 0 2px @view_bg_color;
+}
+
+.chatot-list-delete {
+	min-width: 24px;
+	min-height: 24px;
+	padding: 0;
+	border-radius: 999px;
+	font-size: 12px;
+	opacity: 0.55;
+}
+
+/* Sidebar bottom mode bar: Chats · Status · Channels · Communities. */
+/* "← Archived · N" in the sidebar header's identity slot. */
+.chatot-archived-head {
+	padding: 0 0 0 2px;
+}
+
+/* A primary button that fits inside a 40px card row. */
+button.chatot-row-btn {
+	min-height: 28px;
+	padding: 0 12px;
+	font-size: 12px;
+	border-radius: 8px;
+}
+
+/* ---- Bottom tab bar (tab_bar.go) ----------------------------------------
+   Mockup: a white 50px strip across the whole sidebar with a hairline on
+   top; each tab an icon over a 10.5px label, the active one in accent with
+   a 26×2 bar hanging from the strip's top edge and a faint wash. */
+.chatot-tab-bar {
+	background-color: @chatot_surface;
+	border-top: 1px solid @chatot_hairline_strong;
+}
+
+button.chatot-tab-btn {
+	background: none;
+	border: none;
+	border-radius: 0;
+	box-shadow: none;
+	padding: 0;
+	min-height: 50px;
+	min-width: 0;
+	color: alpha(@window_fg_color, 0.55);
+}
+
+button.chatot-tab-btn:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+button.chatot-tab-btn.chatot-tab-on {
+	background-color: @chatot_wash;
+	color: #147a63;
+}
+
+.chatot-tab-label {
+	font-size: 10.5px;
+	letter-spacing: 0.15px;
+}
+
+.chatot-tab-on .chatot-tab-label {
+	font-weight: bold;
+}
+
+.chatot-tab-mark {
+	background-color: #1b8c72;
+	border-radius: 0 0 2px 2px;
+}
+
+/* 16px green pill overhanging the icon's top-right, ringed in the bar's
+   white. */
+.chatot-tab-badge {
+	background-color: #1b8c72;
+	color: #ffffff;
+	border: 2px solid @chatot_surface;
+	border-radius: 999px;
+	font-size: 9.5px;
+	font-weight: bold;
+	padding: 0 3px;
+	min-width: 6px;
+	min-height: 12px;
+	margin: -6px -10px 0 0;
+}
+
+/* ---- Shared by the Status / Channels / Communities tabs ---------------- */
+.chatot-section-caption {
+	font-size: 10.5px;
+	font-weight: bold;
+	letter-spacing: 0.7px;
+	opacity: 0.45;
+	padding: 15px 16px 5px 16px;
+}
+
+/* The tabs' lists own their row padding; the rows themselves are flush. */
+.chatot-tab-list > row {
+	margin: 0;
+	padding: 0;
+	border-radius: 0;
+}
+
+.chatot-tab-list > row.chatot-inert-row,
+.chatot-tab-list > row.chatot-inert-row:hover {
+	background: none;
+}
+
+.chatot-tab-list > row:selected {
+	background-color: alpha(currentColor, 0.1);
+}
+
+.chatot-tab-list > row:hover:not(:selected) {
+	background-color: alpha(currentColor, 0.06);
+}
+
+/* The content pane's per-tab placeholder: a 66px rounded square, a 15px
+   bold title and a 12.5px hint on the pane's off-white. */
+.chatot-tab-empty {
+	padding: 40px;
+}
+
+.chatot-tab-empty-disc {
+	border-radius: 22px;
+	background-color: alpha(currentColor, 0.06);
+	font-size: 26px;
+}
+
+.chatot-tab-empty-title {
+	font-size: 15px;
+	font-weight: bold;
+}
+
+.chatot-tab-empty-hint {
+	font-size: 12.5px;
+	opacity: 0.55;
+}
+
+.chatot-verified {
+	background-color: #1b8c72;
+	color: #ffffff;
+	border-radius: 999px;
+	font-size: 8px;
+	font-weight: bold;
+	min-width: 0;
+	min-height: 0;
+	padding: 0;
+}
+
+.chatot-mono-meta {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10.5px;
+	opacity: 0.55;
+}
+
+/* Dialog bodies: the dim 12.5px paragraph, a 38px entry and a hint line. */
+.chatot-dialog-body {
+	padding: 16px 22px 12px 22px;
+}
+
+.chatot-dialog-bodytext {
+	font-size: 12.5px;
+	opacity: 0.55;
+}
+
+.chatot-dialog-entry {
+	min-height: 38px;
+	border-radius: 9px;
+	border: 1px solid alpha(currentColor, 0.13);
+	background-color: @view_bg_color;
+	padding: 0 12px;
+	font-size: 13px;
+	box-shadow: none;
+}
+
+.chatot-mono-entry {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 12.5px;
+}
+
+.chatot-dialog-hint {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-dialog-hint-good {
+	color: #147a63;
+	opacity: 1;
+}
+
+.chatot-dialog-hint-bad {
+	color: #c01c28;
+	opacity: 1;
+}
+
+.chatot-chip-btn-danger {
+	color: #c01c28;
+}
+
+button.chatot-danger-btn {
+	background-color: #c01c28;
+}
+
+button.chatot-danger-btn:disabled {
+	background-color: alpha(currentColor, 0.08);
+	color: alpha(currentColor, 0.45);
+	opacity: 1;
+}
+
+/* The share dialogs' link box: white, hairline, the link in green mono. */
+.chatot-link-box {
+	background-color: @view_bg_color;
+	border: 1px solid alpha(currentColor, 0.09);
+	border-radius: 11px;
+	padding: 11px 13px;
+}
+
+.chatot-link-text {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 12px;
+	color: #147a63;
+}
+
+button.chatot-copy-btn {
+	min-height: 28px;
+	padding: 0 12px;
+	border-radius: 8px;
+	font-size: 12px;
+	font-weight: bold;
+	color: #147a63;
+	background-color: @view_bg_color;
+	border: 1px solid alpha(currentColor, 0.13);
+	box-shadow: none;
+}
+
+button.chatot-copy-btn:hover {
+	border-color: #1b8c72;
+}
+
+/* 34px white search pill with a ⌕ and a clear ✕. */
+.chatot-search-pill {
+	background-color: @view_bg_color;
+	border: 1px solid alpha(currentColor, 0.13);
+	border-radius: 999px;
+	min-height: 34px;
+	padding: 0 12px;
+}
+
+.chatot-search-pill-glyph {
+	font-size: 12px;
+	opacity: 0.45;
+}
+
+.chatot-flat-entry,
+.chatot-flat-entry:focus {
+	background: none;
+	border: none;
+	box-shadow: none;
+	outline: none;
+	min-height: 0;
+	padding: 0;
+	font-size: 13.5px;
+}
+
+button.chatot-search-pill-clear {
+	min-width: 20px;
+	min-height: 20px;
+	padding: 0;
+	font-size: 11px;
+	opacity: 0.55;
+	background: none;
+}
+
+/* The report dialog's option rows: a 17px radio, the label, a hover wash;
+   the checked row washes darker and its radio fills green with a white
+   dot. */
+.chatot-report-list {
+	padding: 0;
+}
+
+button.chatot-report-row {
+	background: none;
+	border: none;
+	box-shadow: none;
+	border-radius: 9px;
+	padding: 9px 10px;
+	min-height: 0;
+	font-size: 13px;
+	font-weight: normal;
+}
+
+button.chatot-report-row:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+button.chatot-report-row:checked {
+	background-color: alpha(currentColor, 0.1);
+}
+
+.chatot-radio {
+	border-radius: 999px;
+	border: 1px solid alpha(currentColor, 0.13);
+	background-color: transparent;
+}
+
+button.chatot-report-row:checked .chatot-radio {
+	border: 5px solid #1b8c72;
+	background-color: @chatot_surface;
+}
+
+.chatot-checkbox {
+	border-radius: 6px;
+	border: 1px solid alpha(currentColor, 0.13);
+	font-size: 11px;
+	color: #ffffff;
+}
+
+button.chatot-report-row:checked .chatot-checkbox {
+	border-color: #1b8c72;
+	background-color: #1b8c72;
+}
+
+.chatot-report-check {
+	padding: 9px 0 4px 0;
+	font-size: 13px;
+}
+
+.chatot-report-check check {
+	border-radius: 6px;
+	min-width: 19px;
+	min-height: 19px;
+}
+
+.chatot-report-check check:checked {
+	background-color: #1b8c72;
+	color: #ffffff;
+	border-color: #1b8c72;
+}
+
+/* Info cards (channel / community): the 76px avatar, the 17px name, a
+   dim about paragraph, then a white card of rows or the Members|Groups
+   pill. */
+.chatot-info-head {
+	padding: 22px 22px 14px 22px;
+}
+
+.chatot-info-avatar .chatot-avatar {
+	font-size: 28px;
+}
+
+.chatot-info-name {
+	font-size: 17px;
+	font-weight: bold;
+}
+
+.chatot-info-about {
+	font-size: 12.5px;
+	opacity: 0.55;
+}
+
+.chatot-info-cardwrap {
+	padding: 0 18px 18px 18px;
+}
+
+.chatot-info-tabs {
+	padding: 0 18px 6px 18px;
+}
+
+.chatot-info-search {
+	padding: 6px 18px 4px 18px;
+}
+
+.chatot-info-search .chatot-search-pill {
+	min-height: 32px;
+}
+
+.chatot-info-list {
+	padding: 4px 18px 16px 18px;
+}
+
+.chatot-info-list-groups {
+	padding-top: 8px;
+}
+
+.chatot-info-row {
+	padding: 7px 4px;
+}
+
+.chatot-info-rowname {
+	font-size: 13px;
+}
+
+.chatot-info-rowname-bold {
+	font-weight: bold;
+}
+
+.chatot-info-rowsub {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-role-chip {
+	font-size: 10px;
+	padding: 2px 7px;
+	border-radius: 999px;
+	background-color: alpha(currentColor, 0.08);
+	opacity: 0.75;
+}
+
+/* ---- Status tab ------------------------------------------------------- */
+.chatot-status-row {
+	padding: 7px 14px;
+}
+
+.chatot-status-sub {
+	font-size: 12px;
+	opacity: 0.55;
+}
+
+.chatot-status-name-viewed {
+	font-size: 13.5px;
+}
+
+/* The "My status" ＋: an 18px green disc ringed in the sidebar grey. */
+.chatot-status-plus {
+	background-color: #1b8c72;
+	color: #ffffff;
+	border: 2px solid @chatot_sidebar;
+	border-radius: 999px;
+	font-size: 10px;
+	min-width: 0;
+	min-height: 0;
+	padding: 0;
+	margin: 0 -1px -1px 0;
+}
+
+button.chatot-status-more {
+	min-width: 26px;
+	min-height: 26px;
+	padding: 0;
+	border-radius: 999px;
+	font-size: 13px;
+	letter-spacing: 1px;
+	color: alpha(@window_fg_color, 0.55);
+}
+
+/* The viewer: the mockup's #12191a stage, white type, translucent round
+   buttons. */
+.chatot-status-pane {
+	background-color: #12191a;
+	color: #ffffff;
+}
+
+.chatot-status-top {
+	padding: 11px 14px 9px 14px;
+}
+
+.chatot-status-vname {
+	font-size: 13.5px;
+	font-weight: bold;
+	color: #ffffff;
+}
+
+.chatot-status-vmeta {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10px;
+	color: rgba(255, 255, 255, 0.62);
+}
+
+button.chatot-status-roundbtn {
+	min-width: 28px;
+	min-height: 28px;
+	padding: 0;
+	border-radius: 999px;
+	border: none;
+	box-shadow: none;
+	background-color: rgba(255, 255, 255, 0.1);
+	color: #ffffff;
+	font-size: 14px;
+	letter-spacing: 1px;
+}
+
+button.chatot-status-closebtn {
+	font-size: 12px;
+	letter-spacing: 0;
+}
+
+button.chatot-status-roundbtn:hover {
+	background-color: rgba(255, 255, 255, 0.24);
+}
+
+.chatot-status-stage {
+	padding: 0 16px;
+}
+
+button.chatot-status-zone,
+button.chatot-status-zone:hover,
+button.chatot-status-zone:active {
+	background: none;
+	border: none;
+	box-shadow: none;
+	border-radius: 0;
+}
+
+.chatot-status-card {
+	border-radius: 14px;
+}
+
+.chatot-status-glyph {
+	font-size: 62px;
+}
+
+.chatot-status-text {
+	font-size: 20px;
+	font-weight: bold;
+	color: #ffffff;
+	padding: 30px;
+}
+
+.chatot-status-caption {
+	font-size: 13px;
+	color: rgba(255, 255, 255, 0.92);
+}
+
+.chatot-status-footer {
+	padding: 11px 14px 15px 14px;
+}
+
+.chatot-status-reply,
+.chatot-status-reply:focus {
+	min-height: 36px;
+	border-radius: 999px;
+	border: 1px solid rgba(255, 255, 255, 0.22);
+	background-color: rgba(255, 255, 255, 0.08);
+	color: #ffffff;
+	padding: 0 15px;
+	font-size: 13px;
+	box-shadow: none;
+	caret-color: #ffffff;
+}
+
+.chatot-status-reply placeholder,
+.chatot-status-reply text placeholder {
+	color: rgba(255, 255, 255, 0.55);
+}
+
+button.chatot-status-quick {
+	min-width: 34px;
+	min-height: 34px;
+	padding: 0;
+	border-radius: 999px;
+	border: none;
+	box-shadow: none;
+	background-color: rgba(255, 255, 255, 0.17);
+	font-size: 15px;
+}
+
+button.chatot-status-quick:hover {
+	background-color: rgba(255, 255, 255, 0.3);
+}
+
+button.chatot-status-viewers {
+	min-height: 36px;
+	border-radius: 999px;
+	border: none;
+	box-shadow: none;
+	background-color: rgba(255, 255, 255, 0.12);
+	color: #ffffff;
+	font-size: 13px;
+	font-weight: bold;
+}
+
+button.chatot-status-viewers:hover {
+	background-color: rgba(255, 255, 255, 0.24);
+}
+
+/* ---- Channels tab ----------------------------------------------------- */
+.chatot-find-bar {
+	padding: 8px 8px 0 8px;
+}
+
+button.chatot-find-btn {
+	min-height: 34px;
+	border-radius: 999px;
+	border: 1px solid alpha(currentColor, 0.13);
+	background-color: @view_bg_color;
+	box-shadow: none;
+	font-size: 13px;
+	font-weight: bold;
+	padding: 0 12px;
+}
+
+button.chatot-find-btn:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-find-glyph {
+	font-size: 12px;
+	opacity: 0.55;
+}
+
+.chatot-channels-caption {
+	padding: 14px 16px 5px 16px;
+}
+
+.chatot-channel-row {
+	padding: 7px 8px;
+	margin: 0 8px 1px 8px;
+}
+
+.chatot-tab-list > row .chatot-channel-row {
+	border-radius: 8px;
+}
+
+.chatot-channel-mutedmark {
+	font-size: 9px;
+	opacity: 0.4;
+}
+
+.chatot-discover-search {
+	padding: 8px 8px 4px 8px;
+}
+
+.chatot-discover-chips {
+	padding: 4px 8px 6px 8px;
+}
+
+.chatot-discover-caption {
+	padding: 8px 16px 5px 16px;
+}
+
+/* 28px outline Follow / Following. */
+button.chatot-follow-btn {
+	min-height: 28px;
+	padding: 0 13px;
+	border-radius: 8px;
+	font-size: 12.5px;
+	font-weight: bold;
+	background: none;
+	box-shadow: none;
+	border: 1px solid #147a63;
+	color: #147a63;
+}
+
+button.chatot-follow-btn.chatot-follow-btn-on {
+	border-color: alpha(currentColor, 0.13);
+	color: alpha(@window_fg_color, 0.55);
+}
+
+/* The panes' identity header: 46px like the chat header's row. */
+.chatot-tabpane-header {
+	padding: 8px 12px 8px 14px;
+	border-bottom: 1px solid alpha(currentColor, 0.08);
+}
+
+.chatot-tabpane-title {
+	font-size: 14px;
+	font-weight: bold;
+}
+
+.chatot-tabpane-sub {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+button.chatot-tabpane-identity {
+	padding: 4px 6px;
+	margin: 0 -6px;
+	border-radius: 9px;
+	min-height: 0;
+}
+
+/* The header's 30px Follow pill: green when not following, outlined and
+   green-texted once following. */
+button.chatot-follow-pill {
+	min-height: 30px;
+	padding: 0 15px;
+	border-radius: 999px;
+	border: none;
+	box-shadow: none;
+	background-color: #1b8c72;
+	color: #ffffff;
+	font-size: 12.5px;
+	font-weight: bold;
+}
+
+button.chatot-follow-pill.chatot-follow-pill-on {
+	background-color: transparent;
+	border: 1px solid alpha(currentColor, 0.13);
+	color: #147a63;
+}
+
+.chatot-channel-body {
+	padding: 12px 16px 10px 16px;
+}
+
+.chatot-channel-about {
+	font-size: 11.5px;
+	opacity: 0.55;
+	background-color: alpha(currentColor, 0.06);
+	border-radius: 10px;
+	padding: 8px 14px;
+}
+
+.chatot-channel-post {
+	background-color: alpha(currentColor, 0.06);
+	border-radius: 14px;
+	padding: 10px 12px 9px 12px;
+}
+
+.chatot-channel-post-text {
+	font-size: 13.5px;
+}
+
+button.chatot-channel-fwd {
+	min-width: 24px;
+	min-height: 24px;
+	padding: 0;
+	border-radius: 999px;
+	font-size: 12px;
+	opacity: 0.55;
+}
+
+button.chatot-channel-react {
+	min-height: 22px;
+	padding: 0 9px;
+	border-radius: 999px;
+	border: 1px solid alpha(currentColor, 0.13);
+	background: none;
+	box-shadow: none;
+	font-size: 11.5px;
+	font-weight: bold;
+	color: alpha(@window_fg_color, 0.55);
+}
+
+button.chatot-channel-react.chatot-channel-react-mine {
+	border-color: #1b8c72;
+	background-color: alpha(#1b8c72, 0.1);
+	color: #147a63;
+}
+
+button.chatot-channel-react-add {
+	min-width: 28px;
+	min-height: 22px;
+	padding: 0;
+	border-radius: 999px;
+	border: 1px dashed alpha(currentColor, 0.18);
+	background: none;
+	box-shadow: none;
+	font-size: 11px;
+	color: alpha(@window_fg_color, 0.55);
+}
+
+.chatot-channel-footer {
+	padding: 11px 14px;
+	border-top: 1px solid alpha(currentColor, 0.08);
+	font-size: 12px;
+	opacity: 0.55;
+}
+
+/* ---- Communities tab -------------------------------------------------- */
+.chatot-community-row {
+	padding: 8px;
+	margin: 0 8px 2px 8px;
+}
+
+.chatot-tab-list > row .chatot-community-row {
+	border-radius: 10px;
+}
+
+/* Communities are rounded squares, not discs. */
+.chatot-avatar-square .chatot-avatar {
+	border-radius: 14px;
+	font-size: 16px;
+}
+
+.chatot-newcomm-bar {
+	padding: 8px 10px;
+	border-top: 1px solid alpha(currentColor, 0.08);
+}
+
+button.chatot-newcomm-btn {
+	min-height: 34px;
+	border-radius: 9px;
+	border: 1px solid alpha(currentColor, 0.13);
+	background-color: @chatot_surface;
+	box-shadow: none;
+	color: #147a63;
+	font-size: 13px;
+	font-weight: bold;
+}
+
+button.chatot-newcomm-btn:hover {
+	border-color: #1b8c72;
+}
+
+.chatot-list-emptystate {
+	padding: 44px 24px;
+}
+
+.chatot-list-emptystate-disc {
+	border-radius: 18px;
+	background-color: alpha(currentColor, 0.06);
+	font-size: 22px;
+}
+
+.chatot-list-emptystate-title {
+	font-size: 13.5px;
+	font-weight: bold;
+}
+
+.chatot-list-emptystate-hint {
+	font-size: 12px;
+	opacity: 0.55;
+}
+
+.chatot-community-body {
+	padding: 4px 0 10px 0;
+}
+
+.chatot-community-body .chatot-section-caption {
+	padding: 15px 20px 5px 20px;
+}
+
+button.chatot-community-grouprow {
+	background: none;
+	border: none;
+	box-shadow: none;
+	border-radius: 9px;
+	padding: 8px 10px;
+	margin: 0 12px 1px 12px;
+	min-height: 0;
+	font-weight: normal;
+}
+
+button.chatot-community-grouprow:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-announce-tile {
+	background-color: alpha(#1b8c72, 0.16);
+	border-radius: 12px;
+	font-size: 17px;
+}
+
+.chatot-announce-tile-sm {
+	border-radius: 10px;
+	font-size: 14px;
+}
+
+button.chatot-join-btn {
+	min-height: 28px;
+	padding: 0 14px;
+	border-radius: 8px;
+	border: 1px solid alpha(currentColor, 0.13);
+	background: none;
+	box-shadow: none;
+	font-size: 12.5px;
+	font-weight: bold;
+	color: #147a63;
+}
+
+.chatot-community-footer {
+	padding: 9px 14px;
+	border-top: 1px solid alpha(currentColor, 0.08);
+}
+
+button.chatot-outline-wide {
+	min-height: 34px;
+	border-radius: 9px;
+	border: 1px solid alpha(currentColor, 0.13);
+	background: none;
+	box-shadow: none;
+	font-size: 13px;
+	font-weight: normal;
+}
+
+button.chatot-outline-wide:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+button.chatot-outline-wide:disabled {
+	opacity: 0.45;
+}
+
+.chatot-report-check label {
+	margin-left: 8px;
+}
+
+/* Round glyph buttons (status viewer header, quick reactions): the glyph is
+   overlaid on a fixed square, so the button is a true circle whatever the
+   font makes of the glyph. */
+button.chatot-round-btn {
+	padding: 0;
+	min-width: 0;
+	min-height: 0;
+	border-radius: 999px;
+}
+
+/* "Paused" chip over the status stage while the clock is held. */
+.chatot-status-paused {
+	margin-top: 10px;
+	padding: 3px 10px;
+	border-radius: 999px;
+	background-color: rgba(0, 0, 0, 0.45);
+	color: #ffffff;
+	font-size: 11px;
+	font-weight: bold;
+	letter-spacing: 0.4px;
+}
+
+/* Group info: the description under the member line, and the member row's
+   ⋮ for admins. */
+.chatot-info-topic {
+	font-size: 12.5px;
+	opacity: 0.55;
+}
+
+button.chatot-member-more {
+	min-width: 26px;
+	min-height: 26px;
+	padding: 0;
+	border-radius: 999px;
+	font-size: 14px;
+	letter-spacing: 1px;
+	opacity: 0.6;
+}
+
+/* Full-size photo viewer (no mockup counterpart): a dark stage in both schemes. */
+.chatot-image-stage { background-color: #141414; }
+
+/* Page strip above a document row (the phone's embedded thumbnail, or the
+   page the attach tray rendered for our own PDF). */
+.chatot-doc-preview {
+	border-radius: 8px;
+	background-color: alpha(currentColor, 0.06);
+}
+
+/* ⛶ in a video bubble's corner: opens the viewer without stealing the
+   click GtkVideo uses for play/pause. */
+.chatot-video-expand {
+	min-width: 26px;
+	min-height: 26px;
+	padding: 0;
+	border-radius: 999px;
+	background-color: rgba(0, 0, 0, 0.55);
+	color: #ffffff;
+	border: none;
+	box-shadow: none;
+	-gtk-icon-size: 14px;
+}
+
+.chatot-video-expand:hover {
+	background-color: rgba(0, 0, 0, 0.75);
+}
+
+/* Attach tray: audio transport under the card's meta line. */
+.chatot-tray-audio {
+	padding: 0 6px;
+}
+
+/* Startup: the app mark alone while a linked account connects. */
+.chatot-loading {
+	background-color: @window_bg_color;
+}
+
+/* Send contact: the mono phone under a picker row's name. */
+.chatot-contact-phone {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10.5px;
+	opacity: 0.55;
+}
+
+/* Create poll: option entries are a touch shorter than the question. */
+.chatot-poll-draft {
+	min-height: 36px;
+}
+
+.chatot-poll-add {
+	font-weight: bold;
+	padding: 2px 4px;
+}
+
+.chatot-poll-multi {
+	font-size: 13px;
+}
+
+/* ---- Send location sheet ---- */
+.chatot-loc-tabs {
+	padding: 12px 14px 11px 14px;
+}
+
+.chatot-loc-stage {
+	border-top: 1px solid alpha(currentColor, 0.09);
+	border-bottom: 1px solid alpha(currentColor, 0.09);
+	background-color: #e9e5dd;
+}
+
+.chatot-map {
+	background-color: #e9e5dd;
+}
+
+.chatot-loc-chip {
+	padding: 5px 11px;
+	border-radius: 999px;
+	background-color: @popover_bg_color;
+	border: 1px solid alpha(currentColor, 0.09);
+	box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10.5px;
+}
+
+.chatot-loc-chip-dot {
+	border-radius: 999px;
+	background-color: #1b8c72;
+}
+
+.chatot-loc-search {
+	min-height: 36px;
+	padding: 0 11px;
+	border-radius: 9px;
+	background-color: @popover_bg_color;
+	border: 1px solid alpha(currentColor, 0.13);
+	box-shadow: 0 5px 16px rgba(0, 0, 0, 0.2);
+}
+
+.chatot-loc-search-glyph {
+	font-size: 12px;
+	opacity: 0.55;
+}
+
+.chatot-loc-search-entry {
+	background: none;
+	border: none;
+	box-shadow: none;
+	outline: none;
+	min-height: 0;
+	padding: 0;
+	font-size: 13px;
+}
+
+.chatot-loc-search-clear {
+	min-height: 0;
+	min-width: 0;
+	padding: 2px 4px;
+	font-size: 12px;
+	opacity: 0.55;
+}
+
+.chatot-loc-results {
+	border-radius: 10px;
+	background-color: @popover_bg_color;
+	border: 1px solid alpha(currentColor, 0.09);
+	box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+	padding: 0;
+}
+
+.chatot-loc-result {
+	padding: 8px 11px;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+	border: none;
+}
+
+.chatot-loc-result-sep {
+	border-top: 1px solid alpha(currentColor, 0.09);
+}
+
+.chatot-loc-result-disc {
+	border-radius: 999px;
+	background-color: alpha(#c26b5c, 0.2);
+	font-size: 12px;
+}
+
+.chatot-loc-result-name {
+	font-size: 12.5px;
+	font-weight: bold;
+}
+
+.chatot-loc-result-addr {
+	font-size: 11px;
+	opacity: 0.55;
+}
+
+.chatot-loc-result-dist {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10px;
+	opacity: 0.45;
+}
+
+.chatot-loc-result-none {
+	padding: 11px 12px;
+	font-size: 12.5px;
+	opacity: 0.55;
+}
+
+.chatot-loc-scrim {
+	background-color: alpha(@window_bg_color, 0.8);
+}
+
+.chatot-loc-scrim-title {
+	font-size: 13.5px;
+	font-weight: bold;
+}
+
+.chatot-loc-mono {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10.5px;
+	opacity: 0.55;
+}
+
+.chatot-loc-denied {
+	padding: 17px 17px 14px 17px;
+	border-radius: 12px;
+	background-color: @popover_bg_color;
+	border: 1px solid alpha(currentColor, 0.09);
+	box-shadow: 0 14px 34px rgba(0, 0, 0, 0.26);
+}
+
+.chatot-loc-denied-disc {
+	border-radius: 999px;
+	background-color: alpha(#c01c28, 0.15);
+	font-size: 16px;
+}
+
+.chatot-loc-denied-title {
+	font-size: 13.5px;
+	font-weight: bold;
+}
+
+.chatot-loc-denied-text {
+	font-size: 12.5px;
+	opacity: 0.55;
+}
+
+.chatot-loc-outline-btn {
+	min-height: 32px;
+	padding: 0 13px;
+	border-radius: 9px;
+	border: 1px solid alpha(currentColor, 0.13);
+	background: none;
+	box-shadow: none;
+	font-size: 12.5px;
+	font-weight: bold;
+	color: #147a63;
+}
+
+.chatot-loc-zoom {
+	border-radius: 9px;
+	background-color: @popover_bg_color;
+	border: 1px solid alpha(currentColor, 0.09);
+	box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+}
+
+.chatot-loc-zoom-btn {
+	min-width: 32px;
+	min-height: 29px;
+	padding: 0;
+	border-radius: 0;
+	font-size: 14px;
+}
+
+.chatot-loc-recentre {
+	min-width: 32px;
+	min-height: 32px;
+	padding: 0;
+	border-radius: 9px;
+	background-color: @popover_bg_color;
+	border: 1px solid alpha(currentColor, 0.09);
+	box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+	font-size: 14px;
+}
+
+.chatot-loc-attribution {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 9.5px;
+	padding: 3px 6px;
+	border-radius: 5px;
+	background-color: rgba(255, 255, 255, 0.84);
+	color: rgba(0, 0, 0, 0.68);
+}
+
+.chatot-loc-form {
+	padding: 13px 14px 4px 14px;
+}
+
+.chatot-loc-place {
+	font-size: 12.5px;
+}
+
+.chatot-loc-coords {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 11px;
+	opacity: 0.55;
+}
+
+.chatot-loc-copy {
+	min-height: 28px;
+	padding: 0 11px;
+	font-size: 12px;
+}
+
+.chatot-loc-live-title {
+	font-size: 13px;
+}
+
+.chatot-loc-live-sub {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-loc-footer {
+	padding: 12px 14px;
+	margin-top: 11px;
+	border-top: 1px solid alpha(currentColor, 0.09);
+}
+
+.chatot-loc-source {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10.5px;
+	opacity: 0.45;
+}
+
+/* Location bubble: live badge on the tile, ended pin, Stop sharing. */
+.chatot-location-live-badge {
+	padding: 3px 8px;
+	border-radius: 999px;
+	background-color: rgba(0, 0, 0, 0.66);
+	color: #ffffff;
+	font-family: "JetBrains Mono", monospace;
+	font-size: 9.5px;
+}
+
+.chatot-location-live-dot {
+	border-radius: 999px;
+	background-color: #7ee2c4;
+}
+
+.chatot-location-pin-ended {
+	background-color: rgba(90, 90, 90, 0.9);
+	box-shadow: 0 0 0 4px rgba(90, 90, 90, 0.22);
+}
+
+.chatot-location-stop {
+	min-height: 25px;
+	padding: 0 10px;
+	margin-top: 5px;
+	border-radius: 8px;
+	border: 1px solid alpha(currentColor, 0.25);
+	background: none;
+	box-shadow: none;
+	font-size: 11.5px;
+	font-weight: bold;
+}
+
+/* ---- Eleventh pass: thread details ------------------------------------- */
+
+/* A typing chat's preview is accent green italic (mockup previewColor ac2);
+   the compound selector outranks the plain preview rule's dim opacity. */
+.chatot-chat-preview.chatot-chat-typing {
+	font-style: italic;
+	color: #1b8c72;
+	opacity: 1;
+}
+
+/* Typing bubble in the thread: three 6px dots blinking in turn. */
+@keyframes chatot-blink {
+	0% { opacity: 0.4; }
+	50% { opacity: 1; }
+	100% { opacity: 0.4; }
+}
+
+.chatot-typing-row {
+	padding: 0;
+	margin-top: 2px;
+	background: none;
+}
+
+.chatot-typing-dot {
+	animation: chatot-blink 1.1s infinite;
+}
+
+.chatot-typing-dot-2 {
+	animation-delay: 0.2s;
+}
+
+.chatot-typing-dot-3 {
+	animation-delay: 0.4s;
+}
+
+/* Group bubbles lead with the sender's name in accent bold (mockup 12px). */
+.chatot-bubble-author {
+	font-size: 12px;
+	font-weight: bold;
+	color: #147a63;
+	margin-bottom: 2px;
+}
+
+.chatot-bubble-out .chatot-bubble-author {
+	color: alpha(#ffffff, 0.8);
+}
+
+/* "N unread messages" separator: the system-pill look, on the accent. */
+.chatot-unread-separator {
+	font-size: 10.5px;
+	font-weight: bold;
+	color: #147a63;
+	background-color: alpha(#1b8c72, 0.12);
+	padding: 3px 11px;
+	border-radius: 999px;
+	margin: 6px 0 4px 0;
+}
+
+/* Contact card's Message action on an outgoing bubble is white (linkFg). */
+.chatot-bubble-out .chatot-contact-action {
+	color: #ffffff;
+}
+
+/* Voice note player: 28px round play disc, 4px track with a 10px knob, mono
+   length at the right (mockup isVoice ready state). */
+.chatot-voice {
+	min-width: 260px;
+	padding: 2px 0 3px 0;
+}
+
+.chatot-voice-play {
+	min-width: 28px;
+	min-height: 28px;
+	padding: 0;
+	border-radius: 999px;
+	background-color: #1b8c72;
+	color: #ffffff;
+	border: none;
+	box-shadow: none;
+	font-size: 11px;
+}
+
+.chatot-bubble-out .chatot-voice-play {
+	background-color: alpha(#ffffff, 0.22);
+}
+
+.chatot-voice-time {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 11px;
+	opacity: 0.55;
+}
+
+.chatot-bubble-out .chatot-voice-time {
+	color: alpha(#ffffff, 0.78);
+	opacity: 1;
+}
+
+/* Downloaded video: a 280×115 poster tile with the play pill at its foot. */
+.chatot-video-pill {
+	background-color: alpha(#000000, 0.55);
+	border-radius: 999px;
+	padding: 4px 10px 4px 5px;
+	color: #ffffff;
+}
+
+.chatot-video-pill-disc {
+	min-width: 20px;
+	min-height: 20px;
+	border-radius: 999px;
+	background-color: #ffffff;
+	color: alpha(#000000, 0.75);
+	font-size: 8px;
+}
+
+.chatot-video-pill-len {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10.5px;
+	color: #ffffff;
+}
+
+/* Downloaded document row: the outlined "View" pill (mockup 11.5px). */
+.chatot-media-open {
+	color: #147a63;
+}
+
+.chatot-bubble-out .chatot-media-open {
+	color: #ffffff;
+	border-color: alpha(#ffffff, 0.28);
+}
+
+/* Filter chips scroll sideways instead of widening the sidebar. */
+.chatot-chip-scroller {
+	background: none;
+}
+
+.chatot-chip-scroller > scrollbar {
+	opacity: 0;
+	min-height: 0;
+}
+
+/* ---- Attachment viewer pane (mockup pane === 'viewer') ------------------ */
+
+.chatot-viewer-header {
+	padding: 7px 10px 7px 7px;
+	border-bottom: 1px solid alpha(currentColor, 0.08);
+	background-color: @view_bg_color;
+}
+
+.chatot-viewer-hbtn {
+	min-width: 28px;
+	min-height: 28px;
+	padding: 0;
+	border-radius: 7px;
+	font-size: 13px;
+	opacity: 0.6;
+}
+
+.chatot-viewer-hbtn:hover {
+	opacity: 1;
+}
+
+.chatot-viewer-hbtn-on {
+	background-color: alpha(currentColor, 0.08);
+	opacity: 1;
+}
+
+.chatot-viewer-glyph {
+	min-width: 30px;
+	min-height: 30px;
+	border-radius: 8px;
+	background-color: alpha(currentColor, 0.08);
+	font-size: 14px;
+}
+
+.chatot-viewer-title {
+	font-size: 13.5px;
+	font-weight: bold;
+}
+
+.chatot-viewer-sub {
+	font-size: 11px;
+	opacity: 0.55;
+}
+
+.chatot-viewer-counter {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 11px;
+	opacity: 0.45;
+}
+
+.chatot-viewer-hsep {
+	background-color: alpha(currentColor, 0.09);
+	margin: 0 2px;
+}
+
+.chatot-viewer-primary {
+	min-height: 28px;
+	padding: 0 13px;
+	border-radius: 8px;
+	background-color: #1b8c72;
+	background-image: none;
+	color: #ffffff;
+	font-size: 12.5px;
+	font-weight: bold;
+	border: none;
+	box-shadow: none;
+	margin-left: 3px;
+}
+
+.chatot-viewer-primary:hover {
+	background-color: #147a63;
+}
+
+.chatot-viewer-stage {
+	background-color: @window_bg_color;
+}
+
+.chatot-viewer-stage-dark {
+	background-color: #141414;
+	color: #ffffff;
+}
+
+.chatot-viewer-picture {
+	border-radius: 4px;
+}
+
+.chatot-viewer-nav {
+	min-width: 38px;
+	min-height: 38px;
+	padding: 0;
+	border-radius: 999px;
+	font-size: 14px;
+	background-color: @popover_bg_color;
+	background-image: none;
+	/* The ring is stroked with cairo (see navButton): GTK's own border and
+	   inset-shadow rings break into four bright points on a circle. */
+	border: none;
+	box-shadow: none;
+}
+
+.chatot-viewer-stage-dark .chatot-viewer-nav {
+	background-color: alpha(#141414, 0.6);
+	color: #ffffff;
+}
+
+.chatot-viewer-fetch {
+	min-width: 64px;
+	min-height: 64px;
+	border-radius: 999px;
+	background-color: #1b8c72;
+	background-image: none;
+	color: #ffffff;
+	font-size: 22px;
+	border: none;
+	box-shadow: 0 3px 14px alpha(#000000, 0.24);
+}
+
+.chatot-viewer-fetch-failed {
+	background-color: #c01c28;
+}
+
+.chatot-viewer-fetch-title {
+	font-size: 14px;
+	font-weight: bold;
+}
+
+.chatot-viewer-fetch-sub {
+	font-size: 12px;
+	opacity: 0.62;
+}
+
+.chatot-viewer-zoombar,
+.chatot-transport,
+.chatot-viewer-caption {
+	padding: 8px 14px;
+	border-top: 1px solid alpha(currentColor, 0.08);
+	background-color: @view_bg_color;
+}
+
+.chatot-transport {
+	padding: 8px 16px;
+}
+
+.chatot-viewer-zoombtn {
+	min-width: 28px;
+	min-height: 28px;
+	padding: 0;
+	border-radius: 8px;
+	background: none;
+	border: 1px solid alpha(currentColor, 0.13);
+	box-shadow: none;
+	font-size: 13px;
+}
+
+.chatot-viewer-fitbtn {
+	padding: 0 11px;
+	font-size: 12px;
+}
+
+.chatot-viewer-fit-on {
+	background-color: alpha(currentColor, 0.08);
+}
+
+.chatot-viewer-zoomlbl {
+	min-width: 46px;
+	font-family: "JetBrains Mono", monospace;
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-viewer-pagebtn {
+	min-width: 26px;
+	min-height: 26px;
+	font-size: 12px;
+}
+
+.chatot-viewer-pagelbl {
+	min-width: 52px;
+	font-family: "JetBrains Mono", monospace;
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-transport-play {
+	min-width: 32px;
+	min-height: 32px;
+	padding: 0;
+	border-radius: 999px;
+	background-color: #1b8c72;
+	background-image: none;
+	color: #ffffff;
+	border: none;
+	box-shadow: none;
+}
+
+.chatot-transport-play:hover {
+	background-color: #147a63;
+}
+
+.chatot-transport-time {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 11px;
+	opacity: 0.55;
+}
+
+.chatot-transport-btn {
+	min-width: 28px;
+	min-height: 28px;
+	padding: 0;
+	border-radius: 7px;
+	font-size: 13px;
+	opacity: 0.6;
+}
+
+.chatot-viewer-caption-text {
+	font-size: 13px;
+}
+
+.chatot-viewer-react {
+	border: 1px solid alpha(currentColor, 0.08);
+	border-radius: 999px;
+	padding: 1px 7px;
+	font-size: 11.5px;
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-viewer-strip {
+	padding: 9px 12px;
+	border-top: 1px solid alpha(currentColor, 0.08);
+}
+
+.chatot-viewer-strip-label {
+	font-size: 11.5px;
+	opacity: 0.45;
+	margin-left: 8px;
+}
+
+.chatot-viewer-thumb-btn {
+	padding: 0;
+}
+
+.chatot-viewer-thumb {
+	border-radius: 9px;
+	box-shadow: inset 0 0 0 1px alpha(currentColor, 0.15);
+}
+
+.chatot-viewer-thumb-on {
+	box-shadow: 0 0 0 2px #1b8c72;
+}
+
+.chatot-viewer-thumb-glyph {
+	font-size: 17px;
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-viewer-thumb-chip {
+	background-color: alpha(currentColor, 0.08);
+}
+
+.chatot-viewer-thumb-ext {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10.5px;
+	font-weight: bold;
+	color: #ffffff;
+}
+
+.chatot-viewer-thumb-badge {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 8.5px;
+	background-color: alpha(#000000, 0.62);
+	color: #ffffff;
+	padding: 2px 4px;
+	border-radius: 4px;
+}
+
+.chatot-viewer-card {
+	padding: 20px;
+	border-radius: 14px;
+	border: 1px solid alpha(currentColor, 0.08);
+	background-color: @view_bg_color;
+	box-shadow: 0 4px 20px alpha(#000000, 0.09);
+}
+
+.chatot-viewer-filecard {
+	padding: 26px 22px;
+}
+
+.chatot-viewer-card-title {
+	font-size: 13px;
+	font-weight: bold;
+}
+
+.chatot-viewer-card-sub {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
+.chatot-viewer-exttile {
+	min-width: 62px;
+	min-height: 62px;
+	border-radius: 12px;
+	font-family: "JetBrains Mono", monospace;
+	font-size: 15px;
+	font-weight: bold;
+	color: #ffffff;
+}
+
+.chatot-viewer-ext-pdf {
+	background-color: #a3382f;
+}
+
+.chatot-viewer-ext-sheet {
+	background-color: #3d7a4e;
+}
+
+.chatot-viewer-ext-file {
+	background-color: #5a6570;
+}
+
+.chatot-viewer-file-name {
+	font-size: 14px;
+	font-weight: bold;
+}
+
+.chatot-viewer-file-note {
+	font-size: 12px;
+	opacity: 0.45;
+}
+
+.chatot-viewer-map {
+	border-radius: 12px;
+	border: 1px solid alpha(currentColor, 0.08);
+	box-shadow: 0 4px 20px alpha(#000000, 0.14);
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-viewer-loccard {
+	padding: 10px 13px;
+	border-radius: 10px;
+	background-color: alpha(@view_bg_color, 0.93);
+	border: 1px solid alpha(currentColor, 0.08);
+	box-shadow: 0 3px 14px alpha(#000000, 0.2);
+}
+
+.chatot-viewer-loccoords {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10.5px;
+	opacity: 0.45;
+}
+
+.chatot-loc-zoom-sep {
+	background-color: alpha(currentColor, 0.09);
+}
+
+.chatot-viewer-details {
+	border-left: 1px solid alpha(currentColor, 0.08);
+	background-color: @view_bg_color;
+}
+
+.chatot-viewer-details-head {
+	padding: 11px 12px 9px 14px;
+}
+
+.chatot-viewer-details-who {
+	padding: 0 14px 12px 14px;
+}
+
+.chatot-viewer-facts {
+	border-top: 1px solid alpha(currentColor, 0.08);
+	padding: 4px 0;
+}
+
+.chatot-viewer-fact {
+	padding: 6px 14px;
+}
+
+.chatot-viewer-fact-k {
+	font-size: 11.5px;
+	opacity: 0.45;
+}
+
+.chatot-viewer-fact-v {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 12px;
+}
+
+.chatot-viewer-actions {
+	padding: 11px 14px;
+	border-top: 1px solid alpha(currentColor, 0.08);
+}
+
+.chatot-viewer-showinchat {
+	min-height: 31px;
+	border-radius: 8px;
+	background: none;
+	border: 1px solid alpha(currentColor, 0.15);
+	box-shadow: none;
+	font-size: 12.5px;
+	font-weight: bold;
+}
+
+.chatot-viewer-action {
+	min-height: 29px;
+	padding: 0 8px;
+	border-radius: 8px;
+	font-size: 12.5px;
+	font-weight: normal;
+}
+
+.chatot-viewer-keys {
+	padding: 11px 14px;
+	border-top: 1px solid alpha(currentColor, 0.08);
+}
+
+.chatot-viewer-key {
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10.5px;
+	padding: 3px 5px;
+	border-radius: 5px;
+	background-color: alpha(currentColor, 0.08);
+	opacity: 0.7;
+}
+
+.chatot-viewer-foot {
+	padding: 0 14px 13px 14px;
+	font-size: 11px;
+	opacity: 0.45;
+}
+
+/* Group bubbles carry the sender's avatar beside the bubble, top-aligned. */
+.chatot-bubble-avatar {
+	margin-top: 1px;
+}
+
+/* @ autocomplete over the composer: a menu card of people rows. */
+.chatot-mention-pop > contents {
+	padding: 6px;
+}
+
+button.chatot-mention-row {
+	padding: 5px 8px;
+	min-height: 0;
+	border-radius: 8px;
+	background: none;
+	box-shadow: none;
+	border: none;
+}
+
+button.chatot-mention-row:hover,
+button.chatot-mention-row-sel {
+	background-color: alpha(currentColor, 0.07);
+}
+
+.chatot-mention-name {
+	font-size: 13px;
+	font-weight: bold;
+}
+
+.chatot-mention-sub {
+	font-size: 11px;
+	opacity: 0.6;
+}
+
+/* Fullscreen clip: black stage, the transport floating over its bottom. */
+.chatot-video-fullscreen {
+	background-color: #000000;
+}
+
+.chatot-transport-fullscreen {
+	background-color: alpha(#000000, 0.55);
+	color: #ffffff;
 }

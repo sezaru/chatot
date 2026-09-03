@@ -130,7 +130,7 @@ func newStickerTab(c *Composer, popover *gtk.Popover) gtk.Widgetter {
 
 // newStickerTile renders one recent sticker as a small preview thumbnail.
 func newStickerTile(path string) gtk.Widgetter {
-	pic := gtk.NewPictureForFilename(path)
+	pic := newAsyncPicture(path, 112)
 	pic.SetCanShrink(true)
 	pic.SetContentFit(gtk.ContentFitContain)
 	pic.SetSizeRequest(56, 56)

@@ -74,16 +74,16 @@ func TestMessageNotificationText(t *testing.T) {
 func TestMessageNotificationAttachmentCaption(t *testing.T) {
 	msg := client.Message{Attachment: &client.Attachment{Kind: "image", Caption: "sunset"}}
 	_, body := messageNotification("Ada", msg)
-	if body != "sunset" {
-		t.Fatalf("got body=%q, want caption", body)
+	if body != "📷 sunset" {
+		t.Fatalf("got body=%q, want glyph + caption", body)
 	}
 }
 
 func TestMessageNotificationAttachmentPlaceholder(t *testing.T) {
 	msg := client.Message{Attachment: &client.Attachment{Kind: "video"}}
 	_, body := messageNotification("Ada", msg)
-	if body != "[video]" {
-		t.Fatalf("got body=%q, want [video] placeholder", body)
+	if body != "🎥 Video" {
+		t.Fatalf("got body=%q, want the video placeholder", body)
 	}
 }
 

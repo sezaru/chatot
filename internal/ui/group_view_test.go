@@ -204,3 +204,42 @@ func TestParticipantSelection(t *testing.T) {
 		t.Errorf("Count after removing missing jid = %d, want 2", got)
 	}
 }
+
+func TestGroupInfoSub(t *testing.T) {
+	cases := []struct {
+		names []string
+		you   bool
+		want  string
+	}{
+		{nil, false, ""},
+		{nil, true, "you"},
+		{[]string{"Alex", "Priya", "Sam", "Nina"}, true, "Alex, Priya, Sam, Nina, you"},
+		{[]string{"Alex", "Priya", "Sam", "Nina", "Tomás"}, true, "Alex, Priya, Sam, Nina +1, you"},
+		{[]string{"A", "B", "C", "D", "E"}, false, "A, B, C, D, E"},
+		{[]string{"A", "B", "C", "D", "E", "F", "G"}, false, "A, B, C, D, E +2"},
+	}
+	for _, c := range cases {
+		if got := groupInfoSub(c.names, c.you); got != c.want {
+			t.Errorf("groupInfoSub(%v, %v) = %q, want %q", c.names, c.you, got, c.want)
+		}
+	}
+}
+
+func TestParticipantsCountLabel(t *testing.T) {
+	if participantsCountLabel(1) != "1 participant" || participantsCountLabel(5) != "5 participants" {
+		t.Errorf("participant count labels wrong")
+	}
+}
+
+func TestGroupMemberMenuItems(t *testing.T) {
+	var got []string
+	items := groupMemberMenuItems(client.GroupParticipant{JID: "x@s.whatsapp.net", IsAdmin: true}, func(a string) { got = append(got, a) })
+	if len(items) != 2 || items[0].Label != "Dismiss as admin" || items[1].Label != "Remove from group" || !items[1].Destructive {
+		t.Fatalf("items = %+v", items)
+	}
+	items[0].OnActivate()
+	items[1].OnActivate()
+	if len(got) != 2 || got[0] != "demote" || got[1] != "remove" {
+		t.Errorf("actions = %v", got)
+	}
+}

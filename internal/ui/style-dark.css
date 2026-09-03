@@ -1,0 +1,9 @@
+/* Dark overrides for the surface tokens defined at the top of style.css.
+   Loaded on top of it while AdwStyleManager reports dark; there is no dark
+   mockup, so these are Adwaita dark's neutrals with the brand green kept. */
+@define-color chatot_surface #303030;
+@define-color chatot_sidebar #262626;
+@define-color chatot_hairline rgba(255, 255, 255, 0.08);
+@define-color chatot_hairline_strong rgba(255, 255, 255, 0.13);
+@define-color chatot_wash rgba(255, 255, 255, 0.05);
+@define-color chatot_ring_viewed rgba(255, 255, 255, 0.28);

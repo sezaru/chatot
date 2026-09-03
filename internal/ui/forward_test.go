@@ -11,10 +11,11 @@ func TestForwardSelectionLabel(t *testing.T) {
 		n    int
 		want string
 	}{
-		{0, "0 chats selected"},
-		{1, "1 chat selected"},
-		{2, "2 chats selected"},
-		{5, "5 chats selected"},
+		// Nothing picked yet reads as an instruction, not "0 selected".
+		{0, "Pick chats to forward to"},
+		{1, "1 selected"},
+		{2, "2 selected"},
+		{5, "5 selected"},
 	}
 	for _, tc := range cases {
 		if got := forwardSelectionLabel(tc.n); got != tc.want {

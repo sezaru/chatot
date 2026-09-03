@@ -1,0 +1,63 @@
+package ui
+
+import (
+	"html"
+	"regexp"
+	"strings"
+)
+
+// mentionRE matches WhatsApp's wire form of an @mention: "@" followed by
+// the mentioned account's numeric user part (a phone number or a LID).
+var mentionRE = regexp.MustCompile(`@(\d{5,20})`)
+
+// mentionAccent is the accent the mockup gives links inside an incoming
+// bubble (linkFg); an outgoing bubble uses white via mentionMarkupOut.
+const mentionAccent = "#147a63"
+
+// mentionMarkup renders text as Pango markup with every resolvable
+// @mention replaced by the person's name in bold accent. resolve maps the
+// numeric user part to a display name ("" leaves the mention as typed, still
+// styled so it reads as a mention). Everything else is escaped verbatim.
+func mentionMarkup(text string, resolve func(user string) string, onGreen bool) string {
+	color := mentionAccent
+	if onGreen {
+		color = "#ffffff"
+	}
+	var b strings.Builder
+	last := 0
+	for _, m := range mentionRE.FindAllStringSubmatchIndex(text, -1) {
+		b.WriteString(html.EscapeString(text[last:m[0]]))
+		user := text[m[2]:m[3]]
+		name := ""
+		if resolve != nil {
+			name = resolve(user)
+		}
+		if name == "" {
+			name = user
+		}
+		b.WriteString(`<span foreground="` + color + `" weight="bold">@` + html.EscapeString(name) + `</span>`)
+		last = m[1]
+	}
+	b.WriteString(html.EscapeString(text[last:]))
+	return b.String()
+}
+
+// resolveMentionsPlain rewrites @mentions to "@Name" in plain text, for
+// previews, quotes and notifications where no markup is possible.
+func resolveMentionsPlain(text string, resolve func(user string) string) string {
+	if resolve == nil || !strings.Contains(text, "@") {
+		return text
+	}
+	return mentionRE.ReplaceAllStringFunc(text, func(m string) string {
+		if name := resolve(m[1:]); name != "" {
+			return "@" + name
+		}
+		return m
+	})
+}
+
+// hasMention reports whether text carries a wire-form mention at all, so
+// callers can skip the markup path for the common plain case.
+func hasMention(text string) bool {
+	return strings.Contains(text, "@") && mentionRE.MatchString(text)
+}
