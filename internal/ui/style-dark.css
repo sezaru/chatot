@@ -7,3 +7,5 @@
 @define-color chatot_hairline_strong rgba(255, 255, 255, 0.13);
 @define-color chatot_wash rgba(255, 255, 255, 0.05);
 @define-color chatot_ring_viewed rgba(255, 255, 255, 0.28);
+@define-color chatot_accent_text #46c39a;
+@define-color chatot_accent_text_soft #46c39a;

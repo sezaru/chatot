@@ -587,8 +587,7 @@ func NewConversationView(c client.Client) *ConversationView {
 	emptyBox.SetVExpand(true)
 	emptyBox.SetVAlign(gtk.AlignCenter)
 	emptyBox.SetHAlign(gtk.AlignCenter)
-	emptyIcon := gtk.NewImageFromIconName("chat-symbolic")
-	emptyIcon.SetPixelSize(64)
+	emptyIcon := newEmptyChatGlyph(64)
 	emptyIcon.AddCSSClass("chatot-placeholder")
 	emptyBox.Append(emptyIcon)
 	empty := gtk.NewLabel("Select a chat")
@@ -1680,7 +1679,7 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 		case !vm.Deleted && searchQuery != "" && len(findMatches(vm.Text, searchQuery)) > 0:
 			text.SetMarkup(highlightMarkup(vm.Text, searchQuery))
 		case !vm.Deleted && hasMention(vm.Text):
-			text.SetMarkup(mentionMarkup(vm.Text, h.names, vm.FromMe))
+			text.SetMarkup(mentionMarkupColor(vm.Text, h.names, vm.FromMe, mentionAccentFor()))
 		default:
 			text.SetLabel(vm.Text)
 		}

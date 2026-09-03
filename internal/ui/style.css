@@ -26,6 +26,12 @@
 @define-color chatot_hairline_strong rgba(0, 0, 0, 0.13);
 @define-color chatot_wash rgba(0, 0, 0, 0.032);   /* active tab tint */
 @define-color chatot_ring_viewed rgba(0, 0, 0, 0.2);
+/* Green as text or outline (unread time, chip counts, active tab, typing,
+   links, outline buttons): the brand green on light surfaces, lifted to a
+   mint on dark ones where #147a63 sinks into the background. Fills keep
+   the brand green in both themes. */
+@define-color chatot_accent_text #147a63;
+@define-color chatot_accent_text_soft #1b8c72;
 
 /* Cantarell is the mockup UI font; packaged separately, fallback covers dev.
    No root font-size here so the user's text scale is respected. */
@@ -138,7 +144,7 @@ window {
 /* Mockup: an unread chat's timestamp turns accent green (and drops the dim). */
 .chatot-chat-time-unread {
 	opacity: 1;
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 /* Brand green hard-coded, not @accent_bg_color: libadwaita's runtime accent
@@ -304,7 +310,7 @@ window {
 	padding: 3px 9px;
 	margin-left: 6px;
 	font-size: 11.5px;
-	color: #147a63;
+	color: @chatot_accent_text;
 	background: none;
 	border: 1px solid alpha(currentColor, 0.18);
 	box-shadow: none;
@@ -352,7 +358,7 @@ window {
 	font-size: 12px;
 	border-radius: 999px;
 	border: 2px solid #1b8c72;
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 .chatot-viewonce-title {
@@ -399,7 +405,7 @@ window {
 }
 
 .chatot-location-live {
-	color: #1b8c72;
+	color: @chatot_accent_text_soft;
 }
 
 .chatot-location-sub {
@@ -431,7 +437,7 @@ window {
 	padding-top: 6px;
 	font-size: 12.5px;
 	font-weight: bold;
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 /* Poll: bold question, tickbox rows with a share bar, hairline footer. */
@@ -474,7 +480,7 @@ window {
 
 .chatot-event-title {
 	font-weight: bold;
-	color: #1b8c72;
+	color: @chatot_accent_text_soft;
 }
 
 .chatot-event-canceled {
@@ -793,7 +799,7 @@ button.chatot-composer-iconbtn.text-button,
 .chatot-composer-quote-name {
 	font-size: 11.5px;
 	font-weight: bold;
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 .chatot-composer-quote-text {
@@ -945,7 +951,7 @@ button.chatot-composer-iconbtn.text-button,
 
 .chatot-chat-typing {
 	font-style: italic;
-	color: #1b8c72;
+	color: @chatot_accent_text_soft;
 	opacity: 1;
 }
 
@@ -1110,7 +1116,7 @@ button.chatot-composer-iconbtn.text-button,
 .chatot-account-row-check {
 	font-size: 12px;
 	font-weight: bold;
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 .chatot-account-action {
@@ -1206,7 +1212,7 @@ button.chatot-conv-search-btn:hover {
 .chatot-chip-count {
 	font-size: 10.5px;
 	font-weight: bold;
-	color: #1b8c72;
+	color: @chatot_accent_text_soft;
 }
 
 .chatot-chip-active .chatot-chip-count {
@@ -1378,7 +1384,7 @@ button.chatot-conv-search-btn:hover {
 .chatot-menu-count {
 	font-size: 11px;
 	font-weight: bold;
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 /* Dialog cards (see card_dialog.go). The mockup's title row is 47px with a
@@ -1440,7 +1446,7 @@ button.chatot-conv-search-btn:hover {
 }
 
 .chatot-choice-tick {
-	color: #1b8c72;
+	color: @chatot_accent_text_soft;
 	font-size: 13px;
 }
 
@@ -1888,7 +1894,7 @@ button.chatot-pane-row:active {
 .chatot-link-btn {
 	font-size: 12.5px;
 	font-weight: normal;
-	color: #147a63;
+	color: @chatot_accent_text;
 	padding: 4px 8px;
 	min-height: 0;
 }
@@ -1980,7 +1986,7 @@ button.chatot-card-btnrow:active {
 .chatot-card-action {
 	font-size: 12.5px;
 	font-weight: bold;
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 .chatot-card-action-danger {
@@ -2346,7 +2352,7 @@ button.chatot-tab-btn:hover {
 
 button.chatot-tab-btn.chatot-tab-on {
 	background-color: @chatot_wash;
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 .chatot-tab-label {
@@ -2477,7 +2483,7 @@ button.chatot-tab-btn.chatot-tab-on {
 }
 
 .chatot-dialog-hint-good {
-	color: #147a63;
+	color: @chatot_accent_text;
 	opacity: 1;
 }
 
@@ -2511,7 +2517,7 @@ button.chatot-danger-btn:disabled {
 .chatot-link-text {
 	font-family: "JetBrains Mono", monospace;
 	font-size: 12px;
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 button.chatot-copy-btn {
@@ -2520,7 +2526,7 @@ button.chatot-copy-btn {
 	border-radius: 8px;
 	font-size: 12px;
 	font-weight: bold;
-	color: #147a63;
+	color: @chatot_accent_text;
 	background-color: @view_bg_color;
 	border: 1px solid alpha(currentColor, 0.13);
 	box-shadow: none;
@@ -2931,8 +2937,8 @@ button.chatot-follow-btn {
 	font-weight: bold;
 	background: none;
 	box-shadow: none;
-	border: 1px solid #147a63;
-	color: #147a63;
+	border: 1px solid @chatot_accent_text;
+	color: @chatot_accent_text;
 }
 
 button.chatot-follow-btn.chatot-follow-btn-on {
@@ -2980,7 +2986,7 @@ button.chatot-follow-pill {
 button.chatot-follow-pill.chatot-follow-pill-on {
 	background-color: transparent;
 	border: 1px solid alpha(currentColor, 0.13);
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 .chatot-channel-body {
@@ -3029,7 +3035,7 @@ button.chatot-channel-react {
 button.chatot-channel-react.chatot-channel-react-mine {
 	border-color: #1b8c72;
 	background-color: alpha(#1b8c72, 0.1);
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 button.chatot-channel-react-add {
@@ -3078,7 +3084,7 @@ button.chatot-newcomm-btn {
 	border: 1px solid alpha(currentColor, 0.13);
 	background-color: @chatot_surface;
 	box-shadow: none;
-	color: #147a63;
+	color: @chatot_accent_text;
 	font-size: 13px;
 	font-weight: bold;
 }
@@ -3150,7 +3156,7 @@ button.chatot-join-btn {
 	box-shadow: none;
 	font-size: 12.5px;
 	font-weight: bold;
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 .chatot-community-footer {
@@ -3436,7 +3442,7 @@ button.chatot-member-more {
 	box-shadow: none;
 	font-size: 12.5px;
 	font-weight: bold;
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 .chatot-loc-zoom {
@@ -3553,7 +3559,7 @@ button.chatot-member-more {
    the compound selector outranks the plain preview rule's dim opacity. */
 .chatot-chat-preview.chatot-chat-typing {
 	font-style: italic;
-	color: #1b8c72;
+	color: @chatot_accent_text_soft;
 	opacity: 1;
 }
 
@@ -3586,7 +3592,7 @@ button.chatot-member-more {
 .chatot-bubble-author {
 	font-size: 12px;
 	font-weight: bold;
-	color: #147a63;
+	color: @chatot_accent_text;
 	margin-bottom: 2px;
 }
 
@@ -3598,7 +3604,7 @@ button.chatot-member-more {
 .chatot-unread-separator {
 	font-size: 10.5px;
 	font-weight: bold;
-	color: #147a63;
+	color: @chatot_accent_text;
 	background-color: alpha(#1b8c72, 0.12);
 	padding: 3px 11px;
 	border-radius: 999px;
@@ -3669,7 +3675,7 @@ button.chatot-member-more {
 
 /* Downloaded document row: the outlined "View" pill (mockup 11.5px). */
 .chatot-media-open {
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 .chatot-bubble-out .chatot-media-open {

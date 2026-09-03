@@ -34,6 +34,9 @@ const (
 	tabIconDim     = "#737373"
 	tabIconDimDark = "#9a9a9a"
 	tabIconActive  = "#147a63"
+	// tabIconActiveDark is the dark theme's active green (style-dark.css
+	// chatot_accent_text): the brand green is too dark to read there.
+	tabIconActiveDark = "#46c39a"
 	// tabIconPx is the icon's on-screen size; tabIconScale is what the SVG
 	// rendering (tabIconSVG, kept for tests and tooling) is rasterised at.
 	tabIconPx    = 21
@@ -173,6 +176,9 @@ func drawTabIcon(cr *cairo.Context, d tabDef, w, h float64, active bool) {
 	}
 	if active {
 		color, width = tabIconActive, 2
+		if isDark() {
+			color = tabIconActiveDark
+		}
 	}
 	r, g, b := hexRGB(color)
 	cr.SetSourceRGB(r, g, b)
@@ -228,4 +234,31 @@ func (t *tabBar) SetBadge(id string, n int) {
 	text := tabBadgeText(n)
 	badge.SetText(text)
 	badge.SetVisible(text != "")
+}
+
+// newEmptyChatGlyph is the "Select a chat" placeholder's bubble: the Chats
+// tab's own outline at size px, stroked in the widget's CSS colour so the
+// placeholder class dims it. Drawn rather than named, because
+// "chat-symbolic" is not an Adwaita icon — only some themes carry it, and a
+// packaged install must not depend on the user's theme.
+func newEmptyChatGlyph(size int) *gtk.DrawingArea {
+	area := gtk.NewDrawingArea()
+	area.SetSizeRequest(size, size)
+	area.SetHAlign(gtk.AlignCenter)
+	area.SetDrawFunc(func(_ *gtk.DrawingArea, cr *cairo.Context, w, h int) {
+		c := area.Color()
+		cr.SetSourceRGBA(float64(c.Red()), float64(c.Green()), float64(c.Blue()), float64(c.Alpha()))
+		cr.SetLineCap(cairo.LineCapRound)
+		cr.SetLineJoin(cairo.LineJoinRound)
+		cr.Save()
+		cr.Translate((float64(w)-float64(size))/2, (float64(h)-float64(size))/2)
+		scale := float64(size) / 24
+		cr.Scale(scale, scale)
+		cr.SetLineWidth(1.4)
+		if err := strokeSVGPath(cr, sidebarTabs[0].D1); err == nil {
+			cr.Stroke()
+		}
+		cr.Restore()
+	})
+	return area
 }
