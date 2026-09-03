@@ -95,11 +95,7 @@ func decideNotify(in notifyInput) bool {
 func messageNotification(chatName string, msg client.Message) (title, body string) {
 	body = msg.Text
 	if body == "" && msg.Attachment != nil {
-		if msg.Attachment.Caption != "" {
-			body = msg.Attachment.Caption
-		} else {
-			body = "[" + msg.Attachment.Kind + "]"
-		}
+		body = attachmentPreview(*msg.Attachment)
 	}
 	return chatName, body
 }
@@ -158,7 +154,9 @@ func (n *Notifier) watchEvents() {
 	for ev := range n.events {
 		switch ev.Kind {
 		case client.EventMessage:
-			if ev.Message != nil {
+			// Catch-up traffic (history replay after a link or reconnect) is
+			// old news: it fills the store but never rings.
+			if ev.Message != nil && !ev.Synced {
 				n.handleMessage(*ev.Message)
 			}
 		case client.EventCall:

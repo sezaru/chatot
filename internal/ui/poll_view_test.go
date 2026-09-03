@@ -70,7 +70,24 @@ func TestPollVMZeroVotesNoPercent(t *testing.T) {
 	if !v.MultiVote {
 		t.Fatal("SelectableCount 2 should be multi-vote")
 	}
-	if v.SelectHint != "Select up to 2" {
-		t.Fatalf("SelectHint = %q, want Select up to 2", v.SelectHint)
+	if v.SelectHint != "Select one or more" {
+		t.Fatalf("SelectHint = %q, want Select one or more", v.SelectHint)
+	}
+}
+
+func TestPollSelection(t *testing.T) {
+	single := pollView{Options: []pollOptionView{{Name: "A", Voted: true}, {Name: "B"}}}
+	if got := pollSelection(single, "B"); len(got) != 1 || got[0] != "B" {
+		t.Errorf("single choice picks the clicked option alone: %v", got)
+	}
+	if got := pollSelection(single, "A"); len(got) != 0 {
+		t.Errorf("clicking the picked option retracts the vote: %v", got)
+	}
+	multi := pollView{MultiVote: true, Options: []pollOptionView{{Name: "A", Voted: true}, {Name: "B"}, {Name: "C", Voted: true}}}
+	if got := pollSelection(multi, "B"); len(got) != 3 {
+		t.Errorf("multi choice adds to the picks: %v", got)
+	}
+	if got := pollSelection(multi, "A"); len(got) != 1 || got[0] != "C" {
+		t.Errorf("multi choice drops a picked option: %v", got)
 	}
 }

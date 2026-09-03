@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"mime"
 	"path/filepath"
@@ -9,13 +10,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 
 	"chatot/internal/audio"
 	"chatot/internal/client"
+	"chatot/internal/geo"
 )
 
 // reactEmojis is the fixed quick-react set offered on every bubble.
@@ -25,6 +28,10 @@ var reactEmojis = []string{"👍", "❤️", "😂", "😮", "😢", "🙏"}
 // reads privately (whatsapp never learns a chat was opened here) until a
 // user-facing setting exists.
 var SendReadReceipts = false
+
+// LocationAccess mirrors settings.Settings.LocationAccess: whether the
+// Send-location sheet may ask the system for a position.
+var LocationAccess = true
 
 // SendTypingIndicators gates outbound SendTyping calls from the composer's
 // typing-debounce state machine. Default true, matching WhatsApp's own
@@ -315,14 +322,44 @@ func unreadMessageIDs(msgs []client.Message, count int) []string {
 // SendReadReceipts. Runs the network call synchronously; callers invoke it
 // from a goroutine to keep the GTK main loop unblocked.
 func MarkReadOnOpen(ctx context.Context, c client.Client, jid string, msgs []client.Message, unreadCount int) {
+	if unreadCount <= 0 {
+		return
+	}
+	// Opening the chat means the user has seen it: the badge clears
+	// regardless of the receipt setting, which only decides whether the
+	// sender is told.
 	if !SendReadReceipts {
+		if err := c.ClearUnread(jid); err != nil {
+			log.Printf("chatot: clear unread failed: %v", err)
+		}
 		return
 	}
 	ids := unreadMessageIDs(msgs, unreadCount)
 	if len(ids) == 0 {
+		if err := c.ClearUnread(jid); err != nil {
+			log.Printf("chatot: clear unread failed: %v", err)
+		}
 		return
 	}
 	if err := c.MarkRead(ctx, jid, ids); err != nil {
+		log.Printf("chatot: mark read failed: %v", err)
+	}
+}
+
+// MarkReadOnArrival handles a message that lands in the chat the user is
+// looking at: it is read the moment it is shown, so the badge never counts
+// it and the sender (receipts allowing) gets the tick.
+func MarkReadOnArrival(ctx context.Context, c client.Client, msg client.Message) {
+	if msg.FromMe {
+		return
+	}
+	if !SendReadReceipts {
+		if err := c.ClearUnread(msg.ChatJID); err != nil {
+			log.Printf("chatot: clear unread failed: %v", err)
+		}
+		return
+	}
+	if err := c.MarkRead(ctx, msg.ChatJID, []string{msg.ID}); err != nil {
 		log.Printf("chatot: mark read failed: %v", err)
 	}
 }
@@ -332,18 +369,33 @@ func MarkReadOnOpen(ctx context.Context, c client.Client, jid string, msgs []cli
 type Composer struct {
 	*gtk.Box
 
-	c      client.Client
-	state  composeState
-	window *gtk.Window // parent for gtk.FileDialog; set via SetWindow
+	c       client.Client
+	state   composeState
+	window  *gtk.Window  // parent for gtk.FileDialog; set via SetWindow
+	avatars *avatarCache // the mention picker's rows
 
 	quoteBar   *gtk.Box
 	quoteLabel *gtk.Label
-	editBar    *gtk.Box
-	entry      *gtk.Entry
-	attachBtn  *gtk.MenuButton
-	emojiBtn   *gtk.Button
-	recordBtn  *gtk.Button
-	sendBtn    *gtk.Button
+	quoteName  *gtk.Label
+	// chatName is the open chat's display name, shown as the reply bar's
+	// author line for an incoming message.
+	chatName  string
+	editBar   *gtk.Box
+	entry     *composerInput
+	attachBtn *gtk.MenuButton
+	emojiBtn  *gtk.Button
+	recordBtn *gtk.Button
+	sendBtn   *gtk.Button
+
+	// mentions is the @ autocomplete over the entry; people are the open
+	// chat's candidates (fetched once per chat, peopleJID), and
+	// mentionNames maps every name the picker inserted to its wire user so
+	// submit can send "@user".
+	mentions      *mentionPicker
+	people        []mentionCandidate
+	peopleJID     string
+	peopleLoading string
+	mentionNames  map[string]string
 
 	gifProvider GIFProvider
 	// pickerStack/pickerPopover back the GIF+Stickers picker, now reached
@@ -353,8 +405,23 @@ type Composer struct {
 
 	stickerRecents *stickerRecents
 
+	// tray is the send-preview an attach pick flows into; nil falls back to
+	// sending the first picked file directly.
+	tray *AttachTray
+
 	recorder  *audio.Recorder // non-nil only while a recording is in progress
 	recording bool
+	// The idle strip and the recording strip swap places; recordTick is the
+	// once-a-second timer driving the elapsed label, 0 when not recording.
+	entryRow    *gtk.Box
+	recordRow   *gtk.Box
+	recordTime  *gtk.Label
+	recordDot   *gtk.Box
+	recordTrace *levelTrace  // the pill's level meter; fed every levelTickMS while recording
+	liveShares  []*liveShare // own live locations in progress
+	levelTick   glib.SourceHandle
+	recordPause *gtk.Button
+	recordTick  glib.SourceHandle
 
 	typing *typingModel // debounces our own composing/paused SendTyping calls
 
@@ -366,85 +433,140 @@ func NewComposer(c client.Client) *Composer {
 	root := gtk.NewBox(gtk.OrientationVertical, 0)
 	root.AddCSSClass("chatot-composer")
 
-	quoteBar := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	// The mockup's reply bar sits ABOVE the composer strip, on the chat
+	// surface, inset 12px with a rounded top, a 3px accent left edge, and
+	// two lines: the author in accent bold over the quoted text. The strip's
+	// hairline runs beneath it, so the strip (and its border/padding) is its
+	// own box below rather than the root.
+	quoteBar := gtk.NewBox(gtk.OrientationHorizontal, 10)
 	quoteBar.AddCSSClass("chatot-composer-quote")
 	quoteBar.SetVisible(false)
 
+	quoteCol := gtk.NewBox(gtk.OrientationVertical, 1)
+	quoteCol.SetHExpand(true)
+	quoteCol.SetVAlign(gtk.AlignCenter)
+
+	quoteName := gtk.NewLabel("")
+	quoteName.SetXAlign(0)
+	quoteName.AddCSSClass("chatot-composer-quote-name")
+	quoteCol.Append(quoteName)
+
 	quoteLabel := gtk.NewLabel("")
 	quoteLabel.SetXAlign(0)
-	quoteLabel.SetHExpand(true)
-	quoteLabel.SetWrap(true)
-	quoteBar.Append(quoteLabel)
+	quoteLabel.SetEllipsize(pango.EllipsizeEnd)
+	quoteLabel.AddCSSClass("chatot-composer-quote-text")
+	quoteCol.Append(quoteLabel)
+	quoteBar.Append(quoteCol)
 
-	cancelQuote := gtk.NewButtonWithLabel("×")
+	cancelQuote := gtk.NewButtonWithLabel("✕")
 	cancelQuote.AddCSSClass("flat")
+	cancelQuote.AddCSSClass("chatot-composer-quote-close")
+	cancelQuote.SetVAlign(gtk.AlignCenter)
 	quoteBar.Append(cancelQuote)
 
 	root.Append(quoteBar)
 
-	editBar := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	editBar := gtk.NewBox(gtk.OrientationHorizontal, 10)
 	editBar.AddCSSClass("chatot-composer-quote")
 	editBar.SetVisible(false)
 
 	editLabel := gtk.NewLabel("Editing message…")
 	editLabel.SetXAlign(0)
 	editLabel.SetHExpand(true)
+	editLabel.AddCSSClass("chatot-composer-quote-name")
 	editBar.Append(editLabel)
 
-	cancelEdit := gtk.NewButtonWithLabel("×")
+	cancelEdit := gtk.NewButtonWithLabel("✕")
 	cancelEdit.AddCSSClass("flat")
+	cancelEdit.AddCSSClass("chatot-composer-quote-close")
+	cancelEdit.SetVAlign(gtk.AlignCenter)
 	editBar.Append(cancelEdit)
 
 	root.Append(editBar)
 
-	entryRow := gtk.NewBox(gtk.OrientationHorizontal, 6)
-	entryRow.SetMarginTop(6)
-	entryRow.SetMarginBottom(6)
-	entryRow.SetMarginStart(8)
-	entryRow.SetMarginEnd(8)
+	// Mockup: a 51px strip whose padding lives on .chatot-composer-strip (8px
+	// 12px), with 7px between the buttons and the entry. Row margins here
+	// would compound with that padding and make the strip too tall.
+	strip := gtk.NewBox(gtk.OrientationVertical, 0)
+	strip.AddCSSClass("chatot-composer-strip")
+	root.Append(strip)
+	entryRow := gtk.NewBox(gtk.OrientationHorizontal, 7)
 
-	// Layout per the mockup: 📎 attach · 🙂 emoji · [entry] · 🎤 mic · ➤ send.
+	// Layout per the interactive mockup: 📎 attach · 🙂 emoji · [pill entry] ·
+	// then 🎤 mic when idle, swapped for the green ➤ send once there's text.
+	// Emoji glyphs, not symbolic icons — same call as the hover actions row.
 	attachBtn := gtk.NewMenuButton()
-	attachBtn.SetIconName("mail-attachment-symbolic")
+	// SetChild, not SetLabel: a MenuButton's own label sits in a box that
+	// reserves room for a dropdown arrow, which shoved the glyph off-centre.
+	attachBtn.SetChild(gtk.NewLabel("📎"))
 	attachBtn.AddCSSClass("flat")
+	attachBtn.AddCSSClass("chatot-composer-iconbtn")
+	// Centred, or the button fills the row's height and the 32px disc
+	// stretches into a 36px oval.
+	attachBtn.SetVAlign(gtk.AlignEnd)
 	attachBtn.SetSensitive(false)
 	entryRow.Append(attachBtn)
 
 	emojiBtn := gtk.NewButtonWithLabel("🙂")
 	emojiBtn.AddCSSClass("flat")
+	// A label button is a .text-button, which Adwaita pads sideways into an
+	// oval; this one is a disc.
+	emojiBtn.RemoveCSSClass("text-button")
+	emojiBtn.AddCSSClass("chatot-composer-iconbtn")
+	emojiBtn.AddCSSClass("chatot-composer-emojibtn")
+	emojiBtn.SetVAlign(gtk.AlignEnd)
 	entryRow.Append(emojiBtn)
 
-	entry := gtk.NewEntry()
-	entry.SetHExpand(true)
-	entry.SetPlaceholderText("Type a message")
+	entry := newComposerInput()
+	// Nothing to write to until a chat is open (SetChat enables the strip).
+	entry.SetSensitive(false)
+	emojiBtn.SetSensitive(false)
 	entryRow.Append(entry)
 
-	recordBtn := gtk.NewButtonFromIconName("audio-input-microphone-symbolic")
+	recordBtn := gtk.NewButtonWithLabel("🎤")
 	recordBtn.AddCSSClass("flat")
+	recordBtn.AddCSSClass("chatot-composer-micbtn")
 	recordBtn.SetTooltipText("Record voice message")
 	recordBtn.SetSensitive(false)
+	recordBtn.SetVAlign(gtk.AlignEnd)
 	entryRow.Append(recordBtn)
 
-	// Send is always visible (mockup 1e: "idle · send disabled"), greyed out
-	// until there's text — not the WhatsApp mic-XOR-send swap, which hid it.
+	// Mic-XOR-send like the interactive mockup: idle shows only the mic and
+	// the green send disc appears once the entry holds text
+	// (updateSendVisibility drives the swap).
 	sendBtn := gtk.NewButtonFromIconName("go-next-symbolic")
 	sendBtn.AddCSSClass("chatot-send")
 	sendBtn.SetTooltipText("Send")
 	sendBtn.SetSensitive(false)
+	sendBtn.SetVisible(false)
+	sendBtn.SetVAlign(gtk.AlignEnd)
 	entryRow.Append(sendBtn)
 
-	root.Append(entryRow)
+	strip.Append(entryRow)
+
+	// Recording swaps the whole strip for a recording bar (see
+	// newRecordingBar for what it holds and why).
+	recordRow, recordTime, recordDot, recordTrace, recordCancel, recordPause, recordStop := newRecordingBar()
+	recordRow.SetVisible(false)
+	strip.Append(recordRow)
 
 	comp := &Composer{
 		Box:            root,
 		c:              c,
 		quoteBar:       quoteBar,
 		quoteLabel:     quoteLabel,
+		quoteName:      quoteName,
 		editBar:        editBar,
 		entry:          entry,
 		attachBtn:      attachBtn,
 		emojiBtn:       emojiBtn,
 		recordBtn:      recordBtn,
+		entryRow:       entryRow,
+		recordRow:      recordRow,
+		recordTime:     recordTime,
+		recordDot:      recordDot,
+		recordTrace:    recordTrace,
+		recordPause:    recordPause,
 		sendBtn:        sendBtn,
 		gifProvider:    unconfiguredGIFProvider{},
 		typing:         newTypingModel(typingDebounce),
@@ -454,14 +576,38 @@ func NewComposer(c client.Client) *Composer {
 	pickerPopover, pickerStack := newPickerPopover(comp)
 	comp.pickerStack = pickerStack
 	comp.pickerPopover = pickerPopover
-	pickerPopover.SetParent(attachBtn)
+	// Anchored to the emoji button, not the paperclip: the design puts all
+	// three picker tabs behind the composer's smiley.
+	pickerPopover.SetParent(emojiBtn)
+	// The composer sits at the bottom of the window, so both popovers must
+	// open upward or they fall off-screen.
+	attachBtn.SetDirection(gtk.ArrowUp)
 	attachBtn.SetPopover(newAttachPopover(comp))
 
+	comp.avatars = newAvatarCache()
+	comp.mentions = newMentionPicker(entry, comp.c, comp.avatars, comp.pickMention)
+	// Captured before the entry's own bindings so Enter/Tab/arrows steer
+	// the picker instead of sending or moving the cursor while it is up.
+	mentionKeys := gtk.NewEventControllerKey()
+	mentionKeys.SetPropagationPhase(gtk.PhaseCapture)
+	mentionKeys.ConnectKeyPressed(func(keyval, _ uint, _ gdk.ModifierType) bool {
+		return comp.mentions.Key(keyval)
+	})
+	entry.AddController(mentionKeys)
+	// The fragment under the cursor changes with the cursor too, and the
+	// picker (which never takes the focus) must not outlive it.
+	entry.ConnectCursorMoved(comp.refreshMentionPicker)
+	mentionFocus := gtk.NewEventControllerFocus()
+	mentionFocus.ConnectLeave(func() { comp.mentions.Hide() })
+	entry.AddController(mentionFocus)
 	entry.ConnectActivate(comp.submit)
 	entry.ConnectChanged(comp.onEntryChanged)
 	sendBtn.ConnectClicked(comp.submit)
-	emojiBtn.ConnectClicked(comp.pickEmoji)
+	emojiBtn.ConnectClicked(func() { comp.showPicker("emoji") })
 	recordBtn.ConnectClicked(comp.toggleRecording)
+	recordStop.ConnectClicked(comp.toggleRecording)
+	recordCancel.ConnectClicked(comp.cancelRecording)
+	recordPause.ConnectClicked(comp.togglePause)
 	cancelQuote.ConnectClicked(func() {
 		comp.state.CancelReply()
 		comp.refreshQuoteBar()
@@ -486,6 +632,7 @@ func NewComposer(c client.Client) *Composer {
 // immediately rather than waiting out the debounce window.
 func (c *Composer) onEntryChanged() {
 	c.updateSendVisibility()
+	c.refreshMentionPicker()
 	jid := c.state.jid
 	if jid == "" {
 		return
@@ -502,16 +649,20 @@ func (c *Composer) onEntryChanged() {
 }
 
 // sendEnabled reports whether the send button should be active: only when the
-// entry holds non-whitespace text. Per the mockup the button is always shown
-// (mic and send both visible); this drives its sensitivity, not visibility.
+// entry holds non-whitespace text.
 func sendEnabled(text string) bool {
 	return strings.TrimSpace(text) != ""
 }
 
-// updateSendVisibility greys/enables the send button off the entry's current
-// text. Safe to call with no active chat.
+// updateSendVisibility swaps mic for send off the entry's current text (the
+// interactive mockup's idle composer shows only the mic; the green send disc
+// replaces it once there's something to send). Safe to call with no active
+// chat; an in-progress recording keeps the mic visible.
 func (c *Composer) updateSendVisibility() {
-	c.sendBtn.SetSensitive(sendEnabled(c.entry.Text()))
+	hasText := sendEnabled(c.entry.Text())
+	c.sendBtn.SetVisible(hasText)
+	c.sendBtn.SetSensitive(hasText)
+	c.recordBtn.SetVisible(!hasText || c.recording)
 }
 
 // tickTyping is invoked on the GTK main loop roughly once a second; it asks
@@ -563,10 +714,32 @@ func (c *Composer) SetChat(jid string) {
 	if c.typing.Cleared() && prevJID != "" {
 		c.sendTypingAsync(prevJID, false)
 	}
+	c.mentionNames = nil
+	if c.mentions != nil {
+		c.mentions.Hide()
+	}
 	c.attachBtn.SetSensitive(jid != "")
+	c.emojiBtn.SetSensitive(jid != "")
+	c.entry.SetSensitive(jid != "")
 	c.recordBtn.SetSensitive(jid != "" && !c.recording)
 	c.refreshQuoteBar()
 	c.refreshEditBar()
+}
+
+// FocusInput puts the keyboard focus in the message entry so the user can
+// type straight after opening a chat. No-op while no chat is open.
+func (c *Composer) FocusInput() {
+	if c.state.jid == "" || c.recording {
+		return
+	}
+	c.entry.GrabFocus()
+}
+
+// SetChatName records the open chat's display name for the reply bar's
+// author line. Separate from SetChat, which only ever sees a JID.
+func (c *Composer) SetChatName(name string) {
+	c.chatName = name
+	c.refreshQuoteBar()
 }
 
 // StartReply arms reply mode for msg; called from the conversation view's
@@ -609,8 +782,23 @@ func (c *Composer) refreshQuoteBar() {
 	if text == "" {
 		text = "[media]"
 	}
+	c.quoteName.SetLabel(replyAuthorName(target, c.chatName))
 	c.quoteLabel.SetLabel(text)
 	c.quoteBar.SetVisible(true)
+}
+
+// replyAuthorName is the accent line at the top of the reply bar: "You" for
+// your own message, otherwise the chat's name. The mockup always shows an
+// author; the old bar showed only the quoted text, which left a reply to
+// yourself indistinguishable from a reply to them.
+func replyAuthorName(target client.Message, chatName string) string {
+	if target.FromMe {
+		return "You"
+	}
+	if chatName != "" {
+		return chatName
+	}
+	return "Reply"
 }
 
 // submit resolves the current entry text against composeState and, if
@@ -621,11 +809,12 @@ func (c *Composer) submit() {
 		c.submitEdit()
 		return
 	}
-	action, ok := c.state.Submit(c.entry.Text())
+	action, ok := c.state.Submit(wireMentions(c.entry.Text(), c.mentionNames))
 	if !ok {
 		return
 	}
 	c.entry.SetText("")
+	c.mentionNames = nil
 	c.refreshQuoteBar()
 
 	go func() {
@@ -650,11 +839,12 @@ func (c *Composer) submit() {
 // EditMessage impl pushes an EventMessage so the open chat re-renders the
 // amended bubble; nothing is appended here.
 func (c *Composer) submitEdit() {
-	action, ok := c.state.SubmitEdit(c.entry.Text())
+	action, ok := c.state.SubmitEdit(wireMentions(c.entry.Text(), c.mentionNames))
 	if !ok {
 		return
 	}
 	c.entry.SetText("")
+	c.mentionNames = nil
 	c.refreshEditBar()
 
 	go func() {
@@ -664,136 +854,198 @@ func (c *Composer) submitEdit() {
 	}()
 }
 
-// pickEmoji pops the native emoji chooser anchored to the emoji button;
-// picking inserts the emoji into the entry at the current cursor position.
-func (c *Composer) pickEmoji() {
-	chooser := gtk.NewEmojiChooser()
-	chooser.SetParent(c.emojiBtn)
-	chooser.ConnectClosed(func() { chooser.Unparent() })
-	chooser.ConnectEmojiPicked(func(text string) {
-		insertAtCursor(c.entry, text)
-	})
-	chooser.Popup()
+// attachSource is one row of the 📎 menu: a tinted circle glyph, a label, and
+// what picking it does.
+type attachSource struct {
+	Icon  string
+	Label string
+	Tint  string // hex of the circle's tint, at the mockup's 20% alpha
 }
 
-// insertAtCursor inserts text into entry's buffer at the entry's current
-// cursor position and advances the cursor past the inserted text.
-func insertAtCursor(entry *gtk.Entry, text string) {
-	pos := entry.Position()
-	n := entry.Buffer().InsertText(uint(pos), text, -1)
-	entry.SetPosition(pos + int(n))
+// attachSources is the mockup's exact seven-row attach list, in its order.
+// Kept as a pure list so a drift from the design fails a test rather than only
+// a screenshot.
+//
+// Note this replaces an earlier 3x3 tile grid that carried Camera and Event.
+// Both were stubs that only opened a "not implemented" dialog, and the design
+// has no row for either; a source with no backend is worse than no row.
+func attachSources() []attachSource {
+	return []attachSource{
+		{"📷", "Photos", "#5a7ab5"},
+		{"🎬", "Video", "#9c5b8a"},
+		{"📄", "Document", "#4f8a8b"},
+		{"👤", "Contact", "#b58a4a"},
+		{"📍", "Location", "#c26b5c"},
+		{"📊", "Poll", "#7a8b5a"},
+		{"🎵", "Audio file", "#6a6a8c"},
+	}
 }
 
-// mediaFilter matches images and videos, for the "Photo or video" attach
-// tile; a nil filter (used for "Document") leaves the file dialog unfiltered.
-func mediaFilter() *gtk.FileFilter {
+// attachActions maps each source label to its handler. Split from the list so
+// the list stays testable without a Composer.
+func (c *Composer) attachActions() map[string]func() {
+	return map[string]func(){
+		"Photos":     func() { c.pickAttachment(kindFilter("image/*")) },
+		"Video":      func() { c.pickAttachment(kindFilter("video/*")) },
+		"Document":   func() { c.pickAttachment(nil) },
+		"Contact":    c.pickContact,
+		"Location":   c.pickLocation,
+		"Poll":       c.pickPoll,
+		"Audio file": func() { c.pickAttachment(kindFilter("audio/*")) },
+	}
+}
+
+// kindFilter builds a file-chooser filter for a single MIME pattern; nil
+// patterns mean "any file".
+func kindFilter(mime string) *gtk.FileFilter {
 	f := gtk.NewFileFilter()
-	f.AddMIMEType("image/*")
-	f.AddMIMEType("video/*")
+	f.AddMIMEType(mime)
 	return f
 }
 
-// newAttachTile builds one emoji-over-label tile button for the attach popover,
-// matching the mockup's dark grid variant (2c): a large emoji glyph above a
-// short label — NOT a monochrome symbolic icon.
-func newAttachTile(glyph, label string, onClick func()) *gtk.Button {
-	box := gtk.NewBox(gtk.OrientationVertical, 6)
-	box.SetHAlign(gtk.AlignCenter)
+// newAttachPopover builds the 📎 button's popover: the mockup's vertical list
+// of seven sources, each a 28px tinted circle beside its label, in a 230px
+// card. (GIF/Stickers live in the 🙂 picker, not here; live location is chosen
+// inside the Location flow.)
+func newAttachPopover(c *Composer) *gtk.Popover {
+	popover := gtk.NewPopover()
+	popover.SetHasArrow(false)
+	popover.AddCSSClass("chatot-menu")
+	popover.SetPosition(gtk.PosTop)
 
-	icon := gtk.NewLabel(glyph)
+	list := gtk.NewBox(gtk.OrientationVertical, 1)
+	list.SetSizeRequest(230, -1)
+	actions := c.attachActions()
+	for _, src := range attachSources() {
+		activate := actions[src.Label]
+		list.Append(newAttachRow(src, func() {
+			popover.Popdown()
+			if activate != nil {
+				activate()
+			}
+		}))
+	}
+	popover.SetChild(list)
+	return popover
+}
+
+// newAttachRow builds one attach-menu row: a tinted 28px circle carrying the
+// glyph, then the label.
+func newAttachRow(src attachSource, onClick func()) *gtk.Button {
+	row := gtk.NewBox(gtk.OrientationHorizontal, 11)
+
+	icon := gtk.NewLabel(src.Icon)
 	icon.AddCSSClass("chatot-attach-glyph")
-	box.Append(icon)
+	icon.SetVAlign(gtk.AlignCenter)
+	icon.SetSizeRequest(28, 28)
+	// Per-instance provider: each row's circle carries its own tint, which a
+	// shared stylesheet class can't express. "33" is the mockup's 20% alpha.
+	css := gtk.NewCSSProvider()
+	css.LoadFromString("label { background-color: " + src.Tint + "33; border-radius: 999px; }")
+	icon.StyleContext().AddProvider(css, uint(gtk.STYLE_PROVIDER_PRIORITY_APPLICATION))
+	row.Append(icon)
 
-	text := gtk.NewLabel(label)
-	text.AddCSSClass("chatot-attach-label")
-	box.Append(text)
+	label := gtk.NewLabel(src.Label)
+	label.SetXAlign(0)
+	label.SetHExpand(true)
+	label.AddCSSClass("chatot-attach-label")
+	row.Append(label)
 
 	btn := gtk.NewButton()
 	btn.AddCSSClass("flat")
-	btn.AddCSSClass("chatot-attach-tile")
-	btn.SetChild(box)
-	btn.SetSizeRequest(84, 68)
+	btn.AddCSSClass("chatot-menu-item")
+	btn.SetChild(row)
 	btn.ConnectClicked(onClick)
 	return btn
 }
 
-// comingSoon surfaces an honest "not built yet" dialog for an attach source
-// the mockup shows but whose backend doesn't exist (Camera, Event), instead of
-// a tile that silently does nothing.
-func (c *Composer) comingSoon(feature string) {
-	dialog := adw.NewAlertDialog(feature+" isn't available yet", "This attachment source is planned but not implemented.")
-	dialog.AddResponse("ok", "OK")
-	dialog.SetDefaultResponse("ok")
-	dialog.Present(c.window)
+// newRecordingBar builds the recording strip. It keeps the mockup's chrome
+// (the 34px hairline pill in the composer band, the red dot, the mono timer)
+// but lays the controls out the way WhatsApp does, which the mockup's
+// Cancel-and-stop pair lacked: a 🗑 that discards, then inside the pill the
+// dot, the timer, a dotted track and a ⏸/▶ that pauses without ending the
+// note, and finally the green ➤ that sends. Returns the row plus every
+// widget the composer drives.
+func newRecordingBar() (row *gtk.Box, elapsed *gtk.Label, dot *gtk.Box, trace *levelTrace, cancel, pause, send *gtk.Button) {
+	row = gtk.NewBox(gtk.OrientationHorizontal, 7)
+
+	cancel = gtk.NewButtonWithLabel("🗑")
+	cancel.AddCSSClass("flat")
+	cancel.AddCSSClass("chatot-composer-iconbtn")
+	cancel.AddCSSClass("chatot-record-discard")
+	cancel.SetTooltipText("Discard recording")
+	cancel.SetVAlign(gtk.AlignCenter)
+	row.Append(cancel)
+
+	pill := gtk.NewBox(gtk.OrientationHorizontal, 9)
+	pill.AddCSSClass("chatot-record-pill")
+	pill.SetHExpand(true)
+
+	dot = gtk.NewBox(gtk.OrientationVertical, 0)
+	dot.AddCSSClass("chatot-record-dot")
+	dot.SetSizeRequest(8, 8)
+	dot.SetVAlign(gtk.AlignCenter)
+	pill.Append(dot)
+
+	elapsed = gtk.NewLabel("0:00")
+	elapsed.AddCSSClass("chatot-record-time")
+	pill.Append(elapsed)
+
+	// The dotted track is the level meter at rest: each dot swells into a
+	// bar with the microphone level (see levelTrace).
+	trace = newLevelTrace()
+	pill.Append(trace)
+
+	pause = gtk.NewButtonWithLabel("⏸")
+	pause.AddCSSClass("flat")
+	pause.AddCSSClass("chatot-record-pause")
+	pause.SetTooltipText("Pause")
+	pause.SetVAlign(gtk.AlignCenter)
+	pill.Append(pause)
+	row.Append(pill)
+
+	send = gtk.NewButtonFromIconName("go-next-symbolic")
+	send.AddCSSClass("chatot-send")
+	send.SetTooltipText("Send voice message")
+	send.SetVAlign(gtk.AlignCenter)
+	row.Append(send)
+	return row, elapsed, dot, trace, cancel, pause, send
 }
 
-// newAttachPopover builds the 📎 button's popover: the mockup's exact seven
-// sources (2c) as a 3-column tile grid. Camera and Event have no backend yet,
-// so they surface an honest "coming soon" dialog rather than a dead click.
-// (GIF/Stickers live in the composer's emoji picker per t6, not here; live
-// location is chosen inside the Location flow.)
-func newAttachPopover(c *Composer) *gtk.Popover {
-	popover := gtk.NewPopover()
-
-	tiles := []struct {
-		icon, label string
-		activate    func()
-	}{
-		{"🖼️", "Photo", func() { c.pickAttachment(mediaFilter()) }},
-		{"📷", "Camera", func() { c.comingSoon("Camera") }},
-		{"📄", "Document", func() { c.pickAttachment(nil) }},
-		{"📍", "Location", c.pickLocation},
-		{"👤", "Contact", c.pickContact},
-		{"📊", "Poll", c.pickPoll},
-		{"📅", "Event", func() { c.comingSoon("Event") }},
-	}
-
-	grid := gtk.NewGrid()
-	grid.SetRowSpacing(4)
-	grid.SetColumnSpacing(4)
-	grid.SetMarginTop(8)
-	grid.SetMarginBottom(8)
-	grid.SetMarginStart(8)
-	grid.SetMarginEnd(8)
-	for i, t := range tiles {
-		activate := t.activate
-		tile := newAttachTile(t.icon, t.label, func() {
-			popover.Popdown()
-			activate()
-		})
-		grid.Attach(tile, i%3, i/3, 1, 1)
-	}
-	popover.SetChild(grid)
-	return popover
+// pickerPages are the mockup's three picker tabs, in its order. The GIF and
+// Stickers pages keep their existing content; only the chrome is the design's.
+var pickerPages = []segmentedPage{
+	{"emoji", "Emoji"},
+	{"gif", "GIF"},
+	{"stickers", "Stickers"},
 }
 
-// newPickerPopover builds the GIF/Stickers picker popover: a Stack +
-// StackSwitcher holding a "GIF" page and a "Stickers" page. It's fronted by
-// the attach ＋ menu's GIF/Stickers tiles (see showPicker).
+// newPickerPopover builds the mockup's 360px picker card: a segmented
+// Emoji|GIF|Stickers pill over the selected page. It hangs off the 🙂 button —
+// the design has no separate GIF/sticker entry point, and this replaces the
+// native GtkEmojiChooser the 🙂 used to open.
 func newPickerPopover(c *Composer) (*gtk.Popover, *gtk.Stack) {
 	popover := gtk.NewPopover()
+	popover.SetHasArrow(false)
+	popover.AddCSSClass("chatot-menu")
+	popover.SetPosition(gtk.PosTop)
 
 	stack := gtk.NewStack()
-	switcher := gtk.NewStackSwitcher()
-	switcher.SetStack(stack)
+	stack.AddNamed(newEmojiTab(c, popover), "emoji")
+	stack.AddNamed(newGIFTab(c.gifProvider, c.onGIFChosen), "gif")
+	stack.AddNamed(newStickerTab(c, popover), "stickers")
 
-	stack.AddTitled(newGIFTab(c.gifProvider, c.onGIFChosen), "gif", "GIF")
-	stack.AddTitled(newStickerTab(c, popover), "stickers", "Stickers")
-
-	box := gtk.NewBox(gtk.OrientationVertical, 4)
-	box.SetMarginTop(6)
-	box.SetMarginBottom(6)
-	box.SetMarginStart(6)
-	box.SetMarginEnd(6)
-	box.Append(switcher)
+	box := gtk.NewBox(gtk.OrientationVertical, 8)
+	box.AddCSSClass("chatot-picker")
+	box.SetSizeRequest(360, -1)
+	box.Append(newSegmentedSwitcher(stack, pickerPages, true))
 	box.Append(stack)
 
 	popover.SetChild(box)
 	return popover, stack
 }
 
-// showPicker pops the GIF/Stickers popover (parented to the attach button)
-// on the requested page — the ＋ menu now fronts it instead of a bar button.
+// showPicker pops the picker on the requested page.
 func (c *Composer) showPicker(page string) {
 	if c.pickerStack == nil || c.pickerPopover == nil {
 		return
@@ -820,20 +1072,61 @@ func (c *Composer) pickAttachment(filter *gtk.FileFilter) {
 	if filter != nil {
 		dialog.SetDefaultFilter(filter)
 	}
-	dialog.Open(context.Background(), c.window, func(res gio.AsyncResulter) {
-		file, err := dialog.OpenFinish(res)
+	// OpenMultiple, not Open: the tray queues several files, and the mockup's
+	// thumbnail strip exists precisely to review a multi-file pick.
+	dialog.OpenMultiple(context.Background(), c.window, func(res gio.AsyncResulter) {
+		files, err := dialog.OpenMultipleFinish(res)
 		if err != nil {
 			return // cancelled or failed; nothing to log, this is the common case
 		}
-		c.sendMedia(file.Path())
+		var paths []string
+		for i := uint(0); i < files.NItems(); i++ {
+			if f, ok := files.Item(i).Cast().(*gio.File); ok {
+				paths = append(paths, f.Path())
+			}
+		}
+		if len(paths) == 0 {
+			return
+		}
+		// No tray wired (a bare Composer in a test) means the old behaviour:
+		// send the first pick straight away rather than dropping it silently.
+		if c.tray == nil {
+			c.sendMedia(paths[0])
+			return
+		}
+		c.tray.Open(paths)
 	})
+}
+
+// SetTray gives the composer the send-preview tray its attach picks flow
+// into. Without one the composer sends straight from the file chooser.
+func (c *Composer) SetTray(tray *AttachTray) { c.tray = tray }
+
+// ReopenFilePicker is the tray's ＋ button: pick more files into the open tray.
+func (c *Composer) ReopenFilePicker() { c.pickAttachment(nil) }
+
+// SendTrayItems sends every queued attachment in order, each with its own
+// caption. The first send consumes any pending reply, so the rest are plain
+// sends — a reply quotes one message, not a whole batch.
+func (c *Composer) SendTrayItems(items []trayItem) {
+	for _, item := range items {
+		c.sendTrayItem(item)
+	}
 }
 
 // sendMedia resolves the picked path (using the current entry text as
 // caption) against composeState and sends it in the background, mirroring
 // submit's clear-then-send-then-idle-append flow.
 func (c *Composer) sendMedia(path string) {
-	action, ok := c.state.SubmitMedia(path, c.entry.Text())
+	c.sendTrayItem(trayItem{Path: path, Caption: c.entry.Text()})
+}
+
+// sendTrayItem sends one queued file with its own caption. The tray's
+// preview (poster frame, PDF page, duration, pixel size) rides along as the
+// message's embedded thumbnail and metadata, which is what lets the other
+// side — and our own bubble — show a picture before the file is fetched.
+func (c *Composer) sendTrayItem(item trayItem) {
+	action, ok := c.state.SubmitMedia(item.Path, item.Caption)
 	if !ok {
 		return
 	}
@@ -842,7 +1135,11 @@ func (c *Composer) sendMedia(path string) {
 	c.attachBtn.SetSensitive(false)
 
 	go func() {
-		att := client.Attachment{LocalPath: action.Path, Filename: filepath.Base(action.Path), Caption: action.Caption}
+		att := client.Attachment{
+			LocalPath: action.Path, Filename: filepath.Base(action.Path), Caption: action.Caption,
+			Thumbnail: item.Preview.Image, DurationSecs: item.Preview.Seconds,
+			Width: item.Preview.Width, Height: item.Preview.Height,
+		}
 		id, err := c.c.SendMedia(context.Background(), action.JID, att, action.ReplyTo)
 		glib.IdleAdd(func() {
 			c.attachBtn.SetSensitive(c.state.jid != "")
@@ -858,6 +1155,7 @@ func (c *Composer) sendMedia(path string) {
 				Attachment: &client.Attachment{
 					Kind: guessAttachmentKind(action.Path), Filename: att.Filename,
 					LocalPath: action.Path, Caption: action.Caption,
+					Thumbnail: att.Thumbnail, DurationSecs: att.DurationSecs,
 				},
 			}
 			c.onSent(msg)
@@ -912,63 +1210,31 @@ func (c *Composer) sendSticker(path string) {
 	}()
 }
 
-// pickLocation opens a small modal with name/latitude/longitude entries and,
-// on send, hands the parsed coordinates to sendLocation. No-ops if there's no
-// active chat or no window set yet.
+// pickLocation opens the Send location sheet (see location_picker.go) and
+// sends what it returns: a fixed point, or a live share that keeps a
+// positioning session alive for its duration. No-ops if there's no active
+// chat or no window set yet.
 func (c *Composer) pickLocation() {
 	if c.state.jid == "" || c.window == nil {
 		return
 	}
-
-	dialog := gtk.NewWindow()
-	dialog.SetTitle("Send location")
-	dialog.SetTransientFor(c.window)
-	dialog.SetModal(true)
-
-	grid := gtk.NewGrid()
-	grid.SetRowSpacing(6)
-	grid.SetColumnSpacing(8)
-	grid.SetMarginTop(12)
-	grid.SetMarginBottom(12)
-	grid.SetMarginStart(12)
-	grid.SetMarginEnd(12)
-
-	nameEntry := gtk.NewEntry()
-	nameEntry.SetPlaceholderText("Name (optional)")
-	latEntry := gtk.NewEntry()
-	latEntry.SetPlaceholderText("Latitude")
-	longEntry := gtk.NewEntry()
-	longEntry.SetPlaceholderText("Longitude")
-
-	grid.Attach(gtk.NewLabel("Name"), 0, 0, 1, 1)
-	grid.Attach(nameEntry, 1, 0, 1, 1)
-	grid.Attach(gtk.NewLabel("Latitude"), 0, 1, 1, 1)
-	grid.Attach(latEntry, 1, 1, 1, 1)
-	grid.Attach(gtk.NewLabel("Longitude"), 0, 2, 1, 1)
-	grid.Attach(longEntry, 1, 2, 1, 1)
-
-	sendBtn := gtk.NewButtonWithLabel("Send")
-	sendBtn.AddCSSClass("suggested-action")
-	sendBtn.ConnectClicked(func() {
-		if c.sendLocation(nameEntry.Text(), "", latEntry.Text(), longEntry.Text()) {
-			dialog.Close()
+	showLocationPicker(c.window, LocationAccess, func(res locationResult) {
+		if res.Live {
+			c.sendLiveLocation(res)
+			return
 		}
+		c.sendLocation(res)
 	})
-	grid.Attach(sendBtn, 1, 3, 1, 1)
-
-	dialog.SetChild(grid)
-	dialog.SetDefaultWidget(sendBtn)
-	dialog.Present()
 }
 
-// sendLocation resolves the dialog's raw entries against composeState and
-// sends the location in the background (mirroring submit's flow). Returns
-// false — leaving the dialog open — if the coordinates don't parse.
-func (c *Composer) sendLocation(name, address, lat, long string) bool {
-	action, ok := c.state.SubmitLocation(name, address, lat, long)
+// sendLocation sends a fixed point in the background (mirroring submit's
+// flow), with the sheet's map preview as the message thumbnail.
+func (c *Composer) sendLocation(res locationResult) {
+	action, ok := c.state.SubmitLocation(res.Name, res.Address, geo.FormatCoord(res.Lat), geo.FormatCoord(res.Lon))
 	if !ok {
-		return false
+		return
 	}
+	action.Loc.Thumbnail = res.Thumbnail
 	c.refreshQuoteBar()
 
 	go func() {
@@ -987,64 +1253,20 @@ func (c *Composer) sendLocation(name, address, lat, long string) bool {
 		}
 		glib.IdleAdd(func() { c.onSent(msg) })
 	}()
-	return true
 }
 
-// devLocationLat/Lon stand in for a real GPS fix, which chatot has no way to
-// obtain yet. // TODO real location source
-const (
-	devLocationLat = 51.5007
-	devLocationLon = -0.1246
-)
-
-// liveLocationDurations are the picker's duration choices, in seconds.
-var liveLocationDurations = []struct {
-	label   string
-	seconds int
-}{
-	{"15 minutes", 15 * 60},
-	{"1 hour", 60 * 60},
-	{"8 hours", 8 * 60 * 60},
+// liveShare is an own live location in progress: the message it started
+// and the timer that ends it. WhatsApp has no separate "stop" message, so
+// ending is local (the bubble flips to "ended") — see Client.StopLiveLocation.
+type liveShare struct {
+	chatJID, msgID string
+	expiry         glib.SourceHandle
 }
 
-// pickLiveLocation opens a small modal offering a sharing duration and, on
-// pick, sends a live location at the dev placeholder coordinates. No-ops if
-// there's no active chat or no window set yet.
-func (c *Composer) pickLiveLocation() {
-	if c.state.jid == "" || c.window == nil {
-		return
-	}
-
-	dialog := gtk.NewWindow()
-	dialog.SetTitle("Share live location")
-	dialog.SetTransientFor(c.window)
-	dialog.SetModal(true)
-
-	box := gtk.NewBox(gtk.OrientationVertical, 6)
-	box.SetMarginTop(12)
-	box.SetMarginBottom(12)
-	box.SetMarginStart(12)
-	box.SetMarginEnd(12)
-	box.Append(gtk.NewLabel("Share for:"))
-
-	for _, d := range liveLocationDurations {
-		secs := d.seconds
-		btn := gtk.NewButtonWithLabel(d.label)
-		btn.ConnectClicked(func() {
-			c.sendLiveLocation(secs)
-			dialog.Close()
-		})
-		box.Append(btn)
-	}
-
-	dialog.SetChild(box)
-	dialog.Present()
-}
-
-// sendLiveLocation resolves a live-location send for durationSecs against
-// composeState and sends it in the background, mirroring sendLocation's flow.
-func (c *Composer) sendLiveLocation(durationSecs int) {
-	action, ok := c.state.SubmitLiveLocation(devLocationLat, devLocationLon, durationSecs)
+// sendLiveLocation sends a live share and remembers it so the bubble's
+// Stop sharing (or the chosen duration) can end it.
+func (c *Composer) sendLiveLocation(res locationResult) {
+	action, ok := c.state.SubmitLiveLocation(res.Lat, res.Lon, res.DurationSecs)
 	if !ok {
 		return
 	}
@@ -1056,83 +1278,83 @@ func (c *Composer) sendLiveLocation(durationSecs int) {
 			log.Printf("chatot: send live location failed: %v", err)
 			return
 		}
-		if c.onSent == nil {
-			return
-		}
 		now := time.Now()
 		msg := client.Message{
 			ID: id, ChatJID: action.JID, FromMe: true, TS: now.Unix(), ReplyTo: action.ReplyTo,
 			Location: &client.Location{
 				Latitude: action.Latitude, Longitude: action.Longitude,
 				IsLive: true, LiveUntil: now.Unix() + int64(action.DurationSecs),
+				Thumbnail: res.Thumbnail,
 			},
 		}
-		glib.IdleAdd(func() { c.onSent(msg) })
+		glib.IdleAdd(func() {
+			c.trackLiveShare(action.JID, id, action.DurationSecs)
+			if c.onSent != nil {
+				c.onSent(msg)
+			}
+		})
 	}()
 }
 
-// pollOptionCount is how many option entries the create-poll dialog offers.
-const pollOptionCount = 4
-
-// pickPoll opens a small modal with a question entry and a few option entries
-// and, on send, hands the parsed form to sendPoll. No-ops if there's no active
-// chat or no window set yet.
-func (c *Composer) pickPoll() {
-	if c.state.jid == "" || c.window == nil {
-		return
-	}
-
-	dialog := gtk.NewWindow()
-	dialog.SetTitle("Create poll")
-	dialog.SetTransientFor(c.window)
-	dialog.SetModal(true)
-
-	grid := gtk.NewGrid()
-	grid.SetRowSpacing(6)
-	grid.SetColumnSpacing(8)
-	grid.SetMarginTop(12)
-	grid.SetMarginBottom(12)
-	grid.SetMarginStart(12)
-	grid.SetMarginEnd(12)
-
-	questionEntry := gtk.NewEntry()
-	questionEntry.SetPlaceholderText("Question")
-	grid.Attach(gtk.NewLabel("Question"), 0, 0, 1, 1)
-	grid.Attach(questionEntry, 1, 0, 1, 1)
-
-	optionEntries := make([]*gtk.Entry, pollOptionCount)
-	for i := range optionEntries {
-		e := gtk.NewEntry()
-		e.SetPlaceholderText("Option")
-		optionEntries[i] = e
-		grid.Attach(gtk.NewLabel("Option"), 0, i+1, 1, 1)
-		grid.Attach(e, 1, i+1, 1, 1)
-	}
-
-	sendBtn := gtk.NewButtonWithLabel("Create")
-	sendBtn.AddCSSClass("suggested-action")
-	sendBtn.ConnectClicked(func() {
-		opts := make([]string, len(optionEntries))
-		for i, e := range optionEntries {
-			opts[i] = e.Text()
-		}
-		if c.sendPoll(questionEntry.Text(), opts) {
-			dialog.Close()
-		}
+// trackLiveShare registers a live share and arms its expiry.
+func (c *Composer) trackLiveShare(chatJID, msgID string, durationSecs int) {
+	share := &liveShare{chatJID: chatJID, msgID: msgID}
+	share.expiry = glib.TimeoutSecondsAdd(uint(durationSecs), func() bool {
+		share.expiry = 0
+		c.endLiveShare(share)
+		return false
 	})
-	grid.Attach(sendBtn, 1, pollOptionCount+1, 1, 1)
+	c.liveShares = append(c.liveShares, share)
+}
 
-	dialog.SetChild(grid)
-	dialog.SetDefaultWidget(sendBtn)
-	dialog.Present()
+// StopLiveLocation is the bubble's Stop sharing: it ends the share early.
+// A live location this composer didn't start (another device's, or one
+// from before a restart) is still marked ended locally.
+func (c *Composer) StopLiveLocation(msg client.Message) {
+	for _, share := range c.liveShares {
+		if share.chatJID == msg.ChatJID && share.msgID == msg.ID {
+			if share.expiry != 0 {
+				glib.SourceRemove(share.expiry)
+				share.expiry = 0
+			}
+			c.endLiveShare(share)
+			return
+		}
+	}
+	go func() {
+		if err := c.c.StopLiveLocation(context.Background(), msg.ChatJID, msg.ID); err != nil {
+			log.Printf("chatot: stop live location failed: %v", err)
+		}
+	}()
+}
+
+func (c *Composer) endLiveShare(share *liveShare) {
+	kept := c.liveShares[:0]
+	for _, s := range c.liveShares {
+		if s != share {
+			kept = append(kept, s)
+		}
+	}
+	c.liveShares = kept
+	go func() {
+		if err := c.c.StopLiveLocation(context.Background(), share.chatJID, share.msgID); err != nil {
+			log.Printf("chatot: stop live location failed: %v", err)
+		}
+	}()
 }
 
 // sendPoll resolves the dialog's raw form against composeState and sends the
 // poll in the background (mirroring submit's flow). Returns false — leaving the
 // dialog open — if the form is unusable (blank question or <2 options). Single-
 // select only from the composer; multi-select is out of scope.
-func (c *Composer) sendPoll(question string, options []string) bool {
-	action, ok := c.state.SubmitPoll(question, options, 1)
+func (c *Composer) sendPoll(question string, options []string, multi bool) bool {
+	selectable := 1
+	if multi {
+		// "Allow multiple answers" = every option selectable; parsePollForm
+		// clamps this to the number of options that survive trimming.
+		selectable = len(options)
+	}
+	action, ok := c.state.SubmitPoll(question, options, selectable)
 	if !ok {
 		return false
 	}
@@ -1159,79 +1381,17 @@ func (c *Composer) sendPoll(question string, options []string) bool {
 	return true
 }
 
-// pickContact opens a searchable list of the user's chats and, on a pick,
-// hands off to sendContact. No-ops if there's no active chat or no window
-// set yet.
-func (c *Composer) pickContact() {
-	if c.state.jid == "" || c.window == nil {
-		return
-	}
-
-	chats, err := c.c.Chats(0)
-	if err != nil {
-		log.Printf("chatot: load contacts failed: %v", err)
-		return
-	}
-
-	dialog := gtk.NewWindow()
-	dialog.SetTitle("Send contact")
-	dialog.SetTransientFor(c.window)
-	dialog.SetModal(true)
-	dialog.SetDefaultSize(320, 400)
-
-	box := gtk.NewBox(gtk.OrientationVertical, 6)
-	box.SetMarginTop(12)
-	box.SetMarginBottom(12)
-	box.SetMarginStart(12)
-	box.SetMarginEnd(12)
-
-	search := gtk.NewSearchEntry()
-	search.SetPlaceholderText("Search contacts")
-	box.Append(search)
-
-	list := gtk.NewListBox()
-	list.SetSelectionMode(gtk.SelectionNone)
-
-	scroller := gtk.NewScrolledWindow()
-	scroller.SetVExpand(true)
-	scroller.SetChild(list)
-	box.Append(scroller)
-
-	rebuild := func(query string) {
-		for child := list.FirstChild(); child != nil; {
-			next := gtk.BaseWidget(child).NextSibling()
-			list.Remove(child)
-			child = next
-		}
-		query = strings.ToLower(strings.TrimSpace(query))
-		for _, chat := range chats {
-			if chat.IsGroup {
-				continue
-			}
-			if query != "" && !strings.Contains(strings.ToLower(chat.Name), query) {
-				continue
-			}
-			row := gtk.NewButtonWithLabel(chat.Name)
-			row.AddCSSClass("flat")
-			pick := chat
-			row.ConnectClicked(func() {
-				c.sendContact(pick.JID, pick.Name)
-				dialog.Close()
-			})
-			list.Append(row)
-		}
-	}
-	rebuild("")
-	search.ConnectSearchChanged(func() { rebuild(search.Text()) })
-
-	dialog.SetChild(box)
-	dialog.Present()
-}
-
 // sendContact resolves a contact send from the picked chat's name/JID against
 // composeState and sends it in the background, mirroring sendLocation's flow.
-func (c *Composer) sendContact(jid, name string) {
-	action, ok := c.state.SubmitContact(client.Contact{DisplayName: name, Phones: []string{phoneFromJID(jid)}})
+func (c *Composer) sendContact(jid, name, phone string) {
+	if phone == "" {
+		phone = phoneFromJID(jid)
+	}
+	var phones []string
+	if phone != "" {
+		phones = []string{phone}
+	}
+	action, ok := c.state.SubmitContact(client.Contact{DisplayName: name, Phones: phones})
 	if !ok {
 		return
 	}
@@ -1287,11 +1447,7 @@ func (c *Composer) toggleRecording() {
 	}
 	c.recorder = rec
 	c.recording = true
-	c.recordBtn.SetIconName("media-playback-stop-symbolic")
-	c.recordBtn.AddCSSClass("destructive-action")
-	c.entry.SetSensitive(false)
-	c.attachBtn.SetSensitive(false)
-	c.sendBtn.SetVisible(false)
+	c.enterRecordingUI()
 
 	jid := c.state.jid
 	go func() {
@@ -1321,13 +1477,14 @@ func (c *Composer) stopRecording() {
 		return
 	}
 
-	oggBytes, dur, err := rec.Stop()
-	if err != nil {
-		log.Printf("chatot: stop recording failed: %v", err)
-		return
-	}
-
 	go func() {
+		// Stop runs off the main loop: a paused-and-resumed note is joined by
+		// an ffmpeg re-encode there, which takes as long as the note is.
+		oggBytes, dur, err := rec.Stop()
+		if err != nil {
+			log.Printf("chatot: stop recording failed: %v", err)
+			return
+		}
 		id, err := c.c.SendVoice(context.Background(), jid, oggBytes, dur)
 		// SendVoice already cached the ogg + set local_path; DownloadMedia
 		// returns that cached path without a network hit, so the just-sent
@@ -1355,13 +1512,130 @@ func (c *Composer) stopRecording() {
 // resetRecordButton restores the mic button to its idle appearance and
 // re-enables the entry/attach controls it disabled while recording.
 func (c *Composer) resetRecordButton() {
-	c.recordBtn.SetIconName("audio-input-microphone-symbolic")
-	c.recordBtn.RemoveCSSClass("destructive-action")
+	c.leaveRecordingUI()
 	c.recordBtn.SetSensitive(c.state.jid != "")
-	c.entry.SetSensitive(true)
+	c.entry.SetSensitive(c.state.jid != "")
+	c.emojiBtn.SetSensitive(c.state.jid != "")
 	c.attachBtn.SetSensitive(c.state.jid != "")
 	c.sendBtn.SetVisible(true)
 	c.updateSendVisibility()
+}
+
+// enterRecordingUI swaps the idle strip for the recording bar and starts the
+// once-a-second timer that drives its elapsed label.
+func (c *Composer) enterRecordingUI() {
+	c.entryRow.SetVisible(false)
+	c.recordRow.SetVisible(true)
+	c.recordTime.SetLabel("0:00")
+	c.setPausedUI(false)
+	c.recordTick = glib.TimeoutAdd(1000, func() bool {
+		if !c.recording || c.recorder == nil {
+			return false
+		}
+		c.recordTime.SetLabel(recordingClock(c.recorder.Elapsed()))
+		return true
+	})
+	c.recordTrace.Reset()
+	c.levelTick = glib.TimeoutAdd(levelTickMS, func() bool {
+		if !c.recording || c.recorder == nil {
+			return false
+		}
+		if !c.recorder.Paused() {
+			c.recordTrace.Push(c.recorder.Level())
+		}
+		return true
+	})
+}
+
+// levelTickMS is how often the recording trace samples the microphone
+// level: one column per tick, so ~5 s of speech spans the pill.
+const levelTickMS = 50
+
+// leaveRecordingUI restores the idle strip and stops the timer. Safe to call
+// when no recording was running (stopRecording's error paths reach it).
+func (c *Composer) leaveRecordingUI() {
+	if c.recordTick != 0 {
+		glib.SourceRemove(c.recordTick)
+		c.recordTick = 0
+	}
+	if c.levelTick != 0 {
+		glib.SourceRemove(c.levelTick)
+		c.levelTick = 0
+	}
+	c.recordRow.SetVisible(false)
+	c.entryRow.SetVisible(true)
+}
+
+// recordingClock formats the recording timer the way the mockup's mono label
+// reads: m:ss, growing to h:mm:ss only past an hour.
+func recordingClock(d time.Duration) string {
+	secs := int(d.Seconds())
+	if secs < 0 {
+		secs = 0
+	}
+	return humanDuration2(secs)
+}
+
+// humanDuration2 is humanDuration with a floor of "0:00" — a recording that
+// has just started still needs a clock, where an unknown media duration
+// renders as nothing at all.
+func humanDuration2(secs int) string {
+	if secs <= 0 {
+		return "0:00"
+	}
+	return humanDuration(secs)
+}
+
+// cancelRecording aborts the in-flight recording and discards it.
+func (c *Composer) cancelRecording() {
+	rec := c.recorder
+	jid := c.state.jid
+	c.recorder = nil
+	c.recording = false
+	c.resetRecordButton()
+	if rec != nil {
+		rec.Cancel()
+	}
+	go func() {
+		if err := c.c.SendRecording(jid, false); err != nil {
+			log.Printf("chatot: send recording presence failed: %v", err)
+		}
+	}()
+}
+
+// togglePause pauses or resumes the in-flight recording; the timer stops
+// with it (Recorder.Elapsed excludes pauses) and the dot stops pulsing.
+func (c *Composer) togglePause() {
+	rec := c.recorder
+	if rec == nil {
+		return
+	}
+	if rec.Paused() {
+		if err := rec.Resume(); err != nil {
+			log.Printf("chatot: resume recording failed: %v", err)
+			return
+		}
+		c.setPausedUI(false)
+		return
+	}
+	if err := rec.Pause(); err != nil {
+		log.Printf("chatot: pause recording failed: %v", err)
+		return
+	}
+	c.setPausedUI(true)
+}
+
+// setPausedUI paints the pause button and dot for the paused/live state.
+func (c *Composer) setPausedUI(paused bool) {
+	if paused {
+		c.recordPause.SetLabel("▶")
+		c.recordPause.SetTooltipText("Resume")
+		c.recordDot.AddCSSClass("chatot-record-dot-paused")
+		return
+	}
+	c.recordPause.SetLabel("⏸")
+	c.recordPause.SetTooltipText("Pause")
+	c.recordDot.RemoveCSSClass("chatot-record-dot-paused")
 }
 
 // guessAttachmentKind best-effort classifies path by extension, for the
@@ -1381,3 +1655,318 @@ func guessAttachmentKind(path string) string {
 		return "document"
 	}
 }
+
+// pollMinOptions is how many option entries the create-poll dialog opens
+// with; ＋ Add option appends more.
+const pollMinOptions = 2
+
+// pickPoll opens the mockup's Create poll card: a question entry, option
+// entries (two to start, "＋ Add option" for more), an "Allow multiple
+// answers" check and a Cancel / Send poll footer. No-ops if there's no
+// active chat or no window set yet.
+func (c *Composer) pickPoll() {
+	if c.state.jid == "" || c.window == nil {
+		return
+	}
+
+	dialog := newCardDialog()
+	dialog.SetTitle("Create poll")
+	dialog.SetTransientFor(c.window)
+	dialog.SetModal(true)
+	dialog.SetDefaultSize(420, -1)
+
+	body := dialogBody(10)
+
+	question := gtk.NewEntry()
+	question.SetPlaceholderText("Ask a question")
+	question.AddCSSClass("chatot-dialog-entry")
+	body.Append(question)
+
+	options := gtk.NewBox(gtk.OrientationVertical, 10)
+	body.Append(options)
+	var entries []*gtk.Entry
+	addOption := func() *gtk.Entry {
+		e := gtk.NewEntry()
+		e.SetPlaceholderText(fmt.Sprintf("Option %d", len(entries)+1))
+		e.AddCSSClass("chatot-dialog-entry")
+		e.AddCSSClass("chatot-poll-draft")
+		entries = append(entries, e)
+		options.Append(e)
+		return e
+	}
+	for i := 0; i < pollMinOptions; i++ {
+		addOption()
+	}
+
+	add := gtk.NewButtonWithLabel("＋ Add option")
+	add.AddCSSClass("flat")
+	add.AddCSSClass("chatot-link-btn")
+	add.AddCSSClass("chatot-poll-add")
+	add.SetHAlign(gtk.AlignStart)
+	add.ConnectClicked(func() { addOption().GrabFocus() })
+	body.Append(add)
+
+	multi := gtk.NewCheckButtonWithLabel("Allow multiple answers")
+	multi.AddCSSClass("chatot-poll-multi")
+	body.Append(multi)
+
+	footer := gtk.NewBox(gtk.OrientationHorizontal, 10)
+	footer.AddCSSClass("chatot-dialog-footer")
+	footer.SetHAlign(gtk.AlignEnd)
+	cancel := gtk.NewButtonWithLabel("Cancel")
+	cancel.AddCSSClass("chatot-chip-btn")
+	cancel.ConnectClicked(func() { dialog.Close() })
+	footer.Append(cancel)
+	send := gtk.NewButtonWithLabel("Send poll")
+	send.AddCSSClass("chatot-primary-btn")
+	send.ConnectClicked(func() {
+		opts := make([]string, len(entries))
+		for i, e := range entries {
+			opts[i] = e.Text()
+		}
+		if c.sendPoll(question.Text(), opts, multi.Active()) {
+			dialog.Close()
+		}
+	})
+	footer.Append(send)
+
+	root := gtk.NewBox(gtk.OrientationVertical, 0)
+	root.Append(body)
+	root.Append(footer)
+	dialog.SetChild(root)
+	dialog.SetDefaultWidget(send)
+	dialog.Present()
+	question.GrabFocus()
+}
+
+// contactPick is one row of the Send contact card.
+type contactPick struct {
+	JID   string
+	Name  string
+	Phone string // "" when unknown
+}
+
+// contactPicks turns the chat list into the picker's rows: people only (no
+// groups), with the phone the vCard will carry. Order is the chat list's.
+func contactPicks(chats []client.Chat) []contactPick {
+	out := make([]contactPick, 0, len(chats))
+	for _, chat := range chats {
+		if chat.IsGroup || strings.HasSuffix(chat.JID, "@newsletter") || chat.JID == "status@broadcast" {
+			continue
+		}
+		out = append(out, contactPick{JID: chat.JID, Name: chat.Name, Phone: chat.Phone})
+	}
+	return out
+}
+
+// filterContactPicks keeps the rows whose name or phone contains query.
+func filterContactPicks(picks []contactPick, query string) []contactPick {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return picks
+	}
+	out := make([]contactPick, 0, len(picks))
+	for _, p := range picks {
+		if strings.Contains(strings.ToLower(p.Name), query) || strings.Contains(p.Phone, query) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// contactPhoneLabel is the picker row's mono subline: "+55 48 …" spaced
+// the way the mockup writes numbers, or nothing when the number is unknown.
+func contactPhoneLabel(phone string) string {
+	if phone == "" {
+		return ""
+	}
+	return "+" + phone
+}
+
+// pickContact opens the mockup's Send contact card: a pill search over a
+// multi-select list of people (avatar, bold name, mono phone, round tick)
+// and an "N selected · Send" footer. Every ticked person is sent as its
+// own contact card. No-ops if there's no active chat or no window set yet.
+func (c *Composer) pickContact() {
+	if c.state.jid == "" || c.window == nil {
+		return
+	}
+
+	// Every chat, not the list's default page: a contact to send may be
+	// someone not talked to in a while.
+	chats, err := c.c.Chats(contactPickLimit)
+	if err != nil {
+		log.Printf("chatot: load contacts failed: %v", err)
+		return
+	}
+	picks := contactPicks(chats)
+
+	dialog := newCardDialog()
+	dialog.SetTitle("Send contact")
+	dialog.SetTransientFor(c.window)
+	dialog.SetModal(true)
+	dialog.SetDefaultSize(400, 440)
+
+	box := gtk.NewBox(gtk.OrientationVertical, 0)
+
+	search := sidebarSearchEntry("Search contacts")
+	searchRow := gtk.NewBox(gtk.OrientationVertical, 0)
+	searchRow.AddCSSClass("chatot-forward-search")
+	searchRow.Append(search)
+	box.Append(searchRow)
+
+	list := gtk.NewBox(gtk.OrientationVertical, 0)
+	list.AddCSSClass("chatot-forward-list")
+	scroller := gtk.NewScrolledWindow()
+	scroller.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
+	scroller.SetVExpand(true)
+	scroller.SetMinContentHeight(0)
+	scroller.SetSizeRequest(-1, 120)
+	scroller.SetChild(list)
+	box.Append(scroller)
+
+	footerRow := gtk.NewBox(gtk.OrientationHorizontal, 10)
+	footerRow.AddCSSClass("chatot-dialog-footer")
+	count := gtk.NewLabel("")
+	count.SetXAlign(0)
+	count.SetHExpand(true)
+	count.SetVAlign(gtk.AlignCenter)
+	count.AddCSSClass("chatot-card-value")
+	footerRow.Append(count)
+	send := gtk.NewButtonWithLabel("Send")
+	send.AddCSSClass("chatot-primary-btn")
+	send.SetSensitive(false)
+	footerRow.Append(send)
+	box.Append(footerRow)
+
+	selected := map[string]contactPick{}
+	cache := newAvatarCache()
+	updateFooter := func() {
+		count.SetText(contactSelectionLabel(len(selected)))
+		send.SetSensitive(len(selected) > 0)
+	}
+
+	var rebuild func(string)
+	rebuild = func(query string) {
+		removeAllChildren(list)
+		for _, p := range filterContactPicks(picks, query) {
+			pick := p
+			vm := chatRowVM(client.Chat{JID: p.JID, Name: p.Name}, time.Now())
+			row := gtk.NewBox(gtk.OrientationHorizontal, 10)
+			row.Append(buildAvatar(c.c, cache, p.JID, vm.Initial, contactPickAvatarSize))
+
+			col := gtk.NewBox(gtk.OrientationVertical, 1)
+			col.SetHExpand(true)
+			col.SetVAlign(gtk.AlignCenter)
+			name := gtk.NewLabel(p.Name)
+			name.SetXAlign(0)
+			name.SetEllipsize(pango.EllipsizeEnd)
+			name.AddCSSClass("chatot-forward-name")
+			col.Append(name)
+			if phone := contactPhoneLabel(p.Phone); phone != "" {
+				sub := gtk.NewLabel(phone)
+				sub.SetXAlign(0)
+				sub.AddCSSClass("chatot-contact-phone")
+				col.Append(sub)
+			}
+			row.Append(col)
+
+			_, on := selected[p.JID]
+			check := newCheckGlyph(19, on)
+			check.AddCSSClass("chatot-forward-check")
+			if on {
+				check.AddCSSClass("chatot-forward-check-on")
+			}
+			row.Append(check)
+
+			btn := gtk.NewButton()
+			btn.SetChild(row)
+			btn.AddCSSClass("flat")
+			btn.AddCSSClass("chatot-people-row")
+			btn.ConnectClicked(func() {
+				if _, ok := selected[pick.JID]; ok {
+					delete(selected, pick.JID)
+				} else {
+					selected[pick.JID] = pick
+				}
+				updateFooter()
+				rebuild(search.Text())
+			})
+			list.Append(btn)
+		}
+	}
+	rebuild("")
+	updateFooter()
+	search.ConnectSearchChanged(func() { rebuild(search.Text()) })
+
+	send.ConnectClicked(func() {
+		// Keep the list's order rather than the map's.
+		for _, p := range picks {
+			if pick, ok := selected[p.JID]; ok {
+				c.sendContact(pick.JID, pick.Name, pick.Phone)
+			}
+		}
+		dialog.Close()
+	})
+
+	dialog.SetChild(box)
+	dialog.SetDefaultWidget(send)
+	dialog.Present()
+}
+
+// contactPickAvatarSize is the picker row's avatar, per the mockup.
+const contactPickAvatarSize = 34
+
+// contactPickLimit is how many chats the picker lists (the store's default
+// page is 50).
+const contactPickLimit = 5000
+
+// contactSelectionLabel is the footer's count line.
+func contactSelectionLabel(n int) string {
+	if n == 0 {
+		return "Pick people to send"
+	}
+	return fmt.Sprintf("%d selected", n)
+}
+
+// ShowLocationPicker / ShowPollDialog / ShowContactPicker open the attach
+// sheets directly; screenshot hooks, so the dialogs can be captured without
+// clicking through the attach menu. mode "manual" opens the location sheet
+// on the map picker; "denied" opens it with system positioning off.
+func (c *Composer) ShowLocationPicker(mode, point string) {
+	if c.state.jid == "" || c.window == nil {
+		return
+	}
+	// Only the plain hook talks to the positioning service; the staged
+	// modes must never pop a system permission prompt during a capture.
+	allow := LocationAccess && mode == ""
+	p := showLocationPicker(c.window, allow, func(res locationResult) {
+		if res.Live {
+			c.sendLiveLocation(res)
+			return
+		}
+		c.sendLocation(res)
+	})
+	if mode == "manual" {
+		p.modeStack.SetVisibleChildName("manual")
+		if lat, lon, ok := parseLatLon(point); ok {
+			p.mapView.SetZoom(17)
+			p.mapView.SetCentre(lat, lon)
+			p.dropPin(lat, lon)
+		}
+	}
+}
+
+// parseLatLon reads "lat,lon".
+func parseLatLon(s string) (lat, lon float64, ok bool) {
+	parts := strings.Split(strings.TrimSpace(s), ",")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	lat, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	lon, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	return lat, lon, err1 == nil && err2 == nil
+}
+
+func (c *Composer) ShowPollDialog()    { c.pickPoll() }
+func (c *Composer) ShowContactPicker() { c.pickContact() }

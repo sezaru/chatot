@@ -26,8 +26,8 @@ func TestMediaVM_NoLocalPath(t *testing.T) {
 	if out.HasLocal {
 		t.Error("expected HasLocal=false when local_path is empty")
 	}
-	if out.Chip != "[image] a sunset" {
-		t.Errorf("Chip = %q, want %q", out.Chip, "[image] a sunset")
+	if out.Chip != "📷 a sunset" {
+		t.Errorf("Chip = %q, want %q", out.Chip, "📷 a sunset")
 	}
 }
 
@@ -143,7 +143,7 @@ func TestViewOnceRenderState(t *testing.T) {
 	}{
 		{"not view-once", false, false, "", "", false},
 		{"unopened", true, false, "view once", "Click to open · closes after viewing", false},
-		{"opened", true, true, "opened", "Opened", true},
+		{"opened", true, true, "opened", "No longer available", true},
 		// A viewed=true attachment that somehow isn't view-once shouldn't happen
 		// in practice, but the selector should still treat isViewOnce as the gate.
 		{"viewed but not view-once", false, true, "", "", false},

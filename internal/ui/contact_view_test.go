@@ -53,3 +53,21 @@ func TestBubbleVM_ContactMessage(t *testing.T) {
 		t.Errorf("Contact.Name = %q, want Alan Turing", out.Contact.Name)
 	}
 }
+
+func TestContactChatJID(t *testing.T) {
+	if got, ok := contactChatJID([]string{"+44 20 7946 0958"}); !ok || got != "442079460958@s.whatsapp.net" {
+		t.Errorf("contactChatJID = (%q, %v)", got, ok)
+	}
+	// The first *dialable* number wins, not simply the first entry.
+	if got, ok := contactChatJID([]string{"ext. 4471", "+351 912 345 678"}); !ok || got != "351912345678@s.whatsapp.net" {
+		t.Errorf("contactChatJID skip = (%q, %v)", got, ok)
+	}
+	// No usable number: the caller renders the action inert rather than
+	// opening a chat with a malformed JID.
+	if _, ok := contactChatJID(nil); ok {
+		t.Error("contactChatJID(nil) reported ok")
+	}
+	if _, ok := contactChatJID([]string{"call the office"}); ok {
+		t.Error("contactChatJID(non-number) reported ok")
+	}
+}

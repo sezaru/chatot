@@ -44,7 +44,7 @@ func blockedContactRows(blocked []string, chats []client.Chat) []blockedContactR
 // button per row, refreshing the list after each unblock. Fetching happens
 // off the main thread; UI updates are marshalled back via glib.IdleAdd.
 func showBlockedDialog(parent *gtk.Window, c client.Client) {
-	dialog := gtk.NewWindow()
+	dialog := newCardDialog()
 	dialog.SetTitle("Blocked contacts")
 	if parent != nil {
 		dialog.SetTransientFor(parent)

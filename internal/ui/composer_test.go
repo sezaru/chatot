@@ -176,10 +176,12 @@ func TestUnreadMessageIDsZeroCount(t *testing.T) {
 	}
 }
 
-func TestMarkReadOnOpenSkippedByDefault(t *testing.T) {
-	if SendReadReceipts {
-		t.Fatal("expected SendReadReceipts to default to false")
-	}
+// TestMarkReadOnOpenClearsBadgeWithoutReceipts: with receipts off the
+// badge still clears locally (the user has seen the chat); only the receipt
+// to the sender is withheld.
+func TestMarkReadOnOpenClearsBadgeWithoutReceipts(t *testing.T) {
+	SendReadReceipts = false
+	defer func() { SendReadReceipts = false }()
 
 	f := client.NewFake()
 	msgs, err := f.Messages("1234567890@s.whatsapp.net", 0)
@@ -194,8 +196,36 @@ func TestMarkReadOnOpenSkippedByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range chats {
-		if c.JID == "1234567890@s.whatsapp.net" && c.UnreadCount == 0 {
-			t.Error("expected MarkRead not called (UnreadCount untouched) when SendReadReceipts is false")
+		if c.JID == "1234567890@s.whatsapp.net" && c.UnreadCount != 0 {
+			t.Errorf("UnreadCount = %d, want 0: opening a chat clears its badge even without receipts", c.UnreadCount)
+		}
+	}
+}
+
+func TestMarkReadOnArrivalIgnoresOwnMessages(t *testing.T) {
+	f := client.NewFake()
+	chats, _ := f.Chats(0)
+	var before int
+	for _, c := range chats {
+		if c.JID == "1234567890@s.whatsapp.net" {
+			before = c.UnreadCount
+		}
+	}
+	if before == 0 {
+		t.Skip("fixture chat has no unread messages")
+	}
+	MarkReadOnArrival(context.Background(), f, client.Message{ID: "x", ChatJID: "1234567890@s.whatsapp.net", FromMe: true})
+	chats, _ = f.Chats(0)
+	for _, c := range chats {
+		if c.JID == "1234567890@s.whatsapp.net" && c.UnreadCount != before {
+			t.Errorf("own message changed UnreadCount %d -> %d", before, c.UnreadCount)
+		}
+	}
+	MarkReadOnArrival(context.Background(), f, client.Message{ID: "y", ChatJID: "1234567890@s.whatsapp.net"})
+	chats, _ = f.Chats(0)
+	for _, c := range chats {
+		if c.JID == "1234567890@s.whatsapp.net" && c.UnreadCount != 0 {
+			t.Errorf("inbound arrival left UnreadCount = %d, want 0", c.UnreadCount)
 		}
 	}
 }
@@ -432,5 +462,34 @@ func TestSendEnabled(t *testing.T) {
 	}
 	if !sendEnabled("hi") {
 		t.Error("send should be enabled once there's text")
+	}
+}
+
+func TestContactPicksSkipGroupsAndKeepPhones(t *testing.T) {
+	chats := []client.Chat{
+		{JID: "111@s.whatsapp.net", Name: "Ana", Phone: "111"},
+		{JID: "g@g.us", Name: "Team", IsGroup: true},
+		{JID: "9@lid", Name: "+55 9", Phone: ""},
+		{JID: "n@newsletter", Name: "News"},
+		{JID: "status@broadcast", Name: "Status"},
+	}
+	picks := contactPicks(chats)
+	if len(picks) != 2 || picks[0].Phone != "111" || picks[1].JID != "9@lid" {
+		t.Errorf("contactPicks = %+v", picks)
+	}
+	if got := filterContactPicks(picks, "an"); len(got) != 1 || got[0].Name != "Ana" {
+		t.Errorf("filter by name = %+v", got)
+	}
+	if got := filterContactPicks(picks, "11"); len(got) != 1 || got[0].JID != "111@s.whatsapp.net" {
+		t.Errorf("filter by phone = %+v", got)
+	}
+	if got := contactPhoneLabel(""); got != "" {
+		t.Errorf("empty phone label = %q", got)
+	}
+	if got := contactPhoneLabel("5548999"); got != "+5548999" {
+		t.Errorf("phone label = %q", got)
+	}
+	if contactSelectionLabel(0) == contactSelectionLabel(2) {
+		t.Error("selection label should change with the count")
 	}
 }

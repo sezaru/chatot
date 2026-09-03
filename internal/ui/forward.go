@@ -10,6 +10,7 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 
 	"chatot/internal/client"
 )
@@ -18,12 +19,16 @@ import (
 // rows are a smaller version of the chat-list rows.
 const forwardDialogAvatarSize = 32
 
+// ForwardInitialPick pre-ticks these chat JIDs when the dialog opens; a
+// screenshot hook, so the ticked state can be captured without clicks.
+var ForwardInitialPick []string
+
 // forwardSelectionLabel renders the dialog's footer for n selected chats.
 func forwardSelectionLabel(n int) string {
-	if n == 1 {
-		return "1 chat selected"
+	if n == 0 {
+		return "Pick chats to forward to"
 	}
-	return fmt.Sprintf("%d chats selected", n)
+	return fmt.Sprintf("%d selected", n)
 }
 
 // filterForwardChats returns the chats whose name contains query
@@ -53,53 +58,55 @@ func ShowForwardDialog(parent *gtk.Window, c client.Client, msg client.Message, 
 		return
 	}
 
-	dialog := gtk.NewWindow()
-	dialog.SetTitle("Forward to")
+	dialog := newCardDialog()
+	dialog.SetTitle("Forward to…")
 	if parent != nil {
 		dialog.SetTransientFor(parent)
 	}
 	dialog.SetModal(true)
 	dialog.SetDefaultSize(360, 480)
 
-	box := gtk.NewBox(gtk.OrientationVertical, 8)
-	box.SetMarginTop(12)
-	box.SetMarginBottom(12)
-	box.SetMarginStart(12)
-	box.SetMarginEnd(12)
+	box := gtk.NewBox(gtk.OrientationVertical, 0)
 
-	preview := gtk.NewLabel(starredSnippet(msg))
-	preview.AddCSSClass("chatot-bubble-quote")
-	preview.SetXAlign(0)
-	preview.SetWrap(true)
-	box.Append(preview)
+	// The mockup drops the quoted-message preview: the ⋯ menu you came from
+	// already showed which message this is, and the row list needs the height.
+	search := sidebarSearchEntry("Search chats")
+	searchRow := gtk.NewBox(gtk.OrientationVertical, 0)
+	searchRow.AddCSSClass("chatot-forward-search")
+	searchRow.Append(search)
+	box.Append(searchRow)
 
-	search := gtk.NewSearchEntry()
-	search.SetPlaceholderText("Search chats")
-	box.Append(search)
-
-	list := gtk.NewListBox()
-	list.SetSelectionMode(gtk.SelectionNone)
+	list := gtk.NewBox(gtk.OrientationVertical, 0)
+	list.AddCSSClass("chatot-forward-list")
 
 	scroller := gtk.NewScrolledWindow()
+	scroller.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 	scroller.SetVExpand(true)
+	scroller.SetMinContentHeight(0)
+	scroller.SetSizeRequest(-1, 120)
 	scroller.SetChild(list)
 	box.Append(scroller)
 
+	// A single footer bar, per the mockup: the count at the left, one green
+	// Send at the right. Closing is the title row's ✕.
+	btnRow := gtk.NewBox(gtk.OrientationHorizontal, 10)
+	btnRow.AddCSSClass("chatot-dialog-footer")
 	footer := gtk.NewLabel(forwardSelectionLabel(0))
 	footer.SetXAlign(0)
-	box.Append(footer)
-
-	btnRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	btnRow.SetHAlign(gtk.AlignEnd)
-	cancelBtn := gtk.NewButtonWithLabel("Cancel")
-	forwardBtn := gtk.NewButtonWithLabel("Forward")
-	forwardBtn.AddCSSClass("suggested-action")
+	footer.SetHExpand(true)
+	footer.SetVAlign(gtk.AlignCenter)
+	footer.AddCSSClass("chatot-card-value")
+	btnRow.Append(footer)
+	forwardBtn := gtk.NewButtonWithLabel("Send")
+	forwardBtn.AddCSSClass("chatot-primary-btn")
 	forwardBtn.SetSensitive(false)
-	btnRow.Append(cancelBtn)
 	btnRow.Append(forwardBtn)
 	box.Append(btnRow)
 
 	selected := make(map[string]bool)
+	for _, jid := range ForwardInitialPick {
+		selected[jid] = true
+	}
 	cache := newAvatarCache()
 
 	updateFooter := func() {
@@ -107,49 +114,52 @@ func ShowForwardDialog(parent *gtk.Window, c client.Client, msg client.Message, 
 		forwardBtn.SetSensitive(len(selected) > 0)
 	}
 
-	rebuild := func(query string) {
-		for child := list.FirstChild(); child != nil; {
-			next := gtk.BaseWidget(child).NextSibling()
-			list.Remove(child)
-			child = next
-		}
+	var rebuild func(string)
+	rebuild = func(query string) {
+		removeAllChildren(list)
 		for _, chat := range filterForwardChats(chats, query) {
 			vm := chatRowVM(chat, time.Now())
+			jid := chat.JID
 
-			row := gtk.NewBox(gtk.OrientationHorizontal, 8)
-			row.SetMarginTop(4)
-			row.SetMarginBottom(4)
-			row.SetMarginStart(4)
-			row.SetMarginEnd(4)
-
-			check := gtk.NewCheckButton()
-			check.SetActive(selected[chat.JID])
-			row.Append(check)
-
-			row.Append(buildAvatar(c, cache, chat.JID, vm.Initial, forwardDialogAvatarSize))
+			row := gtk.NewBox(gtk.OrientationHorizontal, 10)
+			row.Append(buildAvatar(c, cache, jid, vm.Initial, forwardDialogAvatarSize))
 
 			nameLabel := gtk.NewLabel(vm.Name)
 			nameLabel.SetXAlign(0)
 			nameLabel.SetHExpand(true)
+			nameLabel.SetEllipsize(pango.EllipsizeEnd)
+			nameLabel.AddCSSClass("chatot-forward-name")
 			row.Append(nameLabel)
 
-			jid := chat.JID
-			check.ConnectToggled(func() {
-				if check.Active() {
-					selected[jid] = true
-				} else {
+			// A round tick disc, not a square GtkCheckButton: the design's
+			// forward list uses the same 19px check as its other pickers.
+			check := newCheckGlyph(19, selected[jid])
+			check.AddCSSClass("chatot-forward-check")
+			if selected[jid] {
+				check.AddCSSClass("chatot-forward-check-on")
+			}
+			row.Append(check)
+
+			btn := gtk.NewButton()
+			btn.SetChild(row)
+			btn.AddCSSClass("flat")
+			btn.AddCSSClass("chatot-people-row")
+			btn.ConnectClicked(func() {
+				if selected[jid] {
 					delete(selected, jid)
+				} else {
+					selected[jid] = true
 				}
 				updateFooter()
+				rebuild(search.Text())
 			})
-
-			list.Append(row)
+			list.Append(btn)
 		}
 	}
 	rebuild("")
+	updateFooter()
 	search.ConnectSearchChanged(func() { rebuild(search.Text()) })
 
-	cancelBtn.ConnectClicked(func() { dialog.Close() })
 	forwardBtn.ConnectClicked(func() {
 		targets := make([]string, 0, len(selected))
 		for jid := range selected {

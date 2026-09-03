@@ -2,6 +2,7 @@ package ui
 
 import (
 	"log"
+	"strings"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -11,50 +12,37 @@ import (
 	"chatot/internal/settings"
 )
 
-// manageAccountsAvatarSize matches the switcher's row avatar.
-const manageAccountsAvatarSize = 40
+// manageAccountsAvatarSize is the mockup's 34px row avatar.
+const manageAccountsAvatarSize = 34
 
-// ShowManageAccountsDialog opens the "Accounts" manager: a per-account row
-// (avatar + name + status + a ⋮ menu of Relink/Account settings/Remove), an
-// Add… button that chains into the add-account dialog, and two global toggles
-// below the list (notifications-per-account, keep-inactive-connected). The list
-// rebuilds after every add/remove and calls onChanged so the switcher/header
-// stay in sync; toggle changes mutate prefs, call onSettingsChanged to persist,
-// and (for keep-connected) apply immediately to the manager.
+// ShowManageAccountsDialog opens the mockup's "Accounts" card: the title row
+// carries the green Add… pill (and no ✕ — the design's card has none), then a
+// bordered list of accounts (avatar, label, a mono "phone · state" line, a ⋮
+// of Relabel/Relink/Remove) and a second card with the two global toggles.
+// The list rebuilds after every change and calls onChanged so the switcher
+// and header stay in sync; toggle changes mutate prefs, call onSettingsChanged
+// to persist, and (for keep-connected) apply immediately to the manager.
 func ShowManageAccountsDialog(parent *gtk.Window, am *client.AccountManager, prefs *settings.Settings, onChanged, onSettingsChanged func()) {
-	dialog := gtk.NewWindow()
+	dialog := newCardDialog()
 	dialog.SetTitle("Accounts")
 	if parent != nil {
 		dialog.SetTransientFor(parent)
 	}
 	dialog.SetModal(true)
-	dialog.SetDefaultSize(400, 480)
+	dialog.SetDefaultSize(420, -1)
 
-	box := gtk.NewBox(gtk.OrientationVertical, 12)
-	box.SetMarginTop(16)
-	box.SetMarginBottom(16)
-	box.SetMarginStart(16)
-	box.SetMarginEnd(16)
-
-	header := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	title := gtk.NewLabel("Accounts")
-	title.AddCSSClass("title-4")
-	title.SetXAlign(0)
-	title.SetHExpand(true)
 	addBtn := gtk.NewButtonWithLabel("Add…")
-	addBtn.AddCSSClass("suggested-action")
-	header.Append(title)
-	header.Append(addBtn)
-	box.Append(header)
+	addBtn.AddCSSClass("chatot-primary-btn")
+	addBtn.AddCSSClass("chatot-dialog-headbtn")
+	addBtn.SetVAlign(gtk.AlignCenter)
+	dialog.PackEnd(addBtn)
 
-	list := gtk.NewListBox()
-	list.SetSelectionMode(gtk.SelectionNone)
-	list.AddCSSClass("boxed-list")
+	box := dialogBody(10)
 
-	scroller := gtk.NewScrolledWindow()
-	scroller.SetVExpand(true)
-	scroller.SetChild(list)
-	box.Append(scroller)
+	// The card is content-sized: a stretching list left the last row with a
+	// slab of empty space under it.
+	list := newSettingsCard()
+	box.Append(list)
 
 	var rebuild func()
 	changed := func() {
@@ -64,153 +52,172 @@ func ShowManageAccountsDialog(parent *gtk.Window, am *client.AccountManager, pre
 		}
 	}
 	rebuild = func() {
-		for child := list.FirstChild(); child != nil; {
-			next := gtk.BaseWidget(child).NextSibling()
-			list.Remove(child)
-			child = next
-		}
+		removeAllChildren(list.Box)
+		list.rows = 0
 		for _, meta := range am.Accounts() {
-			list.Append(buildManageAccountRow(dialog, am, meta, changed))
+			list.Add(buildManageAccountRow(dialog.Window(), am, meta, changed))
 		}
 	}
 	rebuild()
 
 	addBtn.ConnectClicked(func() {
-		ShowAddAccountDialog(dialog, am, changed)
+		ShowAddAccountDialog(dialog.Window(), am, changed)
 	})
 
-	toggles := adw.NewPreferencesGroup()
-
-	perAccount := adw.NewSwitchRow()
-	perAccount.SetTitle("Notifications per account")
-	perAccount.SetSubtitle("Toast titles are prefixed with the label")
-	perAccount.SetActive(prefs.NotificationsPerAccount)
-	perAccount.Connect("notify::active", func() {
-		prefs.NotificationsPerAccount = perAccount.Active()
-		NotificationsPerAccount = prefs.NotificationsPerAccount
-		if onSettingsChanged != nil {
-			onSettingsChanged()
-		}
-	})
+	toggles := newSettingsCard()
+	perAccount, _ := newSwitchRow("Notifications per account",
+		"Toast titles are prefixed with the label",
+		prefs.NotificationsPerAccount, func(on bool) {
+			prefs.NotificationsPerAccount = on
+			NotificationsPerAccount = on
+			if onSettingsChanged != nil {
+				onSettingsChanged()
+			}
+		})
 	toggles.Add(perAccount)
-
-	keepConnected := adw.NewSwitchRow()
-	keepConnected.SetTitle("Keep inactive accounts connected")
-	keepConnected.SetSubtitle("Receive while another account is shown")
-	keepConnected.SetActive(prefs.KeepInactiveConnected)
-	keepConnected.Connect("notify::active", func() {
-		prefs.KeepInactiveConnected = keepConnected.Active()
-		am.SetKeepInactiveConnected(prefs.KeepInactiveConnected)
-		if onSettingsChanged != nil {
-			onSettingsChanged()
-		}
-	})
+	keepConnected, _ := newSwitchRow("Keep inactive accounts connected",
+		"Receive while another account is shown",
+		prefs.KeepInactiveConnected, func(on bool) {
+			prefs.KeepInactiveConnected = on
+			am.SetKeepInactiveConnected(on)
+			if onSettingsChanged != nil {
+				onSettingsChanged()
+			}
+		})
 	toggles.Add(keepConnected)
-
 	box.Append(toggles)
 
 	dialog.SetChild(box)
 	dialog.Present()
 }
 
-// buildManageAccountRow renders one account row: avatar, name over status, and
-// a ⋮ menu with Relink and Remove.
+// accountStatusSubline is the mockup's per-account line: the phone number and
+// the connection state, mono and lower-case, e.g. "+351912345678 · connected".
+// Falls back to the state alone for an account that isn't linked yet.
+func accountStatusSubline(meta client.AccountMeta) string {
+	state := strings.ToLower(meta.Status)
+	if meta.Phone == "" {
+		return state
+	}
+	return meta.Phone + " · " + state
+}
+
+// buildManageAccountRow renders one account row: avatar, name over the mono
+// status line (red when the account needs relinking), and a vertical ⋮
+// opening the design's Relabel/Relink/Remove menu.
 func buildManageAccountRow(dialog *gtk.Window, am *client.AccountManager, meta client.AccountMeta, onChanged func()) *gtk.Box {
-	row := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	row.SetMarginTop(6)
-	row.SetMarginBottom(6)
-	row.SetMarginStart(8)
-	row.SetMarginEnd(8)
+	row := gtk.NewBox(gtk.OrientationHorizontal, 11)
+	row.AddCSSClass("chatot-card-row")
 
 	row.Append(newAvatarInitial(meta.ID, initialFor(meta.Name), manageAccountsAvatarSize))
 
-	textCol := gtk.NewBox(gtk.OrientationVertical, 0)
+	textCol := gtk.NewBox(gtk.OrientationVertical, 2)
 	textCol.SetHExpand(true)
 	textCol.SetVAlign(gtk.AlignCenter)
 
 	name := gtk.NewLabel(meta.Name)
 	name.SetXAlign(0)
-	name.AddCSSClass("chatot-chat-name")
+	name.AddCSSClass("chatot-people-name")
 	textCol.Append(name)
 
-	status := gtk.NewLabel(meta.Status)
+	status := gtk.NewLabel(accountStatusSubline(meta))
 	status.SetXAlign(0)
+	status.SetWrap(true)
 	status.AddCSSClass("chatot-account-status")
+	if meta.Status != "Connected" {
+		status.AddCSSClass("chatot-status-bad")
+	}
 	textCol.Append(status)
 
 	row.Append(textCol)
 
 	menuBtn := gtk.NewMenuButton()
-	menuBtn.SetIconName("view-more-symbolic")
+	// A text ⋮ (vertical, like the header's) via SetChild; the symbolic icon
+	// rendered horizontal and a MenuButton's own label sits off-centre.
+	menuBtn.SetChild(gtk.NewLabel("⋮"))
 	menuBtn.AddCSSClass("flat")
+	menuBtn.AddCSSClass("chatot-hdr-icon")
 	menuBtn.SetVAlign(gtk.AlignCenter)
-
-	pop := gtk.NewPopover()
-	menuBox := gtk.NewBox(gtk.OrientationVertical, 0)
-
-	relink := gtk.NewButtonWithLabel("Relink")
-	relink.AddCSSClass("flat")
-	relink.SetHAlign(gtk.AlignFill)
-	relink.Child().(*gtk.Label).SetXAlign(0)
-	relink.ConnectClicked(func() {
-		pop.Popdown()
-		showRelinkDialog(dialog, am, meta.ID, onChanged)
-	})
-	menuBox.Append(relink)
-
-	acctSettings := gtk.NewButtonWithLabel("Account settings…")
-	acctSettings.AddCSSClass("flat")
-	acctSettings.SetHAlign(gtk.AlignFill)
-	acctSettings.Child().(*gtk.Label).SetXAlign(0)
-	acctSettings.ConnectClicked(func() {
-		pop.Popdown()
-		showAccountSettingsDialog(dialog, am, meta)
-	})
-	menuBox.Append(acctSettings)
-
-	remove := gtk.NewButtonWithLabel("Remove")
-	remove.AddCSSClass("flat")
-	remove.SetHAlign(gtk.AlignFill)
-	remove.Child().(*gtk.Label).SetXAlign(0)
-	remove.ConnectClicked(func() {
-		pop.Popdown()
-		confirmRemoveAccount(dialog, am, meta, onChanged)
-	})
-	menuBox.Append(remove)
-
-	pop.SetChild(menuBox)
+	menuBtn.SetTooltipText("Account options")
+	pop := newMenuPopover(accountRowMenuItems(accountRowMenuActions{
+		Relabel: func() { showRelabelAccountDialog(dialog, am, meta, onChanged) },
+		Relink:  func() { showRelinkDialog(dialog, am, meta.ID, onChanged) },
+		Remove:  func() { confirmRemoveAccount(dialog, am, meta, onChanged) },
+	}))
 	menuBtn.SetPopover(pop)
 	row.Append(menuBtn)
 
 	return row
 }
 
-// showAccountSettingsDialog edits per-account settings (currently just a proxy
-// override). The proxy is applied when the account's client is next created, so
-// a relink or restart is needed for a change to take effect.
-func showAccountSettingsDialog(parent *gtk.Window, am *client.AccountManager, meta client.AccountMeta) {
-	dialog := adw.NewPreferencesDialog()
-	dialog.SetTitle(meta.Name)
+// accountRowMenuActions are the Accounts card's per-row ⋮ callbacks.
+type accountRowMenuActions struct {
+	Relabel func()
+	Relink  func()
+	Remove  func()
+}
 
-	page := adw.NewPreferencesPage()
-	group := adw.NewPreferencesGroup()
-	group.SetTitle("Proxy")
-	group.SetDescription("Relink or restart chatot for a proxy change to take effect")
+// accountRowMenuItems is the per-account ⋮ menu. The mockup names the three
+// as "Relabel · Reconnect · Log out"; chatot's reconnect is a QR relink and
+// its log-out removes the account from this device, so the rows say that.
+func accountRowMenuItems(a accountRowMenuActions) []menuItem {
+	return []menuItem{
+		{Icon: "✎", Label: "Relabel…", OnActivate: a.Relabel},
+		{Icon: "🔗", Label: "Relink", OnActivate: a.Relink},
+		{Icon: "⏻", Label: "Remove", Destructive: true, OnActivate: a.Remove},
+	}
+}
 
-	proxyRow := adw.NewEntryRow()
-	proxyRow.SetTitle("Proxy URL")
-	proxyRow.SetTooltipText("socks5://host:port or http://host:port")
-	proxyRow.SetText(am.AccountProxy(meta.ID))
-	proxyRow.ConnectChanged(func() {
-		if err := am.SetAccountProxy(meta.ID, proxyRow.Text()); err != nil {
-			log.Printf("chatot: set account %q proxy failed: %v", meta.ID, err)
+// showRelabelAccountDialog renames an account's switcher/rail label.
+func showRelabelAccountDialog(parent *gtk.Window, am *client.AccountManager, meta client.AccountMeta, onChanged func()) {
+	dialog := newCardDialog()
+	dialog.SetTitle("Relabel account")
+	dialog.SetTransientFor(parent)
+	dialog.SetDefaultSize(340, -1)
+
+	box := dialogBody(12)
+	card := newSettingsCard()
+	fieldRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	fieldRow.AddCSSClass("chatot-card-row")
+	fieldRow.Append(settingsRowBody("Label", "Shown in the account button"))
+	entry := gtk.NewEntry()
+	entry.SetText(meta.Name)
+	entry.SetVAlign(gtk.AlignCenter)
+	entry.SetSizeRequest(140, -1)
+	entry.AddCSSClass("chatot-card-entry")
+	fieldRow.Append(entry)
+	card.Add(fieldRow)
+	box.Append(card)
+
+	status := gtk.NewLabel("")
+	status.SetWrap(true)
+	status.SetJustify(gtk.JustifyCenter)
+	status.AddCSSClass("chatot-linking-status")
+	status.SetVisible(false)
+	box.Append(status)
+
+	saveBtn := gtk.NewButtonWithLabel("Save")
+	saveBtn.AddCSSClass("chatot-primary-btn")
+	saveBtn.SetHExpand(true)
+	save := func() {
+		if err := am.RenameAccount(meta.ID, entry.Text()); err != nil {
+			log.Printf("chatot: relabel account %q failed: %v", meta.ID, err)
+			status.SetText("The label can't be empty")
+			status.SetVisible(true)
+			return
 		}
-	})
-	group.Add(proxyRow)
+		dialog.Close()
+		if onChanged != nil {
+			onChanged()
+		}
+	}
+	saveBtn.ConnectClicked(save)
+	entry.ConnectActivate(save)
+	box.Append(saveBtn)
 
-	page.Add(group)
-	dialog.Add(page)
-	dialog.Present(parent)
+	dialog.SetChild(box)
+	dialog.Present()
+	entry.GrabFocus()
 }
 
 // confirmRemoveAccount asks before removing meta, then removes it off the main
@@ -243,7 +250,8 @@ func confirmRemoveAccount(parent *gtk.Window, am *client.AccountManager, meta cl
 }
 
 // showRelinkDialog re-presents the pairing QR for an existing account so the
-// user can re-link a logged-out (or to-be-re-paired) account. It subscribes to
+// user can re-link a logged-out account. It is the Add-account card without
+// the label field: instruction, the QR card, a status line. It subscribes to
 // that account's own QR/pair streams; on link it closes and calls onChanged.
 func showRelinkDialog(parent *gtk.Window, am *client.AccountManager, id string, onChanged func()) {
 	acct := am.Find(id)
@@ -251,33 +259,33 @@ func showRelinkDialog(parent *gtk.Window, am *client.AccountManager, id string, 
 		return
 	}
 
-	dialog := gtk.NewWindow()
+	dialog := newCardDialog()
 	dialog.SetTitle("Relink account")
 	dialog.SetTransientFor(parent)
 	dialog.SetModal(true)
-	dialog.SetDefaultSize(320, 400)
+	dialog.SetDefaultSize(360, -1)
 
-	box := gtk.NewBox(gtk.OrientationVertical, 12)
-	box.SetMarginTop(16)
-	box.SetMarginBottom(16)
-	box.SetMarginStart(16)
-	box.SetMarginEnd(16)
+	box := dialogBody(12)
 
-	intro := gtk.NewLabel("On your phone: Linked Devices → Link a device, then scan this code.")
+	intro := gtk.NewLabel("On your phone: Linked devices → Link a device, then scan this code.")
 	intro.SetWrap(true)
 	intro.SetJustify(gtk.JustifyCenter)
-	intro.SetMaxWidthChars(36)
+	intro.SetMaxWidthChars(40)
+	intro.AddCSSClass("chatot-card-sub")
 	box.Append(intro)
 
-	qrPic := gtk.NewPicture()
-	qrPic.SetSizeRequest(256, 256)
-	qrPic.SetCanShrink(false)
-	box.Append(qrPic)
+	qr := newQRCard()
+	box.Append(qr.card)
 
-	status := gtk.NewLabel("Waiting for you to scan…")
+	status := gtk.NewLabel("Waiting for a code…")
 	status.SetWrap(true)
 	status.SetJustify(gtk.JustifyCenter)
+	status.AddCSSClass("chatot-linking-status")
 	box.Append(status)
+	// A linked account never emits a QR: whatsmeow only pairs a fresh session.
+	if acct.LoggedIn() {
+		status.SetText("This account is already linked. Remove it and add it again to pair a new session.")
+	}
 
 	done := make(chan struct{})
 	closed := false
@@ -287,22 +295,22 @@ func showRelinkDialog(parent *gtk.Window, am *client.AccountManager, id string, 
 			close(done)
 		}
 	}
-	dialog.ConnectCloseRequest(func() bool {
-		closeOnce()
-		return false
-	})
+	dialog.ConnectClosed(closeOnce)
 
 	go func() {
-		qr := acct.QRCodes()
+		codes := acct.QRCodes()
 		for {
 			select {
 			case <-done:
 				return
-			case code, ok := <-qr:
+			case code, ok := <-codes:
 				if !ok {
 					return
 				}
-				glib.IdleAdd(func() { setQRPicture(qrPic, status, code) })
+				glib.IdleAdd(func() {
+					qr.Set(code, status)
+					status.SetText("Waiting for you to scan…")
+				})
 			}
 		}
 	}()

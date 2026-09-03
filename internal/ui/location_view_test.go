@@ -2,6 +2,7 @@ package ui
 
 import (
 	"testing"
+	"time"
 
 	"chatot/internal/client"
 )
@@ -39,9 +40,10 @@ func TestLocationVM_UnnamedFallback(t *testing.T) {
 
 func TestLocationVM_LiveUntil(t *testing.T) {
 	until := mustParse(t, "2026-08-30 15:04:00").Unix()
-	live := locationVM(client.Message{Location: &client.Location{
+	now := time.Unix(until, 0).Add(-30 * time.Minute)
+	live := locationVMAt(client.Message{Location: &client.Location{
 		Latitude: 1, Longitude: 2, IsLive: true, LiveUntil: until,
-	}})
+	}}, now)
 	if want := "Live location · until 15:04"; live.Title != want {
 		t.Errorf("Title = %q, want %q", live.Title, want)
 	}
@@ -80,5 +82,34 @@ func TestBubbleVM_LocationMessage(t *testing.T) {
 	}
 	if out.Location.Title != "Home" {
 		t.Errorf("Location.Title = %q, want Home", out.Location.Title)
+	}
+}
+
+func TestLocationVM_LiveEnded(t *testing.T) {
+	until := mustParse(t, "2026-08-30 15:04:00").Unix()
+	after := time.Unix(until, 0).Add(time.Minute)
+	v := locationVMAt(client.Message{Location: &client.Location{
+		Latitude: 1, Longitude: 2, IsLive: true, LiveUntil: until, Address: "Rua do Loureiro",
+	}}, after)
+	if v.Live || !v.Ended {
+		t.Errorf("Live=%v Ended=%v, want ended", v.Live, v.Ended)
+	}
+	if v.Title != "Live location ended" {
+		t.Errorf("Title = %q", v.Title)
+	}
+	if v.Sub != "Stopped sharing at 15:04" {
+		t.Errorf("Sub = %q", v.Sub)
+	}
+	// Still running: the subline is the place itself.
+	running := locationVMAt(client.Message{Location: &client.Location{
+		Latitude: 1, Longitude: 2, IsLive: true, LiveUntil: until, Address: "Rua do Loureiro",
+	}}, time.Unix(until, 0).Add(-time.Minute))
+	if running.Sub != "Rua do Loureiro" {
+		t.Errorf("running Sub = %q", running.Sub)
+	}
+	// An unknown expiry never ends on its own.
+	open := locationVMAt(client.Message{Location: &client.Location{IsLive: true}}, after)
+	if !open.Live || open.Ended {
+		t.Errorf("unknown expiry: Live=%v Ended=%v", open.Live, open.Ended)
 	}
 }

@@ -254,7 +254,7 @@ func copyFile(src, dst string) error {
 // deferred. Include-media, when on, also copies downloaded attachments into
 // a "<file>_media/" folder alongside the text export.
 func ShowExportDialog(parent *gtk.Window, c client.Client, jid, contactName string, toastOverlay *adw.ToastOverlay) {
-	dialog := gtk.NewWindow()
+	dialog := newCardDialog()
 	dialog.SetTitle("Export chat")
 	if parent != nil {
 		dialog.SetTransientFor(parent)
@@ -262,55 +262,50 @@ func ShowExportDialog(parent *gtk.Window, c client.Client, jid, contactName stri
 	dialog.SetModal(true)
 	dialog.SetDefaultSize(420, 0)
 
-	box := gtk.NewBox(gtk.OrientationVertical, 10)
-	box.SetMarginTop(16)
-	box.SetMarginBottom(16)
-	box.SetMarginStart(16)
-	box.SetMarginEnd(16)
+	box := gtk.NewBox(gtk.OrientationVertical, 0)
+	body := dialogBody(12)
 
-	box.Append(dropdownRow("Format", gtk.NewDropDownFromStrings([]string{"Plain text"})))
-	box.Append(dropdownRow("Range", gtk.NewDropDownFromStrings([]string{"All messages"})))
+	// One bordered card holding Format / Range / Include media, per the
+	// mockup, instead of three loose rows separated by a rule.
+	options := newSettingsCard()
+	options.Add(dropdownRow("Format", gtk.NewDropDownFromStrings([]string{"Plain text"})))
+	options.Add(dropdownRow("Range", gtk.NewDropDownFromStrings([]string{"All messages"})))
 
 	count, size, sizeKnown := exportMediaCount(c, jid)
-	mediaRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	mediaText := gtk.NewBox(gtk.OrientationVertical, 2)
-	mediaTitle := gtk.NewLabel("Include media")
-	mediaTitle.SetXAlign(0)
-	mediaText.Append(mediaTitle)
-	mediaSubtitle := gtk.NewLabel(includeMediaSubtitle(count, size, sizeKnown))
-	mediaSubtitle.SetXAlign(0)
-	mediaSubtitle.AddCSSClass("dim-label")
-	mediaText.Append(mediaSubtitle)
-	mediaText.SetHExpand(true)
-	mediaRow.Append(mediaText)
-	includeMedia := gtk.NewSwitch()
-	includeMedia.SetActive(count > 0)
-	includeMedia.SetVAlign(gtk.AlignCenter)
-	mediaRow.Append(includeMedia)
-	box.Append(mediaRow)
+	mediaRow, includeMedia := newSwitchRow("Include media", includeMediaSubtitle(count, size, sizeKnown), count > 0, nil)
+	options.Add(mediaRow)
+	body.Append(options)
 
-	box.Append(gtk.NewSeparator(gtk.OrientationHorizontal))
-
-	saveLabel := gtk.NewLabel("SAVE TO")
-	saveLabel.SetXAlign(0)
-	saveLabel.AddCSSClass("dim-label")
-	box.Append(saveLabel)
-
+	// The "SAVE TO" card: an uppercase caption over the mono path, with the
+	// chooser as an outline button at the right.
+	saveCard := newSettingsCard()
+	saveRow := gtk.NewBox(gtk.OrientationHorizontal, 10)
+	saveRow.AddCSSClass("chatot-card-row")
+	saveCol := gtk.NewBox(gtk.OrientationVertical, 2)
+	saveCol.SetHExpand(true)
+	saveCaption := gtk.NewLabel("SAVE TO")
+	saveCaption.SetXAlign(0)
+	saveCaption.AddCSSClass("chatot-card-caption")
+	saveCol.Append(saveCaption)
 	pathLabel := gtk.NewLabel(defaultExportPath(contactName))
 	pathLabel.SetXAlign(0)
 	pathLabel.SetEllipsize(pango.EllipsizeMiddle)
-	pathLabel.SetHExpand(true)
+	pathLabel.AddCSSClass("chatot-export-path")
+	saveCol.Append(pathLabel)
+	saveRow.Append(saveCol)
 	chooseBtn := gtk.NewButtonWithLabel("Choose…")
-	saveRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	saveRow.Append(pathLabel)
+	chooseBtn.AddCSSClass("chatot-outline-btn")
+	chooseBtn.SetVAlign(gtk.AlignCenter)
 	saveRow.Append(chooseBtn)
-	box.Append(saveRow)
+	saveCard.Add(saveRow)
+	body.Append(saveCard)
+	box.Append(body)
 
 	chooseBtn.ConnectClicked(func() {
 		fd := gtk.NewFileDialog()
 		fd.SetTitle("Export chat to")
 		fd.SetInitialName(filepath.Base(pathLabel.Text()))
-		fd.Save(context.Background(), dialog, func(res gio.AsyncResulter) {
+		fd.Save(context.Background(), dialog.Window(), func(res gio.AsyncResulter) {
 			file, err := fd.SaveFinish(res)
 			if err != nil {
 				return // cancelled
@@ -319,11 +314,13 @@ func ShowExportDialog(parent *gtk.Window, c client.Client, jid, contactName stri
 		})
 	})
 
-	btnRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	btnRow := gtk.NewBox(gtk.OrientationHorizontal, 10)
+	btnRow.AddCSSClass("chatot-dialog-footer")
 	btnRow.SetHAlign(gtk.AlignEnd)
 	cancelBtn := gtk.NewButtonWithLabel("Cancel")
+	cancelBtn.AddCSSClass("chatot-outline-btn")
 	exportBtn := gtk.NewButtonWithLabel("Export")
-	exportBtn.AddCSSClass("suggested-action")
+	exportBtn.AddCSSClass("chatot-primary-btn")
 	btnRow.Append(cancelBtn)
 	btnRow.Append(exportBtn)
 	box.Append(btnRow)
@@ -372,11 +369,10 @@ func ShowExportDialog(parent *gtk.Window, c client.Client, jid, contactName stri
 // Format/Range rows (each a single-choice stand-in until more formats/date
 // ranges are supported).
 func dropdownRow(title string, dropdown *gtk.DropDown) *gtk.Box {
-	row := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	label := gtk.NewLabel(title)
-	label.SetXAlign(0)
-	label.SetHExpand(true)
-	row.Append(label)
+	row := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	row.AddCSSClass("chatot-card-row")
+	row.Append(settingsRowBody(title, ""))
+	dropdown.SetVAlign(gtk.AlignCenter)
 	row.Append(dropdown)
 	return row
 }
