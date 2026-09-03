@@ -1180,6 +1180,23 @@ the offline copy's path is in app.log (`offline render from copy of … at …`)
   the dev shell redirects the latter, since the shell reads the session's
   data home. About reads `0.1.0-beta`.
 
+- **Dark green text unreadable in dark mode.** Chip counts, unread
+  timestamps, the active tab, typing…, links and outline buttons used the
+  brand green (#147a63/#1b8c72) as text on the dark surfaces; the mockup's
+  own dark mode does the same, so it was no guide. New tokens
+  `chatot_accent_text`/`_soft` (brand green on light, mint #46c39a on
+  dark, ~6:1 on the sidebar) replace every green text/outline colour in
+  style.css; fills keep the brand green. The cairo tab icon and the
+  mention accent pick the same mint via `isDark()` at the call site.
+- **Packaging.** `.nix/package.nix` + `packages.chatot`/`apps.default` in
+  the flake: buildGoModule with the cgo GTK stack, wrapped by
+  wrapGAppsHook4 plus ffmpeg/poppler/xdg-utils on PATH, the UI fonts and
+  the Adwaita icon theme on XDG_DATA_DIRS, `CHATOT_NO_DESKTOP_ENTRY=1`,
+  and the .desktop + SVG/512px icons under share/. Verified from an
+  `env -i` launch, which exposed the "Select a chat" glyph naming
+  `chat-symbolic` — a Colloid-only icon — now the Chats tab's bubble path
+  stroked in cairo (`newEmptyChatGlyph`). README documents the install.
+
 Harness: hook `deletedialog` (MSG idx) opens the delete prompt; hook
 `bgarrive` (with `CHATOT_SHOT_CHAT`) has the fake deliver an inbound
 message once the window loses focus (`niri msg action focus-window` on
