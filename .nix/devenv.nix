@@ -47,8 +47,21 @@ in {
     pkgs.gst_all_1.gstreamer
     pkgs.gst_all_1.gst-plugins-base
     pkgs.gst_all_1.gst-plugins-good
+    # H.264/AAC decoding for GtkVideo (WhatsApp clips are H.264 MP4) and the
+    # VA-API plugin so playback stays off the CPU where it can.
+    pkgs.gst_all_1.gst-plugins-bad
+    pkgs.gst_all_1.gst-libav
     pkgs.ffmpeg
+    pkgs.poppler-utils # pdftoppm: first-page previews for PDF attachments
     pkgs.qrencode
+
+    # UI fonts the mockup specifies. Without these the GTK app falls back to
+    # DejaVu Sans, which is wider/taller at the same nominal size, so every
+    # row, header and bubble renders visibly larger than the design. devenv
+    # puts each package's share/ on XDG_DATA_DIRS and fontconfig picks up
+    # $XDG_DATA_DIRS/fonts, so no fontconfig wiring is needed.
+    pkgs.cantarell-fonts # UI font
+    pkgs.jetbrains-mono # the mockup's mono face (phone number subline)
 
     # Browser automation — render the HTML mockup under ./mockup to
     # pixel-exact reference shots. Browsers come from the store, never a
