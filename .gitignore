@@ -7,3 +7,10 @@ devenv.local.nix
 /chatot
 *.test
 /tmp/
+
+# local tooling state and capture scratch
+.claude/settings.local.json
+.playwright-mcp/
+mockup/.playwright-mcp/
+mockup/.od-skills/
+/mock-*.png
