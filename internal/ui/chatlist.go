@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -115,10 +116,18 @@ const searchResultLimit = 30
 type ChatList struct {
 	*gtk.Box
 
-	c       client.Client
-	events  <-chan client.Event
-	list    *gtk.ListBox
-	rowJIDs []string // row index -> JID, rebuilt alongside the ListBox rows
+	c      client.Client
+	events <-chan client.Event
+	list   *gtk.ListBox
+	// refreshQueued coalesces the generic event-driven refresh: a history
+	// backfill publishes hundreds of events in a row and each full rebuild
+	// of the rows costs a store query per chat.
+	refreshQueued atomic.Bool
+	// syncBanner is the "Syncing older messages" strip above the rows.
+	syncBanner *gtk.Box
+	syncLabel  *gtk.Label
+	syncBar    *gtk.ProgressBar
+	rowJIDs    []string // row index -> JID, rebuilt alongside the ListBox rows
 	// rowAccounts parallels rowJIDs in merged mode: row index -> owning
 	// account id. nil in every other mode.
 	rowAccounts []string
@@ -404,6 +413,20 @@ func NewChatList(c client.Client) *ChatList {
 	listCol.Append(chipScroller)
 	listCol.Append(newChipSlider(chipScroller.HAdjustment()))
 
+	// Post-link backfill banner: hidden until "full" history chunks stream
+	// behind the usable chat list (see SetSyncProgress).
+	syncBanner := gtk.NewBox(gtk.OrientationVertical, 4)
+	syncBanner.AddCSSClass("chatot-sync-banner")
+	syncLabel := gtk.NewLabel("")
+	syncLabel.SetXAlign(0)
+	syncLabel.AddCSSClass("chatot-sync-banner-text")
+	syncBar := gtk.NewProgressBar()
+	syncBar.AddCSSClass("chatot-sync-banner-bar")
+	syncBanner.Append(syncLabel)
+	syncBanner.Append(syncBar)
+	syncBanner.SetVisible(false)
+	listCol.Append(syncBanner)
+
 	list := gtk.NewListBox()
 	list.AddCSSClass("navigation-sidebar")
 	list.SetVExpand(true)
@@ -429,6 +452,7 @@ func NewChatList(c client.Client) *ChatList {
 
 	cl := &ChatList{
 		Box: root, c: c, events: c.Events(), list: list,
+		syncBanner: syncBanner, syncLabel: syncLabel, syncBar: syncBar,
 		composingJIDs: make(map[string]string), composingGen: make(map[string]int), names: make(map[string]string), avatarCache: newAvatarCache(),
 		chipRow: chipRow, chipScroller: chipScroller, rail: rail,
 		modes:         modes,
@@ -1080,6 +1104,13 @@ func starredSnippet(m client.Message) string {
 // other event kinds.
 func (cl *ChatList) watchEvents() {
 	for ev := range cl.events {
+		// The header's identity (name, number, status) is read off the
+		// client, so it must be re-read when the connection state moves:
+		// a fresh link takes it from "scan to relink" to the number.
+		switch ev.Kind {
+		case client.EventConnection, client.EventPairSuccess, client.EventLoggedOut:
+			glib.IdleAdd(cl.refreshAccountHeader)
+		}
 		if ev.Kind == client.EventChatPresence && ev.ChatPresence != nil {
 			jid := ev.ChatPresence.ChatJID
 			typing, recording := chatPresenceTypingRecording(ev.ChatPresence.State, ev.ChatPresence.Media)
@@ -1145,11 +1176,37 @@ func (cl *ChatList) watchEvents() {
 			})
 			continue
 		}
-		glib.IdleAdd(func() {
-			cl.refresh()
-		})
+		cl.queueRefresh()
 	}
 }
+
+// queueRefresh schedules one refresh on the main loop for however many
+// events arrive before it runs; the refresh reads the store at run time, so
+// nothing published in between is missed.
+func (cl *ChatList) queueRefresh() {
+	if !cl.refreshQueued.CompareAndSwap(false, true) {
+		return
+	}
+	glib.IdleAdd(func() {
+		cl.refreshQueued.Store(false)
+		cl.refresh()
+	})
+}
+
+// SetSyncProgress shows the backfill banner with text and a bar at fraction
+// (negative pulses an indeterminate bar). Must run on the GTK main loop.
+func (cl *ChatList) SetSyncProgress(text string, fraction float64) {
+	cl.syncLabel.SetText(text)
+	if fraction < 0 {
+		cl.syncBar.Pulse()
+	} else {
+		cl.syncBar.SetFraction(fraction)
+	}
+	cl.syncBanner.SetVisible(true)
+}
+
+// HideSyncProgress retires the backfill banner.
+func (cl *ChatList) HideSyncProgress() { cl.syncBanner.SetVisible(false) }
 
 // chatRowAvatarSize is the chat-list row avatar's fixed square size in px.
 const chatRowAvatarSize = 38
