@@ -876,7 +876,7 @@ func (cl *ChatList) refreshSearch() {
 	now := time.Now()
 	cl.rowJIDs = make([]string, 0, len(hits))
 	for _, h := range hits {
-		cl.list.Append(buildSearchHitRow(searchHitVM(h, now)))
+		cl.list.Append(buildSearchHitRow(cl.c, cl.avatarCache, searchHitVM(h, now)))
 		cl.rowJIDs = append(cl.rowJIDs, h.ChatJID)
 	}
 	cl.reselectRow()
@@ -1492,16 +1492,16 @@ func searchHitVM(h client.SearchHit, now time.Time) searchHitView {
 
 // buildSearchHitRow constructs the GTK widget tree for a single search
 // result row from its pre-computed view-model.
-func buildSearchHitRow(vm searchHitView) *gtk.Box {
+func buildSearchHitRow(c client.Client, cache *avatarCache, vm searchHitView) *gtk.Box {
 	row := gtk.NewBox(gtk.OrientationHorizontal, 8)
 	row.SetMarginTop(6)
 	row.SetMarginBottom(6)
 	row.SetMarginStart(8)
 	row.SetMarginEnd(8)
 
-	avatar := gtk.NewLabel(vm.Initial)
-	avatar.AddCSSClass("chatot-avatar")
-	avatar.SetSizeRequest(36, 36)
+	// The chat's own avatar (photo, or its palette initial), as in the list.
+	avatar := buildAvatar(c, cache, vm.ChatJID, vm.Initial, chatRowAvatarSize)
+	avatar.SetVAlign(gtk.AlignStart)
 	row.Append(avatar)
 
 	textCol := gtk.NewBox(gtk.OrientationVertical, 2)

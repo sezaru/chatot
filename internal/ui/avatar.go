@@ -8,9 +8,11 @@ import (
 	"strings"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
+	"github.com/diamondburned/gotk4/pkg/cairo"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pangocairo"
 
 	"chatot/internal/client"
 )
@@ -86,12 +88,27 @@ func buildAvatar(c client.Client, cache *avatarCache, jid, initial string, size 
 	return box
 }
 
-func newAvatarInitial(jid, initial string, size int) *gtk.Label {
-	label := gtk.NewLabel(initial)
-	label.AddCSSClass("chatot-avatar")
-	label.AddCSSClass(avatarColorClass(jid))
-	label.SetSizeRequest(size, size)
-	return label
+// newAvatarInitial is the initials disc: exactly size×size whatever the
+// glyph, so a wide or tall fallback-font character (₿, an emoji) can't
+// stretch it into an oval the way it did a label. The disc and its palette
+// colour, radius and font still come from the CSS classes; only the glyph
+// is drawn here, centred, in the CSS colour.
+func newAvatarInitial(jid, initial string, size int) *gtk.DrawingArea {
+	area := gtk.NewDrawingArea()
+	area.AddCSSClass("chatot-avatar")
+	area.AddCSSClass(avatarColorClass(jid))
+	area.SetSizeRequest(size, size)
+	area.SetHAlign(gtk.AlignCenter)
+	area.SetVAlign(gtk.AlignCenter)
+	area.SetDrawFunc(func(_ *gtk.DrawingArea, cr *cairo.Context, w, h int) {
+		layout := area.CreatePangoLayout(initial)
+		lw, lh := layout.PixelSize()
+		c := area.Color()
+		cr.SetSourceRGBA(float64(c.Red()), float64(c.Green()), float64(c.Blue()), float64(c.Alpha()))
+		cr.MoveTo(float64(w-lw)/2, float64(h-lh)/2)
+		pangocairo.ShowLayout(cr, layout)
+	})
+	return area
 }
 
 // avatarColorClass maps jid to one of the 8 fixed initials-avatar palette
