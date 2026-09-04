@@ -653,11 +653,7 @@ button.chatot-reaction-pill-mine {
 }
 
 /* The mockup leaves 5px between bubbles; that gap is the bubbles' own
-   margin, so the list rows add none. */
-.chatot-conv-list > row {
-	padding: 0;
-	background: none;
-}
+   margin, so the rows add none. */
 
 /* The composer band sits on the conversation surface (white), separated from
    the thread by a single hairline, and carries the strip's whole padding. */
@@ -957,11 +953,6 @@ button.chatot-composer-iconbtn.text-button,
 .chatot-account-row windowcontrols button image {
 	-gtk-icon-size: 12px;
 	opacity: 0.55;
-}
-
-/* An empty controls widget must not add its 6px box spacing to the row. */
-.chatot-account-row windowcontrols.empty {
-	margin-right: -6px;
 }
 
 /* The sidebar search glyph is a 12px dim mark in the mockup, not Adwaita's

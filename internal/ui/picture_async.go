@@ -11,11 +11,11 @@ import (
 
 // pictureTextures memoises decoded files by path and side. Bubbles are
 // rebuilt whenever the list recycles a row, and the same photo must not be
-// decoded again each time. Main loop only; reset when it grows past
-// pictureTexturesCap so a long session doesn't hoard pixels.
-var pictureTextures = map[string]*gdk.Texture{}
+// decoded again each time. Main loop only; LRU past pictureTexturesBudget
+// bytes, enough for every avatar of a large account plus recent media.
+var pictureTextures = newTextureCache(pictureTexturesBudget)
 
-const pictureTexturesCap = 96
+const pictureTexturesBudget = 64 << 20
 
 // pictureLoads holds the setters waiting on a decode in flight, so a file
 // bound to several widgets at once is decoded once. Main loop only.
@@ -35,7 +35,7 @@ func newAsyncPicture(path string, side int) *gtk.Picture {
 // the background. Nothing happens when the file cannot be decoded.
 func loadPictureAsync(path string, side int, set func(gdk.Paintabler)) {
 	key := path + "|" + strconv.Itoa(side)
-	if t, ok := pictureTextures[key]; ok {
+	if t, ok := pictureTextures.get(key); ok {
 		set(t)
 		return
 	}
@@ -54,10 +54,7 @@ func loadPictureAsync(path string, side int, set func(gdk.Paintabler)) {
 				return
 			}
 			t := gdk.NewTextureForPixbuf(pb)
-			if len(pictureTextures) >= pictureTexturesCap {
-				pictureTextures = map[string]*gdk.Texture{}
-			}
-			pictureTextures[key] = t
+			pictureTextures.put(key, t, textureBytes(t))
 			for _, f := range waiting {
 				f(t)
 			}
