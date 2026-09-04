@@ -121,6 +121,7 @@ modules:
           - .playwright-mcp
           - .flatpak-builder
           - build-aux/flatpak/build
+          - build-aux/flatpak/repo
           - mockup
           - node_modules
       - go.mod.yml
