@@ -1,118 +1,106 @@
 package ui
 
 import (
+	"chatot/internal/client"
+
+	"github.com/diamondburned/gotk4/pkg/core/gioutil"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
-// The thread is real row widgets in a vertical box, one per cv.msgs entry,
-// not a GtkListView. A virtualized list can only estimate the height of
-// rows it hasn't realized, and bubbles range from one line to a photo: as
-// the reader scrolled up, every re-estimate moved the content and rows were
-// realized and unrealized in storms (traced at 600+ binds a second), which
-// read as the thread flickering up and down. Real rows have exact heights,
-// so a prepended page is anchored to the pixel and nothing visible moves.
-// Pages are 40 messages, so a long read back still means hundreds of
-// rows; see thread_window.go for how far ones are emptied.
+// The thread is a GtkListView over a list model that mirrors cv.msgs, the
+// way Fractal, Paper Plane and Flare build theirs. GTK realizes a bubble
+// widget only for the rows near the viewport, recycles it once it scrolls
+// away, and keeps the row under the reader where it is when an older page
+// is spliced in above or a row above changes height. Nothing here sets the
+// scroll value to hold the view; the one piece of scrolling done by hand
+// is following the foot of the thread (thread_scroll.go), and that is
+// theirs too.
 
-// newRowAt builds the row widget for cv.msgs[pos].
-func (cv *ConversationView) newRowAt(pos int) *gtk.Box {
-	// No side margins here: the thread's 18px inset lives on
-	// .chatot-conv-list, and margins would compound with it.
-	row := gtk.NewBox(gtk.OrientationVertical, 0)
-	cv.fillRow(row, pos)
-	return row
+var threadModelType = gioutil.NewListModelType[client.Message]()
+
+// newThreadList builds the list view over cv.model and its row factory.
+func (cv *ConversationView) newThreadList() *gtk.ListView {
+	factory := gtk.NewSignalListItemFactory()
+	factory.ConnectSetup(func(obj *glib.Object) {
+		item := obj.Cast().(*gtk.ListItem)
+		// Rows are not activatable, selectable or focusable: hover and
+		// selection chrome never apply, and arrow keys stay with the
+		// composer. Bubbles' own buttons still take focus.
+		item.SetActivatable(false)
+		item.SetSelectable(false)
+		item.SetFocusable(false)
+		// No side margins here: the thread's 18px inset lives on
+		// .chatot-conv-list, and margins would compound with it.
+		item.SetChild(gtk.NewBox(gtk.OrientationVertical, 0))
+	})
+	factory.ConnectBind(func(obj *glib.Object) {
+		item := obj.Cast().(*gtk.ListItem)
+		if box, ok := item.Child().(*gtk.Box); ok {
+			cv.fillRow(box, int(item.Position()))
+		}
+	})
+	factory.ConnectUnbind(func(obj *glib.Object) {
+		item := obj.Cast().(*gtk.ListItem)
+		if box, ok := item.Child().(*gtk.Box); ok {
+			removeAllChildren(box)
+			cv.forgetRow(box)
+		}
+	})
+	lv := gtk.NewListView(gtk.NewNoSelection(cv.model), &factory.ListItemFactory)
+	lv.AddCSSClass("chatot-conv-list")
+	// Rows are measured at their natural height (Fractal: "needed to use
+	// the natural height of GtkPictures").
+	lv.SetVScrollPolicy(gtk.ScrollNatural)
+	// The list itself never takes focus: a GtkListView that does scrolls
+	// to its current item, which after a chat opens is the first row of
+	// the newest page, wherever the reader is by then. Bubble buttons and
+	// the composer still do.
+	lv.SetFocusable(false)
+	lv.SetTabBehavior(gtk.ListTabItem)
+	return lv
 }
 
-// refillRow re-renders the row at pos in place (its message changed). A
-// placeholder is left alone: it is filled from cv.msgs when it comes back
-// within reach.
+// rowFor is the bound row showing message id, nil when it is not realized.
+func (cv *ConversationView) rowFor(id string) *gtk.Box {
+	for box, mid := range cv.rowMsg {
+		if mid == id {
+			return box
+		}
+	}
+	return nil
+}
+
+// refillRow re-renders the row at pos in place (its message, or its
+// predecessor, changed). A row GTK has not realized is left alone: it is
+// filled from cv.msgs when it is bound.
 func (cv *ConversationView) refillRow(pos int) {
-	if pos < 0 || pos >= len(cv.rows) || !cv.live[cv.rows[pos]] {
+	if pos < 0 || pos >= len(cv.msgs) {
 		return
 	}
-	cv.fillRow(cv.rows[pos], pos)
-}
-
-// spliceRows mirrors a change already made to cv.msgs into the widgets:
-// removed rows at pos go, rows for cv.msgs[pos:pos+added] come in, and the
-// row after the block is refilled when the block changed size, since its
-// predecessor (day separator, unread pill) did.
-func (cv *ConversationView) spliceRows(pos, removed, added int) {
-	for i := 0; i < removed && pos < len(cv.rows); i++ {
-		row := cv.rows[pos]
-		cv.forgetRow(row)
-		cv.list.Remove(row)
-		cv.rows = append(cv.rows[:pos], cv.rows[pos+1:]...)
+	if box := cv.rowFor(cv.msgs[pos].ID); box != nil {
+		cv.fillRow(box, pos)
 	}
-	var prev gtk.Widgetter
-	if pos > 0 {
-		prev = cv.rows[pos-1]
-	}
-	fresh := make([]*gtk.Box, 0, added)
-	for i := 0; i < added; i++ {
-		row := cv.newRowAt(pos + i)
-		cv.list.InsertChildAfter(row, prev)
-		prev = row
-		fresh = append(fresh, row)
-	}
-	if added > 0 {
-		rest := append([]*gtk.Box(nil), cv.rows[pos:]...)
-		cv.rows = append(append(cv.rows[:pos], fresh...), rest...)
-	}
-	if next := pos + added; added != removed && next < len(cv.rows) {
-		cv.refillRow(next)
-	}
-	cv.queueWindowUpdate()
-}
-
-// clearRows drops every row.
-func (cv *ConversationView) clearRows() {
-	for _, row := range cv.rows {
-		cv.forgetRow(row)
-	}
-	removeAllChildren(cv.list)
-	cv.rows = nil
-	cv.live = map[*gtk.Box]bool{}
-	cv.pending = map[*gtk.Box]bool{}
-	cv.anchor = nil
-	cv.threadGen++
 }
 
 // forgetRow drops the bookkeeping a row carried.
 func (cv *ConversationView) forgetRow(row *gtk.Box) {
 	delete(cv.rowMsg, row)
-	delete(cv.live, row)
-	delete(cv.pending, row)
 	if cv.anchorRow == row {
 		cv.anchorRow = nil
 	}
 }
 
-// scrollToRow brings the row at pos to the top of the viewport once it has
-// a layout.
+// scrollToRow brings the row at pos into view. Going to a row is leaving
+// the foot of the thread: following it stops, or the growth from the
+// pages a search jump loads would pull the view straight back down.
 func (cv *ConversationView) scrollToRow(pos int) {
-	if pos < 0 || pos >= len(cv.rows) {
+	if pos < 0 || pos >= cv.model.Len() {
 		return
 	}
-	row := cv.rows[pos]
-	glib.IdleAdd(func() {
-		b, ok := row.ComputeBounds(cv.list)
-		if !ok {
-			return
-		}
-		adj := cv.scroller.VAdjustment()
-		adj.SetValue(float64(b.Y()) - rowScrollInset)
-	})
-}
-
-// rowScrollInset keeps a sliver of the previous row visible above a row
-// scrolled to, so it doesn't sit hard against the top edge.
-const rowScrollInset = 12.0
-
-// onAdjustmentChanged runs when the thread's scrollable height changed:
-// the stick-to-bottom window is honoured and the live window re-checked.
-func (cv *ConversationView) onAdjustmentChanged() {
-	cv.stickToBottom()
-	cv.queueWindowUpdate()
+	cv.sticky = false
+	cv.autoScrolling = false
+	cv.autoGen++
+	cv.stopFling()
+	cv.listView.ScrollTo(uint(pos), gtk.ListScrollNone, nil)
 }

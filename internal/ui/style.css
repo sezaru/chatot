@@ -652,6 +652,15 @@ button.chatot-reaction-pill-mine {
 	background-color: @chatot_thread;
 }
 
+/* GtkListView rows carry no chrome of their own: the bubbles' 5px gap is
+   their margin, and hover/selection never apply (the items are neither
+   activatable nor selectable). */
+.chatot-conv-list > row {
+	padding: 0;
+	background: none;
+	outline-width: 0;
+}
+
 /* The mockup leaves 5px between bubbles; that gap is the bubbles' own
    margin, so the rows add none. */
 

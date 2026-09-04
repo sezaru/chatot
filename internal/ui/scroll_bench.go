@@ -2,7 +2,9 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"math"
 	"sort"
 	"time"
 
@@ -188,33 +190,26 @@ func (cl *ChatList) ReconcileCheck() {
 // AnchorCheck (dev hook CHATOT_SHOT=anchorcheck) records where the first
 // bubble under the viewport's top edge sits on screen, loads an older page
 // into the open thread, and logs how far that bubble moved once the page
-// has streamed in. Zero is the goal.
+// is in. Zero is the goal.
 func (cv *ConversationView) AnchorCheck() {
 	adj := cv.scroller.VAdjustment()
 	adj.SetValue(600)
 	glib.TimeoutAdd(300, func() bool {
-		ref := -1
-		for i, row := range cv.rows {
-			if y, h, ok := cv.rowBounds(row); ok && y+h > adj.Value() {
-				ref = i
-				break
-			}
-		}
-		if ref < 0 {
+		ref, refY := cv.rowUnderTop()
+		if ref == nil {
 			log.Printf("anchorcheck: no reference row")
 			return false
 		}
-		refMsg := cv.msgs[ref].ID
-		b0, _ := cv.rows[ref].ComputeBounds(cv.scroller)
-		v0 := adj.Value()
+		refMsg := cv.rowMsg[ref]
+		v0, u0 := adj.Value(), adj.Upper()
 		cv.loadOlder()
 		// Sample the row's drawn position every frame while the page lands:
 		// a tick runs before layout, so it sees what the last frame showed.
 		var seen []float64
 		start := time.Now()
 		gtk.BaseWidget(cv.scroller).AddTickCallback(func(_ gtk.Widgetter, _ gdk.FrameClocker) bool {
-			if pos := cv.positionOf(refMsg); pos >= 0 {
-				if b, ok := cv.rows[pos].ComputeBounds(cv.scroller); ok {
+			if row := cv.rowFor(refMsg); row != nil {
+				if b, ok := row.ComputeBounds(cv.scroller); ok {
 					y := float64(b.Y())
 					if len(seen) == 0 || seen[len(seen)-1] != y {
 						seen = append(seen, y)
@@ -225,16 +220,145 @@ func (cv *ConversationView) AnchorCheck() {
 		})
 		glib.TimeoutAdd(2500, func() bool {
 			log.Printf("anchorcheck: drawn y per frame: %v", seen)
-			pos := cv.positionOf(refMsg)
-			if pos < 0 {
-				log.Printf("anchorcheck: reference row lost")
+			row := cv.rowFor(refMsg)
+			if row == nil {
+				log.Printf("anchorcheck: reference row not realized")
 				return false
 			}
-			b1, _ := cv.rows[pos].ComputeBounds(cv.scroller)
-			log.Printf("anchorcheck: ref row %d→%d screen y %.0f→%.0f (moved %.0f px); value %.0f→%.0f upper %.0f",
-				ref, pos, b0.Y(), b1.Y(), b1.Y()-b0.Y(), v0, adj.Value(), adj.Upper())
+			b1, _ := row.ComputeBounds(cv.scroller)
+			log.Printf("anchorcheck: ref row %s screen y %.0f→%.0f (moved %.0f px); value %.0f→%.0f upper %.0f→%.0f",
+				refMsg, refY, b1.Y(), float64(b1.Y())-refY, v0, adj.Value(), u0, adj.Upper())
 			return false
 		})
+		return false
+	})
+}
+
+// rowUnderTop is the realized row under the viewport's top edge and its
+// y in viewport coordinates.
+func (cv *ConversationView) rowUnderTop() (*gtk.Box, float64) {
+	var best *gtk.Box
+	bestY := 0.0
+	for row := range cv.rowMsg {
+		b, ok := row.ComputeBounds(cv.scroller)
+		if !ok || float64(b.Y()+b.Height()) <= 0 {
+			continue
+		}
+		if best == nil || float64(b.Y()) < bestY {
+			best, bestY = row, float64(b.Y())
+		}
+	}
+	return best, bestY
+}
+
+// FlingCheck (dev hook CHATOT_SHOT=flingcheck) scrolls the open thread up
+// at 2500 px/s for 8 s, far enough to pull several older pages in, and
+// each frame compares how far every row that stayed on screen actually
+// moved with how far the scroll moved: any difference is content jumping
+// under the reader. CHATOT_SHOT_ARG=abs writes absolute values, as GTK's
+// own deceleration does; anything else scrolls relatively
+// (thread_input.go). Rows are tracked by message, since the list view
+// recycles its row widgets.
+func (cv *ConversationView) FlingCheck(absolute bool) {
+	speed := 3000.0
+	adj := cv.scroller.VAdjustment()
+	var (
+		prev      map[string]float64
+		last      time.Time
+		lastDelta float64
+		start     = time.Now()
+		frames    int
+		jitters   int
+		worst     float64
+		lost      int
+		samples   []string
+		target    = adj.Value()
+	)
+	positions := func() map[string]float64 {
+		m := make(map[string]float64, len(cv.rowMsg))
+		for row, id := range cv.rowMsg {
+			// The list view realizes rows well beyond the viewport but only
+			// positions the ones in it; the rest keep a stale allocation.
+			// Child visibility is set on the list item widget, the row's
+			// parent.
+			if p := row.Parent(); p == nil || !gtk.BaseWidget(p).ChildVisible() {
+				continue
+			}
+			b, ok := row.ComputeBounds(cv.scroller)
+			if !ok || float64(b.Y()) < -adj.PageSize() || float64(b.Y()) > 2*adj.PageSize() {
+				continue
+			}
+			m[id] = float64(b.Y())
+		}
+		return m
+	}
+	gtk.BaseWidget(cv.scroller).AddTickCallback(func(_ gtk.Widgetter, _ gdk.FrameClocker) bool {
+		now := time.Now()
+		if last.IsZero() {
+			last = now
+			prev = positions()
+			return true
+		}
+		dt := now.Sub(last).Seconds()
+		last = now
+		cur := positions()
+		frameWorst := 0.0
+		common := 0
+		for id, y := range cur {
+			if py, ok := prev[id]; ok {
+				common++
+				if d := math.Abs((y - py) + lastDelta); d > frameWorst {
+					frameWorst = d
+				}
+			}
+		}
+		if len(prev) > 0 && common == 0 {
+			// Every row that was on screen is gone: a jump of a page or more.
+			lost++
+			frameWorst = 9999
+		}
+		frames++
+		if frames <= 6 || (frameWorst > 200 && len(samples) < 8) {
+			var rows []string
+			for id, y := range cur {
+				if py, ok := prev[id]; ok {
+					rows = append(rows, fmt.Sprintf("%s:%.0f→%.0f", id[len(id)-4:], py, y))
+				}
+			}
+			sort.Strings(rows)
+			trace(1, "flingcheck f%d delta %.1f value %.0f upper %.0f: %v", frames, lastDelta, adj.Value(), adj.Upper(), rows)
+		}
+		if frameWorst > 2 {
+			jitters++
+			if frameWorst > worst {
+				worst = frameWorst
+			}
+			if len(samples) < 8 {
+				samples = append(samples, fmt.Sprintf("f%d:%.0fpx", frames, frameWorst))
+			}
+		}
+		// Fast for 2.5 s, then a fling's tail: the velocity decays as
+		// GtkScrolledWindow's deceleration does.
+		if now.Sub(start) > 2500*time.Millisecond {
+			speed *= math.Exp(-scrollFriction * dt)
+		}
+		delta := -speed * dt
+		if adj.Value()+delta < 0 {
+			delta = -adj.Value()
+		}
+		if absolute {
+			target += delta
+			adj.SetValue(target)
+		} else {
+			adj.SetValue(adj.Value() + delta)
+		}
+		lastDelta = delta
+		prev = positions()
+		if now.Sub(start) < 8*time.Second && adj.Value() > 0 && speed > 1 {
+			return true
+		}
+		log.Printf("flingcheck abs=%v: %d frames, %d with rows off by >2 px (worst %.0f px), %d with every row gone %v; %d rows loaded; value %.0f upper %.0f",
+			absolute, frames, jitters, worst, lost, samples, len(cv.msgs), adj.Value(), adj.Upper())
 		return false
 	})
 }
