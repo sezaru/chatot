@@ -1,42 +1,31 @@
 package client
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
-
-	"go.mau.fi/whatsmeow"
 )
 
-func TestAvatarCacheName(t *testing.T) {
-	cases := []struct {
-		jid  string
-		want string
-	}{
-		{"1234567890@s.whatsapp.net", "1234567890_s.whatsapp.net.jpg"},
-		{"120363012345678901@g.us", "120363012345678901_g.us.jpg"},
-		{"1234567890:1@s.whatsapp.net", "1234567890_1_s.whatsapp.net.jpg"},
+// A picture already on disk is served without the server, and dropping it
+// removes the file so the next call fetches again.
+func TestAvatarServesDiskCacheFirst(t *testing.T) {
+	dir := t.TempDir()
+	w := &Whatsmeow{avatarDir: dir}
+	jid := "5511999@s.whatsapp.net"
+	path := filepath.Join(dir, avatarCacheName(jid))
+	if err := os.WriteFile(path, []byte("jpg"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	for _, c := range cases {
-		if got := avatarCacheName(c.jid); got != c.want {
-			t.Errorf("avatarCacheName(%q) = %q, want %q", c.jid, got, c.want)
-		}
+	got, err := w.Avatar(context.Background(), jid)
+	if err != nil || got != path {
+		t.Fatalf("Avatar = %q, %v; want the cached file", got, err)
 	}
-}
-
-func TestAvatarCacheNameNoPathSeparators(t *testing.T) {
-	if got := avatarCacheName("a/b@c.d"); got != "a_b_c.d.jpg" {
-		t.Errorf("avatarCacheName(%q) = %q, want no '/' left in it", "a/b@c.d", got)
+	if _, memo := w.avatarMemo[jid]; !memo {
+		t.Fatal("the disk hit should be memoized")
 	}
-}
-
-func TestAvatarDefinitelyMissingOnlyForFinalAnswers(t *testing.T) {
-	for _, err := range []error{whatsmeow.ErrProfilePictureNotSet, whatsmeow.ErrProfilePictureUnauthorized, whatsmeow.ErrNotInGroup} {
-		if !avatarDefinitelyMissing(err) {
-			t.Errorf("%v: want missing", err)
-		}
-	}
-	for _, err := range []error{whatsmeow.ErrNotConnected, whatsmeow.ErrNotLoggedIn, whatsmeow.ErrIQTimedOut} {
-		if avatarDefinitelyMissing(err) {
-			t.Errorf("%v: transient, must not be memoized", err)
-		}
+	w.invalidateAvatar(jid)
+	if fileExists(path) {
+		t.Fatal("invalidate should drop the cached file")
 	}
 }

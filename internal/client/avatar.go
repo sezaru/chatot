@@ -43,6 +43,15 @@ func (w *Whatsmeow) Avatar(ctx context.Context, jid string) (string, error) {
 	if ok {
 		return entry.path, nil // path is "" for a memoized "missing" entry too
 	}
+	// A picture fetched in an earlier run is still on disk: serve it without
+	// a round trip. Every start used to re-ask the server for every chat,
+	// which on a large account meant hundreds of IQs before the list had its
+	// pictures. An events.Picture drops the file (invalidateAvatar), so a
+	// changed picture is still re-fetched.
+	if cached := filepath.Join(w.avatarDir, avatarCacheName(jid)); fileExists(cached) {
+		w.memoAvatar(jid, avatarEntry{path: cached})
+		return cached, nil
+	}
 
 	to, err := types.ParseJID(jid)
 	if err != nil {
@@ -121,10 +130,18 @@ func (w *Whatsmeow) memoAvatar(jid string, entry avatarEntry) {
 	w.avatarMu.Unlock()
 }
 
-// invalidateAvatar drops jid's memo entry so the next Avatar call re-fetches
-// it; called from handleRaw on *events.Picture.
+// invalidateAvatar drops jid's memo entry and cached file so the next Avatar
+// call re-fetches it; called from handleRaw on *events.Picture.
 func (w *Whatsmeow) invalidateAvatar(jid string) {
 	w.avatarMu.Lock()
 	delete(w.avatarMemo, jid)
 	w.avatarMu.Unlock()
+	if w.avatarDir != "" {
+		os.Remove(filepath.Join(w.avatarDir, avatarCacheName(jid)))
+	}
+}
+
+func fileExists(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && !st.IsDir()
 }
