@@ -79,6 +79,11 @@
   </recommends>
 
   <releases>
+    <release version="0.2.0-beta" date="2026-09-04">
+      <description>
+        <p>Smooth scrolling in long chats and the chat list, avatars from the disk cache first, the pairing screen returns after a logout, and unread badges leave the archive out like the phone does.</p>
+      </description>
+    </release>
     <release version="0.1.0-beta" date="2026-09-03">
       <description>
         <p>First public beta: chats, groups, communities, channels, status updates, media, voice notes, locations, search and multi-account support.</p>

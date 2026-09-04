@@ -23,7 +23,7 @@
   jetbrains-mono,
 }: let
   appID = "com.sezdm.chatot";
-  version = "0.1.0-beta";
+  version = "0.2.0-beta";
 in
   buildGoModule {
     pname = "chatot";
