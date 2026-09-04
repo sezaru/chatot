@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log"
 	"mime"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	coreglib "github.com/diamondburned/gotk4/pkg/core/glib"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -597,6 +599,7 @@ func NewComposer(c client.Client) *Composer {
 	// The fragment under the cursor changes with the cursor too, and the
 	// picker (which never takes the focus) must not outlive it.
 	entry.ConnectCursorMoved(comp.refreshMentionPicker)
+	entry.ConnectPasteAttachments(comp.queueFiles, comp.queueImage)
 	mentionFocus := gtk.NewEventControllerFocus()
 	mentionFocus.ConnectLeave(func() { comp.mentions.Hide() })
 	entry.AddController(mentionFocus)
@@ -1101,6 +1104,56 @@ func (c *Composer) pickAttachment(filter *gtk.FileFilter) {
 // SetTray gives the composer the send-preview tray its attach picks flow
 // into. Without one the composer sends straight from the file chooser.
 func (c *Composer) SetTray(tray *AttachTray) { c.tray = tray }
+
+// queueFiles takes files that arrived by paste or drop the way a file
+// chooser pick does: into the tray, or straight to a send without one.
+// Nothing happens with no chat open.
+func (c *Composer) queueFiles(paths []string) {
+	if len(paths) == 0 || !c.attachBtn.Sensitive() {
+		return
+	}
+	if c.tray == nil {
+		c.sendMedia(paths[0])
+		return
+	}
+	c.tray.Open(paths)
+}
+
+// queueImage takes a pasted or dropped picture: it is written out as a
+// PNG under the temp dir, since a send (and the tray's preview) reads
+// from a path.
+func (c *Composer) queueImage(t *gdk.Texture) {
+	if t == nil || !c.attachBtn.Sensitive() {
+		return
+	}
+	path := filepath.Join(os.TempDir(), fmt.Sprintf("chatot-paste-%d.png", time.Now().UnixNano()))
+	if !t.SaveToPNG(path) {
+		log.Printf("chatot: could not write pasted image to %s", path)
+		return
+	}
+	c.queueFiles([]string{path})
+}
+
+// DropTarget is a controller that takes files or a picture dropped on its
+// widget into the composer, as a paste does. It is meant for the whole
+// conversation pane, thread included: a drop is aimed at the chat, not at
+// the entry.
+func (c *Composer) DropTarget() *gtk.DropTarget {
+	target := gtk.NewDropTarget(gdk.GTypeFileList, gdk.ActionCopy)
+	target.SetGTypes([]coreglib.Type{gdk.GTypeFileList, gdk.GTypeTexture})
+	target.ConnectDrop(func(v *coreglib.Value, _, _ float64) bool {
+		switch x := v.GoValue().(type) {
+		case *gdk.FileList:
+			c.queueFiles(filePaths(x))
+			return true
+		case gdk.Texturer:
+			c.queueImage(gdk.BaseTexture(x))
+			return true
+		}
+		return false
+	})
+	return target
+}
 
 // ReopenFilePicker is the tray's ＋ button: pick more files into the open tray.
 func (c *Composer) ReopenFilePicker() { c.pickAttachment(nil) }
