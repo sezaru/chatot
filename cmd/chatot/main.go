@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
@@ -240,6 +242,7 @@ func activate(app *adw.Application, c client.Client) {
 	})
 	viewer.OnMenu(conversation.MessageMenuItems)
 	viewer.OnReply(composer.StartReply)
+	viewer.OnDownloaded(conversation.SetLocalPath)
 
 	chatList.OnStarredRequested(func() {
 		starredPage.Reload()
@@ -323,6 +326,14 @@ func activate(app *adw.Application, c client.Client) {
 	// openChat is the single "show this chat" path: the chat-list click and
 	// the notification's click-to-open action both funnel through it.
 	openChat = func(jid string) {
+		// A chat click lands on the thread: the viewer, starred and media
+		// pages belong to the chat that was open before.
+		if name := rightPane.VisibleChildName(); name != "chat" {
+			if name == "viewer" {
+				viewer.Close()
+			}
+			showChat()
+		}
 		chatList.SetSelected(jid)
 		conversation.Load(jid)
 		composer.SetChat(jid)
@@ -837,6 +848,12 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	case "communityopen":
 		d.chatList.SelectTab("communities")
 		d.chatList.OpenCommunityJID(arg)
+	case "commgroup":
+		// The community CHATOT_SHOT_ARG, then its first group row (the
+		// announcement group) opened as a click would.
+		d.chatList.SelectTab("communities")
+		d.chatList.OpenCommunityJID(arg)
+		glib.TimeoutAdd(2500, func() bool { d.chatList.OpenCommunityGroupAt(0); return false })
 	case "commmenu":
 		d.chatList.SelectTab("communities")
 		d.chatList.OpenCommunityJID(arg)
@@ -917,6 +934,9 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		d.composer.SetDraft("On my way, see you at noon")
 	case "search":
 		d.conversation.OpenSearch("relay")
+	case "listsearch":
+		// The chat list's search box with CHATOT_SHOT_TEXT typed in.
+		d.chatList.SearchList(os.Getenv("CHATOT_SHOT_TEXT"))
 	case "starred":
 		d.chatList.ShowStarred()
 	case "archived":
@@ -990,6 +1010,50 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		if m, ok := d.conversation.MessageAt(msgIdx); ok {
 			d.conversation.OpenViewer(m)
 			glib.TimeoutAdd(400, func() bool { d.viewer.Fullscreen(); return false })
+		}
+	case "dlopen":
+		// The bubble's own download then a click on the picture: the viewer
+		// must open on the file, not ask to fetch it again. CHATOT_SHOT_TEXT
+		// names a file whose bytes stand in for the fake's empty download.
+		if m, ok := d.conversation.MessageAt(msgIdx); ok {
+			path, err := d.c.DownloadMedia(context.Background(), m.ID)
+			if err != nil {
+				log.Printf("chatot: shot dlopen: %v", err)
+				return
+			}
+			if src := os.Getenv("CHATOT_SHOT_TEXT"); src != "" {
+				if b, err := os.ReadFile(src); err == nil {
+					_ = os.WriteFile(path, b, 0o600)
+				}
+			}
+			d.conversation.OpenDownloaded(m, path)
+		}
+	case "wheelzoom":
+		// The viewer on CHATOT_SHOT_MSG, then CHATOT_SHOT_ARG wheel notches
+		// (negative = out) over the picture's top-left quarter.
+		if m, ok := d.conversation.MessageAt(msgIdx); ok {
+			d.conversation.OpenViewer(m)
+			n, _ := strconv.Atoi(arg)
+			glib.TimeoutAdd(600, func() bool {
+				step := 1
+				if n < 0 {
+					step, n = -1, -n
+				}
+				for i := 0; i < n; i++ {
+					d.viewer.WheelZoom(math.Pow(1.12, float64(step)), 200, 150)
+				}
+				return false
+			})
+		}
+	case "viewerswitch":
+		// The viewer on CHATOT_SHOT_MSG, then the chat CHATOT_SHOT_ARG is
+		// opened as a list click would: the pane must land on the thread.
+		if m, ok := d.conversation.MessageAt(msgIdx); ok {
+			d.conversation.OpenViewer(m)
+			glib.TimeoutAdd(400, func() bool {
+				d.win.Application().ActivateAction("open-chat", glib.NewVariantString(arg))
+				return false
+			})
 		}
 	case "viewer":
 		// Opens the attachment viewer on the message at CHATOT_SHOT_MSG;
