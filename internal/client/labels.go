@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"go.mau.fi/whatsmeow/appstate"
+	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types"
 
 	"chatot/internal/store"
@@ -118,4 +119,24 @@ func (w *Whatsmeow) SetChatLabeled(ctx context.Context, labelID, chatJID string,
 // LabelsForChat returns the ids of labels currently on chatJID.
 func (w *Whatsmeow) LabelsForChat(chatJID string) ([]string, error) {
 	return w.store.LabelsForChat(chatJID)
+}
+
+// labelIsBuiltIn reports whether a label-edit describes one of WhatsApp's
+// own lists rather than a user-made label. Older phones flagged them with
+// predefinedID; current ones send a list type (UNREAD, GROUPS, ...) and
+// leave predefinedID unset, and the very first sync after linking can carry
+// neither, so the fixed ids 1-4 with their stock names are the last resort.
+func labelIsBuiltIn(id string, a *waSyncAction.LabelEditAction) bool {
+	if a == nil {
+		return false
+	}
+	if a.GetPredefinedID() != 0 || a.GetIsImmutable() {
+		return true
+	}
+	switch a.GetType() {
+	case waSyncAction.LabelEditAction_NONE, waSyncAction.LabelEditAction_CUSTOM:
+	default:
+		return true
+	}
+	return store.BuiltInLabel(id, a.GetName())
 }

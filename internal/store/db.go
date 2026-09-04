@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
+	"strconv"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -33,7 +34,11 @@ func Open(path string) (*Store, error) {
 		// pin the pool to one connection so the schema/data survive.
 		db.SetMaxOpenConns(1)
 	}
-	pragmas := "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;"
+	// synchronous=NORMAL under WAL only fsyncs at checkpoints; a crash of
+	// the process can't lose committed writes, only a power cut can lose
+	// the tail, and it turns a history backfill of thousands of messages
+	// from one fsync per row into a few.
+	pragmas := "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;"
 	if path == ":memory:" {
 		pragmas = "PRAGMA foreign_keys=ON;" // WAL is a no-op (and noisy) on :memory:
 	}
@@ -189,17 +194,35 @@ func hasColumn(db *sql.DB, table, column string) (bool, error) {
 // gives them tell them apart now.
 func migrateLabelsPredefined(db *sql.DB) error {
 	has, err := hasColumn(db, "labels", "predefined")
-	if err != nil || has {
+	if err != nil {
 		return err
 	}
-	if _, err := db.Exec(`ALTER TABLE labels ADD COLUMN predefined INTEGER NOT NULL DEFAULT 0`); err != nil {
-		return err
+	if !has {
+		if _, err := db.Exec(`ALTER TABLE labels ADD COLUMN predefined INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
 	}
+	// Re-run on every open, not just when the column is added: a store
+	// linked while the ingest path missed the phone's newer list-type flag
+	// holds the built-ins as plain labels and heals here.
 	_, err = db.Exec(`
 		UPDATE labels SET predefined = 1
-		WHERE name IN ('Unread', 'Favorites', 'Groups', 'Communities')
+		WHERE predefined = 0 AND name IN ('Unread', 'Favorites', 'Groups', 'Communities')
 		  AND CAST(label_id AS INTEGER) BETWEEN 1 AND 4`)
 	return err
+}
+
+// BuiltInLabel reports whether id/name is one of WhatsApp's stock lists by
+// the fixed slot and name they always get, the same rule
+// migrateLabelsPredefined applies to rows stored before the flag existed.
+func BuiltInLabel(id, name string) bool {
+	switch name {
+	case "Unread", "Favorites", "Groups", "Communities":
+	default:
+		return false
+	}
+	n, err := strconv.Atoi(id)
+	return err == nil && n >= 1 && n <= 4
 }
 
 // Close closes the underlying database handle.

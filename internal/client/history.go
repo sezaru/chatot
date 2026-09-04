@@ -8,6 +8,7 @@ import (
 
 	"go.mau.fi/whatsmeow"
 	waHistorySync "go.mau.fi/whatsmeow/proto/waHistorySync"
+	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	waWeb "go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/types"
 
@@ -53,15 +54,18 @@ func (w *Whatsmeow) applyHistoryConversation(conv *waHistorySync.Conversation) {
 		w.upsertContact(store.ContactRow{JID: conv.GetLidJID(), PNJID: jid})
 	}
 	jid = w.canonicalChatJID(jid)
-	if err := w.store.UpsertChat(store.ChatRow{
+	// Pin and mute live in app state; a conversation only sometimes repeats
+	// them, and an absent field must not clear what app state already set.
+	muted, hasMute := historyMuted(conv, time.Now())
+	if err := w.store.UpsertChatFlags(store.ChatRow{
 		JID:           jid,
 		IsGroup:       isGroup,
 		Name:          conv.GetName(),
 		Pinned:        conv.GetPinned() != 0,
-		Muted:         conv.GetMuteEndTime() != 0,
+		Muted:         muted,
 		UnreadCount:   int(conv.GetUnreadCount()),
 		LastMessageTS: int64(conv.GetConversationTimestamp()),
-	}); err != nil {
+	}, conv.Pinned != nil, hasMute); err != nil {
 		w.log.Warnf("history: upsert chat %s: %v", jid, err)
 	}
 	// The phone's archive flag rides on the conversation itself; the
@@ -116,7 +120,10 @@ func (w *Whatsmeow) applyHistoryMessage(chatJID string, wmi *waWeb.WebMessageInf
 		// no body chatot renders yet.
 		return
 	}
-	if err := w.ingestMessage(&msg); err != nil {
+	// The conversation's own unreadCount (applied by applyHistoryConversation)
+	// is authoritative; counting every inbound message in the backlog on top
+	// of it would report a chat with 3 unread as having hundreds.
+	if err := w.ingestMessageUnread(&msg, 0); err != nil {
 		w.log.Warnf("history: ingest message %s/%s: %v", chatJID, msg.ID, err)
 	}
 }
@@ -174,4 +181,102 @@ func (w *Whatsmeow) RequestMoreHistory(ctx context.Context, chatJID, oldestMsgID
 		return fmt.Errorf("chatot/client: request more history: send: %w", err)
 	}
 	return nil
+}
+
+// historySyncTypeName maps whatsmeow's chunk kind onto HistorySync.Type.
+func historySyncTypeName(t waHistorySync.HistorySync_HistorySyncType) string {
+	switch t {
+	case waHistorySync.HistorySync_INITIAL_BOOTSTRAP:
+		return "bootstrap"
+	case waHistorySync.HistorySync_INITIAL_STATUS_V3:
+		return "status"
+	case waHistorySync.HistorySync_FULL:
+		return "full"
+	case waHistorySync.HistorySync_RECENT:
+		return "recent"
+	case waHistorySync.HistorySync_PUSH_NAME:
+		return "pushname"
+	case waHistorySync.HistorySync_NON_BLOCKING_DATA:
+		return "nonblocking"
+	case waHistorySync.HistorySync_ON_DEMAND:
+		return "ondemand"
+	}
+	return ""
+}
+
+// historySyncSummary condenses a chunk into the HistorySync event the UI
+// consumes: the touched chat JIDs plus kind, progress and volume.
+func historySyncSummary(data *waHistorySync.HistorySync) *HistorySync {
+	h := &HistorySync{Progress: -1}
+	if data == nil {
+		return h
+	}
+	h.Type = historySyncTypeName(data.GetSyncType())
+	if data.Progress != nil {
+		h.Progress = int(data.GetProgress())
+	}
+	for _, c := range data.GetConversations() {
+		if jid := c.GetID(); jid != "" {
+			h.ChatJIDs = append(h.ChatJIDs, jid)
+		}
+		h.Chats++
+		h.Messages += len(c.GetMessages())
+	}
+	return h
+}
+
+// historySyncNeedsContacts reports whether a chunk can have changed
+// whatsmeow's contact store (push names ride on bootstrap and push-name
+// chunks); mirroring contacts after every one of the hundreds of "full"
+// chunks a large account streams is pure churn.
+func historySyncNeedsContacts(data *waHistorySync.HistorySync) bool {
+	if data == nil {
+		return false
+	}
+	switch data.GetSyncType() {
+	case waHistorySync.HistorySync_INITIAL_BOOTSTRAP, waHistorySync.HistorySync_PUSH_NAME:
+		return true
+	}
+	return len(data.GetPushnames()) > 0
+}
+
+// historyMuted reads a conversation's mute: (muted, known). Unknown when
+// the field is absent. 0 is unmuted, all-ones is WhatsApp's "always", and
+// anything else is an expiry (seconds, or milliseconds on some builds)
+// that only counts while it lies in the future.
+func historyMuted(conv *waHistorySync.Conversation, now time.Time) (bool, bool) {
+	if conv == nil || conv.MuteEndTime == nil {
+		return false, false
+	}
+	t := conv.GetMuteEndTime()
+	switch {
+	case t == 0:
+		return false, true
+	case t == ^uint64(0):
+		return true, true
+	}
+	return muteExpiryActive(int64(t), now), true
+}
+
+// muteExpiryActive reports whether a mute ending at end (unix seconds, or
+// milliseconds when implausibly large) is still in force at now.
+func muteExpiryActive(end int64, now time.Time) bool {
+	if end > 1e12 {
+		end /= 1000
+	}
+	return end > now.Unix()
+}
+
+// muteActive reads an app-state mute action: a mute with an expiry in the
+// past is over even though the phone never sends an explicit unmute for it;
+// -1 (or no expiry at all) is "always".
+func muteActive(a *waSyncAction.MuteAction, now time.Time) bool {
+	if a == nil || !a.GetMuted() {
+		return false
+	}
+	end := a.GetMuteEndTimestamp()
+	if end <= 0 {
+		return true
+	}
+	return muteExpiryActive(end, now)
 }

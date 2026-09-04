@@ -136,9 +136,21 @@ type Connection struct {
 }
 
 // HistorySync signals that a batch of backfilled chats/messages has been
-// ingested and reads should refresh.
+// ingested and reads should refresh. Type/Progress/Chats/Messages describe
+// the chunk for the post-link sync screen: the phone streams the chat list
+// first ("bootstrap"), then recent messages ("recent"), then the older
+// history in "full" chunks that carry a 0-100 Progress.
 type HistorySync struct {
 	ChatJIDs []string
+	// Type is the chunk kind: "bootstrap", "recent", "full", "status",
+	// "pushname", "nonblocking", "ondemand" or "" (a synthetic refresh).
+	Type string
+	// Progress is the phone's percent-complete for this sync, -1 when the
+	// chunk carries none.
+	Progress int
+	// Chats and Messages count what this chunk delivered.
+	Chats    int
+	Messages int
 }
 
 // Chat is a single conversation (1:1 or group) as shown in the chat list.
