@@ -195,6 +195,9 @@ func NewFake() *Fake {
 
 	f.seedGroupThread(now)
 	f.seedTabs(now)
+	if os.Getenv("CHATOT_FAKE_BIG") != "" {
+		f.seedBig(now)
+	}
 	// After seedTabs: it lays the status feed afresh, and the dev media
 	// adds statuses to it.
 	if dir := os.Getenv("CHATOT_FAKE_MEDIA"); dir != "" {
