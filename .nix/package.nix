@@ -21,6 +21,11 @@
   xdg-utils,
   cantarell-fonts,
   jetbrains-mono,
+  # Audio file (anything GStreamer or ffmpeg decodes) that becomes the
+  # default notification sound, replacing the built-in chime:
+  #   chatot.override { notificationSound = ./whatsapp-tone.oga; }
+  # The user's own pick in Preferences still wins over it.
+  notificationSound ? null,
 }: let
   appID = "com.sezdm.chatot";
   version = "0.2.0-beta";
@@ -83,6 +88,7 @@ in
         --prefix PATH : ${lib.makeBinPath [ffmpeg poppler-utils xdg-utils]}
         --prefix XDG_DATA_DIRS : ${cantarell-fonts}/share:${jetbrains-mono}/share:${adwaita-icon-theme}/share
         --set CHATOT_NO_DESKTOP_ENTRY 1
+        ${lib.optionalString (notificationSound != null) "--set CHATOT_NOTIFY_SOUND ${notificationSound}"}
       )
     '';
 
