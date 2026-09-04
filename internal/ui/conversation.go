@@ -10,7 +10,6 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/cairo"
-	"github.com/diamondburned/gotk4/pkg/core/gioutil"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -206,13 +205,33 @@ type ConversationView struct {
 	headerMenuPop *gtk.Popover // ⋮ header menu; dev-hook popup target
 	window        *gtk.Window  // parent for the group-info dialog; set via SetWindow
 	scroller      *gtk.ScrolledWindow
-	listView      *gtk.ListView
-	model         *gioutil.ListModel[client.Message]
-	empty         *gtk.Label
-	emptyBox      *gtk.Box
+	// list holds one row widget per msgs entry (rows, same order); see
+	// thread_rows.go for why the thread is real widgets.
+	list *gtk.Box
+	rows []*gtk.Box
+	// live is the set of rows holding a bubble; the rest are placeholders
+	// of their recorded height (see thread_window.go). windowQueued
+	// coalesces updateWindow.
+	live         map[*gtk.Box]bool
+	windowQueued bool
+	// pending rows are an older page's rows not built yet (thread_stream.go);
+	// threadGen invalidates a stream when the thread is replaced.
+	pending   map[*gtk.Box]bool
+	threadGen int
+	// anchor holds the view across a content change above the reader
+	// (thread_anchor.go); layoutHooked says afterLayout is connected.
+	anchor       *viewAnchor
+	layoutHooked bool
+	// followBottom is set while the reader is at the foot of the thread:
+	// content that grows there (a picture decoding late, a font landing)
+	// keeps the newest bubble in view instead of pushing it under the
+	// composer. Cleared by any scroll away from the bottom.
+	followBottom bool
+	empty        *gtk.Label
+	emptyBox     *gtk.Box
 
-	// msgs mirrors model 1:1 and is the authoritative slice the bind factory
-	// indexes by ListItem position (for the message and its predecessor, which
+	// msgs mirrors rows 1:1 and is the authoritative slice fillRow indexes
+	// by position (for the message and its predecessor, which
 	// bubbleVM needs for day separators). byID resolves reply targets across
 	// the whole loaded window.
 	msgs []client.Message
@@ -299,7 +318,7 @@ type ConversationView struct {
 
 	menuBtn *gtk.Button
 
-	// In-chat search: searchQuery drives bindRow's highlight check (any
+	// In-chat search: searchQuery drives fillRow's highlight check (any
 	// currently-bound row whose text contains it, case-insensitively, is
 	// rendered with Pango highlight markup); searchHits is the ordered
 	// (oldest-first) store match set for the open chat, searchIdx the
@@ -597,12 +616,8 @@ func NewConversationView(c client.Client) *ConversationView {
 	emptyBox.Append(empty)
 	root.Append(emptyBox)
 
-	model := conversationModelType.New()
-
-	// GtkListView virtualizes: it only realizes bubble widgets for rows in (or
-	// near) the viewport and unrealizes the rest as they scroll off, so the
-	// live widget count stays bounded no matter how far back history is paged.
-	factory := gtk.NewSignalListItemFactory()
+	list := gtk.NewBox(gtk.OrientationVertical, 0)
+	list.AddCSSClass("chatot-conv-list")
 	scroller := gtk.NewScrolledWindow()
 
 	cv := &ConversationView{
@@ -624,7 +639,9 @@ func NewConversationView(c client.Client) *ConversationView {
 		searchIdx:            -1,
 		highlightedPositions: make(map[int]bool),
 		scroller:             scroller,
-		model:                model,
+		list:                 list,
+		live:                 map[*gtk.Box]bool{},
+		pending:              map[*gtk.Box]bool{},
 		empty:                empty,
 		emptyBox:             emptyBox,
 		presence:             make(map[string]PresenceState),
@@ -664,34 +681,6 @@ func NewConversationView(c client.Client) *ConversationView {
 	searchDownBtn.ConnectClicked(func() { cv.stepHit(true) })
 	searchCloseBtn.ConnectClicked(func() { cv.closeSearchBar() })
 
-	factory.ConnectSetup(func(obj *glib.Object) {
-		item := obj.Cast().(*gtk.ListItem)
-		// A focusable item takes the focus on click; when its row is then
-		// re-bound (a poll tally landing), GtkListView moves the lost focus
-		// to its first row and scrolls the whole thread to the top.
-		item.SetFocusable(false)
-		// No side margins here: the thread's 18px inset lives on
-		// .chatot-conv-list, and margins would compound with it.
-		row := gtk.NewBox(gtk.OrientationVertical, 0)
-		item.SetChild(row)
-	})
-	factory.ConnectBind(func(obj *glib.Object) {
-		item := obj.Cast().(*gtk.ListItem)
-		cv.bindRow(item)
-	})
-	factory.ConnectUnbind(func(obj *glib.Object) {
-		item := obj.Cast().(*gtk.ListItem)
-		if box, ok := item.Child().(*gtk.Box); ok {
-			delete(cv.rowMsg, box)
-			if cv.anchorRow == box {
-				cv.anchorRow = nil
-			}
-		}
-	})
-
-	cv.listView = gtk.NewListView(gtk.NewNoSelection(model), &factory.ListItemFactory)
-	cv.listView.AddCSSClass("chatot-conv-list")
-
 	scroller.SetVExpand(true)
 	scroller.SetHExpand(true)
 	// Keep the scroller's own height request minimal so a tall thread scrolls
@@ -703,37 +692,27 @@ func NewConversationView(c client.Client) *ConversationView {
 	// widen it (which would push content off the right edge like the sidebar
 	// list did vertically).
 	scroller.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
-	scroller.SetChild(cv.listView)
+	scroller.SetChild(list)
 	scroller.SetVisible(false)
 
 	root.Append(scroller)
 
 	scroller.VAdjustment().ConnectValueChanged(cv.onScroll)
-	scroller.VAdjustment().ConnectChanged(cv.stickToBottom)
+	scroller.VAdjustment().ConnectChanged(cv.onAdjustmentChanged)
 
 	go cv.watchEvents()
 
 	return cv
 }
 
-// conversationModelType is the shared typed-model constructor for the
-// conversation's message list; ObjectValue recovers a client.Message from a
-// row's GObject inside the bind factory.
-var conversationModelType = gioutil.NewListModelType[client.Message]()
-
-// bindRow (re)renders one virtualized row: it rebuilds the bubble for the
-// message at the item's position into the row's box. Called whenever a row
-// scrolls into view or its position shifts (e.g. after an older page is
-// prepended), so day separators and reply quotes always reflect the current
-// neighbours.
-func (cv *ConversationView) bindRow(item *gtk.ListItem) {
-	box, ok := item.Child().(*gtk.Box)
-	if !ok {
-		return
-	}
+// fillRow renders the message at pos into its row box, rebuilding the
+// bubble from scratch. Called when a row is created or its message (or
+// its predecessor, for day separators and reply quotes) changed.
+func (cv *ConversationView) fillRow(box *gtk.Box, pos int) {
 	removeAllChildren(box)
+	cv.live[box] = true
 
-	pos := int(item.Position())
+	trace(2, "fill row %d of %d", pos, len(cv.msgs))
 	if pos < 0 || pos >= len(cv.msgs) {
 		return
 	}
@@ -817,7 +796,7 @@ func (cv *ConversationView) clearUnreadPill() {
 		}
 		adj := cv.scroller.VAdjustment()
 		pos := adj.Value()
-		cv.model.Splice(i, 1, cv.msgs[i])
+		cv.refillRow(i)
 		adj.SetValue(pos)
 		glib.IdleAdd(func() { adj.SetValue(pos) })
 		return
@@ -850,6 +829,13 @@ func unreadAnchorFor(msgs []client.Message, unread int) string {
 // the GTK main loop (fired by the adjustment). loadingOlder debounces the
 // burst of value-changed signals a single scroll gesture emits.
 func (cv *ConversationView) onScroll() {
+	cv.followBottom = cv.atBottom()
+	cv.queueWindowUpdate()
+	if traceLevel > 0 {
+		adj := cv.scroller.VAdjustment()
+		trace(1, "scroll value=%.0f upper=%.0f page=%.0f rows=%d loadingOlder=%v inFlight=%v hasMore=%v",
+			adj.Value(), adj.Upper(), adj.PageSize(), len(cv.rows), cv.loadingOlder, cv.historyInFlight, cv.hasMore)
+	}
 	if cv.loadingOlder || cv.historyInFlight || !cv.hasMore || cv.jid == "" {
 		return
 	}
@@ -863,6 +849,7 @@ func (cv *ConversationView) onScroll() {
 // whatever was shown before; older messages are pulled in on scroll-up (see
 // loadOlder). Must run on the GTK main loop.
 func (cv *ConversationView) Load(jid string) {
+	trace(1, "Load %s", jid)
 	// A reload of the currently-open chat (receipts/reactions/revokes/poll
 	// votes all trigger one) keeps the search bar open; only an actual chat
 	// switch resets it.
@@ -898,10 +885,11 @@ func (cv *ConversationView) Load(jid string) {
 		cv.unreadAnchor = unreadAnchorFor(msgs, chat.UnreadCount)
 	}
 
-	// Replace the whole model with the new page in one splice; the typing
-	// sentinel (if any) goes with it and is re-added below.
+	// Replace every row with the new page; the typing sentinel (if any)
+	// goes with it and is re-added below.
 	cv.typingShown = false
-	cv.model.Splice(0, cv.model.Len(), msgs...)
+	cv.clearRows()
+	cv.spliceRows(0, 0, len(msgs))
 
 	if len(msgs) == 0 {
 		cv.empty.SetLabel("No messages yet")
@@ -1003,10 +991,11 @@ func (cv *ConversationView) refreshInPlace() {
 		}
 		cv.msgs[i] = msgs[i]
 		cv.byID[msgs[i].ID] = msgs[i]
-		cv.model.Splice(i, 1, msgs[i])
+		cv.refillRow(i)
 		changed = true
 	}
 	if changed {
+		trace(1, "refreshInPlace: rows changed, restoring value=%.0f", pos)
 		adj.SetValue(pos)
 		glib.IdleAdd(func() { adj.SetValue(pos) })
 	}
@@ -1027,6 +1016,7 @@ func (cv *ConversationView) loadOlder() {
 	}
 	if len(older) == 0 {
 		request, exhausted := nextHistoryAction(len(older), cv.historyRequested)
+		trace(1, "loadOlder: store floor reached; request=%v exhausted=%v", request, exhausted)
 		cv.hasMore = !exhausted
 		cv.loadingOlder = false
 		if request {
@@ -1040,30 +1030,36 @@ func (cv *ConversationView) loadOlder() {
 		return
 	}
 
-	// A genuine older page arrived (from local store or a landed history sync).
-	anchor := len(older)
-	cv.prependOlder(older)
-
-	glib.IdleAdd(func() {
-		cv.listView.ScrollTo(uint(anchor), gtk.ListScrollNone, nil)
-		cv.loadingOlder = false
-	})
+	// A genuine older page arrived (from local store or a landed history
+	// sync). Its rows go in empty and are built a few per frame, each chunk
+	// anchored so nothing on screen shifts (thread_stream.go); loadingOlder
+	// stays set until the page is in.
+	trace(1, "loadOlder: prepend %d (oldest %s)", len(older), cv.oldestID)
+	cv.cancelFling()
+	cv.prependOlder(older, false)
+	cv.streamPrepend(len(older))
 }
 
 // prependOlder splices older (oldest-first) onto the front of the currently
-// loaded thread, updating the pagination cursor/index. Shared by loadOlder
+// loaded thread, updating the pagination cursor/index. With build set the
+// rows are built at once (a search jump needs them laid out now); without
+// it they go in empty for streamPrepend to fill. Shared by loadOlder
 // (scroll-up paging) and jumpToMessage (loading pages synchronously to reach
 // a search hit that isn't loaded yet). historyRequested is cleared so hitting
 // the store's floor again re-requests the next batch from the phone, one
 // page at a time rather than stopping after one. Must run on the GTK main
 // loop.
-func (cv *ConversationView) prependOlder(older []client.Message) {
+func (cv *ConversationView) prependOlder(older []client.Message, build bool) {
 	cv.historyRequested = false
 	cv.msgs = append(older, cv.msgs...)
 	cv.oldestID = cv.msgs[0].ID
 	cv.byID = indexByID(cv.msgs[:cv.threadLen()])
 	cv.hasMore = len(older) == conversationPageSize
-	cv.model.Splice(0, 0, older...)
+	if build {
+		cv.spliceRows(0, 0, len(older))
+	} else {
+		cv.insertPending(len(older))
+	}
 }
 
 // watchEvents listens for client events and, for the currently-loaded chat,
@@ -1329,6 +1325,7 @@ func (cv *ConversationView) ApplyOwnReaction(chatJID string) {
 // factory renders the new row when it realizes at the bottom. Must run on the
 // GTK main loop.
 func (cv *ConversationView) appendMessage(msg client.Message) {
+	trace(1, "appendMessage %s", msg.ID)
 	if !cv.typingShown {
 		cv.msgs = append(cv.msgs, msg)
 	}
@@ -1355,9 +1352,9 @@ func (cv *ConversationView) appendMessage(msg client.Message) {
 		cv.msgs = append(cv.msgs, client.Message{})
 		copy(cv.msgs[at+1:], cv.msgs[at:])
 		cv.msgs[at] = msg
-		cv.model.Splice(at, 0, msg)
+		cv.spliceRows(at, 0, 1)
 	} else {
-		cv.model.Append(msg)
+		cv.spliceRows(len(cv.msgs)-1, 0, 1)
 	}
 	if follow {
 		cv.scrollToBottom()
@@ -1381,13 +1378,14 @@ func (cv *ConversationView) atBottom() bool {
 // once its bubble is bound, the scroller is also pinned to its maximum on
 // the next few size changes (see stickToBottom).
 func (cv *ConversationView) scrollToBottom() {
+	trace(1, "scrollToBottom")
 	cv.stickUntil = time.Now().Add(stickWindow)
+	cv.followBottom = true
+	cv.hookLayout()
 	glib.IdleAdd(func() {
-		n := cv.model.Len()
-		if n == 0 {
+		if len(cv.rows) == 0 {
 			return
 		}
-		cv.listView.ScrollTo(uint(n-1), gtk.ListScrollNone, nil)
 		cv.stickToBottom()
 	})
 }
@@ -1402,7 +1400,11 @@ const stickWindow = 400 * time.Millisecond
 // the window a scrollToBottom opened, so it never fights a reader who has
 // scrolled up.
 func (cv *ConversationView) stickToBottom() {
-	if time.Now().After(cv.stickUntil) {
+	if traceLevel > 0 {
+		adj := cv.scroller.VAdjustment()
+		trace(1, "adjustment changed value=%.0f upper=%.0f page=%.0f sticking=%v", adj.Value(), adj.Upper(), adj.PageSize(), time.Now().Before(cv.stickUntil))
+	}
+	if !cv.followBottom && time.Now().After(cv.stickUntil) {
 		return
 	}
 	adj := cv.scroller.VAdjustment()
@@ -1479,7 +1481,7 @@ func (cv *ConversationView) refreshTypingBubble() {
 func (cv *ConversationView) showTypingRow() {
 	follow := cv.atBottom()
 	cv.msgs = append(cv.msgs, client.Message{ID: typingSentinelID, ChatJID: cv.jid})
-	cv.model.Append(cv.msgs[len(cv.msgs)-1])
+	cv.spliceRows(len(cv.msgs)-1, 0, 1)
 	cv.typingShown = true
 	if follow {
 		cv.scrollToBottom()
@@ -1493,7 +1495,7 @@ func (cv *ConversationView) hideTypingRow() {
 		return
 	}
 	cv.msgs = cv.msgs[:at]
-	cv.model.Splice(at, 1)
+	cv.spliceRows(at, 1, 0)
 	cv.typingShown = false
 }
 
@@ -1977,7 +1979,7 @@ func (cv *ConversationView) SetLocalPath(msgID, path string) {
 	if cv.setLocalPath(msgID, path) {
 		for i := range cv.msgs {
 			if cv.msgs[i].ID == msgID {
-				cv.model.Splice(i, 1, cv.msgs[i])
+				cv.refillRow(i)
 				return
 			}
 		}

@@ -318,23 +318,19 @@ func (cv *ConversationView) jumpToMessage(msgID string) {
 			cv.hasMore = len(older) == conversationPageSize
 			break
 		}
-		cv.prependOlder(older)
+		cv.prependOlder(older, true)
 		pos = cv.positionOf(msgID)
 	}
 	if pos < 0 {
 		return
 	}
-	cv.listView.ScrollTo(uint(pos), gtk.ListScrollNone, nil)
+	cv.scrollToRow(pos)
 }
 
-// touchRow forces the row at pos to rebind (re-run bindRow), by splicing the
-// same message back into the model at that position — the cheapest way to
-// get GtkListView to re-render a row that isn't otherwise changing.
+// touchRow re-renders the row at pos in place, for a highlight that came
+// or went without the message changing.
 func (cv *ConversationView) touchRow(pos int) {
-	if pos < 0 || pos >= len(cv.msgs) {
-		return
-	}
-	cv.model.Splice(pos, 1, cv.msgs[pos])
+	cv.refillRow(pos)
 }
 
 // applyHighlights re-renders every row that was highlighted before (so a
