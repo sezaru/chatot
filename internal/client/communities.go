@@ -52,13 +52,24 @@ func (w *Whatsmeow) Communities(ctx context.Context) ([]Community, error) {
 			if jg, ok := joined[jid]; ok {
 				cg.Joined = true
 				cg.MemberCount = groupMemberCount(jg)
+				if cg.Name == "" {
+					cg.Name = jg.Name
+				}
 				if c, ok := byJID[jid]; ok {
 					cg.Preview = c.Preview
 					cg.UnreadCount = c.UnreadCount
+					if cg.Name == "" {
+						cg.Name = c.Name
+					}
 					if cg.Announcement {
 						comm.Muted = c.Muted
 					}
 				}
+			}
+			// The sub-group listing may come without subjects; the
+			// announcement group carries its community's name.
+			if cg.Name == "" && cg.Announcement {
+				cg.Name = comm.Name
 			}
 			comm.Groups = append(comm.Groups, cg)
 		}
