@@ -15,6 +15,12 @@ func (s *Store) UpsertChat(row ChatRow) error { return s.UpsertChatFlags(row, tr
 // (both live in app state, which syncs separately), and overwriting them
 // with false on every chunk would undo the mute the phone just reported.
 // On insert an unknown flag starts false.
+//
+// The row's unread count and timestamp are a snapshot of the chat as of
+// its last message: they replace the stored ones only when they are at
+// least as new. A history chunk the phone assembled before a message
+// arrived live says nothing about that message, and taking its count
+// would clear the badge the message just raised.
 func (s *Store) UpsertChatFlags(row ChatRow, setPinned, setMuted bool) error {
 	_, err := s.db.Exec(`
 		INSERT INTO chats(jid, is_group, name, pinned, muted, unread_count, last_message_ts)
@@ -24,11 +30,29 @@ func (s *Store) UpsertChatFlags(row ChatRow, setPinned, setMuted bool) error {
 			name = COALESCE(excluded.name, chats.name),
 			pinned = CASE WHEN ? THEN excluded.pinned ELSE chats.pinned END,
 			muted = CASE WHEN ? THEN excluded.muted ELSE chats.muted END,
-			unread_count = excluded.unread_count,
-			last_message_ts = excluded.last_message_ts
+			unread_count = CASE WHEN excluded.last_message_ts >= chats.last_message_ts
+				THEN excluded.unread_count ELSE chats.unread_count END,
+			last_message_ts = MAX(excluded.last_message_ts, chats.last_message_ts)
 	`, row.JID, boolToInt(row.IsGroup), row.Name, boolToInt(row.Pinned), boolToInt(row.Muted), row.UnreadCount, row.LastMessageTS,
 		boolToInt(setPinned), boolToInt(setMuted))
 	return err
+}
+
+// RepairGroupSenders blanks the sender of group messages filed under the
+// group itself: history sync once read the sender off the message key,
+// which groups leave empty, and fell back to the chat as for a DM. The
+// real sender is not recoverable from the store; a blank one at least
+// stops the bubbles naming (and picturing) the group. Returns how many
+// messages changed.
+func (s *Store) RepairGroupSenders() (int64, error) {
+	res, err := s.db.Exec(`
+		UPDATE messages SET from_jid = ''
+		WHERE from_me = 0 AND chat_jid LIKE '%@g.us' AND from_jid = chat_jid
+	`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // BumpChatActivity records a message's activity on a chat: it ensures the

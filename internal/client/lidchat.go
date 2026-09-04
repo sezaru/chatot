@@ -175,3 +175,29 @@ func (w *Whatsmeow) repairUnreadOnce() {
 		w.log.Warnf("chatot/client: record unread repair: %v", err)
 	}
 }
+
+// groupSenderRepairKey marks a store whose group messages were checked once
+// for a sender equal to the group (see store.RepairGroupSenders).
+const groupSenderRepairKey = "group_sender_repair_v1"
+
+// repairGroupSendersOnce blanks, a single time per store, the group
+// senders an earlier history sync misfiled as the group itself.
+func (w *Whatsmeow) repairGroupSendersOnce() {
+	if w.store == nil {
+		return
+	}
+	if done, err := w.store.Meta(groupSenderRepairKey); err != nil || done != "" {
+		return
+	}
+	n, err := w.store.RepairGroupSenders()
+	if err != nil {
+		w.log.Warnf("chatot/client: repair group senders: %v", err)
+		return
+	}
+	if n > 0 {
+		w.log.Infof("chatot/client: blanked the misfiled sender on %d group messages", n)
+	}
+	if err := w.store.SetMeta(groupSenderRepairKey, "1"); err != nil {
+		w.log.Warnf("chatot/client: record group sender repair: %v", err)
+	}
+}

@@ -161,6 +161,7 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 	w.wa = w.newWAClient(device)
 	w.mergeLIDChats()
 	w.repairUnreadOnce()
+	w.repairGroupSendersOnce()
 	return w, nil
 }
 
