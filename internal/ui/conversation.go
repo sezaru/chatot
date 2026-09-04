@@ -206,6 +206,9 @@ type ConversationView struct {
 	headerMenuPop *gtk.Popover // ⋮ header menu; dev-hook popup target
 	window        *gtk.Window  // parent for the group-info dialog; set via SetWindow
 	scroller      *gtk.ScrolledWindow
+	// threadOverlay wraps the scroller and floats jumpBtn over it.
+	threadOverlay *gtk.Overlay
+	jumpBtn       *gtk.Button
 	// model mirrors msgs 1:1 and listView shows it; see thread_rows.go.
 	model    *gioutil.ListModel[client.Message]
 	listView *gtk.ListView
@@ -677,7 +680,26 @@ func NewConversationView(c client.Client) *ConversationView {
 	scroller.SetChild(cv.listView)
 	scroller.SetVisible(false)
 
-	root.Append(scroller)
+	// The thread sits under a floating "back to the newest message"
+	// button at the pane's bottom-right, shown only while the reader has
+	// scrolled up (see updateJumpButton).
+	cv.threadOverlay = gtk.NewOverlay()
+	cv.threadOverlay.SetChild(scroller)
+	cv.threadOverlay.SetVExpand(true)
+	cv.threadOverlay.SetVisible(false)
+	cv.jumpBtn = gtk.NewButton()
+	cv.jumpBtn.SetChild(newChevronGlyph(18))
+	cv.jumpBtn.AddCSSClass("chatot-jump-bottom")
+	cv.jumpBtn.SetTooltipText("Scroll to bottom")
+	cv.jumpBtn.SetFocusable(false)
+	cv.jumpBtn.SetHAlign(gtk.AlignEnd)
+	cv.jumpBtn.SetVAlign(gtk.AlignEnd)
+	cv.jumpBtn.SetMarginEnd(16)
+	cv.jumpBtn.SetMarginBottom(14)
+	cv.jumpBtn.SetVisible(false)
+	cv.jumpBtn.ConnectClicked(cv.scrollToBottom)
+	cv.threadOverlay.AddOverlay(cv.jumpBtn)
+	root.Append(cv.threadOverlay)
 
 	adj := scroller.VAdjustment()
 	adj.ConnectValueChanged(cv.onScroll)
@@ -845,12 +867,12 @@ func (cv *ConversationView) Load(jid string) {
 	if len(msgs) == 0 {
 		cv.empty.SetLabel("No messages yet")
 		cv.emptyBox.SetVisible(true)
-		cv.scroller.SetVisible(false)
+		cv.setThreadVisible(false)
 		return
 	}
 
 	cv.emptyBox.SetVisible(false)
-	cv.scroller.SetVisible(true)
+	cv.setThreadVisible(true)
 	// Presence is per-chat, so a switch re-evaluates the typing bubble
 	// rather than leaving the previous chat's state showing.
 	cv.refreshTypingBubble()
@@ -1265,7 +1287,7 @@ func (cv *ConversationView) appendMessage(msg client.Message) {
 
 	if cv.emptyBox.Visible() {
 		cv.emptyBox.SetVisible(false)
-		cv.scroller.SetVisible(true)
+		cv.setThreadVisible(true)
 	}
 
 	// A message that lands while the window is in the background is one
@@ -1561,13 +1583,13 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 		// (~two-thirds of the pane) instead of stretching edge-to-edge, matching
 		// the mockup's bubble sizing.
 		text.SetMaxWidthChars(48)
-		switch {
-		case !vm.Deleted && searchQuery != "" && len(findMatches(vm.Text, searchQuery)) > 0:
-			text.SetMarkup(highlightMarkup(vm.Text, searchQuery))
-		case !vm.Deleted && hasMention(vm.Text):
-			text.SetMarkup(mentionMarkupColor(vm.Text, h.names, vm.FromMe, mentionAccentFor()))
-		default:
+		if vm.Deleted {
 			text.SetLabel(vm.Text)
+		} else {
+			// Links open on click (GtkLabel's own activate-link opens the
+			// URI), and the text can be swept and copied.
+			text.SetMarkup(messageMarkup(vm.Text, h.names, vm.FromMe, mentionAccentFor(), searchQuery))
+			text.SetSelectable(true)
 		}
 		bubble.Append(text)
 	}
@@ -1998,8 +2020,9 @@ func attachBubbleAffordances(bubble *gtk.Box, msg client.Message, vm bubbleView,
 	showing := false
 	a := bubbleAffordances{bubble: bubble, host: h.host, fromMe: vm.FromMe, actions: actions, chevron: chevron, smiley: smiley, showing: &showing}
 	a.openReact = func() {
-		pop := a.popover(smiley, gtk.PosTop, bubbleMenuWidth)
-		pop.SetChild(buildReactRow(bubble, msg, h, pop))
+		at := alignedRect(a.host, smiley, a.bubble, bubbleMenuWidth, a.fromMe)
+		pop := a.popoverAt(at, gtk.PosTop)
+		pop.SetChild(buildReactRow(bubble, msg, h, pop, at))
 		pop.Popup()
 	}
 	a.openMenu = func() {
@@ -2024,8 +2047,14 @@ func attachBubbleAffordances(bubble *gtk.Box, msg client.Message, vm bubbleView,
 // for an outgoing one), the mockup's placement, so a card under a bubble at
 // the pane's edge grows inward instead of past the window.
 func (a bubbleAffordances) popover(anchor gtk.Widgetter, pos gtk.PositionType, width int) *gtk.Popover {
+	return a.popoverAt(alignedRect(a.host, anchor, a.bubble, width, a.fromMe), pos)
+}
+
+// popoverAt is popover pointed at an already computed rectangle (nil for
+// GTK's default placement).
+func (a bubbleAffordances) popoverAt(at *gdk.Rectangle, pos gtk.PositionType) *gtk.Popover {
 	*a.showing = true
-	pop := newBubblePopover(a.host, anchor, alignedRect(a.host, anchor, a.bubble, width, a.fromMe), func() {
+	pop := newBubblePopover(a.host, a.bubble, at, func() {
 		*a.showing = false
 		a.setVisible(false)
 	})
@@ -2072,8 +2101,9 @@ func newBubblePopover(host, anchor gtk.Widgetter, rect *gdk.Rectangle, onClosed 
 }
 
 // buildReactRow is the quick-reaction pill: the six fixed reactions and a ＋
-// that opens the full picker. Picking closes owner.
-func buildReactRow(bubble *gtk.Box, msg client.Message, h bubbleHooks, owner *gtk.Popover) *gtk.Box {
+// that opens the full picker. Picking closes owner, the popover pointed
+// at at (see popoverChildRect) that shows the pill.
+func buildReactRow(bubble *gtk.Box, msg client.Message, h bubbleHooks, owner *gtk.Popover, at *gdk.Rectangle) *gtk.Box {
 	pill := gtk.NewBox(gtk.OrientationHorizontal, 2)
 	pill.AddCSSClass("chatot-react-row")
 	pill.SetHAlign(gtk.AlignCenter)
@@ -2091,20 +2121,29 @@ func buildReactRow(bubble *gtk.Box, msg client.Message, h bubbleHooks, owner *gt
 	plus := gtk.NewButtonWithLabel("＋")
 	plus.AddCSSClass("chatot-hover-more-reacts")
 	plus.SetTooltipText("More reactions")
+	shotRegister(msg.ID, func(s *bubbleShot) { s.reactPlus = plus })
 	plus.ConnectClicked(func() {
+		// Measured before the row pops down: the picker hangs under the
+		// ＋ itself, its right edge on the button's (the mockup's anchor).
+		under := popoverChildRect(owner, at, plus, reactPickerCardWidth)
 		owner.Popdown()
-		openReactionPicker(bubble, msg, h)
+		openReactionPicker(bubble, msg, h, under)
 	})
 	pill.Append(plus)
 	return pill
 }
 
 // openReactionPicker is the ＋'s full picker: the mockup's 322px "Pick a
-// reaction" card with an eight-column grid. It is chatot's own grid rather
-// than GtkEmojiChooser, which rebuilt its whole Unicode table on every open
-// and lagged for seconds.
-func openReactionPicker(bubble *gtk.Box, msg client.Message, h bubbleHooks) {
-	pop := newBubblePopover(h.host, bubble, alignedRect(h.host, bubble, nil, reactPickerCardWidth, msg.FromMe), func() {})
+// reaction" card with an eight-column grid, hung below the pointing
+// rectangle at (the ＋ button; the bubble's edge when it has none). It is
+// chatot's own grid rather than GtkEmojiChooser, which rebuilt its whole
+// Unicode table on every open and lagged for seconds.
+func openReactionPicker(bubble *gtk.Box, msg client.Message, h bubbleHooks, at *gdk.Rectangle) {
+	if at == nil {
+		at = alignedRect(h.host, bubble, nil, reactPickerCardWidth, msg.FromMe)
+	}
+	pop := newBubblePopover(h.host, bubble, at, func() {})
+	pop.SetPosition(gtk.PosBottom)
 	pop.AddCSSClass("chatot-react-picker")
 
 	col := gtk.NewBox(gtk.OrientationVertical, 6)
@@ -2214,6 +2253,42 @@ func alignedRect(host, anchor, fallback gtk.Widgetter, width int, fromMe bool) *
 		return &rect
 	}
 	return nil
+}
+
+// popoverChildRect is the pointing rectangle for a width px card hung under
+// child, a widget inside the open popover pop, right edge on the child's,
+// in host coordinates; nil when nothing is placed yet. pop was pointed at
+// at (host coordinates) with position top. A popover draws on its own
+// surface and ComputeBounds against the host stops there, so the child's
+// place is reconstructed from how GTK lays a popover out: its contents
+// (the box inside the shadow) centred on the pointing rectangle and
+// resting on its top edge, or hanging under its bottom edge when there
+// was no room above.
+func popoverChildRect(pop *gtk.Popover, at *gdk.Rectangle, child gtk.Widgetter, width int) *gdk.Rectangle {
+	if pop == nil || at == nil || pop.Child() == nil {
+		return nil
+	}
+	b, ok := gtk.BaseWidget(child).ComputeBounds(pop)
+	if !ok || b.Width() <= 0 || b.Height() <= 0 {
+		return nil
+	}
+	contents := gtk.BaseWidget(pop.Child()).Parent()
+	if contents == nil {
+		return nil
+	}
+	cb, ok := gtk.BaseWidget(contents).ComputeBounds(pop)
+	if !ok || cb.Width() <= 0 {
+		return nil
+	}
+	left := at.X() + (at.Width()-int(cb.Width()))/2
+	top := at.Y() - int(cb.Height())
+	if top < 0 {
+		top = at.Y() + at.Height()
+	}
+	x := left + int(b.X()-cb.X())
+	y := top + int(b.Y()-cb.Y())
+	rect := gdk.NewRectangle(alignPopoverX(x, int(b.Width()), width, true), y, width, int(b.Height()))
+	return &rect
 }
 
 // alignPopoverX returns the x of a width-wide pointing rectangle that GTK,

@@ -15,3 +15,11 @@
 @define-color chatot_ring_viewed rgba(255, 255, 255, 0.28);
 @define-color chatot_accent_text #46c39a;
 @define-color chatot_accent_text_soft #46c39a;
+
+.chatot-bubble-text link {
+	color: @chatot_accent_text;
+}
+
+.chatot-jump-bottom {
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}

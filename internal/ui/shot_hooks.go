@@ -20,6 +20,8 @@ import (
 // can reveal them; populated only while EnableShotHooks has been called.
 type bubbleShot struct {
 	affordances bubbleAffordances
+	// reactPlus is the open quick-reaction row's ＋ (nil until it shows).
+	reactPlus *gtk.Button
 }
 
 var shotRegistry map[string]*bubbleShot
@@ -308,13 +310,17 @@ func (c *Composer) ShowTray(paths []string) {
 // ShowMerged switches the sidebar into the merged "All accounts" list.
 func (cl *ChatList) ShowMerged() { cl.setMerged(true) }
 
-// PopupReactionPicker opens the ＋ full reaction grid for the bubble at idx.
+// PopupReactionPicker opens the ＋ full reaction grid for the bubble at idx
+// the way a reader does: the quick-reaction row first, then its ＋ once
+// the row is on screen, so the grid hangs where the button was.
 func (cv *ConversationView) PopupReactionPicker(idx int) {
-	if m, ok := cv.MessageAt(idx); ok {
-		if s := cv.shotFor(idx); s != nil && s.affordances.chevron != nil {
-			openReactionPicker(s.affordances.bubble, m, cv.hooks())
+	cv.PopupReactPill(idx)
+	glib.TimeoutAdd(400, func() bool {
+		if s := cv.shotFor(idx); s != nil && s.reactPlus != nil {
+			s.reactPlus.Activate()
 		}
-	}
+		return false
+	})
 }
 
 // ShowGroupName opens the group-name step with two people already picked.
