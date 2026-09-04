@@ -23,8 +23,9 @@ import (
 // window on change.
 var NotificationSound = true
 
-// notifyChime is the built-in chime: two quick ascending bell tones in the
-// style of WhatsApp's own, used unless the user supplies a sound file.
+// notifyChime is the built-in chime, WhatsApp's notification tone (Ogg
+// Vorbis, since MP3 aborts GtkMediaFile here), used unless the user supplies
+// a sound file.
 //
 //go:embed assets/notify.oga
 var notifyChime []byte
