@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
@@ -20,6 +23,13 @@ type composerInput struct {
 	// noted on the key press, consumed by the newline it inserts.
 	enterPending bool
 	enterShift   bool
+	// onPasteFiles and onPasteImage take a paste that is files or a
+	// picture rather than text (see ConnectPasteAttachments).
+	onPasteFiles func(paths []string)
+	onPasteImage func(t *gdk.Texture)
+	// pasteAsText is set while a paste is being re-emitted as text after
+	// the clipboard's files or picture could not be read.
+	pasteAsText bool
 }
 
 // composerMaxLines is how tall the pill grows before it scrolls.
@@ -69,6 +79,13 @@ func newComposerInput() *composerInput {
 		return false
 	})
 	view.AddController(keys)
+	// A paste of files (copied in a file manager) or of a picture (copied
+	// from a browser or an editor) becomes an attachment instead of text.
+	view.ConnectPasteClipboard(func() {
+		if !in.pasteAsText && in.pasteAttachment() {
+			view.StopEmission("paste-clipboard")
+		}
+	})
 	in.buf.ConnectInsertText(func(_ *gtk.TextIter, text string, _ int) {
 		if text != "\n" || !in.enterPending {
 			return
@@ -151,4 +168,70 @@ func (in *composerInput) GrabFocus() bool { return in.view.GrabFocus() }
 func (in *composerInput) SetSensitive(on bool) {
 	in.Overlay.SetSensitive(on)
 	in.view.SetSensitive(on)
+}
+
+// ConnectPasteAttachments routes a paste of files to files and of a
+// picture to image; text keeps pasting as text.
+func (in *composerInput) ConnectPasteAttachments(files func(paths []string), image func(t *gdk.Texture)) {
+	in.onPasteFiles = files
+	in.onPasteImage = image
+}
+
+// pasteAttachment reads the clipboard as files or as a picture when it
+// offers either, handing the result to the paste hooks, and reports
+// whether it did (the text paste is then stopped). Files win over a
+// picture: a copied image file offers both. A read that fails after all
+// falls back to the ordinary text paste, so an odd clipboard never eats
+// the keystroke.
+func (in *composerInput) pasteAttachment() bool {
+	if in.onPasteFiles == nil || in.onPasteImage == nil {
+		return false
+	}
+	clip := in.view.Clipboard()
+	formats := clip.Formats()
+	switch {
+	case formats.ContainGType(gdk.GTypeFileList):
+		clip.ReadValueAsync(context.Background(), gdk.GTypeFileList, int(glib.PriorityDefault), func(res gio.AsyncResulter) {
+			v, err := clip.ReadValueFinish(res)
+			if err != nil {
+				in.pasteText()
+				return
+			}
+			if files, ok := v.GoValue().(*gdk.FileList); ok {
+				in.onPasteFiles(filePaths(files))
+			}
+		})
+		return true
+	case formats.ContainGType(gdk.GTypeTexture):
+		clip.ReadTextureAsync(context.Background(), func(res gio.AsyncResulter) {
+			t, err := clip.ReadTextureFinish(res)
+			if err != nil || t == nil {
+				in.pasteText()
+				return
+			}
+			in.onPasteImage(gdk.BaseTexture(t))
+		})
+		return true
+	}
+	return false
+}
+
+// pasteText runs the text view's own paste once, bypassing the attachment
+// interception.
+func (in *composerInput) pasteText() {
+	in.pasteAsText = true
+	in.view.ActivateAction("clipboard.paste", nil)
+	in.pasteAsText = false
+}
+
+// filePaths is the local paths in a dropped or pasted file list; remote
+// files (no path) are skipped.
+func filePaths(files *gdk.FileList) []string {
+	var paths []string
+	for _, f := range files.Files() {
+		if p := f.Path(); p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths
 }

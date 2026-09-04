@@ -231,6 +231,8 @@ func activate(app *adw.Application, c client.Client) {
 	contentBox.SetHExpand(true)
 	contentBox.Append(conversation)
 	contentBox.Append(composer)
+	// Files dropped anywhere on the chat pane queue as attachments.
+	contentBox.AddController(composer.DropTarget())
 
 	// Declared up here because the starred page needs it, and it in turn needs
 	// the conversation and composer that are built above.
