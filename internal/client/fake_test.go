@@ -275,7 +275,7 @@ func TestFakeReactUnknownMessageErrors(t *testing.T) {
 func TestFakeMarkReadClearsUnread(t *testing.T) {
 	f := NewFake()
 	jid := "1234567890@s.whatsapp.net"
-	if err := f.MarkRead(context.Background(), jid, []string{"m1"}); err != nil {
+	if err := f.MarkRead(context.Background(), jid, []string{"m1"}, true); err != nil {
 		t.Fatalf("MarkRead: %v", err)
 	}
 	chats, _ := f.Chats(0)

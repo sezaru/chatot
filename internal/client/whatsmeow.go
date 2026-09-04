@@ -1632,12 +1632,13 @@ func (w *Whatsmeow) React(ctx context.Context, jid, msgID, emoji string) error {
 	return nil
 }
 
-// MarkRead sends a single read receipt covering msgIDs. All of them must
-// share the same original sender (whatsmeow's constraint); for 1:1 chats
-// that's always the chat JID itself, which is what we pass as sender here.
-// Group chats with mixed senders would need one call per sender — not
-// needed yet since the UI only marks read on 1:1/aggregate chat open.
-func (w *Whatsmeow) MarkRead(ctx context.Context, jid string, msgIDs []string) error {
+// MarkRead tells WhatsApp the account read msgIDs in jid, then clears the
+// local badge. The receipt always reaches the account's other devices, so
+// the phone's badge clears too; with notifySender the senders get it as
+// well (blue ticks), otherwise a read-self receipt syncs the devices only,
+// as WhatsApp Web does with read receipts turned off. A group receipt must
+// name the message's sender, so the ids are sent in one batch per sender.
+func (w *Whatsmeow) MarkRead(ctx context.Context, jid string, msgIDs []string, notifySender bool) error {
 	if len(msgIDs) == 0 {
 		return nil
 	}
@@ -1645,14 +1646,30 @@ func (w *Whatsmeow) MarkRead(ctx context.Context, jid string, msgIDs []string) e
 	if err != nil {
 		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
 	}
-	sender := chat
-	if chat.Server == types.GroupServer {
-		sender = types.EmptyJID // best-effort: see doc comment above
+	var kind []types.ReceiptType
+	if !notifySender {
+		kind = append(kind, types.ReceiptTypeReadSelf)
 	}
-	ids := make([]types.MessageID, len(msgIDs))
-	copy(ids, msgIDs)
-	if err := w.wa.MarkRead(ctx, ids, time.Now(), chat, sender); err != nil {
-		return fmt.Errorf("chatot/client: mark read: %w", err)
+	batches := readBatches(msgIDs, func(id string) string {
+		m, ok, err := w.store.MessageByID(jid, id)
+		if err == nil && ok && m.FromJID != "" {
+			return m.FromJID
+		}
+		if chat.Server == types.GroupServer {
+			return "" // no sender to name: the receipt cannot be sent
+		}
+		return jid
+	})
+	for _, b := range batches {
+		sender, err := types.ParseJID(b.Sender)
+		if err != nil {
+			return fmt.Errorf("chatot/client: parse sender %q: %w", b.Sender, err)
+		}
+		ids := make([]types.MessageID, len(b.MsgIDs))
+		copy(ids, b.MsgIDs)
+		if err := w.wa.MarkRead(ctx, ids, time.Now(), receiptTarget(chat, sender), sender, kind...); err != nil {
+			return fmt.Errorf("chatot/client: mark read: %w", err)
+		}
 	}
 	return w.ClearUnread(jid)
 }

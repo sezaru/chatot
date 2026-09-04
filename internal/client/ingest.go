@@ -54,6 +54,17 @@ func (w *Whatsmeow) ingestMessageUnread(m *Message, unreadDelta int) error {
 		return nil
 	}
 	isGroup := strings.HasSuffix(m.ChatJID, "@g.us")
+	// A message seen before (a resend, or one the history already
+	// delivered) is no new unread.
+	if unreadDelta > 0 {
+		_, known, err := w.store.MessageByID(m.ChatJID, m.ID)
+		if err != nil {
+			return err
+		}
+		if known {
+			unreadDelta = 0
+		}
+	}
 	// A channel post is filed under its JID for the Channels tab (like
 	// persistNewsletterPost) but is not a chat: no row, no unread count.
 	if !strings.HasSuffix(m.ChatJID, "@newsletter") {

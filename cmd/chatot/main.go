@@ -814,8 +814,8 @@ func sendPresence(c client.Client, available bool) {
 	}
 }
 
-// markReadOnOpen looks up jid's unread count from the chat list and, if
-// ui.SendReadReceipts is enabled, marks the corresponding messages read.
+// markReadOnOpen looks up jid's unread count from the chat list and marks
+// that many of its newest inbound messages read.
 func markReadOnOpen(c client.Client, jid string, msgs []client.Message) {
 	chats, err := c.Chats(0)
 	if err != nil {

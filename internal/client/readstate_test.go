@@ -1,6 +1,11 @@
 package client
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"go.mau.fi/whatsmeow/types"
+)
 
 func TestGroupReadStatus(t *testing.T) {
 	canon := func(jid string) string {
@@ -63,5 +68,42 @@ func TestJIDUserIn(t *testing.T) {
 	}
 	if jidUserIn("999@lid", own) || jidUserIn("", own) {
 		t.Fatal("stranger recognised as own")
+	}
+}
+
+func TestReadBatchesGroupBySenderInOrder(t *testing.T) {
+	senders := map[string]string{
+		"m1": "111@lid",
+		"m2": "222@s.whatsapp.net",
+		"m3": "111@lid",
+		"m4": "", // sender never learned: no receipt possible
+	}
+	got := readBatches([]string{"m1", "m2", "m3", "m4"}, func(id string) string { return senders[id] })
+	want := []readBatch{
+		{Sender: "111@lid", MsgIDs: []string{"m1", "m3"}},
+		{Sender: "222@s.whatsapp.net", MsgIDs: []string{"m2"}},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("readBatches = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i].Sender != want[i].Sender || strings.Join(got[i].MsgIDs, ",") != strings.Join(want[i].MsgIDs, ",") {
+			t.Errorf("batch %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestReceiptTargetFollowsTheMessageAddressing(t *testing.T) {
+	pn := types.NewJID("5511939467052", types.DefaultUserServer)
+	lid := types.NewJID("77322967326900", types.HiddenUserServer)
+	group := types.NewJID("554884131986-1482356741", types.GroupServer)
+	if got := receiptTarget(pn, pn); got != pn {
+		t.Errorf("PN-addressed DM: target = %s, want %s", got, pn)
+	}
+	if got := receiptTarget(pn, lid); got != lid {
+		t.Errorf("LID-addressed DM: target = %s, want %s", got, lid)
+	}
+	if got := receiptTarget(group, lid); got != group {
+		t.Errorf("group: target = %s, want %s", got, group)
 	}
 }

@@ -26,9 +26,9 @@ import (
 // reactEmojis is the fixed quick-react set offered on every bubble.
 var reactEmojis = []string{"👍", "❤️", "😂", "😮", "😢", "🙏"}
 
-// SendReadReceipts gates MarkRead calls on chat open. Default false: chatot
-// reads privately (whatsapp never learns a chat was opened here) until a
-// user-facing setting exists.
+// SendReadReceipts decides whether a read here is reported to the senders
+// (blue ticks). The account's own devices always learn about it, so the
+// phone's badge stays in step either way.
 var SendReadReceipts = false
 
 // LocationAccess mirrors settings.Settings.LocationAccess: whether the
@@ -320,32 +320,15 @@ func unreadMessageIDs(msgs []client.Message, count int) []string {
 	return ids
 }
 
-// MarkReadOnOpen sends read receipts for a just-opened chat, gated on
-// SendReadReceipts. Runs the network call synchronously; callers invoke it
-// from a goroutine to keep the GTK main loop unblocked.
+// MarkReadOnOpen reports a just-opened chat's unread messages as read: to
+// the account's other devices always, to the senders when SendReadReceipts
+// allows. Runs the network call synchronously; callers invoke it from a
+// goroutine to keep the GTK main loop unblocked.
 func MarkReadOnOpen(ctx context.Context, c client.Client, jid string, msgs []client.Message, unreadCount int) {
 	if unreadCount <= 0 {
 		return
 	}
-	// Opening the chat means the user has seen it: the badge clears
-	// regardless of the receipt setting, which only decides whether the
-	// sender is told.
-	if !SendReadReceipts {
-		if err := c.ClearUnread(jid); err != nil {
-			log.Printf("chatot: clear unread failed: %v", err)
-		}
-		return
-	}
-	ids := unreadMessageIDs(msgs, unreadCount)
-	if len(ids) == 0 {
-		if err := c.ClearUnread(jid); err != nil {
-			log.Printf("chatot: clear unread failed: %v", err)
-		}
-		return
-	}
-	if err := c.MarkRead(ctx, jid, ids); err != nil {
-		log.Printf("chatot: mark read failed: %v", err)
-	}
+	markRead(ctx, c, jid, unreadMessageIDs(msgs, unreadCount))
 }
 
 // MarkReadOnArrival handles a message that lands in the chat the user is
@@ -355,14 +338,22 @@ func MarkReadOnArrival(ctx context.Context, c client.Client, msg client.Message)
 	if msg.FromMe {
 		return
 	}
-	if !SendReadReceipts {
-		if err := c.ClearUnread(msg.ChatJID); err != nil {
-			log.Printf("chatot: clear unread failed: %v", err)
+	markRead(ctx, c, msg.ChatJID, []string{msg.ID})
+}
+
+// markRead sends the read for ids in jid. Opening the chat means the user
+// has seen it, so the local badge clears even when the receipt cannot be
+// sent (or there is no message to send it for).
+func markRead(ctx context.Context, c client.Client, jid string, ids []string) {
+	if len(ids) > 0 {
+		err := c.MarkRead(ctx, jid, ids, SendReadReceipts)
+		if err == nil {
+			return
 		}
-		return
-	}
-	if err := c.MarkRead(ctx, msg.ChatJID, []string{msg.ID}); err != nil {
 		log.Printf("chatot: mark read failed: %v", err)
+	}
+	if err := c.ClearUnread(jid); err != nil {
+		log.Printf("chatot: clear unread failed: %v", err)
 	}
 }
 

@@ -731,8 +731,8 @@ func (m *AccountManager) React(ctx context.Context, jid, msgID, emoji string) er
 	return m.active().React(ctx, jid, msgID, emoji)
 }
 
-func (m *AccountManager) MarkRead(ctx context.Context, jid string, msgIDs []string) error {
-	return m.active().MarkRead(ctx, jid, msgIDs)
+func (m *AccountManager) MarkRead(ctx context.Context, jid string, msgIDs []string, notifySender bool) error {
+	return m.active().MarkRead(ctx, jid, msgIDs, notifySender)
 }
 
 func (m *AccountManager) ClearUnread(jid string) error { return m.active().ClearUnread(jid) }
