@@ -91,15 +91,7 @@ func translate(evt interface{}) *Event {
 	case *events.PairSuccess:
 		return &Event{Kind: EventPairSuccess}
 	case *events.HistorySync:
-		var jids []string
-		if v.Data != nil {
-			for _, c := range v.Data.GetConversations() {
-				if jid := c.GetID(); jid != "" {
-					jids = append(jids, jid)
-				}
-			}
-		}
-		return &Event{Kind: EventHistorySync, HistorySync: &HistorySync{ChatJIDs: jids}}
+		return &Event{Kind: EventHistorySync, HistorySync: historySyncSummary(v.Data)}
 	default:
 		return nil
 	}

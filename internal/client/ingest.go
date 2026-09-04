@@ -40,11 +40,20 @@ func (w *Whatsmeow) ingestMessage(m *Message) error {
 	if m == nil {
 		return nil
 	}
-	isGroup := strings.HasSuffix(m.ChatJID, "@g.us")
 	unreadDelta := 0
 	if !m.FromMe && !m.Edited {
 		unreadDelta = 1
 	}
+	return w.ingestMessageUnread(m, unreadDelta)
+}
+
+// ingestMessageUnread is ingestMessage with an explicit unread delta, for
+// callers (history backfill) whose messages must not count as new.
+func (w *Whatsmeow) ingestMessageUnread(m *Message, unreadDelta int) error {
+	if m == nil {
+		return nil
+	}
+	isGroup := strings.HasSuffix(m.ChatJID, "@g.us")
 	// A channel post is filed under its JID for the Channels tab (like
 	// persistNewsletterPost) but is not a chat: no row, no unread count.
 	if !strings.HasSuffix(m.ChatJID, "@newsletter") {

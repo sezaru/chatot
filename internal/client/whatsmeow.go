@@ -192,7 +192,9 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 	}
 	if hs, ok := evt.(*events.HistorySync); ok {
 		w.applyHistorySync(hs.Data)
-		go w.syncContacts(context.Background())
+		if historySyncNeedsContacts(hs.Data) {
+			go w.syncContacts(context.Background())
+		}
 	}
 	if _, ok := evt.(*events.OfflineSyncCompleted); ok {
 		w.endSyncWindow()
@@ -220,7 +222,7 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 	}
 	if m, ok := evt.(*events.Mute); ok {
 		w.applyChatUpdate(m.JID.String(), func(jid string) error {
-			return w.store.SetChatMuted(jid, m.Action.GetMuted())
+			return w.store.SetChatMuted(jid, muteActive(m.Action, time.Now()))
 		})
 		return
 	}
@@ -256,9 +258,9 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 	// LabelAssociationChat toggles a chat's membership in a label. Both push
 	// an EventLabelUpdate so the sidebar's label filter and chat list refresh.
 	if le, ok := evt.(*events.LabelEdit); ok {
-		// A predefined id marks one of WhatsApp's own lists (Unread,
-		// Favorites, ...), which the sidebar's fixed chips already cover.
-		predefined := le.Action.GetPredefinedID() != 0
+		// WhatsApp's own lists (Unread, Favorites, ...) are covered by the
+		// sidebar's fixed chips and must not show as custom labels.
+		predefined := labelIsBuiltIn(le.LabelID, le.Action)
 		if err := w.store.UpsertLabel(le.LabelID, le.Action.GetName(), int(le.Action.GetColor()), le.Action.GetDeleted(), predefined); err != nil {
 			w.log.Warnf("chatot/client: apply label-edit app-state: %v", err)
 		}

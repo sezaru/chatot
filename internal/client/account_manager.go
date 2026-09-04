@@ -76,11 +76,14 @@ func phoneFromJID(jid string) string {
 	return "+" + user
 }
 
-// accountStatusLine is the pure status subline for an account, given whether
-// its client is logged in.
-func accountStatusLine(loggedIn bool) string {
-	if loggedIn {
+// accountStatusLine is the pure status subline for an account: a paired
+// account whose socket is down is between connections, not signed out.
+func accountStatusLine(paired, loggedIn bool) string {
+	switch {
+	case loggedIn:
 		return "Connected"
+	case paired:
+		return "Reconnecting…"
 	}
 	return "Logged out · scan to relink"
 }
@@ -220,7 +223,7 @@ func (m *AccountManager) Accounts() []AccountMeta {
 		out[i] = AccountMeta{
 			ID:     a.ID,
 			Name:   a.displayName(i),
-			Status: accountStatusLine(a.c.LoggedIn()),
+			Status: accountStatusLine(a.c.Paired(), a.c.LoggedIn()),
 			Phone:  phoneFromJID(a.c.OwnJID()),
 			Unread: unread,
 		}
@@ -272,7 +275,7 @@ func (m *AccountManager) SetActive(id string) error {
 		}
 	}
 
-	m.events.Publish(Event{Kind: EventHistorySync, HistorySync: &HistorySync{}})
+	m.events.Publish(Event{Kind: EventHistorySync, HistorySync: &HistorySync{Progress: -1}})
 	return nil
 }
 

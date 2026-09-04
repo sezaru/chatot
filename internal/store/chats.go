@@ -8,18 +8,26 @@ import (
 
 // UpsertChat inserts or updates a chat row. An empty Name leaves any
 // existing name untouched (chat metadata often arrives piecemeal).
-func (s *Store) UpsertChat(row ChatRow) error {
+func (s *Store) UpsertChat(row ChatRow) error { return s.UpsertChatFlags(row, true, true) }
+
+// UpsertChatFlags is UpsertChat where setPinned/setMuted say whether row's
+// Pinned/Muted are known. A history-sync conversation often carries neither
+// (both live in app state, which syncs separately), and overwriting them
+// with false on every chunk would undo the mute the phone just reported.
+// On insert an unknown flag starts false.
+func (s *Store) UpsertChatFlags(row ChatRow, setPinned, setMuted bool) error {
 	_, err := s.db.Exec(`
 		INSERT INTO chats(jid, is_group, name, pinned, muted, unread_count, last_message_ts)
 		VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, ?)
 		ON CONFLICT(jid) DO UPDATE SET
 			is_group = excluded.is_group,
 			name = COALESCE(excluded.name, chats.name),
-			pinned = excluded.pinned,
-			muted = excluded.muted,
+			pinned = CASE WHEN ? THEN excluded.pinned ELSE chats.pinned END,
+			muted = CASE WHEN ? THEN excluded.muted ELSE chats.muted END,
 			unread_count = excluded.unread_count,
 			last_message_ts = excluded.last_message_ts
-	`, row.JID, boolToInt(row.IsGroup), row.Name, boolToInt(row.Pinned), boolToInt(row.Muted), row.UnreadCount, row.LastMessageTS)
+	`, row.JID, boolToInt(row.IsGroup), row.Name, boolToInt(row.Pinned), boolToInt(row.Muted), row.UnreadCount, row.LastMessageTS,
+		boolToInt(setPinned), boolToInt(setMuted))
 	return err
 }
 

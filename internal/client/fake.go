@@ -353,7 +353,7 @@ func (f *Fake) RequestMoreHistory(ctx context.Context, chatJID, oldestMsgID stri
 	f.messages[chatJID] = append(older, msgs...)
 	f.mu.Unlock()
 
-	f.events.Publish(Event{Kind: EventHistorySync, HistorySync: &HistorySync{ChatJIDs: []string{chatJID}}})
+	f.events.Publish(Event{Kind: EventHistorySync, HistorySync: &HistorySync{ChatJIDs: []string{chatJID}, Type: "ondemand", Progress: -1}})
 	return nil
 }
 

@@ -122,10 +122,13 @@ func lastText(t *testing.T, f *Fake, jid string) string {
 }
 
 func TestAccountStatusLine(t *testing.T) {
-	if got := accountStatusLine(true); got != "Connected" {
+	if got := accountStatusLine(true, true); got != "Connected" {
 		t.Errorf("logged-in status = %q, want %q", got, "Connected")
 	}
-	if got := accountStatusLine(false); got != "Logged out · scan to relink" {
+	if got := accountStatusLine(true, false); got != "Reconnecting…" {
+		t.Errorf("paired-but-offline status = %q, want %q", got, "Reconnecting…")
+	}
+	if got := accountStatusLine(false, false); got != "Logged out · scan to relink" {
 		t.Errorf("logged-out status = %q, want %q", got, "Logged out · scan to relink")
 	}
 }
