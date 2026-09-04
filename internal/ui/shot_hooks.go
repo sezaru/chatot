@@ -119,6 +119,21 @@ func (cv *ConversationView) OpenViewer(m client.Message) {
 	}
 }
 
+// WheelZoom scales the viewer's picture by factor about the point
+// at (x, y) in stage coordinates — a screenshot hook standing in for the
+// pointer event.
+func (v *AttachmentViewer) WheelZoom(factor, x, y float64) {
+	if v.wheel != nil {
+		v.wheel(factor, x, y)
+	}
+}
+
+// OpenDownloaded is the click on a picture the bubble just downloaded to
+// path: the same handler the inline widget runs.
+func (cv *ConversationView) OpenDownloaded(m client.Message, path string) {
+	cv.hooks().mediaOpener(m)(path)
+}
+
 // PopupHeaderMenu opens the conversation header's ⋮ popover.
 func (cv *ConversationView) PopupHeaderMenu() {
 	if cv.headerMenuPop != nil {
@@ -581,4 +596,21 @@ func ShowImageViewerNow(win *gtk.Window, m client.Message, path string) {
 // FilterByLabel selects the label filter for id — a dev/screenshot hook.
 func (cl *ChatList) FilterByLabel(id string) {
 	cl.setFilter(chatFilter{Kind: filterLabel, LabelID: id})
+}
+
+// OpenCommunityGroupAt is the click on the i-th group row of the open
+// community's page.
+func (cl *ChatList) OpenCommunityGroupAt(i int) {
+	c := cl.communityPane.current
+	if i < 0 || i >= len(c.Groups) {
+		return
+	}
+	cl.openCommunityGroup(c.Groups[i])
+}
+
+// SearchList types text into the chat list's search box.
+func (cl *ChatList) SearchList(text string) {
+	cl.search.SetText(text)
+	cl.search.GrabFocus()
+	cl.search.SetPosition(-1)
 }
