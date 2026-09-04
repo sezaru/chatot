@@ -171,3 +171,40 @@ func TestInlineable(t *testing.T) {
 		}
 	}
 }
+
+func TestInlinePhotoHeightFollowsAspect(t *testing.T) {
+	cases := []struct{ w, h, want int }{
+		{1400, 400, 80}, // banner: 280*400/1400 = 80
+		{1400, 300, 80}, // wider still: clamped to the floor
+		{800, 600, 210}, // 4:3 lands at 210
+		{600, 800, 360}, // portrait: 373 clamped to the ceiling
+		{0, 0, 200},     // unknown: the old fixed box
+	}
+	for _, c := range cases {
+		if got := inlinePhotoHeight(c.w, c.h); got != c.want {
+			t.Errorf("inlinePhotoHeight(%d,%d) = %d, want %d", c.w, c.h, got, c.want)
+		}
+	}
+}
+
+func TestNextZoomStepSnapsToDesignSteps(t *testing.T) {
+	cases := []struct {
+		z    float64
+		d    int
+		want float64
+	}{
+		{1, 1, 1.5},    // Fit → first step up
+		{1.5, 1, 2},    // on a step → next step
+		{1.7, 1, 2},    // between steps → the step above
+		{1.7, -1, 1.5}, // between steps → the step below
+		{5, 1, 5},      // at the ceiling stays
+		{1, -1, 1},     // at Fit stays
+		{1.004, -1, 1}, // rounding noise counts as Fit
+		{2.004, 1, 3},  // rounding noise counts as the step
+	}
+	for _, c := range cases {
+		if got := nextZoomStep(c.z, c.d); got != c.want {
+			t.Errorf("nextZoomStep(%v,%d) = %v, want %v", c.z, c.d, got, c.want)
+		}
+	}
+}

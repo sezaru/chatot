@@ -440,6 +440,7 @@ func nextHistoryAction(olderCount int, alreadyRequested bool) (request, exhauste
 // subscribes to c.Events() for live append.
 func NewConversationView(c client.Client) *ConversationView {
 	root := gtk.NewBox(gtk.OrientationVertical, 0)
+	root.AddCSSClass("chatot-conv-root")
 	root.SetVExpand(true)
 	root.SetHExpand(true)
 
@@ -1910,6 +1911,9 @@ type bubbleHooks struct {
 	// onOpenViewer opens msg's attachment in the viewer pane; nil falls
 	// back to the standalone photo/video windows.
 	onOpenViewer func(client.Message)
+	// onLocalPath records that msgID's attachment now sits at path (the
+	// bubble downloaded it), so later reads of the view's messages see it.
+	onLocalPath func(msgID, path string)
 	// names resolves the numeric user part of an @mention to a display
 	// name ("" when unknown); nil leaves mentions as typed.
 	names func(user string) string
@@ -1931,6 +1935,17 @@ func (cv *ConversationView) VoteAt(idx int, option string) {
 // fullscreen for a clip) over the view's window.
 func (h bubbleHooks) mediaOpener(msg client.Message) func(path string) {
 	return func(path string) {
+		// The bubble downloaded the file itself: msg (captured at bind time)
+		// and the view's list still say "not downloaded", so the viewer would
+		// ask to fetch it again. Carry the path over first.
+		if path != "" && msg.Attachment != nil && msg.Attachment.LocalPath != path {
+			a := *msg.Attachment
+			a.LocalPath = path
+			msg.Attachment = &a
+			if h.onLocalPath != nil {
+				h.onLocalPath(msg.ID, path)
+			}
+		}
 		if h.onOpenViewer != nil {
 			h.onOpenViewer(msg)
 			return
@@ -1950,8 +1965,41 @@ func (cv *ConversationView) hooks() bubbleHooks {
 		ownJID:  cv.c.OwnJID(),
 		onReply: cv.onReply, onReact: cv.onReact, onVote: cv.onVote, onEdit: cv.onEdit,
 		onDelete: cv.onDelete, onStar: cv.onStar, onForward: cv.onForward, onStopLive: cv.onStopLive,
-		onOpenViewer: cv.onOpenViewer, names: cv.mentionName, avatars: cv.avatarCache,
+		onOpenViewer: cv.onOpenViewer, onLocalPath: func(id, path string) { cv.setLocalPath(id, path) }, names: cv.mentionName, avatars: cv.avatarCache,
 	}
+}
+
+// SetLocalPath records that msgID's attachment was downloaded to path (by
+// the viewer pane) and rebinds its bubble, so the thread shows the picture
+// instead of a download disc without a reload.
+func (cv *ConversationView) SetLocalPath(msgID, path string) {
+	if cv.setLocalPath(msgID, path) {
+		for i := range cv.msgs {
+			if cv.msgs[i].ID == msgID {
+				cv.model.Splice(i, 1, cv.msgs[i])
+				return
+			}
+		}
+	}
+}
+
+// setLocalPath updates the cached message's attachment path without
+// touching the list. It reports whether anything changed.
+func (cv *ConversationView) setLocalPath(msgID, path string) bool {
+	if path == "" {
+		return false
+	}
+	for i := range cv.msgs {
+		m := &cv.msgs[i]
+		if m.ID != msgID || m.Attachment == nil || m.Attachment.LocalPath == path {
+			continue
+		}
+		a := *m.Attachment
+		a.LocalPath = path
+		m.Attachment = &a
+		return true
+	}
+	return false
 }
 
 // pinMessage sends the pin and reports the outcome the way the mockup does

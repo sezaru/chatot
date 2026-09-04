@@ -14,6 +14,8 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
+	"github.com/diamondburned/gotk4/pkg/graphene"
+	"github.com/diamondburned/gotk4/pkg/gsk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 
@@ -83,10 +85,13 @@ type AttachmentViewer struct {
 	onBack func()
 	// onForward/onReply/onStar act on the shown message; onMenu supplies
 	// the ⋯ menu (the bubble's own).
-	onForward func(client.Message)
-	onReply   func(client.Message)
-	onStar    func(client.Message)
-	onMenu    func(client.Message) []menuItem
+	onForward    func(client.Message)
+	onReply      func(client.Message)
+	onStar       func(client.Message)
+	onMenu       func(client.Message) []menuItem
+	onDownloaded func(msgID, path string)
+	// wheel is the current picture scroller's zoom-at-point, for WheelZoom.
+	wheel func(factor, x, y float64)
 
 	chat  client.Chat
 	items []client.Message
@@ -115,10 +120,12 @@ type AttachmentViewer struct {
 
 	// per-item state
 	player   *mediaPlayer
-	zoomIdx  int
+	zoom     float64 // multiple of the fitted size; 1 = Fit
 	zoomLbl  *gtk.Label
 	fitBtn   *gtk.Button
 	pic      *gtk.Picture // photo/pdf page
+	picTex   *gdk.Texture // what pic shows at full size (see applyZoom)
+	anchor   zoomAnchor   // pending wheel-zoom scroll target (see zoomAt)
 	picW     int
 	picH     int
 	page     int
@@ -208,6 +215,10 @@ func (v *AttachmentViewer) OnForward(f func(client.Message))         { v.onForwa
 func (v *AttachmentViewer) OnReply(f func(client.Message))           { v.onReply = f }
 func (v *AttachmentViewer) OnStar(f func(client.Message))            { v.onStar = f }
 func (v *AttachmentViewer) OnMenu(f func(client.Message) []menuItem) { v.onMenu = f }
+
+// OnDownloaded fires after the viewer fetches an attachment, with the
+// message ID and the file's path, so the thread can show it too.
+func (v *AttachmentViewer) OnDownloaded(f func(msgID, path string)) { v.onDownloaded = f }
 
 // Open shows msgID among the viewable messages of chat (msgs is the loaded
 // thread; every attachment in it navigates as one sequence).
@@ -405,7 +416,7 @@ func (v *AttachmentViewer) onKey(keyval uint) bool {
 	case gdk.KEY_minus, gdk.KEY_KP_Subtract:
 		v.zoomBy(-1)
 	case gdk.KEY_0, gdk.KEY_KP_0:
-		v.setZoom(0)
+		v.setZoom(1)
 	case gdk.KEY_space:
 		if v.player != nil {
 			v.player.Toggle()
@@ -529,12 +540,13 @@ func (v *AttachmentViewer) show(i int) {
 	m := v.items[i]
 	kind := viewerKind(m)
 	now := time.Now()
-	v.zoomIdx = 0
+	v.zoom = 1
 	v.page = 1
 	v.pages = 0
 	v.pdfCache = map[int]*gdk.Texture{}
 	v.mapZoom = 17
 	v.pic = nil
+	v.anchor = zoomAnchor{}
 	v.mapView = nil
 	v.loading = false
 
@@ -722,8 +734,13 @@ func (v *AttachmentViewer) download(m client.Message, col *gtk.Box, disc *gtk.Bu
 				sub.SetLabel("Click to retry — the sender may need to be online")
 				return
 			}
-			m.Attachment.LocalPath = path
+			a := *m.Attachment
+			a.LocalPath = path
+			m.Attachment = &a
 			v.items[v.idx] = m
+			if v.onDownloaded != nil {
+				v.onDownloaded(m.ID, path)
+			}
 			v.show(v.idx)
 		})
 	}()
@@ -737,6 +754,7 @@ func (v *AttachmentViewer) photoStage(path string) gtk.Widgetter {
 		return v.centred(v.brokenCard("This picture can't be decoded here.", path), false)
 	}
 	v.pic = gtk.NewPictureForPaintable(texture)
+	v.picTex = texture
 	v.picW, v.picH = texture.Width(), texture.Height()
 	return v.pictureScroller()
 }
@@ -756,8 +774,107 @@ func (v *AttachmentViewer) pictureScroller() gtk.Widgetter {
 	scroller.SetHExpand(true)
 	scroller.SetVExpand(true)
 	scroller.SetChild(v.pic)
+	// The wheel zooms (a notch up = in, down = out) rather than panning:
+	// captured ahead of the scrolled window so it never scrolls the stage.
+	// The zoom keeps the point under the pointer where it was.
+	wheel := gtk.NewEventControllerScroll(gtk.EventControllerScrollVertical)
+	wheel.SetPropagationPhase(gtk.PhaseCapture)
+	var px, py float64
+	motion := gtk.NewEventControllerMotion()
+	motion.ConnectMotion(func(x, y float64) { px, py = x, y })
+	scroller.AddController(motion)
+	wheel.ConnectScroll(func(_, dy float64) bool {
+		// A wheel notch is dy = ±1; a touchpad streams fractions of that,
+		// so the zoom follows the finger instead of jumping a step.
+		v.zoomAt(scroller, math.Pow(wheelZoomPerNotch, -dy), px, py)
+		return true
+	})
+	scroller.AddController(wheel)
+	v.wheel = func(f, x, y float64) { v.zoomAt(scroller, f, x, y) }
+	hadj, vadj := scroller.HAdjustment(), scroller.VAdjustment()
+	hadj.ConnectChanged(func() { v.applyAnchor(hadj, vadj) })
+	vadj.ConnectChanged(func() { v.applyAnchor(hadj, vadj) })
 	v.applyZoom()
 	return scroller
+}
+
+// wheelZoomPerNotch is the zoom change of one wheel notch: fine enough that
+// a few notches feel continuous, and a touchpad's fractional deltas finer
+// still.
+const wheelZoomPerNotch = 1.12
+
+// viewerPicMargin is the margin around the picture in its scroller: the
+// scrolled content is the picture plus twice this on each axis.
+const viewerPicMargin = 24.0
+
+// zoomAnchor is where the scroller should sit once the picture takes its
+// new zoomed size: the values to set, and the content extents at which
+// they are final. Kept on the viewer so that a burst of wheel events (a
+// touchpad sends several per frame) only ever has one target, applied by
+// one handler, instead of a stale handler per event pulling the scroller
+// back and forth.
+type zoomAnchor struct {
+	on       bool
+	hv, vv   float64
+	hup, vup float64
+}
+
+// zoomAt multiplies the zoom by factor keeping the picture point under
+// (x, y), in the scroller's coordinates, where it is, so wheel zoom homes
+// in on the pointer. The picture is centred when smaller than the stage,
+// so the point is taken relative to the drawn picture, not the scroller.
+func (v *AttachmentViewer) zoomAt(scroller *gtk.ScrolledWindow, factor, x, y float64) {
+	if v.pic == nil || factor <= 0 {
+		return
+	}
+	hadj, vadj := scroller.HAdjustment(), scroller.VAdjustment()
+	pw, ph := hadj.PageSize(), vadj.PageSize()
+	fit := v.fitScale()
+	w0 := float64(v.picW) * v.zoom * fit
+	h0 := float64(v.picH) * v.zoom * fit
+	// The pointed-at picture point as fractions of the picture, the
+	// picture's top-left sitting at its margin, or centred when smaller
+	// than the page. Page size doesn't change with zoom, so this holds
+	// before and after layout alike.
+	fx := (hadj.Value() + x - picOffset(pw, w0)) / w0
+	fy := (vadj.Value() + y - picOffset(ph, h0)) / h0
+	fx = math.Min(1, math.Max(0, fx))
+	fy = math.Min(1, math.Max(0, fy))
+	v.setZoom(v.zoom * factor)
+	w1 := float64(v.picW) * v.zoom * fit
+	h1 := float64(v.picH) * v.zoom * fit
+	v.anchor = zoomAnchor{
+		on:  true,
+		hv:  fx*w1 - x + picOffset(pw, w1),
+		vv:  fy*h1 - y + picOffset(ph, h1),
+		hup: math.Max(pw, w1+2*viewerPicMargin),
+		vup: math.Max(ph, h1+2*viewerPicMargin),
+	}
+	// Reachable already (zooming out, or clamped at a bound), or once the
+	// adjustments take the new extents during layout (see applyAnchor).
+	v.applyAnchor(hadj, vadj)
+}
+
+// picOffset is where the picture's left/top edge sits in the scrolled
+// content: at its margin when it overflows the page, else centred.
+func picOffset(page, pic float64) float64 {
+	return math.Max(viewerPicMargin, (page-pic)/2)
+}
+
+// applyAnchor places the scroller at the pending zoom anchor, and retires
+// it once the adjustments have the extents it was computed for. Wired to
+// both adjustments' "changed" (extents changed in layout), which happens
+// before that frame paints, so the picture never shows at the old offset.
+func (v *AttachmentViewer) applyAnchor(hadj, vadj *gtk.Adjustment) {
+	a := v.anchor
+	if !a.on {
+		return
+	}
+	hadj.SetValue(a.hv)
+	vadj.SetValue(a.vv)
+	if math.Abs(hadj.Upper()-a.hup) < 1.5 && math.Abs(vadj.Upper()-a.vup) < 1.5 {
+		v.anchor.on = false
+	}
 }
 
 // fitScale is the scale that fits the current picture in the stage.
@@ -781,24 +898,33 @@ func (v *AttachmentViewer) applyZoom() {
 		return
 	}
 	fit := v.fitScale()
-	mul := viewerZoomSteps[v.zoomIdx]
-	if v.zoomIdx == 0 {
+	mul := v.zoom
+	atFit := v.atFit()
+	if atFit {
+		v.pic.SetPaintable(v.picTex)
 		v.pic.SetCanShrink(true)
-		v.pic.SetSizeRequest(-1, -1)
 	} else {
+		// A GtkPicture never asks for less than its paintable's own size
+		// once it may not shrink, so a size request below that is ignored
+		// and the picture would jump to 100%. Show it through a paintable
+		// whose intrinsic size is the scaled size instead: a render node
+		// referencing the texture, scaled by the GPU, no pixels copied.
 		scale := fit * mul
+		w := float32(float64(v.picW)*scale + 0.5)
+		h := float32(float64(v.picH)*scale + 0.5)
+		v.pic.SetPaintable(scaledPaintable(v.picTex, w, h))
 		v.pic.SetCanShrink(false)
-		v.pic.SetSizeRequest(int(float64(v.picW)*scale), int(float64(v.picH)*scale))
 	}
+	v.pic.SetSizeRequest(-1, -1)
 	if v.zoomLbl != nil {
 		shown := fit * mul
-		if shown > 1 && v.zoomIdx == 0 {
+		if shown > 1 && atFit {
 			shown = 1 // a small picture is not upscaled to fit
 		}
 		v.zoomLbl.SetLabel(strconv.Itoa(int(shown*100+0.5)) + "%")
 	}
 	if v.fitBtn != nil {
-		if v.zoomIdx == 0 {
+		if atFit {
 			v.fitBtn.AddCSSClass("chatot-viewer-fit-on")
 		} else {
 			v.fitBtn.RemoveCSSClass("chatot-viewer-fit-on")
@@ -806,19 +932,41 @@ func (v *AttachmentViewer) applyZoom() {
 	}
 }
 
-func (v *AttachmentViewer) zoomBy(d int) { v.setZoom(v.zoomIdx + d) }
+// atFit reports whether the zoom is (within rounding) the fitted size.
+func (v *AttachmentViewer) atFit() bool { return math.Abs(v.zoom-1) < 0.005 }
 
-func (v *AttachmentViewer) setZoom(i int) {
+// zoomBy moves to the next design step above (d > 0) or below (d < 0) the
+// current zoom, which the wheel may have left between steps.
+func (v *AttachmentViewer) zoomBy(d int) { v.setZoom(nextZoomStep(v.zoom, d)) }
+
+// nextZoomStep is the first of viewerZoomSteps strictly above (d > 0) or
+// below (d < 0) z, or z's nearest bound when there is none. A z within
+// rounding of a step counts as that step.
+func nextZoomStep(z float64, d int) float64 {
+	const eps = 0.005
+	if d > 0 {
+		for _, s := range viewerZoomSteps {
+			if s > z+eps {
+				return s
+			}
+		}
+		return viewerZoomSteps[len(viewerZoomSteps)-1]
+	}
+	for i := len(viewerZoomSteps) - 1; i >= 0; i-- {
+		if viewerZoomSteps[i] < z-eps {
+			return viewerZoomSteps[i]
+		}
+	}
+	return viewerZoomSteps[0]
+}
+
+// setZoom sets the zoom multiple, clamped to the design's range.
+func (v *AttachmentViewer) setZoom(z float64) {
 	if v.pic == nil {
 		return
 	}
-	if i < 0 {
-		i = 0
-	}
-	if i >= len(viewerZoomSteps) {
-		i = len(viewerZoomSteps) - 1
-	}
-	v.zoomIdx = i
+	z = math.Max(viewerZoomSteps[0], math.Min(viewerZoomSteps[len(viewerZoomSteps)-1], z))
+	v.zoom = z
 	v.applyZoom()
 }
 
@@ -871,7 +1019,7 @@ func (v *AttachmentViewer) zoomBar(pages bool) gtk.Widgetter {
 	v.fitBtn.SetTooltipText("Fit to window · 0")
 	v.fitBtn.SetFocusOnClick(false)
 	v.fitBtn.SetMarginStart(4)
-	v.fitBtn.ConnectClicked(func() { v.setZoom(0) })
+	v.fitBtn.ConnectClicked(func() { v.setZoom(1) })
 	bar.Append(v.fitBtn)
 	// The stage's size is only known once mapped; refit then.
 	glib.IdleAdd(func() { v.applyZoom() })
@@ -928,7 +1076,7 @@ func (v *AttachmentViewer) setPage(n int) {
 // main loop the first time.
 func (v *AttachmentViewer) renderPage(path string, n int) {
 	if tex, ok := v.pdfCache[n]; ok {
-		v.pic.SetPaintable(tex)
+		v.picTex = tex
 		v.picW, v.picH = tex.Width(), tex.Height()
 		v.applyZoom()
 		return
@@ -951,7 +1099,7 @@ func (v *AttachmentViewer) renderPage(path string, n int) {
 			}
 			v.pdfCache[n] = tex
 			if v.page == n {
-				v.pic.SetPaintable(tex)
+				v.picTex = tex
 				v.picW, v.picH = tex.Width(), tex.Height()
 				v.applyZoom()
 			}
@@ -1758,4 +1906,15 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// scaledPaintable is tex drawn at w×h: a paintable whose intrinsic size is
+// exactly that, so a GtkPicture showing it measures w×h.
+func scaledPaintable(tex *gdk.Texture, w, h float32) gdk.Paintabler {
+	if tex == nil {
+		return nil
+	}
+	snap := gtk.NewSnapshot()
+	snap.AppendScaledTexture(tex, gsk.ScalingFilterTrilinear, graphene.RectAlloc().Init(0, 0, w, h))
+	return snap.ToPaintable(graphene.NewSizeAlloc().Init(w, h))
 }
