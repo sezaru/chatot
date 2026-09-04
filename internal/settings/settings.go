@@ -30,6 +30,11 @@ type Settings struct {
 	// LocationAccess lets the Send-location sheet ask the system (the XDG
 	// location portal) for a position; off leaves only the map picker.
 	LocationAccess bool `json:"locationAccess"`
+	// NotificationSound plays a short chime with each desktop notification.
+	// Notification daemons rarely ring on their own for app notifications, so
+	// the app does it: the system sound theme's "message-new-instant" when a
+	// theme is installed, otherwise a built-in chime.
+	NotificationSound bool `json:"notificationSound"`
 }
 
 // Default returns the preferences a fresh install starts with: chatot
@@ -44,6 +49,7 @@ func Default() Settings {
 		NotificationsPerAccount: true,
 		KeepInactiveConnected:   true,
 		LocationAccess:          true,
+		NotificationSound:       true,
 	}
 }
 

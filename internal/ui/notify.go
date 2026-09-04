@@ -191,6 +191,9 @@ func (n *Notifier) handleMessage(msg client.Message) {
 		// One id per chat: a newer message notification replaces rather than
 		// stacks alongside an unread one for the same chat.
 		n.app.SendNotification("chatot-chat-"+msg.ChatJID, notif)
+		if NotificationSound {
+			playNotificationSound()
+		}
 	})
 }
 
@@ -208,6 +211,9 @@ func (n *Notifier) handleCall(call client.Call) {
 		notif.SetDefaultActionAndTarget("app.open-chat", glib.NewVariantString(call.ChatJID))
 		notif.AddButtonWithTarget("Decline", "app.reject-call", glib.NewVariantString(encodeCallActionParam(call.ChatJID, call.CallID)))
 		n.app.SendNotification("chatot-call-"+call.ChatJID, notif)
+		if NotificationSound {
+			playNotificationSound()
+		}
 	})
 }
 
