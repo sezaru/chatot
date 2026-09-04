@@ -23,6 +23,8 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		Proxy:                   "socks5://localhost:9050",
 		NotificationsPerAccount: false,
 		KeepInactiveConnected:   false,
+		FontSize:                "default",
+		AutoDownload:            "photos",
 	}
 	if err := Save(dir, want); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -75,5 +77,40 @@ func TestLoadKeepsNotificationSoundWhenAbsent(t *testing.T) {
 	}
 	if s := Load(dir); !s.NotificationSound {
 		t.Fatal("settings written before the sound toggle existed should keep it on")
+	}
+}
+
+func TestLoadNormalizesUnknownEnumValues(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(`{"fontSize":"huge","autoDownload":"wifi"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := Load(dir)
+	if s.FontSize != "default" || s.AutoDownload != "photos" {
+		t.Errorf("Load = fontSize %q autoDownload %q, want defaults", s.FontSize, s.AutoDownload)
+	}
+}
+
+func TestLoadKeepsTrayAndPreviewDefaultsWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(`{"theme":"dark"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := Load(dir)
+	if !s.ShowTrayIcon || !s.CloseToTray || !s.ShowWindowControls || !s.ShowMessagePreviews || !s.NotificationText {
+		t.Errorf("absent fields lost their on defaults: %+v", s)
+	}
+}
+
+func TestSoundFileRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	s := Default()
+	s.NotificationSoundFile = "/tmp/ding.mp3"
+	s.VerboseLogging = true
+	if err := Save(dir, s); err != nil {
+		t.Fatal(err)
+	}
+	if got := Load(dir); got.NotificationSoundFile != s.NotificationSoundFile || !got.VerboseLogging {
+		t.Errorf("Load = %+v, want %+v", got, s)
 	}
 }

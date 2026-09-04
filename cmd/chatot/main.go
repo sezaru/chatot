@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
@@ -19,14 +20,31 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"chatot/internal/client"
+	"chatot/internal/logfile"
 	"chatot/internal/settings"
 	"chatot/internal/ui"
 )
 
 const appID = "com.sezdm.chatot"
 
+// logFileLimit caps the log file Preferences › Advanced points at.
+const logFileLimit = 8 << 20
+
+// mainWin is the one main window; a second activation (the launcher while
+// the app is running, or a hidden-to-tray window) presents it instead of
+// building another.
+var mainWin *adw.ApplicationWindow
+
 func main() {
 	ensureComposeInput()
+	// Every log line also lands in a capped file under the state dir, the
+	// one Preferences › Advanced › Log file opens.
+	if w, err := logfile.Open(filepath.Join(stateDir(), "chatot.log"), logFileLimit); err == nil {
+		log.SetOutput(io.MultiWriter(os.Stderr, w))
+		ui.Prefs.LogFile = w.Path()
+	} else {
+		log.Printf("chatot: log file: %v", err)
+	}
 	// GTK 4.16+ defaults to its Vulkan renderer, which logs a
 	// VK_SUBOPTIMAL_KHR warning whenever a popover surface first presents.
 	// The GL renderer ("gl"; "ngl" before 4.22) draws the same and stays quiet; an explicit
@@ -169,6 +187,10 @@ func stateDir() string {
 }
 
 func activate(app *adw.Application, c client.Client) {
+	if mainWin != nil {
+		mainWin.Present()
+		return
+	}
 	loadCSS()
 	if os.Getenv("CHATOT_SHOT") != "" {
 		ui.EnableShotHooks()
@@ -388,6 +410,8 @@ func activate(app *adw.Application, c client.Client) {
 	}
 
 	win := adw.NewApplicationWindow(&app.Application)
+	mainWin = win
+	ui.ApplyFontSize(win, prefs.FontSize)
 	win.SetTitle("chatot")
 	// The icon name resolves through the desktop entry installDesktopEntry
 	// keeps in place; on X11 GTK reads it from the window directly.
@@ -504,6 +528,20 @@ func activate(app *adw.Application, c client.Client) {
 	app.AddAction(quitAction)
 	app.SetAccelsForAction("app.quit", []string{"<Ctrl>q"})
 
+	// The Shortcuts page's Window and Conversation bindings.
+	searchChatsAction := gio.NewSimpleAction("search-chats", nil)
+	searchChatsAction.ConnectActivate(func(_ *glib.Variant) { chatList.FocusSearch() })
+	app.AddAction(searchChatsAction)
+	app.SetAccelsForAction("app.search-chats", []string{"<Ctrl>k"})
+	searchInChatAction := gio.NewSimpleAction("search-in-chat", nil)
+	searchInChatAction.ConnectActivate(func(_ *glib.Variant) { conversation.OpenSearch("") })
+	app.AddAction(searchInChatAction)
+	app.SetAccelsForAction("app.search-in-chat", []string{"<Ctrl>f"})
+	closeWindowAction := gio.NewSimpleAction("close-window", nil)
+	closeWindowAction.ConnectActivate(func(_ *glib.Variant) { win.Close() })
+	app.AddAction(closeWindowAction)
+	app.SetAccelsForAction("app.close-window", []string{"<Ctrl>w"})
+
 	var accountInfo func() (string, int)
 	if hasAccounts {
 		accountInfo = func() (string, int) { return am.ActiveName(), am.Count() }
@@ -514,8 +552,51 @@ func activate(app *adw.Application, c client.Client) {
 
 	// System-tray StatusNotifierItem: click to raise, Open/Quit menu, unread
 	// tooltip. Degrades to a no-op with no StatusNotifierWatcher on the bus.
-	tray := ui.SetupTray(func() { win.Present() }, func() { app.Quit() })
-	go watchTrayUnread(c, tray)
+	// Preferences › Notifications › Show tray icon adds and removes it.
+	var trayMu sync.Mutex
+	var tray *ui.Tray
+	setTray := func(show bool) {
+		trayMu.Lock()
+		defer trayMu.Unlock()
+		switch {
+		case show && tray == nil:
+			tray = ui.SetupTray(func() { win.Present() }, func() { app.Quit() })
+			tray.SetUnread(totalUnread(c))
+		case !show && tray != nil:
+			tray.Teardown()
+			tray = nil
+		}
+	}
+	setTray(prefs.ShowTrayIcon)
+	go watchTrayUnread(c, func(n int) {
+		trayMu.Lock()
+		defer trayMu.Unlock()
+		if tray != nil {
+			tray.SetUnread(n)
+		}
+	})
+	// Close to tray: with a tray icon to bring it back, closing hides the
+	// window and the app keeps running; without one (the switch off, or no
+	// tray host on this desktop), closing quits.
+	win.ConnectCloseRequest(func() bool {
+		trayMu.Lock()
+		hasTray := tray != nil
+		trayMu.Unlock()
+		if prefs.CloseToTray && hasTray && ui.TrayAvailable() {
+			win.SetVisible(false)
+			return true
+		}
+		return false
+	})
+
+	ui.Prefs.RefreshChatList = chatList.RebuildRows
+	ui.Prefs.SetTrayVisible = setTray
+	ui.Prefs.Toasts = toastOverlay
+	ui.Prefs.ManageAccounts = func() {
+		if hasAccounts {
+			ui.ShowManageAccountsDialog(&win.Window, am, &prefs, func() { chatList.RefreshAccounts() }, saveSettings)
+		}
+	}
 
 	// Feed pairing QR codes into the linking screen.
 	go func() {
@@ -676,6 +757,8 @@ func activate(app *adw.Application, c client.Client) {
 		glib.TimeoutAdd(900, func() bool { composer.PopAttach(); return false })
 	}
 	if os.Getenv("CHATOT_SHOT_PREFS") == "1" {
+		// CHATOT_SHOT_ARG names the page to open on (a prefPages ID).
+		ui.PreferencesInitialPage = os.Getenv("CHATOT_SHOT_ARG")
 		ui.ShowPreferences(&win.Window, &prefs, c, func(updated settings.Settings) { prefs = updated })
 	}
 	if os.Getenv("CHATOT_SHOT_SWITCHER") == "1" {
@@ -701,6 +784,12 @@ func applySettings(s settings.Settings) {
 	ui.NotificationsEnabled = s.ShowNotifications
 	ui.NotificationsPerAccount = s.NotificationsPerAccount
 	ui.NotificationSound = s.NotificationSound
+	ui.NotificationSoundFile = s.NotificationSoundFile
+	ui.NotificationText = s.NotificationText
+	ui.ShowWindowControls = s.ShowWindowControls
+	ui.ShowMessagePreviews = s.ShowMessagePreviews
+	ui.AutoDownload = s.AutoDownload
+	client.SetVerboseLogging(s.VerboseLogging)
 	ui.ApplyTheme(s.Theme)
 
 	// Whatsmeow.Start reads CHATOT_PROXY itself (see internal/client), so
@@ -736,12 +825,12 @@ func markReadOnOpen(c client.Client, jid string, msgs []client.Message) {
 // events that move an unread count (new message, receipt, or a synced
 // pin/mute/unread change). Its own Events() subscription is independent of the
 // chat list's and the notifier's (fan-out bus).
-func watchTrayUnread(c client.Client, tray *ui.Tray) {
-	tray.SetUnread(totalUnread(c))
+func watchTrayUnread(c client.Client, setUnread func(int)) {
+	setUnread(totalUnread(c))
 	for ev := range c.Events() {
 		switch ev.Kind {
 		case client.EventMessage, client.EventReceipt, client.EventChatUpdate, client.EventHistorySync:
-			tray.SetUnread(totalUnread(c))
+			setUnread(totalUnread(c))
 		}
 	}
 }

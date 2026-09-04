@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"log"
-	"os"
 	"path/filepath"
 
 	"github.com/diamondburned/gotk4/pkg/cairo"
@@ -295,11 +294,7 @@ func (p *mediaPlayer) SetLoop(loop bool) {
 
 // playableCacheDir is where MP3s GTK cannot play are transcoded to.
 func playableCacheDir() string {
-	dir := os.Getenv("XDG_CACHE_HOME")
-	if dir == "" {
-		dir = filepath.Join(os.Getenv("HOME"), ".cache")
-	}
-	return filepath.Join(dir, "chatot", "playable")
+	return filepath.Join(cacheDir(), "playable")
 }
 
 // preparePlayable hands the player a GTK-safe copy of the audio at path:

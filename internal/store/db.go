@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
+	"os"
 	"strconv"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -262,4 +263,28 @@ func pruneEmptyMessages(db *sql.DB) error {
 			AND NOT EXISTS (SELECT 1 FROM media WHERE media.chat_jid = messages.chat_jid AND media.msg_id = messages.msg_id)
 	`)
 	return err
+}
+
+// Backup writes a consistent copy of the database to path, using SQLite's
+// VACUUM INTO so an open WAL and concurrent writers are handled by the
+// engine rather than by copying files. path must not exist.
+func (s *Store) Backup(path string) error {
+	_, err := s.db.Exec("VACUUM INTO ?", path)
+	return err
+}
+
+// Size reports the database file's bytes on disk (main file plus WAL), or
+// 0 for an in-memory store.
+func (s *Store) Size() int64 {
+	var path string
+	if err := s.db.QueryRow("SELECT file FROM pragma_database_list WHERE name = 'main'").Scan(&path); err != nil || path == "" {
+		return 0
+	}
+	var total int64
+	for _, p := range []string{path, path + "-wal"} {
+		if st, err := os.Stat(p); err == nil {
+			total += st.Size()
+		}
+	}
+	return total
 }

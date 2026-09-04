@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"math"
-	"os"
 	"path/filepath"
 
 	"github.com/diamondburned/gotk4/pkg/cairo"
@@ -27,11 +26,7 @@ const (
 var sharedTiles = newSharedTiles()
 
 func newSharedTiles() *geo.TileCache {
-	dir := os.Getenv("XDG_CACHE_HOME")
-	if dir == "" {
-		dir = filepath.Join(os.Getenv("HOME"), ".cache")
-	}
-	return geo.NewTileCache(filepath.Join(dir, "chatot", "tiles"))
+	return geo.NewTileCache(filepath.Join(cacheDir(), "tiles"))
 }
 
 // mapMarker is what the map draws on top of the tiles.

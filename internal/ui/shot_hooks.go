@@ -160,8 +160,12 @@ func (cv *ConversationView) ScrollThreadTo(fraction float64) {
 	glib.TimeoutAdd(400, func() bool { set(); return false })
 }
 
-// OpenSearch reveals the in-chat search bar with query typed in.
+// OpenSearch reveals the in-chat search bar with query typed in (the Ctrl+F
+// accelerator passes ""); a no-op with no chat open.
 func (cv *ConversationView) OpenSearch(query string) {
+	if cv.CurrentJID() == "" {
+		return
+	}
 	cv.openSearchBar()
 	cv.searchEntry.SetText(query)
 }
