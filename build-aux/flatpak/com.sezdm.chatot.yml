@@ -1,0 +1,126 @@
+# Flatpak manifest for chatot (GTK4 + libadwaita, whatsmeow in-process).
+#
+# Local build, installed into the user's Flatpak installation:
+#
+#   flatpak run org.flatpak.Builder --force-clean --user --install \
+#     --install-deps-from=flathub --ccache \
+#     build-aux/flatpak/build build-aux/flatpak/com.sezdm.chatot.yml
+#
+# The build is offline: Go modules come from go.mod.yml + modules.txt
+# (regenerate both with `go run github.com/dennwc/flatpak-go-mod@latest .`
+# whenever go.mod changes). The Flathub copy of this manifest is identical
+# except that the chatot module's source is a tagged git commit instead of
+# the checkout (see README, "Flatpak").
+id: com.sezdm.chatot
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.golang
+command: chatot
+
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  # WhatsApp servers, media CDN, map tiles and place search.
+  - --share=network
+  # Voice-note playback and recording (ffmpeg reads the default PulseAudio
+  # source); clip and voice-note playback goes through GStreamer.
+  - --socket=pulseaudio
+  # Tray item (StatusNotifierItem) with unread count and Open/Quit.
+  - --talk-name=org.kde.StatusNotifierWatcher
+
+build-options:
+  append-path: /usr/lib/sdk/golang/bin
+
+cleanup:
+  - /include
+  - /lib/cmake
+  - /lib/pkgconfig
+  - /lib/*.a
+  - /lib/*.la
+  - /share/man
+  - /share/pkgconfig
+
+modules:
+  # The design's monospace face (phone numbers, codes, timestamps).
+  # Cantarell, the UI face, comes with the GNOME runtime.
+  - name: jetbrains-mono
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 fonts/ttf/*.ttf -t /app/share/fonts/jetbrains-mono
+    sources:
+      - type: archive
+        url: https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip
+        sha256: 6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf
+        strip-components: 0
+
+  # pdftoppm/pdfinfo for document previews (the runtime has no poppler).
+  # Only the core library and the two utilities the app shells out to.
+  - name: poppler
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DENABLE_UTILS=ON
+      - -DENABLE_CPP=OFF
+      - -DENABLE_GLIB=OFF
+      - -DENABLE_GOBJECT_INTROSPECTION=OFF
+      - -DENABLE_QT5=OFF
+      - -DENABLE_QT6=OFF
+      - -DENABLE_BOOST=OFF
+      - -DENABLE_LIBCURL=OFF
+      - -DENABLE_LIBTIFF=OFF
+      - -DENABLE_NSS3=OFF
+      - -DENABLE_GPGME=OFF
+      - -DENABLE_HARFBUZZ=OFF
+      - -DENABLE_UNSTABLE_API_ABI_HEADERS=OFF
+      - -DBUILD_GTK_TESTS=OFF
+      - -DBUILD_QT5_TESTS=OFF
+      - -DBUILD_QT6_TESTS=OFF
+      - -DBUILD_CPP_TESTS=OFF
+      - -DBUILD_MANUAL_TESTS=OFF
+    cleanup:
+      - /bin/pdfattach
+      - /bin/pdfdetach
+      - /bin/pdffonts
+      - /bin/pdfimages
+      - /bin/pdfseparate
+      - /bin/pdfsig
+      - /bin/pdftocairo
+      - /bin/pdftohtml
+      - /bin/pdftops
+      - /bin/pdftotext
+      - /bin/pdfunite
+    sources:
+      - type: archive
+        url: https://poppler.freedesktop.org/poppler-26.09.0.tar.xz
+        sha256: 8059eadb6805340768f138c465b57f8164c92b4a0773c37ef031ea6c0d987b2e
+
+  - name: chatot
+    buildsystem: simple
+    build-options:
+      env:
+        GOFLAGS: -mod=vendor -trimpath -buildvcs=false
+        GOCACHE: /run/build/chatot/.gocache
+    build-commands:
+      # sqlite_fts5: message search uses go-sqlite3's bundled SQLite with FTS5.
+      - go build -tags sqlite_fts5 -ldflags='-s -w' -o /app/bin/chatot ./cmd/chatot
+      - install -Dm644 data/com.sezdm.chatot.desktop -t /app/share/applications
+      - install -Dm644 data/com.sezdm.chatot.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 internal/ui/assets/chatot-icon.svg /app/share/icons/hicolor/scalable/apps/com.sezdm.chatot.svg
+      - install -Dm644 internal/ui/assets/chatot-icon-512.png /app/share/icons/hicolor/512x512/apps/com.sezdm.chatot.png
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - .git
+          - .devenv
+          - .direnv
+          - .playwright-mcp
+          - .flatpak-builder
+          - build-aux/flatpak/build
+          - mockup
+          - node_modules
+      - go.mod.yml

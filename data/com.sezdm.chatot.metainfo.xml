@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.sezdm.chatot</id>
+  <name>chatot</name>
+  <summary>WhatsApp for the GNOME desktop</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="com.sezdm">
+    <name>Eduardo Barreto Alexandre</name>
+  </developer>
+
+  <description>
+    <p>
+      chatot is a native WhatsApp client for GNOME. It links to your phone as a
+      companion device, like WhatsApp Web, and keeps your chats, groups,
+      communities, channels and status updates in a GTK4 and libadwaita window
+      that follows the system's light and dark styles.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Text, replies, reactions, forwards, edits and deletes</li>
+      <li>Photos, videos, voice notes, documents, stickers and GIFs, with an in-app viewer</li>
+      <li>Voice-note recording and playback</li>
+      <li>Locations with an inline map, live locations and place search</li>
+      <li>Groups, communities, channels and status updates</li>
+      <li>Full-text message search, archive, pins, mutes and starred messages</li>
+      <li>Several linked accounts in one window</li>
+      <li>Desktop notifications and a tray item with the unread count</li>
+    </ul>
+    <p>
+      chatot is an unofficial client built on the whatsmeow library. It is not
+      affiliated with, endorsed by or supported by WhatsApp or Meta. Using an
+      unofficial client may be against WhatsApp's terms of service.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">com.sezdm.chatot.desktop</launchable>
+  <provides>
+    <binary>chatot</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/sezaru/chatot</url>
+  <url type="bugtracker">https://github.com/sezaru/chatot/issues</url>
+  <url type="vcs-browser">https://github.com/sezaru/chatot</url>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#d9efe8</color>
+    <color type="primary" scheme_preference="dark">#0f3d33</color>
+  </branding>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/sezaru/chatot/master/data/screenshots/chat.png</image>
+      <caption>A group conversation with replies and mentions</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/sezaru/chatot/master/data/screenshots/media.png</image>
+      <caption>Photos, clips, voice notes and documents in a chat</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/sezaru/chatot/master/data/screenshots/chat-dark.png</image>
+      <caption>The dark style</caption>
+    </screenshot>
+  </screenshots>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-audio">intense</content_attribute>
+    <content_attribute id="social-location">intense</content_attribute>
+  </content_rating>
+
+  <requires>
+    <internet>always</internet>
+  </requires>
+  <recommends>
+    <display_length compare="ge">768</display_length>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+
+  <releases>
+    <release version="0.1.0-beta" date="2026-09-03">
+      <description>
+        <p>First public beta: chats, groups, communities, channels, status updates, media, voice notes, locations, search and multi-account support.</p>
+      </description>
+    </release>
+  </releases>
+</component>

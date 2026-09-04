@@ -16,9 +16,10 @@ import (
 // app id → .desktop file, so this cannot be done from the window itself.
 // Re-run on every start because the Exec path follows the binary; a
 // packaged install (with its own entry) can point CHATOT_NO_DESKTOP_ENTRY at
-// anything to skip it.
+// anything to skip it, and a Flatpak (whose entry the sandbox exports, and
+// whose data dir the shell never reads) is skipped on its own.
 func installDesktopEntry() error {
-	if os.Getenv("CHATOT_NO_DESKTOP_ENTRY") != "" {
+	if os.Getenv("CHATOT_NO_DESKTOP_ENTRY") != "" || inFlatpak() {
 		return nil
 	}
 	exe, err := os.Executable()
@@ -87,4 +88,15 @@ func writeIfChanged(path string, data []byte) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0o644)
+}
+
+// inFlatpak reports whether the process runs inside a Flatpak sandbox:
+// flatpak sets FLATPAK_ID for the app and mounts its metadata at
+// /.flatpak-info.
+func inFlatpak() bool {
+	if os.Getenv("FLATPAK_ID") != "" {
+		return true
+	}
+	_, err := os.Stat("/.flatpak-info")
+	return err == nil
 }
