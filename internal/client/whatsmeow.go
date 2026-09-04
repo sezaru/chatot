@@ -57,6 +57,10 @@ type Whatsmeow struct {
 
 	events  *eventBus
 	qrCodes chan string
+	// startCtx is the context Start was last given, reused when relink
+	// starts a fresh pairing; relinkMu serializes relink.
+	startCtx context.Context
+	relinkMu sync.Mutex
 
 	presenceMu         sync.Mutex
 	presenceSubscribed map[string]bool // jid -> SubscribePresence already requested
@@ -136,11 +140,6 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 
 	clientLog := waLog.Stdout("Client", "ERROR", false)
 	announceDevice()
-	wa := whatsmeow.NewClient(device, clientLog)
-	// The first app-state sync after linking is a "full sync", and whatsmeow
-	// swallows its events by default — which is exactly where the phone's
-	// existing labels, archived/pinned/muted chats and stars come from.
-	wa.EmitAppStateEventsOnFullSync = true
 
 	avatarDir := filepath.Join(stateDir, "avatars")
 	if err := os.MkdirAll(avatarDir, 0o700); err != nil {
@@ -151,7 +150,6 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 		log:       clientLog,
 		container: container,
 		device:    device,
-		wa:        wa,
 		store:     msgStore,
 		mediaDir:  filepath.Join(stateDir, "media"),
 		avatarDir: avatarDir,
@@ -160,9 +158,9 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 		blocked:   make(map[string]bool),
 	}
 	// Chats written before LID DMs were filed under their number.
+	w.wa = w.newWAClient(device)
 	w.mergeLIDChats()
 	w.repairUnreadOnce()
-	wa.AddEventHandler(w.handleRaw)
 	return w, nil
 }
 
@@ -328,6 +326,11 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 	if e == nil {
 		return
 	}
+	if _, ok := evt.(*events.LoggedOut); ok {
+		// The phone removed this device: publish first so the linking
+		// screen comes up, then start a fresh pairing for it.
+		defer func() { go w.relink() }()
+	}
 	if e.Kind == EventMessage && e.Message != nil {
 		e.Synced = w.syncing.Load() || time.Since(time.Unix(e.Message.TS, 0)) > syncedMessageAge
 	}
@@ -437,6 +440,7 @@ func (w *Whatsmeow) Start(ctx context.Context) error {
 	if w.offline {
 		return nil
 	}
+	w.startCtx = ctx
 	proxy := w.proxyOverride
 	if proxy == "" {
 		proxy = os.Getenv("CHATOT_PROXY")
@@ -493,7 +497,11 @@ func (w *Whatsmeow) LoggedIn() bool {
 }
 
 func (w *Whatsmeow) Logout(ctx context.Context) error {
-	return w.wa.Logout(ctx)
+	if err := w.wa.Logout(ctx); err != nil {
+		return err
+	}
+	go w.relink()
+	return nil
 }
 
 func (w *Whatsmeow) Events() <-chan Event { return w.events.Subscribe() }
