@@ -22,6 +22,12 @@
    palette colour, or an alpha of currentColor and reads right unchanged. */
 @define-color chatot_surface #ffffff;             /* header, account row, tab bar, cards */
 @define-color chatot_sidebar #ebebeb;             /* rail + chat list column */
+@define-color chatot_thread #ffffff;              /* the conversation canvas behind the bubbles */
+/* libadwaita paints the split view's sidebar pane (the strip behind the
+   search box and chips) with its own sidebar colours; pin them to ours so
+   the whole column is one tone in both themes. */
+@define-color sidebar_bg_color #ebebeb;
+@define-color sidebar_backdrop_color #ebebeb;
 @define-color chatot_hairline rgba(0, 0, 0, 0.08);
 @define-color chatot_hairline_strong rgba(0, 0, 0, 0.13);
 @define-color chatot_wash rgba(0, 0, 0, 0.032);   /* active tab tint */
@@ -37,10 +43,6 @@
    No root font-size here so the user's text scale is respected. */
 window {
 	font-family: "Cantarell", system-ui, sans-serif;
-}
-
-.chatot-sidebar {
-	background-color: @sidebar_bg_color;
 }
 
 .chatot-placeholder {
@@ -109,6 +111,12 @@ window {
 /* Mockup row metrics: 53px tall, 8px inset from the list edge, a 1px gap
    between rows, 8px radius. All of the row's own padding lives on the inner
    box built by buildChatRow (7px 8px) so the two don't compound. */
+/* The list column takes the sidebar tone in both themes (Adwaita's own
+   navigation-sidebar tint drifts blue on dark). */
+.navigation-sidebar {
+	background-color: @chatot_sidebar;
+}
+
 .navigation-sidebar > row {
 	border-radius: 8px;
 	margin: 1px 8px;
@@ -634,8 +642,14 @@ button.chatot-reaction-pill-mine {
 }
 /* Strip GtkListView's default row background/padding so the message bubbles
  * sit on the plain surface, and give the thread a little top/bottom margin. */
+/* The conversation column behind header, thread and composer. */
+.chatot-conv-root {
+	background-color: @chatot_thread;
+}
+
 .chatot-conv-list {
 	padding: 10px 18px 14px 18px;
+	background-color: @chatot_thread;
 }
 
 /* The mockup leaves 5px between bubbles; that gap is the bubbles' own
@@ -648,7 +662,7 @@ button.chatot-reaction-pill-mine {
 /* The composer band sits on the conversation surface (white), separated from
    the thread by a single hairline, and carries the strip's whole padding. */
 .chatot-composer {
-	background-color: @view_bg_color;
+	background-color: @chatot_surface;
 }
 
 .chatot-composer-strip {
