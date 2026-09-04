@@ -660,12 +660,43 @@ func inlineMediaWidget(mv mediaView, open func(path string)) gtk.Widgetter {
 		p.AddCSSClass("chatot-sticker")
 		return p
 	}
-	// Decoded at twice the tile so it stays crisp on HiDPI.
-	p := newAsyncPicture(mv.LocalPath, inlinePhotoSide*2)
+	// Decoded at twice the tile so it stays crisp on HiDPI. The tile is
+	// as tall as the picture at the bubble width, so a wide screenshot is
+	// not letterboxed in a 200px box (the size settles once decoded; the
+	// texture is memoised, so a recycled row gets it at once).
+	p := gtk.NewPicture()
 	p.SetCanShrink(true)
 	p.SetContentFit(gtk.ContentFitContain)
-	p.SetSizeRequest(inlinePhotoSide, 200)
+	p.SetSizeRequest(inlinePhotoSide, inlinePhotoMinH)
+	loadPictureAsync(mv.LocalPath, inlinePhotoSide*2, func(t gdk.Paintabler) {
+		p.SetPaintable(t)
+		p.SetSizeRequest(inlinePhotoSide, inlinePhotoHeight(t.IntrinsicWidth(), t.IntrinsicHeight()))
+	})
 	return p
+}
+
+// inlinePhotoMinH/MaxH bound the photo bubble's height: a banner-shaped
+// screenshot still gets a readable strip, a tall portrait doesn't fill the
+// thread.
+const (
+	inlinePhotoMinH = 80
+	inlinePhotoMaxH = 360
+)
+
+// inlinePhotoHeight is the bubble height for a w×h picture shown at
+// inlinePhotoSide wide, keeping its aspect within the bounds.
+func inlinePhotoHeight(w, h int) int {
+	if w <= 0 || h <= 0 {
+		return 200
+	}
+	fit := int(float64(inlinePhotoSide)*float64(h)/float64(w) + 0.5)
+	if fit < inlinePhotoMinH {
+		return inlinePhotoMinH
+	}
+	if fit > inlinePhotoMaxH {
+		return inlinePhotoMaxH
+	}
+	return fit
 }
 
 // videoTileW/H is the mockup's downloaded-video tile: the poster frame with
