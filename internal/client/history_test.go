@@ -1,6 +1,7 @@
 package client
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -11,6 +12,8 @@ import (
 	"go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
+
+	"chatot/internal/store"
 )
 
 func TestHistorySender(t *testing.T) {
@@ -184,5 +187,122 @@ func TestHistoryConversationKeepsAppStateMute(t *testing.T) {
 	w.applyHistoryConversation(&waHistorySync.Conversation{ID: proto.String(jid), MuteEndTime: proto.Uint64(0)})
 	if c, _ := chatByJID(t, w, jid); c.Muted {
 		t.Fatal("an explicit muteEndTime=0 must unmute")
+	}
+}
+
+func TestApplyHistoryMessageNamesGroupSenderFromParticipant(t *testing.T) {
+	w := newIngestFixture(t)
+	group := "120363000000000000@g.us"
+	sender := "5559998888@s.whatsapp.net"
+	hm := historyText(group, "g1", false, 1700000001, "hi all")
+	hm.Message.Participant = proto.String(sender)
+	unknown := historyText(group, "g2", false, 1700000002, "no sender recorded")
+	w.applyHistoryConversation(&waHistorySync.Conversation{
+		ID:       proto.String(group),
+		Messages: []*waHistorySync.HistorySyncMsg{hm, unknown},
+	})
+	msgs, err := w.store.Messages(group, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("stored %d messages, want 2", len(msgs))
+	}
+	if msgs[0].FromJID != sender {
+		t.Errorf("group message sender = %q, want the participant %q", msgs[0].FromJID, sender)
+	}
+	if msgs[1].FromJID != "" {
+		t.Errorf("group message with no participant has sender %q, want none rather than the group", msgs[1].FromJID)
+	}
+}
+
+func TestApplyHistoryConversationKeepsLiveUnreadNewerThanSnapshot(t *testing.T) {
+	w := newIngestFixture(t)
+	jid := "5551112222@s.whatsapp.net"
+	live := &Message{ID: "live", ChatJID: jid, FromJID: jid, TS: 1700000010, Text: "just now"}
+	if err := w.ingestMessage(live); err != nil {
+		t.Fatal(err)
+	}
+	w.applyHistoryConversation(&waHistorySync.Conversation{
+		ID:                    proto.String(jid),
+		UnreadCount:           proto.Uint32(0),
+		ConversationTimestamp: proto.Uint64(1700000002),
+		Messages: []*waHistorySync.HistorySyncMsg{
+			historyText(jid, "m1", false, 1700000001, "one"),
+			historyText(jid, "m2", true, 1700000002, "mine"),
+		},
+	})
+	c, ok := chatByJID(t, w, jid)
+	if !ok {
+		t.Fatalf("chat %s missing", jid)
+	}
+	if c.UnreadCount != 1 {
+		t.Errorf("unread after an older history snapshot = %d, want the live message's 1", c.UnreadCount)
+	}
+	if c.LastMessageTS != 1700000010 {
+		t.Errorf("last message ts = %d, want the live message's", c.LastMessageTS)
+	}
+}
+
+func TestRepairGroupSendersOnceBlanksGroupAsSender(t *testing.T) {
+	w := newIngestFixture(t)
+	group := "120363000000000000@g.us"
+	dm := "5551112222@s.whatsapp.net"
+	for _, m := range []*Message{
+		{ID: "g1", ChatJID: group, FromJID: group, TS: 1, Text: "misfiled"},
+		{ID: "g2", ChatJID: group, FromJID: "5559998888@s.whatsapp.net", TS: 2, Text: "fine"},
+		{ID: "d1", ChatJID: dm, FromJID: dm, TS: 3, Text: "dm peer is the chat"},
+	} {
+		if err := w.ingestMessage(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.repairGroupSendersOnce()
+	got := map[string]string{}
+	for _, chat := range []string{group, dm} {
+		msgs, err := w.store.Messages(chat, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range msgs {
+			got[m.ID] = m.FromJID
+		}
+	}
+	if got["g1"] != "" || got["g2"] != "5559998888@s.whatsapp.net" || got["d1"] != dm {
+		t.Errorf("senders after repair = %v", got)
+	}
+	if done, _ := w.store.Meta(groupSenderRepairKey); done == "" {
+		t.Error("repair not recorded as done")
+	}
+}
+
+func TestNewWhatsmeowRepairsGroupSendersOnce(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(filepath.Join(dir, "chatot.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := "120363000000000000@g.us"
+	if err := s.BumpChatActivity(group, true, 1, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertMessage(store.MessageRow{ChatJID: group, MsgID: "g1", FromJID: group, TS: 1, Text: "misfiled"}); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	w, err := NewWhatsmeow(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.store.Close()
+	msgs, err := w.store.Messages(group, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].FromJID != "" {
+		t.Fatalf("after NewWhatsmeow: %+v, want the group sender blanked", msgs)
+	}
+	if done, _ := w.store.Meta(groupSenderRepairKey); done == "" {
+		t.Error("repair not recorded")
 	}
 }

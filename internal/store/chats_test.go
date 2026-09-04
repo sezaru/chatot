@@ -541,3 +541,28 @@ func TestMergeChatKeepsUnreadOfNewerRow(t *testing.T) {
 		t.Fatalf("unread = %d, want the newer row's 0", c.UnreadCount)
 	}
 }
+
+func TestUpsertChatFlagsOlderSnapshotKeepsLiveUnread(t *testing.T) {
+	s := newTestStore(t)
+	jid := "5551112222@s.whatsapp.net"
+	if err := s.BumpChatActivity(jid, false, 200, 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertChatFlags(ChatRow{JID: jid, UnreadCount: 0, LastMessageTS: 100}, false, false); err != nil {
+		t.Fatal(err)
+	}
+	chats, err := s.Chats(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chats) != 1 || chats[0].UnreadCount != 3 || chats[0].LastMessageTS != 200 {
+		t.Fatalf("after an older snapshot: %+v, want unread 3 at ts 200", chats)
+	}
+	if err := s.UpsertChatFlags(ChatRow{JID: jid, UnreadCount: 5, LastMessageTS: 300}, false, false); err != nil {
+		t.Fatal(err)
+	}
+	chats, _ = s.Chats(10)
+	if chats[0].UnreadCount != 5 || chats[0].LastMessageTS != 300 {
+		t.Fatalf("after a newer snapshot: %+v, want unread 5 at ts 300", chats[0])
+	}
+}

@@ -30,6 +30,12 @@ func normalizePairingPhone(input string) (digits string, ok bool) {
 	return digits, true
 }
 
+// pairDisplayName is what the phone lists the device as while pairing by
+// code. WhatsApp validates it as "Browser (OS)" from a short list of
+// browsers and systems and answers 400 bad-request to anything else, so
+// the app's own name cannot go here.
+const pairDisplayName = "Chrome (Linux)"
+
 // PairPhone requests a pairing code for phone, an international number in
 // any common formatting (it's normalized internally).
 func (w *Whatsmeow) PairPhone(ctx context.Context, phone string) (string, error) {
@@ -37,5 +43,5 @@ func (w *Whatsmeow) PairPhone(ctx context.Context, phone string) (string, error)
 	if !ok {
 		return "", fmt.Errorf("chatot/client: invalid phone number %q", phone)
 	}
-	return w.wa.PairPhone(ctx, digits, true, whatsmeow.PairClientChrome, "chatot")
+	return w.wa.PairPhone(ctx, digits, true, whatsmeow.PairClientChrome, pairDisplayName)
 }

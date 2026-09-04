@@ -1,6 +1,9 @@
 package client
 
-import "testing"
+import (
+	"regexp"
+	"testing"
+)
 
 func TestNormalizePairingPhone(t *testing.T) {
 	cases := []struct {
@@ -22,5 +25,13 @@ func TestNormalizePairingPhone(t *testing.T) {
 		if ok != c.wantOK || got != c.wantOut {
 			t.Errorf("normalizePairingPhone(%q) = (%q, %v), want (%q, %v)", c.in, got, ok, c.wantOut, c.wantOK)
 		}
+	}
+}
+
+func TestPairDisplayNameIsBrowserOS(t *testing.T) {
+	// WhatsApp validates the pairing-code display name as "Browser (OS)"
+	// and answers 400 bad-request to anything else.
+	if !regexp.MustCompile(`^(Chrome|Firefox|Safari|Edge|Opera) \((Linux|Windows|macOS|Mac OS|Android|iOS)\)$`).MatchString(pairDisplayName) {
+		t.Errorf("pairDisplayName = %q, want a Browser (OS) name WhatsApp accepts", pairDisplayName)
 	}
 }

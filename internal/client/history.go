@@ -98,11 +98,11 @@ func (w *Whatsmeow) applyHistoryMessage(chatJID string, wmi *waWeb.WebMessageInf
 	msg := Message{
 		ID:      key.GetID(),
 		ChatJID: chatJID,
-		FromJID: key.GetParticipant(),
+		FromJID: historyParticipant(wmi),
 		FromMe:  key.GetFromMe(),
 		TS:      int64(wmi.GetMessageTimestamp()),
 	}
-	if msg.FromJID == "" && !msg.FromMe {
+	if msg.FromJID == "" && !msg.FromMe && !strings.HasSuffix(chatJID, "@g.us") {
 		msg.FromJID = chatJID // DM: the only other participant is the chat peer
 	}
 	switch wmi.GetMessageStubType() {
@@ -126,6 +126,17 @@ func (w *Whatsmeow) applyHistoryMessage(chatJID string, wmi *waWeb.WebMessageInf
 	if err := w.ingestMessageUnread(&msg, 0); err != nil {
 		w.log.Warnf("history: ingest message %s/%s: %v", chatJID, msg.ID, err)
 	}
+}
+
+// historyParticipant is who sent a history-sync message: a group message
+// names its sender in WebMessageInfo.participant (the key's participant is
+// only set for a few message kinds), and it may be a LID. "" for a DM,
+// whose sender is the chat itself.
+func historyParticipant(wmi *waWeb.WebMessageInfo) string {
+	if p := wmi.GetParticipant(); p != "" {
+		return p
+	}
+	return wmi.GetKey().GetParticipant()
 }
 
 // historySender derives the MessageInfo.Sender BuildHistorySyncRequest needs
