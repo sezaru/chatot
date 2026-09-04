@@ -199,7 +199,7 @@ func newMenuDot(hex string) *gtk.Label {
 	dot.SetVAlign(gtk.AlignCenter)
 	css := gtk.NewCSSProvider()
 	css.LoadFromString("label { background-color: " + hex + "; border-radius: 3px; }")
-	dot.StyleContext().AddProvider(css, uint(gtk.STYLE_PROVIDER_PRIORITY_APPLICATION))
+	dot.StyleContext().AddProvider(css, widgetPriority(uint(gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)))
 	return dot
 }
 

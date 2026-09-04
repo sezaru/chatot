@@ -285,7 +285,7 @@ func (cl *ChatList) buildChipButton(chip chipSpec) *gtk.Button {
 		dot.SetVAlign(gtk.AlignCenter)
 		css := gtk.NewCSSProvider()
 		css.LoadFromString("label { background-color: " + chip.Dot + "; border-radius: 3px; }")
-		dot.StyleContext().AddProvider(css, uint(gtk.STYLE_PROVIDER_PRIORITY_APPLICATION))
+		dot.StyleContext().AddProvider(css, widgetPriority(uint(gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)))
 		content.Append(dot)
 	}
 	content.Append(gtk.NewLabel(chip.Text))
@@ -304,7 +304,7 @@ func (cl *ChatList) buildChipButton(chip chipSpec) *gtk.Button {
 		btn.AddCSSClass("chatot-chip-active")
 		css := gtk.NewCSSProvider()
 		css.LoadFromString("button { background-image: none; background-color: #1b8c72; color: #ffffff; font-weight: bold; } button:hover { background-color: #0f6350; }")
-		btn.StyleContext().AddProvider(css, uint(gtk.STYLE_PROVIDER_PRIORITY_USER))
+		btn.StyleContext().AddProvider(css, widgetPriority(uint(gtk.STYLE_PROVIDER_PRIORITY_USER)))
 	}
 	key := chip.Key
 	btn.ConnectClicked(func() {
@@ -466,7 +466,7 @@ func showManageListsDialog(parent *gtk.Window, c client.Client, onCreated func(l
 		btn.SetSizeRequest(20, 20)
 		css := gtk.NewCSSProvider()
 		css.LoadFromString("button { background-color: " + labelSwatchColors[idx] + "; }")
-		btn.StyleContext().AddProvider(css, uint(gtk.STYLE_PROVIDER_PRIORITY_APPLICATION))
+		btn.StyleContext().AddProvider(css, widgetPriority(uint(gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)))
 		btn.ConnectClicked(func() {
 			picked = idx
 			for j, b := range buttons {

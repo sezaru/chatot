@@ -942,7 +942,7 @@ func newAttachRow(src attachSource, onClick func()) *gtk.Button {
 	// shared stylesheet class can't express. "33" is the mockup's 20% alpha.
 	css := gtk.NewCSSProvider()
 	css.LoadFromString("label { background-color: " + src.Tint + "33; border-radius: 999px; }")
-	icon.StyleContext().AddProvider(css, uint(gtk.STYLE_PROVIDER_PRIORITY_APPLICATION))
+	icon.StyleContext().AddProvider(css, widgetPriority(uint(gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)))
 	row.Append(icon)
 
 	label := gtk.NewLabel(src.Label)
