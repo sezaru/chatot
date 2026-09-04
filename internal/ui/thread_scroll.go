@@ -20,8 +20,27 @@ func (cv *ConversationView) atBottom() bool {
 	return adj.Value()+adj.PageSize() >= adj.Upper()-1
 }
 
+// setThreadVisible shows or hides the thread (the scroller and the button
+// floating over it); the "Select a chat" placeholder takes its place.
+func (cv *ConversationView) setThreadVisible(on bool) {
+	cv.scroller.SetVisible(on)
+	cv.threadOverlay.SetVisible(on)
+	cv.updateJumpButton()
+}
+
+// updateJumpButton shows the scroll-to-bottom button while the reader is
+// away from the foot of the thread, and hides it once they are back (or
+// while a scroll of ours is taking them there).
+func (cv *ConversationView) updateJumpButton() {
+	if cv.jumpBtn == nil {
+		return
+	}
+	cv.jumpBtn.SetVisible(cv.scroller.Visible() && !cv.sticky && !cv.autoScrolling)
+}
+
 // onScroll runs on every change of the scroll value.
 func (cv *ConversationView) onScroll() {
+	defer cv.updateJumpButton()
 	adj := cv.scroller.VAdjustment()
 	if traceLevel > 0 {
 		trace(1, "scroll value=%.0f upper=%.0f page=%.0f sticky=%v auto=%v loadingOlder=%v inFlight=%v hasMore=%v",
@@ -55,6 +74,7 @@ func (cv *ConversationView) onScroll() {
 // onUpperChanged runs when the thread's scrollable height or the
 // viewport's height changed.
 func (cv *ConversationView) onUpperChanged() {
+	defer cv.updateJumpButton()
 	adj := cv.scroller.VAdjustment()
 	cv.lastUpper, cv.lastPage = adj.Upper(), adj.PageSize()
 	if cv.sticky || cv.autoScrolling {
@@ -79,6 +99,7 @@ func (cv *ConversationView) scrollDown() {
 	cv.autoGen++
 	gen := cv.autoGen
 	cv.stopFling()
+	defer cv.updateJumpButton()
 	adj := cv.scroller.VAdjustment()
 	adj.SetValue(adj.Upper() - adj.PageSize())
 	cv.listView.ScrollTo(uint(n-1), gtk.ListScrollNone, nil)
@@ -94,6 +115,7 @@ func (cv *ConversationView) scrollDown() {
 			trace(1, "scrollDown: gave up waiting for the bottom")
 			cv.autoScrolling = false
 			cv.sticky = cv.atBottom()
+			cv.updateJumpButton()
 		}
 		return false
 	})

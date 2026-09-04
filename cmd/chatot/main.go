@@ -747,7 +747,13 @@ func activate(app *adw.Application, c client.Client) {
 		if v := os.Getenv("CHATOT_SHOT_MSG"); v != "" {
 			fmt.Sscanf(v, "%d", &msgIdx)
 		}
-		glib.TimeoutAdd(1200, func() bool {
+		// CHATOT_SHOT_DELAY (ms) waits longer for a thread whose pictures
+		// re-measure the rows after they decode.
+		delay := uint(1200)
+		if v := os.Getenv("CHATOT_SHOT_DELAY"); v != "" {
+			fmt.Sscanf(v, "%d", &delay)
+		}
+		glib.TimeoutAdd(delay, func() bool {
 			shotHook(state, msgIdx, shotDeps{chatList: chatList, conversation: conversation, composer: composer, viewer: viewer, stack: stack, linking: linking, sync: syncView, win: &win.Window, c: c, am: am, prefs: &prefs, toasts: toastOverlay, saveSettings: saveSettings})
 			return false
 		})

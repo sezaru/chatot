@@ -27,16 +27,12 @@ func mentionAccentFor() string {
 	return mentionAccent
 }
 
-// mentionMarkup renders text as Pango markup with every resolvable
-// @mention replaced by the person's name in bold accent. resolve maps the
-// numeric user part to a display name ("" leaves the mention as typed, still
-// styled so it reads as a mention). Everything else is escaped verbatim.
-func mentionMarkup(text string, resolve func(user string) string, onGreen bool) string {
-	return mentionMarkupColor(text, resolve, onGreen, mentionAccent)
-}
-
-// mentionMarkupColor is mentionMarkup with the incoming-bubble accent
-// supplied (mentionAccentFor at the call site keeps this pure for tests).
+// mentionMarkupColor renders text as Pango markup with every resolvable
+// @mention replaced by the person's name in bold accent (white on an
+// outgoing bubble). resolve maps the numeric user part to a display name
+// ("" leaves the mention as typed, still styled so it reads as a mention).
+// Everything else is escaped verbatim. Message bubbles go through
+// messageMarkup, which renders mentions the same way beside links.
 func mentionMarkupColor(text string, resolve func(user string) string, onGreen bool, accent string) string {
 	color := accent
 	if onGreen {
@@ -73,10 +69,4 @@ func resolveMentionsPlain(text string, resolve func(user string) string) string 
 		}
 		return m
 	})
-}
-
-// hasMention reports whether text carries a wire-form mention at all, so
-// callers can skip the markup path for the common plain case.
-func hasMention(text string) bool {
-	return strings.Contains(text, "@") && mentionRE.MatchString(text)
 }
