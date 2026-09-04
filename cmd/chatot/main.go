@@ -808,6 +808,24 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	name := chatNameFor(d.c, jid)
 	arg := os.Getenv("CHATOT_SHOT_ARG")
 	switch state {
+	case "refreshbench":
+		d.chatList.RefreshBench(10)
+		d.chatList.RefreshBreakdown()
+		d.chatList.RefreshBreakdown()
+	case "reconcilecheck":
+		d.chatList.ReconcileCheck()
+	case "anchorcheck":
+		d.conversation.AnchorCheck()
+	case "scrollbench":
+		// CHATOT_SHOT_ARG=chats scrolls the chat list, anything else the
+		// open thread; frame stats land in the log after 6 s.
+		if arg == "chats" {
+			s := d.chatList.ListScroller()
+			ui.ScrollBench(s, s.VAdjustment(), "chats", 6*time.Second, 900)
+		} else {
+			s := d.conversation.Scroller()
+			ui.ScrollBench(s, s.VAdjustment(), "thread", 6*time.Second, 900)
+		}
 	case "plusmenu":
 		d.chatList.PopupPlusMenu()
 	// The bottom tabs: CHATOT_SHOT_ARG names a tab, a status poster, a
