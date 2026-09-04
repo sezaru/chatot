@@ -28,7 +28,7 @@
   notificationSound ? null,
 }: let
   appID = "com.sezdm.chatot";
-  version = "0.2.0-beta";
+  version = "0.3.0-beta";
 in
   buildGoModule {
     pname = "chatot";
