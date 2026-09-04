@@ -11,8 +11,11 @@ import (
 )
 
 // appMarkSVG is the design's app icon (the 2c mark: the white chatot with
-// its amber beak over the brand green), drawn as a square so the corners
-// can be rounded per surface. It is what gets installed for the desktop
+// its amber beak over the brand green) on a rounded tile (rx 28 of 128,
+// the ~22% radius of the platform's other app icons, so the launcher's
+// grid shows the same soft corners as its neighbours). In-app surfaces
+// still round it themselves via CSS, over a green fill that hides the
+// tile's transparent corners. It is what gets installed for the desktop
 // shell, which renders SVG itself.
 //
 //go:embed assets/chatot-icon.svg
