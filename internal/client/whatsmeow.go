@@ -135,6 +135,7 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 	}
 
 	clientLog := waLog.Stdout("Client", "ERROR", false)
+	announceDevice()
 	wa := whatsmeow.NewClient(device, clientLog)
 	// The first app-state sync after linking is a "full sync", and whatsmeow
 	// swallows its events by default — which is exactly where the phone's
