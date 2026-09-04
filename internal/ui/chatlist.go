@@ -119,6 +119,17 @@ type ChatList struct {
 	c      client.Client
 	events <-chan client.Event
 	list   *gtk.ListBox
+	// listScroller is the scrolled window around list.
+	listScroller *gtk.ScrolledWindow
+	// rows are the reconciled chat rows by key (jid, or account|jid when
+	// merged) and listKind says which mode built them; see chatlist_rows.go.
+	rows     map[string]*rowEntry
+	listKind string
+	// lastChips is the chip strip as last built, so a refresh that changes
+	// no chip leaves the strip (and its scroll position) alone.
+	lastChips       []chipSpec
+	chipLabels      []client.Label
+	chipLabelCounts map[string]int
 	// refreshQueued coalesces the generic event-driven refresh: a history
 	// backfill publishes hundreds of events in a row and each full rebuild
 	// of the rows costs a store query per chat.
@@ -253,6 +264,12 @@ func NewChatList(c client.Client) *ChatList {
 	headerBox.AddCSSClass("chatot-account-row")
 	startControls := gtk.NewWindowControls(gtk.PackStart)
 	startControls.SetVAlign(gtk.AlignCenter)
+	// An empty controls widget would still cost the row's box spacing, and
+	// a negative CSS margin to cancel that makes GTK warn about a negative
+	// minimum width: hide it instead.
+	hideEmptyControls := func() { startControls.SetVisible(!startControls.Empty()) }
+	hideEmptyControls()
+	startControls.NotifyProperty("empty", hideEmptyControls)
 	headerBox.Append(startControls)
 
 	accountAvatar := gtk.NewLabel("S")
@@ -456,7 +473,7 @@ func NewChatList(c client.Client) *ChatList {
 	listCol.Append(listScroller)
 
 	cl := &ChatList{
-		Box: root, c: c, events: c.Events(), list: list,
+		Box: root, c: c, events: c.Events(), list: list, listScroller: listScroller,
 		syncBanner: syncBanner, syncLabel: syncLabel, syncBar: syncBar,
 		composingJIDs: make(map[string]string), composingGen: make(map[string]int), names: make(map[string]string), avatarCache: newAvatarCache(),
 		chipRow: chipRow, chipScroller: chipScroller, rail: rail,
@@ -636,7 +653,7 @@ func showAboutDialog(parent *gtk.Window) {
 // version is the single place it is declared and carries the beta tag while
 // chatot is one; the mockup shows it beside the toolkit chatot is built on.
 const (
-	aboutVersion  = "0.1.0-beta"
+	aboutVersion  = "0.2.0-beta"
 	aboutHomepage = "https://github.com/sezdm/chatot"
 	aboutIssues   = "https://github.com/sezdm/chatot/issues"
 )
@@ -753,7 +770,12 @@ func (cl *ChatList) OpenGlobalSearch(query string) {
 // StarredMessages (starred mode), Search (query set) or Chats (none of the
 // above). Must run on the GTK main loop.
 func (cl *ChatList) refresh() {
-	cl.updateChipRow()
+	chats, err := cl.c.Chats(0)
+	if err != nil {
+		log.Printf("chatot: list chats: %v", err)
+		return
+	}
+	cl.updateChipRow(chats)
 	switch {
 	case cl.tab == "communities":
 		cl.refreshCommunities()
@@ -766,28 +788,23 @@ func (cl *ChatList) refresh() {
 	case cl.query != "":
 		cl.refreshSearch()
 	default:
-		cl.refreshChats()
+		cl.refreshChats(chats)
 	}
-	cl.updateTabBadges()
+	cl.updateTabBadges(chats)
 }
 
-func (cl *ChatList) refreshChats() {
+func (cl *ChatList) refreshChats(chats []client.Chat) {
 	if cl.merged {
 		cl.refreshMergedChats()
-		return
-	}
-	chats, err := cl.c.Chats(0)
-	if err != nil {
 		return
 	}
 	chats = pinnedFirst(chats)
 	cl.archivedTitle.SetText(archivedTitleText(countArchived(chats)))
 
-	cl.list.RemoveAll()
-
 	now := time.Now()
 	cl.rowJIDs = make([]string, 0, len(chats))
 	cl.rowAccounts = nil
+	want := make([]wantRow, 0, len(chats))
 	for _, chat := range chats {
 		if !showChatInList(chat, cl.showArchived) {
 			continue
@@ -802,16 +819,17 @@ func (cl *ChatList) refreshChats() {
 			vm.Typing = true
 		}
 		vm.Blocked = cl.c.IsBlocked(chat.JID)
-		row := buildChatRow(cl.c, cl.avatarCache, vm)
-		cl.attachRowMenu(row, chat)
-		cl.list.Append(row)
+		chat := chat
+		want = append(want, wantRow{key: vm.JID, vm: vm, build: func() *gtk.Box {
+			row := buildChatRow(cl.c, cl.avatarCache, vm)
+			cl.attachRowMenu(row, chat)
+			return row
+		}})
 		cl.rowJIDs = append(cl.rowJIDs, vm.JID)
 	}
 
+	cl.reconcileRows(listChats, want)
 	cl.reselectRow()
-	if len(cl.rowJIDs) == 0 {
-		cl.list.Append(cl.newListEmptyState())
-	}
 }
 
 // refreshMergedChats rebuilds the list from every account at once (the
@@ -827,14 +845,14 @@ func (cl *ChatList) refreshMergedChats() {
 		// Nothing to merge (single-account build): fall back rather than
 		// leaving the list blank.
 		cl.merged = false
-		cl.refreshChats()
+		cl.refreshChats(chatsOrEmpty(cl.c))
 		return
 	}
 
-	cl.list.RemoveAll()
 	now := time.Now()
 	cl.rowJIDs = nil
 	cl.rowAccounts = nil
+	var want []wantRow
 	for _, mc := range source.MergedChats(0) {
 		if !showChatInList(mc.Chat, cl.showArchived) {
 			continue
@@ -855,15 +873,17 @@ func (cl *ChatList) refreshMergedChats() {
 		vm.Preview = mergedPreview(mc.AccountName, vm.Preview)
 		vm.AccountColor = avatarColorClass(mc.AccountID)
 		vm.Blocked = rowClient.IsBlocked(mc.Chat.JID)
-		row := buildChatRow(rowClient, cl.avatarCache, vm)
-		cl.list.Append(row)
+		chat := mc.Chat
+		want = append(want, wantRow{key: mc.AccountID + "|" + vm.JID, vm: vm, build: func() *gtk.Box {
+			row := buildChatRow(rowClient, cl.avatarCache, vm)
+			cl.attachRowMenu(row, chat)
+			return row
+		}})
 		cl.rowJIDs = append(cl.rowJIDs, vm.JID)
 		cl.rowAccounts = append(cl.rowAccounts, mc.AccountID)
 	}
+	cl.reconcileRows(listMerged, want)
 	cl.reselectRow()
-	if len(cl.rowJIDs) == 0 {
-		cl.list.Append(cl.newListEmptyState())
-	}
 }
 
 // mergedPreview prefixes a row's preview with the account it belongs to,
@@ -894,7 +914,7 @@ func (cl *ChatList) refreshSearch() {
 		hits = nil
 	}
 
-	cl.list.RemoveAll()
+	cl.resetList()
 
 	if len(hits) == 0 {
 		cl.rowJIDs = nil
@@ -1116,6 +1136,11 @@ func (cl *ChatList) watchEvents() {
 		case client.EventConnection, client.EventPairSuccess, client.EventLoggedOut:
 			glib.IdleAdd(cl.refreshAccountHeader)
 		}
+		// Avatar fetches that failed while disconnected are completed in
+		// place once the socket is up, rather than by rebuilding rows.
+		if ev.Kind == client.EventConnection && ev.Connection != nil && ev.Connection.Connected {
+			glib.IdleAdd(func() { cl.avatarCache.retryFailed(cl.c) })
+		}
 		if ev.Kind == client.EventChatPresence && ev.ChatPresence != nil {
 			jid := ev.ChatPresence.ChatJID
 			typing, recording := chatPresenceTypingRecording(ev.ChatPresence.State, ev.ChatPresence.Media)
@@ -1159,6 +1184,7 @@ func (cl *ChatList) watchEvents() {
 			jid := ev.Avatar.JID
 			glib.IdleAdd(func() {
 				cl.avatarCache.invalidate(jid)
+				cl.invalidateRow(jid)
 				cl.refresh()
 			})
 			continue
@@ -1181,20 +1207,41 @@ func (cl *ChatList) watchEvents() {
 			})
 			continue
 		}
-		cl.queueRefresh()
+		if sidebarRefreshEvent(ev.Kind) {
+			cl.queueRefresh()
+		}
 	}
 }
 
+// sidebarRefreshEvent reports whether an event of kind can change what the
+// sidebar shows (rows, chips, badges, header). Presence, reactions, votes
+// and calls can't, and they are the bulk of a live account's traffic; each
+// used to cost a full rebuild.
+func sidebarRefreshEvent(kind client.EventKind) bool {
+	switch kind {
+	case client.EventMessage, client.EventReceipt, client.EventRevoke,
+		client.EventChatUpdate, client.EventHistorySync, client.EventLabelUpdate,
+		client.EventConnection, client.EventPairSuccess, client.EventLoggedOut:
+		return true
+	}
+	return false
+}
+
+// refreshDebounceMS is how long queueRefresh waits for more events before
+// refreshing: a history page or a busy group lands dozens in a row.
+const refreshDebounceMS = 100
+
 // queueRefresh schedules one refresh on the main loop for however many
-// events arrive before it runs; the refresh reads the store at run time, so
-// nothing published in between is missed.
+// events arrive within refreshDebounceMS; the refresh reads the store at
+// run time, so nothing published in between is missed.
 func (cl *ChatList) queueRefresh() {
 	if !cl.refreshQueued.CompareAndSwap(false, true) {
 		return
 	}
-	glib.IdleAdd(func() {
+	glib.TimeoutAdd(refreshDebounceMS, func() bool {
 		cl.refreshQueued.Store(false)
 		cl.refresh()
+		return false
 	})
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -202,14 +203,11 @@ func (cl *ChatList) setFilter(f chatFilter) {
 	cl.refresh()
 }
 
-// updateChipRow rebuilds the chip row from the current chats/labels/filter.
-// Must run on the GTK main loop; called from refresh so the chips (unread
-// count, active state, inline label) always track live data.
-func (cl *ChatList) updateChipRow() {
-	chats, err := cl.c.Chats(0)
-	if err != nil {
-		chats = nil
-	}
+// updateChipRow rebuilds the chip row from chats, the labels and the
+// filter, unless nothing on it changed. Must run on the GTK main loop;
+// called from refresh so the chips (unread count, active state, inline
+// label) always track live data.
+func (cl *ChatList) updateChipRow(chats []client.Chat) {
 	scoped := make([]client.Chat, 0, len(chats))
 	for _, c := range chats {
 		if showChatInList(c, cl.showArchived) {
@@ -233,15 +231,23 @@ func (cl *ChatList) updateChipRow() {
 		}
 	}
 	labelCounts := computeLabelCounts(chatLabels)
+	chips := buildChips(counts, cl.filter, labelCounts, labels)
+	// The overflow popover reads these when opened, so an unchanged strip
+	// still gets the latest labels and counts.
+	cl.chipLabels, cl.chipLabelCounts = labels, labelCounts
+	if cl.overflowBtn != nil && slices.Equal(chips, cl.lastChips) {
+		return
+	}
+	cl.lastChips = chips
 
-	// The strip is rebuilt on every refresh; emptying it resets its scroll,
-	// which is put back once the new chips have their size.
+	// The strip is rebuilt when a chip changes; emptying it resets its
+	// scroll, which is put back once the new chips have their size.
 	scrollX := cl.chipScroller.HAdjustment().Value()
 	for child := cl.chipRow.FirstChild(); child != nil; child = cl.chipRow.FirstChild() {
 		cl.chipRow.Remove(child)
 	}
 
-	for _, chip := range buildChips(counts, cl.filter, labelCounts, labels) {
+	for _, chip := range chips {
 		cl.chipRow.Append(cl.buildChipButton(chip))
 	}
 	if scrollX > 0 {
@@ -255,7 +261,7 @@ func (cl *ChatList) updateChipRow() {
 	overflow.SetFocusOnClick(false)
 	cl.overflowBtn = overflow
 	overflow.ConnectClicked(func() {
-		cl.showLabelOverflowPopover(overflow, labels, labelCounts)
+		cl.showLabelOverflowPopover(overflow, cl.chipLabels, cl.chipLabelCounts)
 	})
 	// The … chip scrolls with the others: the row is one strip.
 	cl.chipRow.Append(overflow)
