@@ -483,10 +483,11 @@ func NewConversationView(c client.Client) *ConversationView {
 	headerContent.SetVisible(false)
 	// GtkWindowControls centred in the strip so the mockup's 24px circles
 	// don't stretch to its height (there is no vertical alignment in GTK
-	// CSS). The explicit decoration layout forces − □ ✕; the desktop default
-	// on a compositor without server-side decorations is often close-only.
+	// CSS). No explicit decoration layout: the buttons follow the desktop's
+	// gtk-decoration-layout (GNOME's button-layout via the settings portal,
+	// or gtk-4.0/settings.ini), so a tiling-WM user can hide them all and
+	// a left-side layout lands in the sidebar header's PackStart controls.
 	windowControls := gtk.NewWindowControls(gtk.PackEnd)
-	windowControls.SetDecorationLayout(":minimize,maximize,close")
 	windowControls.SetVAlign(gtk.AlignCenter)
 
 	// The mockup's in-chat search REPLACES the header's identity area rather
