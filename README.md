@@ -59,3 +59,11 @@ stack, Go and the mockup/capture tooling; `go run ./cmd/chatot` starts the
 app against your real account, `CHATOT_FAKE=1` against canned data. See
 `CLAUDE.md` for the mockup-driven workflow and `docs/mockup-parity-plan.md`
 for what has been built.
+
+## Notification sound
+
+Each desktop notification plays a short built-in chime (Preferences →
+Notifications turns it off). To use your own sound, drop a file named
+`notify.oga`, `notify.ogg`, `notify.opus`, `notify.flac`, `notify.wav`,
+`notify.mp3` or `notify.m4a` into `$XDG_CONFIG_HOME/chatot/` (usually
+`~/.config/chatot/`; for the Flatpak, `~/.var/app/com.sezdm.chatot/config/chatot/`).

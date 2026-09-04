@@ -651,7 +651,9 @@ func applySettings(s settings.Settings) {
 	ui.SendReadReceipts = s.SendReadReceipts
 	ui.SendTypingIndicators = s.SendTypingIndicators
 	ui.LocationAccess = s.LocationAccess
+	ui.NotificationsEnabled = s.ShowNotifications
 	ui.NotificationsPerAccount = s.NotificationsPerAccount
+	ui.NotificationSound = s.NotificationSound
 	ui.ApplyTheme(s.Theme)
 
 	// Whatsmeow.Start reads CHATOT_PROXY itself (see internal/client), so
@@ -969,6 +971,25 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		}
 		if f, ok := active.(*client.Fake); ok && jid != "" {
 			f.PushEvent(client.Event{Kind: client.EventChatPresence, ChatPresence: &client.ChatPresence{ChatJID: jid, State: "composing"}})
+		}
+	case "arrive":
+		// ARG messages, 1.5 s apart, land in a chat other than the open one
+		// (fake only): each raises a desktop notification and its chime.
+		var active client.Client = d.c
+		if d.am != nil {
+			active = d.am.ActiveClient()
+		}
+		if f, ok := active.(*client.Fake); ok {
+			n, _ := strconv.Atoi(arg)
+			if n < 1 {
+				n = 1
+			}
+			left := n
+			glib.TimeoutAdd(1500, func() bool {
+				f.Receive("1112223333@s.whatsapp.net", "1112223333@s.whatsapp.net", "Ping "+strconv.Itoa(n-left+1))
+				left--
+				return left > 0
+			})
 		}
 	case "bgarrive":
 		// The open chat's peer sends a message once the window has lost

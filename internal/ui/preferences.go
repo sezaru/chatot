@@ -180,9 +180,18 @@ func prefNotifications(s *settings.Settings, onChange func(settings.Settings)) g
 	alerts := newSettingsCard()
 	desktop, _ := newSwitchRow("Desktop notifications", "", s.ShowNotifications, func(on bool) {
 		s.ShowNotifications = on
+		NotificationsEnabled = on
 		onChange(*s)
 	})
 	alerts.Add(desktop)
+	sound, _ := newSwitchRow("Notification sound",
+		"Plays a chime with each notification",
+		s.NotificationSound, func(on bool) {
+			s.NotificationSound = on
+			NotificationSound = on
+			onChange(*s)
+		})
+	alerts.Add(sound)
 	perAccount, _ := newSwitchRow("Label notifications by account",
 		"Prefixes each notification with the account it arrived on",
 		s.NotificationsPerAccount, func(on bool) {

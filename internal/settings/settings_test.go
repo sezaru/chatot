@@ -67,3 +67,13 @@ func TestLoadMalformedFileReturnsDefaults(t *testing.T) {
 		t.Errorf("Load(malformed) = %+v, want defaults %+v", got, want)
 	}
 }
+
+func TestLoadKeepsNotificationSoundWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(`{"showNotifications":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s := Load(dir); !s.NotificationSound {
+		t.Fatal("settings written before the sound toggle existed should keep it on")
+	}
+}
