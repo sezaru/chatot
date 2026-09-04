@@ -746,7 +746,8 @@ func watchTrayUnread(c client.Client, tray *ui.Tray) {
 	}
 }
 
-// totalUnread sums the unread counts across all chats.
+// totalUnread sums the unread counts across all chats outside the archive,
+// which the phone's badge leaves out too.
 func totalUnread(c client.Client) int {
 	chats, err := c.Chats(0)
 	if err != nil {
@@ -754,7 +755,9 @@ func totalUnread(c client.Client) int {
 	}
 	total := 0
 	for _, chat := range chats {
-		total += chat.UnreadCount
+		if !chat.Archived {
+			total += chat.UnreadCount
+		}
 	}
 	return total
 }
