@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
@@ -358,9 +359,11 @@ func activate(app *adw.Application, c client.Client) {
 	// The window flips between the QR pairing screen and the main UI via a
 	// stack keyed on login state; whatsmeow pairing/connection events switch it.
 	linking := ui.NewLinkingView()
+	syncView := ui.NewSyncView()
 	stack := gtk.NewStack()
 	stack.AddNamed(ui.NewLoadingView(), "loading")
 	stack.AddNamed(linking, "linking")
+	stack.AddNamed(syncView, "syncing")
 	stack.AddNamed(split, "main")
 	// The main view fades in over the loading mark once the socket is up.
 	stack.SetTransitionType(gtk.StackTransitionTypeCrossfade)
@@ -542,13 +545,57 @@ func activate(app *adw.Application, c client.Client) {
 	// conversation and notifier each have their own (see the eventBus).
 	// Subscribe synchronously (before the goroutine and before Start) so no
 	// early event is dropped.
+	// The post-link backfill: a fresh pairing parks the window on the
+	// syncing screen until the chat list and recent messages have landed,
+	// then the older history streams behind a sidebar banner. sync is only
+	// ever touched on the main loop.
+	var sync ui.SyncTracker
+	applySync := func() {
+		if sync.Blocking() {
+			syncView.SetCounts(sync.Counts())
+			if stack.VisibleChildName() != "syncing" {
+				stack.SetVisibleChildName("syncing")
+			}
+			return
+		}
+		if stack.VisibleChildName() == "syncing" {
+			stack.SetVisibleChildName("main")
+			chatList.RefreshAccounts()
+		}
+		if sync.Background() {
+			chatList.SetSyncProgress(sync.BannerText(), sync.Fraction())
+		} else {
+			chatList.HideSyncProgress()
+		}
+	}
+	glib.TimeoutAdd(1000, func() bool {
+		if sync.Tick(time.Now()) || sync.Blocking() || sync.Background() {
+			applySync()
+		}
+		return true
+	})
+
 	loginCh := c.Events()
 	go func() {
 		for ev := range loginCh {
 			switch {
-			case ev.Kind == client.EventPairSuccess,
-				ev.Kind == client.EventConnection && ev.Connection != nil && ev.Connection.Connected:
-				glib.IdleAdd(func() { stack.SetVisibleChildName("main") })
+			case ev.Kind == client.EventPairSuccess:
+				glib.IdleAdd(func() {
+					sync.Pair(time.Now())
+					applySync()
+				})
+			case ev.Kind == client.EventConnection && ev.Connection != nil && ev.Connection.Connected:
+				glib.IdleAdd(func() {
+					if !sync.Blocking() {
+						stack.SetVisibleChildName("main")
+					}
+				})
+			case ev.Kind == client.EventHistorySync && ev.HistorySync != nil:
+				h := ev.HistorySync
+				glib.IdleAdd(func() {
+					sync.Chunk(h, time.Now())
+					applySync()
+				})
 			case ev.Kind == client.EventLoggedOut:
 				glib.IdleAdd(func() {
 					// Every account's events share this bus; a background
@@ -620,7 +667,7 @@ func activate(app *adw.Application, c client.Client) {
 			fmt.Sscanf(v, "%d", &msgIdx)
 		}
 		glib.TimeoutAdd(1200, func() bool {
-			shotHook(state, msgIdx, shotDeps{chatList: chatList, conversation: conversation, composer: composer, viewer: viewer, stack: stack, linking: linking, win: &win.Window, c: c, am: am, prefs: &prefs, toasts: toastOverlay, saveSettings: saveSettings})
+			shotHook(state, msgIdx, shotDeps{chatList: chatList, conversation: conversation, composer: composer, viewer: viewer, stack: stack, linking: linking, sync: syncView, win: &win.Window, c: c, am: am, prefs: &prefs, toasts: toastOverlay, saveSettings: saveSettings})
 			return false
 		})
 	}
@@ -738,6 +785,7 @@ type shotDeps struct {
 	composer     *ui.Composer
 	stack        *gtk.Stack
 	linking      *ui.LinkingView
+	sync         *ui.SyncView
 	win          *gtk.Window
 	c            client.Client
 	am           *client.AccountManager
@@ -1146,6 +1194,16 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		d.linking.SetQR("chatot-demo-pairing-code")
 		d.linking.SetStatus("Waiting for you to scan…")
 		d.stack.SetVisibleChildName("linking")
+	case "syncing":
+		// CHATOT_SHOT_ARG=empty shows the pre-first-chunk prompt.
+		if arg == "empty" {
+			d.sync.SetCounts("")
+		} else {
+			d.sync.SetCounts("128 chats · 4,213 messages")
+		}
+		d.stack.SetVisibleChildName("syncing")
+	case "syncbanner":
+		d.chatList.SetSyncProgress("Syncing older messages · 43%", 0.43)
 	case "toast":
 		d.toasts.AddToast(adw.NewToast("Message copied to clipboard"))
 	case "reactpick":
