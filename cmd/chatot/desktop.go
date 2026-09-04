@@ -30,6 +30,16 @@ func installDesktopEntry() error {
 	if err != nil {
 		return err
 	}
+	// A packaged install (nix profile, distro package) ships its own entry
+	// in a system data dir; one written here would shadow it with a dev
+	// binary's path that soon stops existing. Drop any such leftover and
+	// leave the packaged entry in charge.
+	if packagedDesktopEntry(os.Getenv("XDG_DATA_DIRS")) {
+		for _, data := range homes {
+			removeDevDesktopEntry(filepath.Join(data, "applications", appID+".desktop"))
+		}
+		return nil
+	}
 	for _, data := range homes {
 		apps := filepath.Join(data, "icons", "hicolor")
 		if err := writeIfChanged(filepath.Join(apps, "scalable", "apps", appID+".svg"), ui.AppMarkSVG()); err != nil {
@@ -99,4 +109,31 @@ func inFlatpak() bool {
 	}
 	_, err := os.Stat("/.flatpak-info")
 	return err == nil
+}
+
+// packagedDesktopEntry reports whether some dir in the colon-separated
+// dataDirs ($XDG_DATA_DIRS) carries the app's desktop entry.
+func packagedDesktopEntry(dataDirs string) bool {
+	for _, dir := range filepath.SplitList(dataDirs) {
+		if dir == "" {
+			continue
+		}
+		if st, err := os.Stat(filepath.Join(dir, "applications", appID+".desktop")); err == nil && !st.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+// removeDevDesktopEntry deletes the entry at path if it is one
+// installDesktopEntry wrote: its Exec is an absolute binary path, where a
+// packaged entry says plain "chatot". Anything else is left alone.
+func removeDevDesktopEntry(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	if bytes.Contains(data, []byte("\nExec=/")) {
+		os.Remove(path)
+	}
 }
