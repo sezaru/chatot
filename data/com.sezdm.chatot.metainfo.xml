@@ -79,6 +79,11 @@
   </recommends>
 
   <releases>
+    <release version="0.3.0-beta" date="2026-09-04">
+      <description>
+        <p>The conversation thread is a GtkListView with relative scrolling, so older pages load without flicker. Preferences are fully wired: font size, window controls, notification sound and text privacy, message previews, tray icon, proxy, auto-download, storage and a log file. Packages can ship their own notification sound.</p>
+      </description>
+    </release>
     <release version="0.2.0-beta" date="2026-09-04">
       <description>
         <p>Smooth scrolling in long chats and the chat list, avatars from the disk cache first, the pairing screen returns after a logout, and unread badges leave the archive out like the phone does.</p>
