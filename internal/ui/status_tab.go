@@ -268,7 +268,23 @@ func (cl *ChatList) loadStatusFeed() statusFeed {
 	for _, jid := range list {
 		muted[jid] = true
 	}
-	return groupStatuses(msgs, cl.c.OwnJID(), chatNames(cl.c), muted)
+	return groupStatuses(msgs, cl.c.OwnJID(), posterNames(cl.c, msgs), muted)
+}
+
+// posterNames is chatNames plus, for a poster with no chat of their own,
+// the contacts table's name for them — a status is not a conversation.
+func posterNames(c client.Client, msgs []client.Message) map[string]string {
+	names := chatNames(c)
+	for _, m := range msgs {
+		jid := m.FromJID
+		if _, ok := names[jid]; ok {
+			continue
+		}
+		if n := c.ContactName(jid); n != "" {
+			names[jid] = n
+		}
+	}
+	return names
 }
 
 // captionRow wraps a section caption as a non-selectable list row.
@@ -507,7 +523,7 @@ func (cl *ChatList) openStatus(jid string) {
 
 // closeStatus leaves the viewer for the tab's empty pane.
 func (cl *ChatList) closeStatus() {
-	cl.statusPane.stop()
+	cl.statusPane.leave()
 	// Nothing left to resume: a reply field losing focus after the close
 	// must not restart the clock on a hidden pane.
 	cl.statusPane.current.Items = nil
@@ -634,6 +650,11 @@ type StatusPane struct {
 	userPaused bool
 	typing     bool
 	elapsed    time.Duration
+
+	// video is the clip on show, when the update is one; videoUnwatch
+	// drops its watcher.
+	video        *mediaPlayer
+	videoUnwatch func()
 }
 
 // statusAdvanceMS is how long one update stays up before the next.
@@ -861,6 +882,7 @@ func (p *StatusPane) showItem() {
 	}
 	item := p.current.Items[p.index]
 	p.meta.SetText(statusViewerMeta(item, p.index, len(p.current.Items), time.Now()))
+	p.detachVideo()
 	removeAllChildren(p.cardSlot)
 	p.cardSlot.Append(p.buildCard(item))
 	caption := item.Text
@@ -892,6 +914,15 @@ func (p *StatusPane) startClock() {
 	base := p.elapsed
 	started := time.Now()
 	p.tick = glib.TimeoutAdd(40, func() bool {
+		if v := p.video; v != nil {
+			// A clip runs its own length; its segment follows the playhead
+			// and it steps on when it ends (attachVideo), not at 5 s.
+			p.progress = v.Progress()
+			if p.index < len(p.segs) {
+				p.segs[p.index].QueueDraw()
+			}
+			return true
+		}
 		p.elapsed = base + time.Since(started)
 		p.progress = statusProgress(p.elapsed)
 		if p.index < len(p.segs) {
@@ -941,7 +972,13 @@ func (p *StatusPane) applyPause() {
 	p.updatePauseUI()
 	if p.paused() {
 		p.stop()
+		if p.video != nil {
+			p.video.Pause()
+		}
 		return
+	}
+	if p.video != nil && !p.video.Playing() {
+		p.video.Toggle()
 	}
 	if p.tick == 0 && p.index < len(p.current.Items) {
 		p.startClock()
@@ -1011,17 +1048,17 @@ func (p *StatusPane) buildCard(item client.Message) gtk.Widgetter {
 	card.SetSizeRequest(statusCardW, statusCardH)
 	card.SetOverflow(gtk.OverflowHidden)
 
-	if att := item.Attachment; att != nil && att.Kind == "image" {
-		if pic := statusPicture(att); pic != nil {
-			card.Append(coverInCard(pic))
-			return card
+	if att := item.Attachment; att != nil && (att.Kind == "image" || att.Kind == "video") {
+		// The embedded preview (or a glyph) holds the card while the file
+		// itself is fetched; the full picture, or the playing clip, then
+		// takes its place.
+		placeholder := statusPreview(att)
+		card.Append(placeholder)
+		if att.LocalPath != "" {
+			p.showStatusMedia(item, att.LocalPath, card, placeholder)
+		} else {
+			p.fetchStatusMedia(item, card, placeholder)
 		}
-		glyph := gtk.NewLabel("🖼")
-		glyph.AddCSSClass("chatot-status-glyph")
-		glyph.SetVExpand(true)
-		glyph.SetHExpand(true)
-		card.Append(glyph)
-		p.fetchStatusMedia(item, card, glyph)
 		return card
 	}
 	text := gtk.NewLabel(item.Text)
@@ -1036,8 +1073,28 @@ func (p *StatusPane) buildCard(item client.Message) gtk.Widgetter {
 	return card
 }
 
-// statusPicture renders an image status from its local file or embedded
-// thumbnail, nil when neither is at hand yet.
+// statusPreview is what stands in for a media status until its file is
+// shown: the embedded thumbnail covering the card, else a glyph.
+func statusPreview(att *client.Attachment) gtk.Widgetter {
+	if len(att.Thumbnail) > 0 {
+		if texture, err := gdk.NewTextureFromBytes(glib.NewBytesWithGo(att.Thumbnail)); err == nil {
+			return coverInCard(coverPicture(texture))
+		} else {
+			log.Printf("chatot: status preview: %v", err)
+		}
+	}
+	glyph := gtk.NewLabel("🖼")
+	if att.Kind == "video" {
+		glyph.SetText("🎬")
+	}
+	glyph.AddCSSClass("chatot-status-glyph")
+	glyph.SetVExpand(true)
+	glyph.SetHExpand(true)
+	return glyph
+}
+
+// statusPicture renders a media attachment from its local file or embedded
+// thumbnail, nil when neither is at hand yet (the channel reader's posts).
 func statusPicture(att *client.Attachment) gtk.Widgetter {
 	var texture *gdk.Texture
 	var err error
@@ -1053,6 +1110,11 @@ func statusPicture(att *client.Attachment) gtk.Widgetter {
 		log.Printf("chatot: status picture: %v", err)
 		return nil
 	}
+	return coverPicture(texture)
+}
+
+// coverPicture is texture filling whatever holds it.
+func coverPicture(texture *gdk.Texture) *gtk.Picture {
 	pic := gtk.NewPictureForPaintable(texture)
 	pic.SetContentFit(gtk.ContentFitCover)
 	pic.SetCanShrink(true)
@@ -1061,26 +1123,93 @@ func statusPicture(att *client.Attachment) gtk.Widgetter {
 	return pic
 }
 
-// fetchStatusMedia downloads a photo status in the background and swaps it
-// into card in place of the glyph once it lands (if the card is still up).
-func (p *StatusPane) fetchStatusMedia(item client.Message, card *gtk.Box, glyph gtk.Widgetter) {
+// fetchStatusMedia downloads a media status in the background and shows
+// the file in card in place of placeholder once it lands (if the card is
+// still up).
+func (p *StatusPane) fetchStatusMedia(item client.Message, card *gtk.Box, placeholder gtk.Widgetter) {
 	go func() {
 		path, err := p.cl.c.DownloadMedia(context.Background(), item.ID)
 		if err != nil || path == "" {
+			log.Printf("chatot: status media %s: %v", item.ID, err)
 			return
 		}
 		glib.IdleAdd(func() {
 			if card.Parent() == nil {
 				return
 			}
-			att := *item.Attachment
-			att.LocalPath = path
-			if pic := statusPicture(&att); pic != nil {
-				card.Remove(glyph)
-				card.Append(coverInCard(pic))
-			}
+			p.showStatusMedia(item, path, card, placeholder)
 		})
 	}()
+}
+
+// showStatusMedia puts the downloaded file at path on the card: the full
+// picture, or the clip playing under the pane's clock.
+func (p *StatusPane) showStatusMedia(item client.Message, path string, card *gtk.Box, placeholder gtk.Widgetter) {
+	att := item.Attachment
+	if att.Kind == "video" {
+		player := newMediaPlayer(path, att.DurationSecs)
+		stage := newVideoStage(player, att.Thumbnail)
+		// The card's own click holds the update (and with it the clip);
+		// the stage's play/pause click would fight it.
+		stage.SetCanTarget(false)
+		card.Remove(placeholder)
+		card.Append(coverInCard(stage))
+		p.attachVideo(player)
+		return
+	}
+	texture, err := gdk.NewTextureFromFilename(path)
+	if err != nil {
+		log.Printf("chatot: status picture: %v", err)
+		return
+	}
+	card.Remove(placeholder)
+	card.Append(coverInCard(coverPicture(texture)))
+}
+
+// attachVideo makes player the update on show: it starts unless the viewer
+// is held, its playhead drives the segment, and its end steps on.
+func (p *StatusPane) attachVideo(player *mediaPlayer) {
+	p.detachVideo()
+	p.video = player
+	p.videoUnwatch = player.Watch(func() {
+		if p.video != player {
+			return
+		}
+		if player.ended {
+			p.step(1)
+		}
+	})
+	if p.paused() {
+		return
+	}
+	// Start once the stage is on screen: a stream decodes onto its surface
+	// only after the picture painting it is realized.
+	glib.IdleAdd(func() {
+		if p.video == player && !player.Playing() {
+			player.Toggle()
+		}
+	})
+}
+
+// detachVideo silences and forgets the clip on show, if any.
+func (p *StatusPane) detachVideo() {
+	if p.video == nil {
+		return
+	}
+	p.video.Pause()
+	if p.videoUnwatch != nil {
+		p.videoUnwatch()
+		p.videoUnwatch = nil
+	}
+	p.video = nil
+}
+
+// leave is the viewer being closed: the clock stops and the card is
+// dropped, so no clip plays on behind another pane.
+func (p *StatusPane) leave() {
+	p.stop()
+	p.detachVideo()
+	removeAllChildren(p.cardSlot)
 }
 
 // menu is the viewer's ⋮: the contact actions, or our own status's menu

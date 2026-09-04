@@ -59,6 +59,35 @@ func (f *Fake) seedDevMedia(dir string, now int64) {
 			},
 		})
 	}
+	f.seedDevStatuses(dir, now)
+}
+
+// seedDevStatuses adds a photo and a clip status from the second fixture
+// contact, backed by the files in dir, so the status viewer's media cards
+// can be exercised. Called from seedDevMedia.
+func (f *Fake) seedDevStatuses(dir string, now int64) {
+	const from = "1112223333@s.whatsapp.net"
+	kinds := []struct {
+		file, kind, mime, caption string
+		secs                      int
+	}{
+		{"photo.jpg", "image", "image/jpeg", "", 0},
+		{"clip.mp4", "video", "video/mp4", "🌅", 6},
+	}
+	for i, k := range kinds {
+		path := filepath.Join(dir, k.file)
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		f.messages[statusBroadcastJID] = append(f.messages[statusBroadcastJID], Message{
+			ID: "ds" + itoa(i), ChatJID: statusBroadcastJID, FromJID: from, TS: now - 600 + int64(i)*60,
+			Attachment: &Attachment{
+				Kind: k.kind, MimeType: k.mime, Filename: k.file, Caption: k.caption,
+				LocalPath: path, Size: info.Size(), DurationSecs: k.secs,
+			},
+		})
+	}
 }
 
 func itoa(n int) string {
