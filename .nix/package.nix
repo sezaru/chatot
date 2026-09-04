@@ -14,6 +14,9 @@
   glib,
   gobject-introspection, # gotk4's gerror binds girepository at build time
   librsvg,
+  webp-pixbuf-loader,
+  gdk-pixbuf,
+  runCommand,
   adwaita-icon-theme,
   gst_all_1,
   ffmpeg,
@@ -28,6 +31,21 @@
   notificationSound ? null,
 }: let
   appID = "com.sezdm.chatot";
+
+  # gdk-pixbuf's loader cache with the SVG and WebP loaders on top of its
+  # own: the app's mark is SVG and WhatsApp stickers are WebP. One merged
+  # cache, since GDK reads a single GDK_PIXBUF_MODULE_FILE and
+  # wrapGAppsHook4 only ever picks one package's.
+  pixbufLoaders =
+    runCommand "chatot-pixbuf-loaders.cache" {
+      nativeBuildInputs = [gdk-pixbuf.dev];
+    } ''
+      gdk-pixbuf-query-loaders \
+        ${gdk-pixbuf}/${gdk-pixbuf.moduleDir}/*.so \
+        ${librsvg}/${gdk-pixbuf.moduleDir}/*.so \
+        ${webp-pixbuf-loader}/${gdk-pixbuf.moduleDir}/*.so \
+        > $out
+    '';
   version = "0.3.0-beta";
 in
   buildGoModule {
@@ -67,6 +85,7 @@ in
       glib
       gobject-introspection
       librsvg # gdk-pixbuf's SVG loader
+      webp-pixbuf-loader # stickers
       gst_all_1.gstreamer
       gst_all_1.gst-plugins-base
       gst_all_1.gst-plugins-good
@@ -77,14 +96,17 @@ in
     # The tests need a display for the GTK parts; they run in the devenv.
     doCheck = false;
 
-    # wrapGAppsHook4 already wires GST_PLUGIN_SYSTEM_PATH_1_0, the pixbuf
-    # loaders and the GSettings schemas. On top: the tools the app shells
-    # out to; the fonts the design specifies and the icon theme behind the
-    # UI's -symbolic names, both via XDG_DATA_DIRS (fontconfig reads its
-    # fonts/, GTK its icons/), since the hook only adds schema dirs; and no
-    # self-installed desktop entry — this package ships its own.
+    # wrapGAppsHook4 already wires GST_PLUGIN_SYSTEM_PATH_1_0, the GSettings
+    # schemas and one package's pixbuf loader cache (librsvg's, which lacks
+    # WebP; the merged one set here comes later in the args and wins). On
+    # top: the tools the app shells out to; the fonts the design specifies
+    # and the icon theme behind the UI's -symbolic names, both via
+    # XDG_DATA_DIRS (fontconfig reads its fonts/, GTK its icons/), since
+    # the hook only adds schema dirs; and no self-installed desktop entry —
+    # this package ships its own.
     preFixup = ''
       gappsWrapperArgs+=(
+        --set GDK_PIXBUF_MODULE_FILE ${pixbufLoaders}
         --prefix PATH : ${lib.makeBinPath [ffmpeg poppler-utils xdg-utils]}
         --prefix XDG_DATA_DIRS : ${cantarell-fonts}/share:${jetbrains-mono}/share:${adwaita-icon-theme}/share
         --set CHATOT_NO_DESKTOP_ENTRY 1

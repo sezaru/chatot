@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -655,12 +656,20 @@ func inlineMediaWidget(mv mediaView, open func(path string)) gtk.Widgetter {
 	case "audio":
 		return newVoiceBubble(mv, open)
 	case "sticker":
+		// Decoded at twice the footprint for HiDPI, then clamped back to
+		// it: a GtkPicture's natural size is its texture's, and nothing
+		// else in the bubble would stop it growing to 240px.
 		p := newAsyncPicture(mv.LocalPath, stickerRenderSize*2)
 		p.SetCanShrink(true)
 		p.SetContentFit(gtk.ContentFitContain)
 		p.SetSizeRequest(stickerRenderSize, stickerRenderSize)
 		p.AddCSSClass("chatot-sticker")
-		return p
+		clamp := adw.NewClamp()
+		clamp.SetMaximumSize(stickerRenderSize)
+		clamp.SetTighteningThreshold(stickerRenderSize)
+		clamp.SetChild(p)
+		clamp.SetHAlign(gtk.AlignStart)
+		return clamp
 	}
 	// Decoded at twice the tile so it stays crisp on HiDPI. The tile is
 	// as tall as the picture at the bubble width, so a wide screenshot is

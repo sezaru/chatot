@@ -14,6 +14,20 @@
   playwright-mcp = pkgs.writeShellScriptBin "playwright-mcp" ''
     exec npx @playwright/mcp --executable-path ${pkgs.chromium}/bin/chromium "$@"
   '';
+
+  # The pixbuf loader cache the packaged app runs with (see
+  # .nix/package.nix): gdk-pixbuf's own loaders plus SVG and WebP, so a dev
+  # run decodes the app mark and stickers too.
+  pixbufLoaders =
+    pkgs.runCommand "chatot-pixbuf-loaders.cache" {
+      nativeBuildInputs = [pkgs.gdk-pixbuf.dev];
+    } ''
+      gdk-pixbuf-query-loaders \
+        ${pkgs.gdk-pixbuf}/${pkgs.gdk-pixbuf.moduleDir}/*.so \
+        ${pkgs.librsvg}/${pkgs.gdk-pixbuf.moduleDir}/*.so \
+        ${pkgs.webp-pixbuf-loader}/${pkgs.gdk-pixbuf.moduleDir}/*.so \
+        > $out
+    '';
 in {
   imports = [
     inputs.devkit.devenvModule
@@ -102,6 +116,8 @@ in {
 
     PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
+
+    GDK_PIXBUF_MODULE_FILE = "${pixbufLoaders}";
   };
 
   # devkit's open-design module parks OD_DATA_DIR in $DEVENV_STATE, which is
