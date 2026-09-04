@@ -246,9 +246,14 @@ func NewChatList(c client.Client) *ChatList {
 	// identity button (avatar + name over phone + chevron) fills the left,
 	// then ＋ and ⋮ in that order. A WindowHandle keeps the strip draggable
 	// like the header bar it replaces; window controls live on the
-	// conversation side (right pane).
+	// conversation side (right pane), except the start side of the
+	// desktop's gtk-decoration-layout, which lands here: empty under the
+	// usual "…:minimize,maximize,close", populated for a left-hand layout.
 	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	headerBox.AddCSSClass("chatot-account-row")
+	startControls := gtk.NewWindowControls(gtk.PackStart)
+	startControls.SetVAlign(gtk.AlignCenter)
+	headerBox.Append(startControls)
 
 	accountAvatar := gtk.NewLabel("S")
 	accountAvatar.AddCSSClass("chatot-avatar")

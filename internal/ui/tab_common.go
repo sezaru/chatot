@@ -357,7 +357,6 @@ func NewPlainHeader() gtk.Widgetter {
 	spacer.SetHExpand(true)
 	row.Append(spacer)
 	controls := gtk.NewWindowControls(gtk.PackEnd)
-	controls.SetDecorationLayout(":minimize,maximize,close")
 	controls.SetVAlign(gtk.AlignCenter)
 	row.Append(controls)
 	h := gtk.NewWindowHandle()

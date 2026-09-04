@@ -939,8 +939,10 @@ button.chatot-composer-iconbtn.text-button,
 }
 
 /* Window controls: the mockup's 24px neutral circles, not Adwaita's larger
-   squares-with-icons. */
-.chatot-conv-header windowcontrols button {
+   squares-with-icons. The account row's copy only has children under a
+   left-hand decoration layout. */
+.chatot-conv-header windowcontrols button,
+.chatot-account-row windowcontrols button {
 	min-width: 24px;
 	min-height: 24px;
 	padding: 0;
@@ -951,9 +953,15 @@ button.chatot-composer-iconbtn.text-button,
 
 /* Adwaita sizes these from the icon, not the button box, so the circle above
    only shrinks once the glyph does. */
-.chatot-conv-header windowcontrols button image {
+.chatot-conv-header windowcontrols button image,
+.chatot-account-row windowcontrols button image {
 	-gtk-icon-size: 12px;
 	opacity: 0.55;
+}
+
+/* An empty controls widget must not add its 6px box spacing to the row. */
+.chatot-account-row windowcontrols.empty {
+	margin-right: -6px;
 }
 
 /* The sidebar search glyph is a 12px dim mark in the mockup, not Adwaita's
