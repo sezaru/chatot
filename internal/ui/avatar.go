@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
-	"strconv"
 	"strings"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
@@ -21,12 +20,26 @@ import (
 // rebuilding a chat list / header doesn't re-fetch on every redraw. A jid
 // present with path "" means "known to have no avatar" (still don't
 // re-fetch); a jid absent means "not resolved yet".
+//
+// It also owns the fetches: one in flight per jid however many rows ask,
+// and a row whose fetch failed transiently (not connected yet) stays
+// registered as a waiter so retryFailed can complete it in place later,
+// without the row being rebuilt. All methods run on the GTK main loop.
 type avatarCache struct {
-	paths map[string]string
+	paths   map[string]string
+	pending map[string]bool
+	waiters map[string][]avatarWaiter
+}
+
+// avatarWaiter is a row's avatar slot waiting for jid's picture.
+type avatarWaiter struct {
+	box     *gtk.Box
+	initial string
+	size    int
 }
 
 func newAvatarCache() *avatarCache {
-	return &avatarCache{paths: make(map[string]string)}
+	return &avatarCache{paths: make(map[string]string), pending: make(map[string]bool), waiters: make(map[string][]avatarWaiter)}
 }
 
 // get reports the memoized path for jid and whether it's been resolved yet.
@@ -40,18 +53,91 @@ func (a *avatarCache) set(jid, path string) { a.paths[jid] = path }
 // invalidate drops jid so the next buildAvatar call for it re-fetches.
 func (a *avatarCache) invalidate(jid string) {
 	if path := a.paths[jid]; path != "" {
-		// The picture file is rewritten in place, so its decoded copy is
+		// The picture file is rewritten in place, so its decoded copies are
 		// stale too.
-		delete(pictureTextures, path+"|"+strconv.Itoa(avatarDecodeSide))
+		pictureTextures.dropPrefix(path + "|")
 	}
 	delete(a.paths, jid)
+}
+
+// addWaiter registers w for jid's picture and reports whether a fetch
+// must be started (none is in flight).
+func (a *avatarCache) addWaiter(jid string, w avatarWaiter) (start bool) {
+	a.waiters[jid] = append(a.waiters[jid], w)
+	if a.pending[jid] {
+		return false
+	}
+	a.pending[jid] = true
+	return true
+}
+
+// takeWaiters ends jid's fetch: on success the waiters are handed back to
+// be filled and forgotten; on failure they stay registered for retryFailed
+// and nothing is returned.
+func (a *avatarCache) takeWaiters(jid string, ok bool) []avatarWaiter {
+	delete(a.pending, jid)
+	if !ok {
+		return nil
+	}
+	ws := a.waiters[jid]
+	delete(a.waiters, jid)
+	return ws
+}
+
+// failedJIDs lists the jids with waiters and no fetch in flight.
+func (a *avatarCache) failedJIDs() []string {
+	var out []string
+	for jid := range a.waiters {
+		if !a.pending[jid] {
+			out = append(out, jid)
+		}
+	}
+	return out
+}
+
+// retryFailed re-runs every fetch that failed, filling the rows that were
+// waiting; the chat list calls it when the connection comes up.
+func (a *avatarCache) retryFailed(c client.Client) {
+	for _, jid := range a.failedJIDs() {
+		a.pending[jid] = true
+		a.fetch(c, jid)
+	}
+}
+
+// avatarFetchSlots caps concurrent avatar fetches: a fresh 500-chat list
+// used to fire one IQ per row at once.
+var avatarFetchSlots = make(chan struct{}, 8)
+
+// fetch resolves jid off the main loop and fills its waiters when done.
+func (a *avatarCache) fetch(c client.Client, jid string) {
+	go func() {
+		avatarFetchSlots <- struct{}{}
+		path, err := c.Avatar(context.Background(), jid)
+		<-avatarFetchSlots
+		glib.IdleAdd(func() {
+			// Transient (not connected yet, timeout): leave jid unresolved
+			// and its waiters registered so retryFailed completes them.
+			ws := a.takeWaiters(jid, err == nil)
+			if err != nil {
+				return
+			}
+			a.set(jid, path)
+			if path == "" {
+				return
+			}
+			for _, w := range ws {
+				removeAllChildren(w.box)
+				w.box.Append(newAvatarPicture(path, w.initial, w.size))
+			}
+		})
+	}()
 }
 
 // buildAvatar returns a size x size container showing jid's avatar picture if
 // known, else initial as an immediate fallback with an async fetch kicked off
 // in the background (unless cache already knows jid has none). The fetch
-// swaps the picture in via glib.IdleAdd when it completes; box is captured by
-// that closure so a stale swap (the row/header having since been rebuilt or
+// swaps the picture in via glib.IdleAdd when it completes; box is captured
+// as a waiter so a stale swap (the row having since been rebuilt or
 // removed) is harmless — it just mutates a widget nobody's looking at anymore.
 func buildAvatar(c client.Client, cache *avatarCache, jid, initial string, size int) *gtk.Box {
 	box := gtk.NewBox(gtk.OrientationVertical, 0)
@@ -67,24 +153,9 @@ func buildAvatar(c client.Client, cache *avatarCache, jid, initial string, size 
 	}
 
 	box.Append(newAvatarInitial(jid, initial, size))
-
-	go func() {
-		path, err := c.Avatar(context.Background(), jid)
-		if err != nil {
-			// Transient (not connected yet, timeout): leave jid unresolved so
-			// the next rebuild retries instead of pinning the initial.
-			return
-		}
-		glib.IdleAdd(func() {
-			cache.set(jid, path)
-			if path == "" {
-				return
-			}
-			removeAllChildren(box)
-			box.Append(newAvatarPicture(path, initial, size))
-		})
-	}()
-
+	if cache.addWaiter(jid, avatarWaiter{box: box, initial: initial, size: size}) {
+		cache.fetch(c, jid)
+	}
 	return box
 }
 
@@ -128,13 +199,24 @@ func avatarColorClass(jid string) string {
 func newAvatarPicture(path, initial string, size int) gtk.Widgetter {
 	avatar := adw.NewAvatar(size, initial, true)
 	avatar.AddCSSClass("chatot-avatar-img")
-	loadPictureAsync(path, avatarDecodeSide, func(t gdk.Paintabler) { avatar.SetCustomImage(t) })
+	loadPictureAsync(path, avatarDecodeSideFor(size), func(t gdk.Paintabler) { avatar.SetCustomImage(t) })
 	return avatar
 }
 
 // avatarDecodeSide is the box avatar files are decoded into: the largest
 // avatar on screen is the profile card's, well under this on HiDPI.
 const avatarDecodeSide = 192
+
+// avatarDecodeSideFor picks the decode box for an avatar shown at size px:
+// the list's and bubbles' small discs share a quarter-size decode, so
+// hundreds of them fit the texture budget; anything larger gets the full
+// avatarDecodeSide.
+func avatarDecodeSideFor(size int) int {
+	if size <= 48 {
+		return avatarDecodeSide / 2
+	}
+	return avatarDecodeSide
+}
 
 // initialFor derives the single-uppercase-letter fallback shown until (or
 // instead of) a real avatar picture: the first rune of name, or "?" if name
