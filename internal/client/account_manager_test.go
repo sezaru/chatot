@@ -237,3 +237,32 @@ func TestAccountDisplayNameFallsBackToProfile(t *testing.T) {
 		t.Fatalf("Accounts()[0].Name = %q", metas[0].Name)
 	}
 }
+
+// The rail badge counts chats with unread messages outside the archive,
+// like the sidebar's Unread chip: an archived group with hundreds of unread
+// must not turn the badge into "99+".
+func TestAccountsUnreadCountsUnarchivedChats(t *testing.T) {
+	f := NewFake()
+	m := NewAccountManager()
+	m.AddAccount("a", "A", f)
+	chats, _ := f.Chats(0)
+	want, archived := 0, ""
+	for _, c := range chats {
+		if c.UnreadCount > 0 && archived == "" {
+			archived = c.JID
+			continue
+		}
+		if c.UnreadCount > 0 && !c.Archived {
+			want++
+		}
+	}
+	if archived == "" {
+		t.Skip("fake has no unread chat")
+	}
+	if err := f.ArchiveChat(context.Background(), archived, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Accounts()[0].Unread; got != want {
+		t.Fatalf("Unread = %d, want %d unarchived unread chats", got, want)
+	}
+}

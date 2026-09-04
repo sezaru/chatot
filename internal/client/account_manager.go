@@ -50,7 +50,9 @@ func (a *Account) PairPhone(ctx context.Context, phone string) (string, error) {
 // the account switcher UI. Status/Unread are a best-effort snapshot read off
 // the account's client at Accounts() time: Status is "Connected" when logged
 // in, else the relink prompt (a live "reconnecting" state isn't observable
-// through the Client seam); Unread is the summed unread count across its chats.
+// through the Client seam); Unread is the number of chats with unread
+// messages outside the archive, what the sidebar's Unread chip counts and
+// the phone's own badge ignores archived chats for.
 type AccountMeta struct {
 	ID     string
 	Name   string
@@ -217,7 +219,9 @@ func (m *AccountManager) Accounts() []AccountMeta {
 		unread := 0
 		if chats, err := a.c.Chats(0); err == nil {
 			for _, ch := range chats {
-				unread += ch.UnreadCount
+				if ch.UnreadCount > 0 && !ch.Archived {
+					unread++
+				}
 			}
 		}
 		out[i] = AccountMeta{
