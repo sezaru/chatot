@@ -475,6 +475,10 @@ type GroupInfo struct {
 	Locked            bool   // only admins may edit group info
 	DisappearingTimer uint32 // seconds; 0 = off
 	Participants      []GroupParticipant
+	// IsParent marks a community (the parent group); LinkedParentJID is the
+	// community a sub-group (announcement group included) belongs to.
+	IsParent        bool
+	LinkedParentJID string
 }
 
 // JoinRequest is a pending request to join an approval-required group; the

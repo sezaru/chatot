@@ -207,15 +207,20 @@ func TestChatsFilterDropsCommunityParent(t *testing.T) {
 	}
 }
 
-func TestChatsFilterDropsLinkedAnnouncementChannel(t *testing.T) {
+func TestChatsKeepsLinkedAnnouncementGroup(t *testing.T) {
 	s := newTestStore(t)
 	must(t, s.UpsertChat(ChatRow{JID: "announce@g.us", IsGroup: true, Name: "Announcements"}))
 	must(t, s.UpsertGroup(GroupRow{JID: "announce@g.us", Name: "Announcements", LinkedParentJID: "parent@g.us"}))
 	must(t, s.UpsertChat(ChatRow{JID: "dm@s.whatsapp.net", Name: "Friend"}))
 
 	chats := mustChats(t, s)
-	if len(chats) != 1 || chats[0].JID != "dm@s.whatsapp.net" {
-		t.Fatalf("got %+v, want only the DM (linked channel dropped)", chats)
+	if len(chats) != 2 {
+		t.Fatalf("got %+v, want the DM and the community's announcement group", chats)
+	}
+	for _, c := range chats {
+		if c.JID == "announce@g.us" && c.Name != "Announcements" {
+			t.Fatalf("announcement group named %q, want Announcements", c.Name)
+		}
 	}
 }
 
@@ -240,6 +245,11 @@ func TestChatsRespectsLimit(t *testing.T) {
 	must(t, err)
 	if len(chats) != 2 {
 		t.Fatalf("got %d chats, want 2", len(chats))
+	}
+	all, err := s.Chats(0)
+	must(t, err)
+	if len(all) != 3 {
+		t.Fatalf("Chats(0) gave %d chats, want all 3", len(all))
 	}
 }
 

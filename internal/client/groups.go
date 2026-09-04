@@ -48,7 +48,17 @@ func groupInfoFromWhatsmeow(info *types.GroupInfo) *GroupInfo {
 		Locked:            info.IsLocked,
 		DisappearingTimer: info.DisappearingTimer,
 		Participants:      parts,
+		IsParent:          info.IsParent,
+		LinkedParentJID:   linkedParent(info),
 	}
+}
+
+// linkedParent is the community a group is linked to, "" for none.
+func linkedParent(info *types.GroupInfo) string {
+	if info.LinkedParentJID.IsEmpty() {
+		return ""
+	}
+	return info.LinkedParentJID.String()
 }
 
 // OwnJID exposes this device's own user JID for the UI's admin gating.
@@ -349,7 +359,9 @@ func parseInviteCode(input string) string {
 // persistGroupInfo saves gi's metadata and membership to the store,
 // warning (not failing) on error.
 func (w *Whatsmeow) persistGroupInfo(gi *GroupInfo) {
-	if err := w.store.UpsertGroup(store.GroupRow{JID: gi.JID, Name: gi.Name, Topic: gi.Topic}); err != nil {
+	// The linkage travels with the info: UpsertGroup overwrites it, so a
+	// refresh that left it out would unlink a community's groups.
+	if err := w.store.UpsertGroup(store.GroupRow{JID: gi.JID, Name: gi.Name, Topic: gi.Topic, IsParent: gi.IsParent, LinkedParentJID: gi.LinkedParentJID}); err != nil {
 		w.log.Warnf("chatot/client: persist group %s: %v", gi.JID, err)
 	}
 	defer func() {

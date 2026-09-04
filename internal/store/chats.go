@@ -90,12 +90,14 @@ func (s *Store) SetChatUnread(jid string, unread bool) error {
 }
 
 // Chats returns the chat list: name-resolved, ordered, preview-populated,
-// and filtered to DMs plus non-parent/non-linked groups. See the design doc
+// and filtered to DMs plus groups other than communities themselves (a
+// community's sub-groups, its announcement group included, are chats like
+// any other, as in WhatsApp). See the design doc
 // ("Store: name resolution / ordering / preview") for the reference rules.
 func (s *Store) Chats(limit int) ([]Chat, error) {
-	if limit <= 0 {
-		limit = 50
-	}
+	// limit <= 0 is every chat (as the fake reads it): the list and every
+	// name lookup go through here, and a chat quiet since last year is
+	// still a chat.
 	rows, err := s.db.Query(`
 		SELECT
 			c.jid, c.is_group, COALESCE(c.name, ''), c.pinned, c.muted, c.archived, c.unread_count, c.last_message_ts,
@@ -116,7 +118,7 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 			)
 		) lm ON lm.chat_jid = c.jid
 		LEFT JOIN media md ON md.chat_jid = lm.chat_jid AND md.msg_id = lm.msg_id
-		WHERE COALESCE(g.is_parent, 0) = 0 AND COALESCE(g.linked_parent_jid, '') = ''
+		WHERE COALESCE(g.is_parent, 0) = 0
 			AND c.jid != 'status@broadcast'
 			AND c.jid NOT LIKE '%@newsletter'
 	`)
@@ -175,7 +177,7 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		}
 		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
 	})
-	if len(out) > limit {
+	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}
 	return out, nil
