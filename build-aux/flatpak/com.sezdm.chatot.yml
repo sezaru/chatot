@@ -29,11 +29,11 @@ finish-args:
   # Voice-note playback and recording (ffmpeg reads the default PulseAudio
   # source); clip and voice-note playback goes through GStreamer.
   - --socket=pulseaudio
-  # Tray item (StatusNotifierItem) with unread count and Open/Quit. The
-  # item registers as org.kde.StatusNotifierItem-<pid>-1, and the app is
-  # always pid 2 in its sandbox.
+  # Tray item (StatusNotifierItem) with unread count and Open/Quit. The item
+  # registers with the watcher under its unique bus name (Flathub never
+  # grants --own-name for org.kde.StatusNotifierItem-*); the failed request
+  # for the well-known name only logs.
   - --talk-name=org.kde.StatusNotifierWatcher
-  - --own-name=org.kde.StatusNotifierItem-2-1
 
 build-options:
   append-path: /usr/lib/sdk/golang/bin
