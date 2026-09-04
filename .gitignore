@@ -14,3 +14,8 @@ devenv.local.nix
 mockup/.playwright-mcp/
 mockup/.od-skills/
 /mock-*.png
+
+# flatpak-builder scratch
+.flatpak-builder/
+build-aux/flatpak/build/
+build-aux/flatpak/repo/

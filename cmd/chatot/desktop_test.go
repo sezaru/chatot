@@ -13,3 +13,10 @@ func TestDesktopEntry(t *testing.T) {
 		}
 	}
 }
+
+func TestInFlatpakFromEnv(t *testing.T) {
+	t.Setenv("FLATPAK_ID", appID)
+	if !inFlatpak() {
+		t.Fatal("FLATPAK_ID set: want inFlatpak")
+	}
+}

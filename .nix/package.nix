@@ -1,8 +1,9 @@
 # chatot as an installable desktop app: the cgo GTK4/libadwaita binary,
 # wrapped so it finds GStreamer plugins (H.264 clips, voice notes), the
 # pixbuf loaders (SVG), ffmpeg/poppler on PATH, and the mockup's UI fonts;
-# plus the .desktop entry and icons under share/ so the shell, dock and
-# notifications show chatot's own mark for app id com.sezdm.chatot.
+# plus the .desktop entry, AppStream metadata and icons under share/ so
+# the shell, dock and notifications show chatot's own mark for app id
+# com.sezdm.chatot.
 {
   lib,
   buildGoModule,
@@ -37,10 +38,11 @@ in
         ../go.sum
         ../cmd
         ../internal
+        ../data
       ];
     };
 
-    vendorHash = "sha256-hlA4d9Lr11gg1kx2jn9wV/hM5+6Gboy9Nu6cd+lEpN4=";
+    vendorHash = "sha256-TwfaQR59YWah3LOpwBGor0Sp2yeCppE5/1khtZij9gI=";
 
     subPackages = ["cmd/chatot"];
 
@@ -84,24 +86,15 @@ in
       )
     '';
 
+    # The same desktop entry and AppStream metadata the Flatpak ships
+    # (data/), plus the icons from the UI assets.
     postInstall = ''
       install -Dm644 internal/ui/assets/chatot-icon.svg \
         $out/share/icons/hicolor/scalable/apps/${appID}.svg
       install -Dm644 internal/ui/assets/chatot-icon-512.png \
         $out/share/icons/hicolor/512x512/apps/${appID}.png
-      mkdir -p $out/share/applications
-      cat > $out/share/applications/${appID}.desktop <<DESKTOP
-[Desktop Entry]
-Type=Application
-Name=chatot
-Comment=WhatsApp for the GNOME desktop
-Exec=chatot
-Icon=${appID}
-Terminal=false
-Categories=Network;InstantMessaging;GTK;
-StartupNotify=true
-StartupWMClass=${appID}
-DESKTOP
+      install -Dm644 data/${appID}.desktop -t $out/share/applications
+      install -Dm644 data/${appID}.metainfo.xml -t $out/share/metainfo
     '';
 
     meta = {
