@@ -318,7 +318,7 @@ func (cv *ConversationView) jumpToMessage(msgID string) {
 			cv.hasMore = len(older) == conversationPageSize
 			break
 		}
-		cv.prependOlder(older, true)
+		cv.prependOlder(older)
 		pos = cv.positionOf(msgID)
 	}
 	if pos < 0 {

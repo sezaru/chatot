@@ -816,6 +816,8 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		d.chatList.ReconcileCheck()
 	case "anchorcheck":
 		d.conversation.AnchorCheck()
+	case "flingcheck":
+		d.conversation.FlingCheck(arg == "abs")
 	case "scrollbench":
 		// CHATOT_SHOT_ARG=chats scrolls the chat list, anything else the
 		// open thread; frame stats land in the log after 6 s.
@@ -1004,7 +1006,13 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	case "draft":
 		d.composer.SetDraft("On my way, see you at noon")
 	case "search":
-		d.conversation.OpenSearch("relay")
+		// In-chat search for CHATOT_SHOT_TEXT (default "relay"), landing on
+		// its first hit.
+		q := os.Getenv("CHATOT_SHOT_TEXT")
+		if q == "" {
+			q = "relay"
+		}
+		d.conversation.OpenSearch(q)
 	case "listsearch":
 		// The chat list's search box with CHATOT_SHOT_TEXT typed in.
 		d.chatList.SearchList(os.Getenv("CHATOT_SHOT_TEXT"))
