@@ -200,6 +200,12 @@ func TestMarkReadOnOpenClearsBadgeWithoutReceipts(t *testing.T) {
 			t.Errorf("UnreadCount = %d, want 0: opening a chat clears its badge even without receipts", c.UnreadCount)
 		}
 	}
+	// The account's other devices still learn of the read, just not the
+	// sender.
+	calls := f.MarkReadCalls()
+	if len(calls) != 1 || calls[0].NotifySender || len(calls[0].MsgIDs) != 2 {
+		t.Errorf("MarkRead calls = %+v, want one private read of 2 messages", calls)
+	}
 }
 
 func TestMarkReadOnArrivalIgnoresOwnMessages(t *testing.T) {
@@ -250,6 +256,10 @@ func TestMarkReadOnOpenSendsWhenEnabled(t *testing.T) {
 		if c.JID == "1234567890@s.whatsapp.net" && c.UnreadCount != 0 {
 			t.Errorf("UnreadCount = %d, want 0 after MarkRead", c.UnreadCount)
 		}
+	}
+	calls := f.MarkReadCalls()
+	if len(calls) != 1 || !calls[0].NotifySender {
+		t.Errorf("MarkRead calls = %+v, want one read that tells the sender", calls)
 	}
 }
 

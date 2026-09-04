@@ -27,6 +27,8 @@ type Fake struct {
 	events   *eventBus
 	qrCodes  chan string
 	loggedIn bool
+	// markReads records MarkRead calls for tests (see MarkReadCalls).
+	markReads []MarkReadCall
 	// pairing marks a demo account that never links: Start emits a demo QR
 	// instead of flipping loggedIn, so the add-account and relink dialogs
 	// have a code to render in CHATOT_FAKE=1 builds.
@@ -729,8 +731,25 @@ func (f *Fake) DeleteMessageForMe(ctx context.Context, chatJID, msgID string) er
 	return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, chatJID)
 }
 
-func (f *Fake) MarkRead(ctx context.Context, jid string, msgIDs []string) error {
+// MarkReadCall records one Fake.MarkRead, for tests of the read path.
+type MarkReadCall struct {
+	JID          string
+	MsgIDs       []string
+	NotifySender bool
+}
+
+func (f *Fake) MarkRead(ctx context.Context, jid string, msgIDs []string, notifySender bool) error {
+	f.mu.Lock()
+	f.markReads = append(f.markReads, MarkReadCall{JID: jid, MsgIDs: append([]string(nil), msgIDs...), NotifySender: notifySender})
+	f.mu.Unlock()
 	return f.ClearUnread(jid)
+}
+
+// MarkReadCalls lists every MarkRead so far, oldest first.
+func (f *Fake) MarkReadCalls() []MarkReadCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]MarkReadCall(nil), f.markReads...)
 }
 
 func (f *Fake) StopLiveLocation(ctx context.Context, chatJID, msgID string) error {

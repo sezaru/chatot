@@ -288,3 +288,18 @@ func TestApplyMarkChatAsReadHonoursRange(t *testing.T) {
 		t.Fatalf("mark unread left unread=%d", c.UnreadCount)
 	}
 }
+
+// TestIngestRepeatedMessageCountsUnreadOnce: a message delivered again (a
+// sender's resend, or the live copy of one the history already stored)
+// is one unread, not two.
+func TestIngestRepeatedMessageCountsUnreadOnce(t *testing.T) {
+	w := newIngestFixture(t)
+	m := &Message{ChatJID: "1234567890@s.whatsapp.net", ID: "m1", Text: "hi", TS: 10}
+	must(t, w.ingestMessage(m))
+	must(t, w.ingestMessage(m))
+
+	c, _ := chatByJID(t, w, "1234567890@s.whatsapp.net")
+	if c.UnreadCount != 1 {
+		t.Errorf("UnreadCount = %d, want 1 after the same message twice", c.UnreadCount)
+	}
+}

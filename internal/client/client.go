@@ -585,9 +585,11 @@ type Client interface {
 	// dropped from the store, no tombstone.
 	DeleteMessageForMe(ctx context.Context, chatJID, msgID string) error
 	React(ctx context.Context, jid, msgID, emoji string) error // "" clears
-	MarkRead(ctx context.Context, jid string, msgIDs []string) error
-	// ClearUnread zeroes jid's local unread badge without sending a read
-	// receipt (MarkRead does both).
+	// MarkRead reports msgIDs in jid as read: to the account's other
+	// devices always, so their badges clear, and to the senders too when
+	// notifySender is set. It clears the local badge as well.
+	MarkRead(ctx context.Context, jid string, msgIDs []string, notifySender bool) error
+	// ClearUnread zeroes jid's local unread badge without telling anyone.
 	ClearUnread(jid string) error
 	// CheckOnWhatsApp looks up an E.164 phone number and reports its canonical
 	// JID and whether it's registered on WhatsApp. onWhatsApp is false (with a
