@@ -1833,6 +1833,9 @@ func (w *Whatsmeow) Statuses(limit int) ([]Message, error) {
 	out := make([]Message, len(rows))
 	for i, m := range rows {
 		out[i] = messageFromStore(m, selfJID)
+		// A status is posted from the sender's LID; the poster is the
+		// person, so name, avatar and "reply privately" want the number.
+		out[i].FromJID = w.canonicalChatJID(out[i].FromJID)
 	}
 	return out, nil
 }

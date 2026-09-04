@@ -120,3 +120,12 @@ func TestStatusFeedPosterSearchesEverySection(t *testing.T) {
 		t.Error("unknown poster must be nil")
 	}
 }
+
+func TestPosterNamesFallsBackToContacts(t *testing.T) {
+	c := client.NewFake()
+	msgs := []client.Message{{ID: "x", FromJID: "4445556666@s.whatsapp.net"}}
+	names := posterNames(c, msgs)
+	if got := names["4445556666@s.whatsapp.net"]; got == "" {
+		t.Fatalf("poster with no chat got no name; want the contacts table's")
+	}
+}
