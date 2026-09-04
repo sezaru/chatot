@@ -2,6 +2,8 @@ package ui
 
 import (
 	"log"
+	"strconv"
+	"strings"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
@@ -80,4 +82,31 @@ func (cl *ChatList) buildRailAccount(vm accountRowView) *gtk.Overlay {
 		overlay.SetMeasureOverlay(badge, false)
 	}
 	return overlay
+}
+
+// railSignature is what the rail draws that events can change: each
+// account's unread count. Cheap to compare on every list refresh.
+func (cl *ChatList) railSignature() string {
+	if cl.switcher == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, m := range cl.switcher.Accounts() {
+		b.WriteString(m.ID)
+		b.WriteByte(':')
+		b.WriteString(strconv.Itoa(m.Unread))
+		b.WriteByte(';')
+	}
+	return b.String()
+}
+
+// refreshRailBadges rebuilds the rail when an unread count moved; the
+// header refresh that accompanies an account switch rebuilds it anyway.
+func (cl *ChatList) refreshRailBadges() {
+	sig := cl.railSignature()
+	if sig == cl.railSig {
+		return
+	}
+	cl.railSig = sig
+	cl.refreshAccountRail()
 }

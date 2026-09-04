@@ -89,6 +89,14 @@ func decideNotify(in notifyInput) bool {
 	}
 }
 
+// NotificationText mirrors settings.NotificationText: whether a message
+// notification carries the message itself or only says one arrived.
+var NotificationText = true
+
+// hiddenNotificationBody stands in for the message when NotificationText
+// is off.
+const hiddenNotificationBody = "New message"
+
 // messageNotification builds the title/body for a message notification:
 // title is the chat's display name, body is the text preview or, for a
 // caption-less attachment, a "[kind]" placeholder.
@@ -175,6 +183,9 @@ func (n *Notifier) watchEvents() {
 func (n *Notifier) handleMessage(msg client.Message) {
 	name, muted := n.chatInfo(msg.ChatJID)
 	title, body := messageNotification(name, msg)
+	if !NotificationText {
+		body = hiddenNotificationBody
+	}
 	title = accountPrefixedTitle(title, n.accountPrefix())
 	glib.IdleAdd(func() {
 		focused, openJID := n.focused()

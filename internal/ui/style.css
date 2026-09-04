@@ -4222,3 +4222,19 @@ button.chatot-mention-row-sel {
 	background-color: alpha(#000000, 0.55);
 	color: #ffffff;
 }
+
+/* Preferences › Font size. The classes sit on the main window; the rules
+   rescale the chat list's name/preview and the message text only, so
+   headers, chips and menus keep the design's sizes. */
+.chatot-font-small .chatot-chat-name { font-size: 12.5px; }
+.chatot-font-small .chatot-chat-preview { font-size: 11.5px; }
+.chatot-font-small .chatot-bubble { font-size: 12.5px; }
+.chatot-font-large .chatot-chat-name { font-size: 15px; }
+.chatot-font-large .chatot-chat-preview { font-size: 14px; }
+.chatot-font-large .chatot-bubble { font-size: 15px; }
+
+/* Preferences › Network: the Host and Port fields sit inside a card row. */
+.chatot-pref-entry {
+	min-height: 28px;
+	font-size: 12.5px;
+}

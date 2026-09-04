@@ -2,11 +2,15 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
@@ -41,6 +45,27 @@ func ApplyTheme(theme string) {
 	adw.StyleManagerGetDefault().SetColorScheme(themeSchemes[themeIndex(theme)])
 }
 
+// PreferenceHooks are the app-level actions Preferences reaches for that
+// live outside the ui package: main.go fills it in once the window exists.
+type PreferenceHooks struct {
+	// ManageAccounts opens the Accounts card (the Account rail row).
+	ManageAccounts func()
+	// RefreshChatList rebuilds the sidebar rows after a preference that
+	// changes how they render.
+	RefreshChatList func()
+	// SetTrayVisible adds or removes the tray icon.
+	SetTrayVisible func(show bool)
+	// Toasts is the main window's toast overlay for short confirmations.
+	Toasts *adw.ToastOverlay
+	// LogFile is the capped log file's path, "" when none could be opened.
+	LogFile string
+}
+
+// Prefs is the live PreferenceHooks.
+var Prefs PreferenceHooks
+
+func prefToast(text string) { showToast(Prefs.Toasts, text) }
+
 // prefPages are the mockup's six Preferences tabs, in its order.
 var prefPages = []struct{ ID, Icon, Label string }{
 	{"appearance", "🎨", "Appearance"},
@@ -63,19 +88,22 @@ func ShowPreferences(parent *gtk.Window, s *settings.Settings, c client.Client, 
 	dialog := newCardDialog()
 	dialog.SetTitle("Preferences")
 	dialog.SetTransientFor(parent)
-	dialog.SetDefaultSize(720, 445)
+	dialog.SetDefaultSize(720, 447)
 
 	stack := gtk.NewStack()
 	stack.SetHExpand(true)
 	stack.SetVExpand(true)
+	// Pages differ in height; a homogeneous stack would size every page to
+	// the tallest and leave the scroller nothing to do.
+	stack.SetVhomogeneous(false)
 
 	build := map[string]func() gtk.Widgetter{
-		"appearance":    func() gtk.Widgetter { return prefAppearance(s, onChange) },
-		"notifications": func() gtk.Widgetter { return prefNotifications(s, onChange) },
+		"appearance":    func() gtk.Widgetter { return prefAppearance(parent, s, c, onChange) },
+		"notifications": func() gtk.Widgetter { return prefNotifications(dialog, s, onChange) },
 		"privacy":       func() gtk.Widgetter { return prefPrivacy(dialog, s, c, onChange) },
 		"network":       func() gtk.Widgetter { return prefNetwork(s, onChange) },
 		"shortcuts":     func() gtk.Widgetter { return prefShortcuts() },
-		"advanced":      func() gtk.Widgetter { return prefAdvanced() },
+		"advanced":      func() gtk.Widgetter { return prefAdvanced(dialog, s, c, onChange) },
 	}
 	for _, page := range prefPages {
 		scroller := gtk.NewScrolledWindow()
@@ -108,6 +136,10 @@ func newPrefNav(stack *gtk.Stack) gtk.Widgetter {
 	nav := gtk.NewBox(gtk.OrientationVertical, 2)
 	nav.AddCSSClass("chatot-pref-nav")
 	nav.SetSizeRequest(170, -1)
+	// The labels inside expand to fill their button; without pinning the
+	// rail's own expand flag that propagates up and the rail takes half the
+	// card.
+	nav.SetHExpand(false)
 
 	var buttons []*gtk.ToggleButton
 	sync := func() {
@@ -155,43 +187,110 @@ func prefPage(groups ...gtk.Widgetter) gtk.Widgetter {
 	return box
 }
 
-func prefAppearance(s *settings.Settings, onChange func(settings.Settings)) gtk.Widgetter {
-	card := newSettingsCard()
-
-	// A dropdown, not the mockup's click-to-cycle row: three states are more
-	// than a cycling affordance can communicate.
-	dropdown := gtk.NewDropDownFromStrings(themeOptions)
-	dropdown.SetSelected(themeIndex(s.Theme))
-	dropdown.NotifyProperty("selected", func() {
-		i := dropdown.Selected()
-		if int(i) >= len(themeValues) {
-			return
+// choiceRow is the mockup's "value ▾" row: clicking it drops a menu of
+// labels under the row and hands the pick's index to onPick, which
+// returns the new value text.
+func choiceRow(label, sub, value string, labels []string, onPick func(i int) string) gtk.Widgetter {
+	var row gtk.Widgetter
+	var valueLabel *gtk.Label
+	row, valueLabel = newValueRow(label, sub, value, func() {
+		items := make([]menuItem, 0, len(labels))
+		for i, l := range labels {
+			i := i
+			items = append(items, menuItem{Label: l, OnActivate: func() {
+				valueLabel.SetText(onPick(i) + " ▾")
+			}})
 		}
+		popupMenuBelow(row, items)
+	})
+	return row
+}
+
+func prefAppearance(parent *gtk.Window, s *settings.Settings, c client.Client, onChange func(settings.Settings)) gtk.Widgetter {
+	theme := newSettingsCard()
+	theme.Add(choiceRow("Colour scheme", "", themeOptions[themeIndex(s.Theme)], themeOptions, func(i int) string {
 		s.Theme = themeValues[i]
 		ApplyTheme(s.Theme)
 		onChange(*s)
-	})
-	card.Add(dropdownRow("Colour scheme", dropdown))
+		return themeOptions[i]
+	}))
+	controls, _ := newSwitchRow("Show window controls",
+		"Hides minimize, maximize and close when off",
+		s.ShowWindowControls, func(on bool) {
+			s.ShowWindowControls = on
+			ApplyWindowControls(on)
+			onChange(*s)
+		})
+	theme.Add(controls)
+	linked := "1 linked"
+	if am, ok := c.(*client.AccountManager); ok {
+		linked = fmt.Sprintf("%d linked", am.Count())
+	}
+	theme.Add(newActionRow("Account rail",
+		"Shown automatically while more than one account is linked",
+		linked, false, Prefs.ManageAccounts))
 
-	return prefPage(newSettingsGroup("THEME", card))
+	list := newSettingsCard()
+	list.Add(choiceRow("Font size", "", fontSizeLabel(s.FontSize), []string{"Small", "Default", "Large"}, func(i int) string {
+		s.FontSize = settings.FontSizes[i]
+		if parent != nil {
+			ApplyFontSize(parent, s.FontSize)
+		}
+		onChange(*s)
+		return fontSizeLabel(s.FontSize)
+	}))
+	previews, _ := newSwitchRow("Show message previews", "", s.ShowMessagePreviews, func(on bool) {
+		s.ShowMessagePreviews = on
+		ShowMessagePreviews = on
+		if Prefs.RefreshChatList != nil {
+			Prefs.RefreshChatList()
+		}
+		onChange(*s)
+	})
+	list.Add(previews)
+
+	return prefPage(
+		newSettingsGroup("THEME", theme),
+		newSettingsGroup("CHAT LIST", list),
+	)
 }
 
-func prefNotifications(s *settings.Settings, onChange func(settings.Settings)) gtk.Widgetter {
+// soundSourceText describes where the chime comes from, for the Sound
+// file row's subtitle.
+func soundSourceText(path, source string) string {
+	switch source {
+	case soundSourceCustom:
+		return filepath.Base(path)
+	case soundSourceDropIn:
+		return "Drop-in file " + filepath.Base(path)
+	case soundSourcePackage:
+		return "Packaged default: " + filepath.Base(path)
+	}
+	return "Built-in chime"
+}
+
+func prefNotifications(dialog *cardDialog, s *settings.Settings, onChange func(settings.Settings)) gtk.Widgetter {
 	alerts := newSettingsCard()
+	sound, _ := newSwitchRow("Play sound", "", s.NotificationSound, func(on bool) {
+		s.NotificationSound = on
+		NotificationSound = on
+		onChange(*s)
+	})
+	alerts.Add(sound)
 	desktop, _ := newSwitchRow("Desktop notifications", "", s.ShowNotifications, func(on bool) {
 		s.ShowNotifications = on
 		NotificationsEnabled = on
 		onChange(*s)
 	})
 	alerts.Add(desktop)
-	sound, _ := newSwitchRow("Notification sound",
-		"Plays a chime with each notification",
-		s.NotificationSound, func(on bool) {
-			s.NotificationSound = on
-			NotificationSound = on
+	text, _ := newSwitchRow("Show message text in notifications",
+		"Off shows only that a message arrived",
+		s.NotificationText, func(on bool) {
+			s.NotificationText = on
+			NotificationText = on
 			onChange(*s)
 		})
-	alerts.Add(sound)
+	alerts.Add(text)
 	perAccount, _ := newSwitchRow("Label notifications by account",
 		"Prefixes each notification with the account it arrived on",
 		s.NotificationsPerAccount, func(on bool) {
@@ -201,7 +300,96 @@ func prefNotifications(s *settings.Settings, onChange func(settings.Settings)) g
 		})
 	alerts.Add(perAccount)
 
-	return prefPage(newSettingsGroup("ALERTS", alerts))
+	// The chime itself: pick any audio file (MP3 included; it is transcoded
+	// before GTK sees it), hear it, or go back to the default.
+	chime := newSettingsCard()
+	var sourceSub *gtk.Label
+	var resetRow gtk.Widgetter
+	refreshSource := func() {
+		path, source := currentNotificationSound()
+		sourceSub.SetText(soundSourceText(path, source))
+		gtk.BaseWidget(resetRow).SetSensitive(s.NotificationSoundFile != "")
+	}
+	setSound := func(path string) {
+		s.NotificationSoundFile = path
+		NotificationSoundFile = path
+		onChange(*s)
+		refreshSource()
+	}
+	fileRow, _ := newActionRowLabel("Sound file", "", "Choose…", false, func() {
+		pickSoundFile(dialog.Window(), func(path string) {
+			setSound(path)
+			playSoundFile(path, func(err error) {
+				prefToast("Couldn't play that file: " + err.Error())
+				setSound("")
+			})
+		})
+	})
+	// The subtitle is filled by refreshSource; reach it through the row.
+	sourceSub = rowSubLabel(fileRow)
+	chime.Add(fileRow)
+	chime.Add(newActionRow("Preview", "", "Play", false, func() { playNotificationSound() }))
+	resetRow = newActionRow("Use the default sound", "", "Reset", false, func() { setSound("") })
+	chime.Add(resetRow)
+	refreshSource()
+
+	tray := newSettingsCard()
+	show, _ := newSwitchRow("Show tray icon", "Tooltip shows the unread count", s.ShowTrayIcon, func(on bool) {
+		s.ShowTrayIcon = on
+		if Prefs.SetTrayVisible != nil {
+			Prefs.SetTrayVisible(on)
+		}
+		onChange(*s)
+	})
+	tray.Add(show)
+	closeTo, _ := newSwitchRow("Close to tray", "Closing the window keeps chatot running", s.CloseToTray, func(on bool) {
+		s.CloseToTray = on
+		onChange(*s)
+	})
+	tray.Add(closeTo)
+
+	return prefPage(
+		newSettingsGroup("ALERTS", alerts),
+		newSettingsGroup("SOUND", chime),
+		newSettingsGroup("TRAY", tray),
+	)
+}
+
+// rowSubLabel adds an (initially empty) subtitle to a row built without one
+// and returns it. Rows are a button around a box whose first child is the
+// label column.
+func rowSubLabel(row gtk.Widgetter) *gtk.Label {
+	sub := gtk.NewLabel("")
+	sub.SetXAlign(0)
+	sub.SetWrap(true)
+	sub.AddCSSClass("chatot-card-sub")
+	if btn, ok := row.(*gtk.Button); ok {
+		if box, ok := btn.Child().(*gtk.Box); ok {
+			if col, ok := box.FirstChild().(*gtk.Box); ok {
+				col.Append(sub)
+			}
+		}
+	}
+	return sub
+}
+
+// pickSoundFile opens an audio chooser and hands back the pick.
+func pickSoundFile(parent *gtk.Window, onPicked func(path string)) {
+	fd := gtk.NewFileDialog()
+	fd.SetTitle("Choose a notification sound")
+	filter := gtk.NewFileFilter()
+	filter.SetName("Audio")
+	filter.AddMIMEType("audio/*")
+	filters := gio.NewListStore(glib.TypeObject)
+	filters.Append(filter.Object)
+	fd.SetFilters(filters)
+	fd.Open(context.Background(), parent, func(res gio.AsyncResulter) {
+		file, err := fd.OpenFinish(res)
+		if err != nil || file == nil {
+			return
+		}
+		onPicked(file.Path())
+	})
 }
 
 func prefPrivacy(dialog *cardDialog, s *settings.Settings, c client.Client, onChange func(settings.Settings)) gtk.Widgetter {
@@ -232,9 +420,19 @@ func prefPrivacy(dialog *cardDialog, s *settings.Settings, c client.Client, onCh
 	location.Add(locRow)
 
 	security := newSettingsCard()
-	security.Add(newActionRow("Blocked contacts", "", "View", false, func() {
+	blockedRow, blockedWord := newActionRowLabel("Blocked contacts", "", "View", false, func() {
 		showBlockedDialog(dialog.Window(), c)
-	}))
+	})
+	security.Add(blockedRow)
+	go func() {
+		list, err := c.Blocklist(context.Background())
+		glib.IdleAdd(func() {
+			if err != nil || blockedWord.Root() == nil {
+				return
+			}
+			blockedWord.SetText(fmt.Sprintf("%d blocked", len(list)))
+		})
+	}()
 
 	// The account's WhatsApp privacy settings (last seen, profile photo…)
 	// come from the phone, so the group fills in once they arrive rather
@@ -273,23 +471,91 @@ func prefPrivacy(dialog *cardDialog, s *settings.Settings, c client.Client, onCh
 	)
 }
 
-func prefNetwork(s *settings.Settings, onChange func(settings.Settings)) gtk.Widgetter {
-	proxy := newSettingsCard()
-
+// entryRow is a card row whose trailing control is a text field.
+func entryRow(label, sub string, entry *gtk.Entry, width int) gtk.Widgetter {
 	row := gtk.NewBox(gtk.OrientationHorizontal, 12)
 	row.AddCSSClass("chatot-card-row")
-	row.Append(settingsRowBody("Proxy URL", "socks5:// or http:// — applied on next launch"))
-	entry := gtk.NewEntry()
-	entry.SetText(s.Proxy)
-	entry.SetPlaceholderText("Direct connection")
+	row.Append(settingsRowBody(label, sub))
+	entry.AddCSSClass("chatot-pref-entry")
 	entry.SetVAlign(gtk.AlignCenter)
-	entry.SetSizeRequest(220, -1)
-	entry.ConnectChanged(func() {
-		s.Proxy = entry.Text()
-		onChange(*s)
-	})
+	entry.SetSizeRequest(width, -1)
 	row.Append(entry)
-	proxy.Add(row)
+	return row
+}
+
+func prefNetwork(s *settings.Settings, onChange func(settings.Settings)) gtk.Widgetter {
+	// The proxy is edited as type, host and port (the mockup's rows) but
+	// stored as the one URL whatsmeow reads at startup.
+	scheme, host, port := proxyParts(s.Proxy)
+	hostEntry := gtk.NewEntry()
+	hostEntry.SetText(host)
+	hostEntry.SetPlaceholderText("127.0.0.1")
+	portEntry := gtk.NewEntry()
+	portEntry.SetText(port)
+	portEntry.SetPlaceholderText("9050")
+	portEntry.SetInputPurpose(gtk.InputPurposeDigits)
+	setSensitive := func() {
+		hostEntry.SetSensitive(scheme != "")
+		portEntry.SetSensitive(scheme != "")
+	}
+	store := func() {
+		s.Proxy = proxyURL(scheme, hostEntry.Text(), portEntry.Text())
+		onChange(*s)
+	}
+	labels := make([]string, len(proxyTypes))
+	for i, t := range proxyTypes {
+		labels[i] = t.Label
+	}
+	proxy := newSettingsCard()
+	proxy.Add(choiceRow("Proxy type", "Applied on the next launch", proxyTypeLabel(scheme), labels, func(i int) string {
+		scheme = proxyTypes[i].Scheme
+		setSensitive()
+		store()
+		return proxyTypes[i].Label
+	}))
+	proxy.Add(entryRow("Host", "", hostEntry, 200))
+	proxy.Add(entryRow("Port", "", portEntry, 90))
+	hostEntry.ConnectChanged(store)
+	portEntry.ConnectChanged(store)
+	setSensitive()
+
+	var testWord *gtk.Label
+	testRow, word := newActionRowLabel("Connection",
+		"Reaches the proxy, or WhatsApp directly with none", "Test", false, func() {
+			testWord.SetText("Testing…")
+			url := proxyURL(scheme, hostEntry.Text(), portEntry.Text())
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+				defer cancel()
+				d, err := testProxy(ctx, url)
+				glib.IdleAdd(func() {
+					if testWord.Root() == nil {
+						return
+					}
+					if err != nil {
+						testWord.SetText("Unreachable · Test again")
+						prefToast("Connection test failed: " + err.Error())
+						return
+					}
+					testWord.SetText(fmt.Sprintf("Reachable · %d ms", d.Milliseconds()))
+				})
+			}()
+		})
+	testWord = word
+	proxy.Add(testRow)
+
+	media := newSettingsCard()
+	modes := make([]string, len(settings.AutoDownloadModes))
+	for i, m := range settings.AutoDownloadModes {
+		modes[i] = autoDownloadLabel(m)
+	}
+	media.Add(choiceRow("Auto-download", "Media from the last 7 days; older waits for a click",
+		autoDownloadLabel(s.AutoDownload), modes, func(i int) string {
+			s.AutoDownload = settings.AutoDownloadModes[i]
+			AutoDownload = s.AutoDownload
+			onChange(*s)
+			return autoDownloadLabel(s.AutoDownload)
+		}))
 
 	accounts := newSettingsCard()
 	keep, _ := newSwitchRow("Keep inactive accounts connected",
@@ -302,37 +568,111 @@ func prefNetwork(s *settings.Settings, onChange func(settings.Settings)) gtk.Wid
 
 	return prefPage(
 		newSettingsGroup("PROXY", proxy),
+		newSettingsGroup("MEDIA", media),
 		newSettingsGroup("ACCOUNTS", accounts),
 	)
 }
 
 func prefShortcuts() gtk.Widgetter {
-	card := newSettingsCard()
-	for _, sc := range appShortcuts() {
-		row := gtk.NewBox(gtk.OrientationHorizontal, 12)
-		row.AddCSSClass("chatot-card-row")
-		row.Append(settingsRowBody(sc.Action, ""))
-		keys := gtk.NewLabel(sc.Keys)
-		keys.AddCSSClass("chatot-menu-accel")
-		keys.SetVAlign(gtk.AlignCenter)
-		row.Append(keys)
-		card.Add(row)
+	var groups []gtk.Widgetter
+	for i, rows := range shortcutsByGroup() {
+		card := newSettingsCard()
+		for _, sc := range rows {
+			row := gtk.NewBox(gtk.OrientationHorizontal, 12)
+			row.AddCSSClass("chatot-card-row")
+			row.Append(settingsRowBody(sc.Action, ""))
+			keys := gtk.NewLabel(sc.Keys)
+			keys.AddCSSClass("chatot-menu-accel")
+			keys.SetVAlign(gtk.AlignCenter)
+			row.Append(keys)
+			card.Add(row)
+		}
+		groups = append(groups, newSettingsGroup(strings.ToUpper(shortcutGroups[i]), card))
 	}
-	return prefPage(newSettingsGroup("KEYBOARD", card))
+	return prefPage(groups...)
 }
 
-func prefAdvanced() gtk.Widgetter {
-	card := newSettingsCard()
+func prefAdvanced(dialog *cardDialog, s *settings.Settings, c client.Client, onChange func(settings.Settings)) gtk.Widgetter {
+	storage := newSettingsCard()
 
+	cache := cacheDir()
+	var cacheWord *gtk.Label
+	cacheRow, word := newActionRowLabel("Media cache", cache, "", false, func() {
+		if err := clearDir(cache); err != nil {
+			prefToast("Couldn't clear the cache: " + err.Error())
+		}
+		cacheWord.SetText(humanSize(dirSize(cache)) + " · Clear")
+	})
+	cacheWord = word
+	cacheWord.SetText(humanSize(dirSize(cache)) + " · Clear")
+	storage.Add(cacheRow)
+
+	if si, ok := c.(client.StorageInfo); ok {
+		if dir := si.MediaDir(); dir != "" {
+			storage.Add(newActionRow("Downloaded media", dir, humanSize(dirSize(dir))+" · Open", false, func() {
+				openFile(dir)
+			}))
+		}
+		storage.Add(newActionRow("Message database", humanSize(si.DatabaseSize()), "Export", false, func() {
+			exportDatabase(dialog.Window(), si)
+		}))
+	}
+
+	debug := newSettingsCard()
+	verbose, _ := newSwitchRow("Verbose logging", "WhatsApp protocol detail in the log", s.VerboseLogging, func(on bool) {
+		s.VerboseLogging = on
+		client.SetVerboseLogging(on)
+		onChange(*s)
+	})
+	debug.Add(verbose)
+	var openLog func()
+	if Prefs.LogFile != "" {
+		openLog = func() { openFile(Prefs.LogFile) }
+	}
+	debug.Add(newActionRow("Log file", Prefs.LogFile, "Open", false, openLog))
+
+	files := newSettingsCard()
 	stateDir := chatotStateDir()
-	card.Add(newActionRow("Application data", stateDir, "Open", stateDir == "", func() {
+	files.Add(newActionRow("Application data", stateDir, "Open", stateDir == "", func() {
 		openFile(stateDir)
 	}))
-	card.Add(newActionRow("Settings file", filepath.Join(settings.Dir(), "settings.json"), "Open", false, func() {
+	files.Add(newActionRow("Settings file", filepath.Join(settings.Dir(), "settings.json"), "Open", false, func() {
 		openFile(settings.Dir())
 	}))
 
-	return prefPage(newSettingsGroup("STORAGE", card))
+	return prefPage(
+		newSettingsGroup("STORAGE", storage),
+		newSettingsGroup("DEBUG", debug),
+		newSettingsGroup("FILES", files),
+	)
+}
+
+// exportDatabase asks where to save a copy of the message database and
+// writes it there off the main loop.
+func exportDatabase(parent *gtk.Window, si client.StorageInfo) {
+	fd := gtk.NewFileDialog()
+	fd.SetTitle("Export message database")
+	fd.SetInitialName("chatot-" + time.Now().Format("2006-01-02") + ".db")
+	fd.Save(context.Background(), parent, func(res gio.AsyncResulter) {
+		file, err := fd.SaveFinish(res)
+		if err != nil || file == nil {
+			return
+		}
+		path := file.Path()
+		go func() {
+			// VACUUM INTO refuses to overwrite; the chooser already asked.
+			os.Remove(path)
+			err := si.BackupDatabase(context.Background(), path)
+			glib.IdleAdd(func() {
+				if err != nil {
+					log.Printf("chatot: export database: %v", err)
+					prefToast("Export failed: " + err.Error())
+					return
+				}
+				prefToast("Database exported to " + path)
+			})
+		}()
+	})
 }
 
 // chatotStateDir mirrors main.go's state-dir resolution so the Advanced page

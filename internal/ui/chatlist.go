@@ -121,6 +121,8 @@ type ChatList struct {
 	list   *gtk.ListBox
 	// listScroller is the scrolled window around list.
 	listScroller *gtk.ScrolledWindow
+	searchEntry  *gtk.SearchEntry
+	railSig      string
 	// rows are the reconciled chat rows by key (jid, or account|jid when
 	// merged) and listKind says which mode built them; see chatlist_rows.go.
 	rows     map[string]*rowEntry
@@ -262,14 +264,7 @@ func NewChatList(c client.Client) *ChatList {
 	// usual "…:minimize,maximize,close", populated for a left-hand layout.
 	headerBox := gtk.NewBox(gtk.OrientationHorizontal, 6)
 	headerBox.AddCSSClass("chatot-account-row")
-	startControls := gtk.NewWindowControls(gtk.PackStart)
-	startControls.SetVAlign(gtk.AlignCenter)
-	// An empty controls widget would still cost the row's box spacing, and
-	// a negative CSS margin to cancel that makes GTK warn about a negative
-	// minimum width: hide it instead.
-	hideEmptyControls := func() { startControls.SetVisible(!startControls.Empty()) }
-	hideEmptyControls()
-	startControls.NotifyProperty("empty", hideEmptyControls)
+	startControls := newWindowControls(gtk.PackStart)
 	headerBox.Append(startControls)
 
 	accountAvatar := gtk.NewLabel("S")
@@ -473,7 +468,8 @@ func NewChatList(c client.Client) *ChatList {
 	listCol.Append(listScroller)
 
 	cl := &ChatList{
-		Box: root, c: c, events: c.Events(), list: list, listScroller: listScroller,
+		searchEntry: search,
+		Box:         root, c: c, events: c.Events(), list: list, listScroller: listScroller,
 		syncBanner: syncBanner, syncLabel: syncLabel, syncBar: syncBar,
 		composingJIDs: make(map[string]string), composingGen: make(map[string]int), names: make(map[string]string), avatarCache: newAvatarCache(),
 		chipRow: chipRow, chipScroller: chipScroller, rail: rail,
@@ -791,6 +787,7 @@ func (cl *ChatList) refresh() {
 		cl.refreshChats(chats)
 	}
 	cl.updateTabBadges(chats)
+	cl.refreshRailBadges()
 }
 
 func (cl *ChatList) refreshChats(chats []client.Chat) {
@@ -1313,7 +1310,11 @@ func buildChatRow(c client.Client, cache *avatarCache, vm chatRowView) *gtk.Box 
 	// Single line, ellipsized. MaxWidthChars(1) keeps the label's natural
 	// width tiny so a long message can't stretch the row wider than the
 	// sidebar; HExpand lets it fill whatever width the sidebar does give.
-	previewLabel := gtk.NewLabel(vm.Preview)
+	previewText := vm.Preview
+	if !ShowMessagePreviews && !vm.Typing {
+		previewText = ""
+	}
+	previewLabel := gtk.NewLabel(previewText)
 	previewLabel.SetXAlign(0)
 	// SingleLineMode as well as Ellipsize: Pango ellipsizes per line, so a
 	// preview holding a newline still rendered as two lines and grew the row.

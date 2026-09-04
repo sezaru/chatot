@@ -116,7 +116,7 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 		return nil, fmt.Errorf("chatot/client: create state dir: %w", err)
 	}
 
-	dbLog := waLog.Stdout("Database", "ERROR", false)
+	dbLog := newLogger("Database")
 	dbPath := filepath.Join(stateDir, "session.db")
 	dsn := fmt.Sprintf("file:%s?_foreign_keys=on", dbPath)
 	container, err := sqlstore.New(context.Background(), "sqlite3", dsn, dbLog)
@@ -138,7 +138,7 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 		return nil, fmt.Errorf("chatot/client: open message store: %w", err)
 	}
 
-	clientLog := waLog.Stdout("Client", "ERROR", false)
+	clientLog := newLogger("Client")
 	announceDevice()
 
 	avatarDir := filepath.Join(stateDir, "avatars")

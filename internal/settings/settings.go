@@ -35,7 +35,40 @@ type Settings struct {
 	// the app does it: the system sound theme's "message-new-instant" when a
 	// theme is installed, otherwise a built-in chime.
 	NotificationSound bool `json:"notificationSound"`
+	// NotificationSoundFile is the audio file the chime plays instead of the
+	// default; "" keeps the default (the CHATOT_NOTIFY_SOUND file a package
+	// wires in, else the built-in chime).
+	NotificationSoundFile string `json:"notificationSoundFile"`
+	// NotificationText puts the message text in the notification body; off
+	// shows only that a message arrived, for shared or locked screens.
+	NotificationText bool `json:"notificationText"`
+	// ShowTrayIcon keeps a StatusNotifierItem in the desktop's tray.
+	ShowTrayIcon bool `json:"showTrayIcon"`
+	// CloseToTray makes closing the window hide it (the tray brings it
+	// back); off quits. Only honoured while the tray icon is shown.
+	CloseToTray bool `json:"closeToTray"`
+	// ShowWindowControls draws the minimize/maximize/close buttons the
+	// desktop's gtk-decoration-layout asks for; off hides them all.
+	ShowWindowControls bool `json:"showWindowControls"`
+	// FontSize scales the chat list and message text: "small", "default"
+	// or "large".
+	FontSize string `json:"fontSize"`
+	// ShowMessagePreviews puts the last message under each chat's name in
+	// the list; off leaves the name alone.
+	ShowMessagePreviews bool `json:"showMessagePreviews"`
+	// AutoDownload picks which incoming media is fetched as soon as it is
+	// shown: "always", "photos" (photos, stickers and voice notes) or
+	// "never" (everything waits for a click).
+	AutoDownload string `json:"autoDownload"`
+	// VerboseLogging turns on whatsmeow's info and debug lines in the log.
+	VerboseLogging bool `json:"verboseLogging"`
 }
+
+// FontSizes lists the FontSize values in display order.
+var FontSizes = []string{"small", "default", "large"}
+
+// AutoDownloadModes lists the AutoDownload values in display order.
+var AutoDownloadModes = []string{"always", "photos", "never"}
 
 // Default returns the preferences a fresh install starts with: chatot
 // matches WhatsApp's own defaults (read receipts on, as the mockup's Privacy
@@ -50,6 +83,13 @@ func Default() Settings {
 		KeepInactiveConnected:   true,
 		LocationAccess:          true,
 		NotificationSound:       true,
+		NotificationText:        true,
+		ShowTrayIcon:            true,
+		CloseToTray:             true,
+		ShowWindowControls:      true,
+		FontSize:                "default",
+		ShowMessagePreviews:     true,
+		AutoDownload:            "photos",
 	}
 }
 
@@ -68,7 +108,7 @@ func Load(dir string) Settings {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return Default()
 	}
-	return s
+	return normalize(s)
 }
 
 // Save writes s to dir/settings.json as indented JSON, creating dir if
@@ -94,4 +134,26 @@ func Dir() string {
 		return filepath.Join(".config", "chatot")
 	}
 	return filepath.Join(home, ".config", "chatot")
+}
+
+// normalize replaces enum-valued fields that hold something the app does
+// not know (an older file, a hand edit) with their defaults, so callers can
+// switch on them without a fallback arm.
+func normalize(s Settings) Settings {
+	if !contains(FontSizes, s.FontSize) {
+		s.FontSize = Default().FontSize
+	}
+	if !contains(AutoDownloadModes, s.AutoDownload) {
+		s.AutoDownload = Default().AutoDownload
+	}
+	return s
+}
+
+func contains(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }

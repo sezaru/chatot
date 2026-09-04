@@ -293,6 +293,7 @@ func buildAttachmentTile(mv *mediaView, msg client.Message, c client.Client, slo
 	click := gtk.NewGestureClick()
 	click.ConnectReleased(func(int, float64, float64) { downloadAndSwap(mv, msg, c, slot, overlay, circle, open) })
 	overlay.AddController(click)
+	maybeAutoDownload(func() { downloadAndSwap(mv, msg, c, slot, overlay, circle, open) }, mv.Kind, msg.TS)
 	return overlay
 }
 
@@ -323,6 +324,7 @@ func buildMediaRow(mv *mediaView, msg client.Message, c client.Client, slot *gtk
 	click := gtk.NewGestureClick()
 	click.ConnectReleased(func(int, float64, float64) { downloadAndSwap(mv, msg, c, slot, row, circle, open) })
 	row.AddController(click)
+	maybeAutoDownload(func() { downloadAndSwap(mv, msg, c, slot, row, circle, open) }, mv.Kind, msg.TS)
 	return row
 }
 

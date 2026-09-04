@@ -122,6 +122,13 @@ func newValueRow(label, sub, value string, onClick func()) (gtk.Widgetter, *gtk.
 // newActionRow is a row whose trailing element is an accent-coloured action
 // word ("Choose…", "Unlink"), the mockup's isButton variant.
 func newActionRow(label, sub, action string, destructive bool, onClick func()) gtk.Widgetter {
+	row, _ := newActionRowLabel(label, sub, action, destructive, onClick)
+	return row
+}
+
+// newActionRowLabel is newActionRow that also hands back the action word,
+// for rows whose word changes ("2 blocked", "1.4 GB · Clear").
+func newActionRowLabel(label, sub, action string, destructive bool, onClick func()) (gtk.Widgetter, *gtk.Label) {
 	row := gtk.NewBox(gtk.OrientationHorizontal, 12)
 	row.Append(settingsRowBody(label, sub))
 
@@ -141,7 +148,7 @@ func newActionRow(label, sub, action string, destructive bool, onClick func()) g
 	if onClick != nil {
 		btn.ConnectClicked(onClick)
 	}
-	return btn
+	return btn, word
 }
 
 // newIconRow is the Contact-info variant: a 16px glyph column, the label, and
