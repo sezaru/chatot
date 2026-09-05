@@ -62,7 +62,17 @@ type Settings struct {
 	AutoDownload string `json:"autoDownload"`
 	// VerboseLogging turns on whatsmeow's info and debug lines in the log.
 	VerboseLogging bool `json:"verboseLogging"`
+	// GIFService is the GIF search the picker uses: "giphy" (the default;
+	// free app keys) or "tenor" (for a key issued before Tenor stopped
+	// giving them out in January 2026).
+	GIFService string `json:"gifService"`
+	// GIFAPIKey is that service's API key; "" leaves the GIF tab explaining
+	// how to get one.
+	GIFAPIKey string `json:"gifApiKey"`
 }
+
+// GIFServices lists the GIFService values in display order.
+var GIFServices = []string{"giphy", "tenor"}
 
 // FontSizes lists the FontSize values in display order.
 var FontSizes = []string{"small", "default", "large"}
@@ -90,6 +100,7 @@ func Default() Settings {
 		FontSize:                "default",
 		ShowMessagePreviews:     true,
 		AutoDownload:            "photos",
+		GIFService:              "giphy",
 	}
 }
 

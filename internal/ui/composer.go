@@ -561,7 +561,7 @@ func NewComposer(c client.Client) *Composer {
 		recordTrace:    recordTrace,
 		recordPause:    recordPause,
 		sendBtn:        sendBtn,
-		gifProvider:    unconfiguredGIFProvider{},
+		gifProvider:    settingsProvider{},
 		typing:         newTypingModel(typingDebounce),
 		stickerRecents: newStickerRecents(stickerRecentsCap),
 	}
@@ -1048,9 +1048,42 @@ func (c *Composer) showPicker(page string) {
 	c.pickerPopover.Popup()
 }
 
-// onGIFChosen would send the picked GIF; unwired until a real GIFProvider
-// exists to source a SendURL from (see GIFProvider in gif.go).
-func (c *Composer) onGIFChosen(GIFResult) {}
+// onGIFChosen sends the picked GIF to the active chat: its mp4 is fetched
+// into the cache and goes out as a looping video, which is what a GIF is
+// on WhatsApp.
+func (c *Composer) onGIFChosen(r GIFResult) {
+	jid := c.state.jid
+	if jid == "" || r.SendURL == "" {
+		return
+	}
+	if c.pickerPopover != nil {
+		c.pickerPopover.Popdown()
+	}
+	go func() {
+		path, err := fetchGIFFile(context.Background(), r.SendURL, ".mp4")
+		if err != nil {
+			log.Printf("chatot: fetch gif: %v", err)
+			return
+		}
+		att := client.Attachment{
+			Kind: "video", MimeType: "video/mp4", LocalPath: path, Filename: filepath.Base(path),
+			IsGIF: true, Width: r.Width, Height: r.Height,
+		}
+		id, err := c.c.SendMedia(context.Background(), jid, att, nil)
+		if err != nil {
+			log.Printf("chatot: send gif failed: %v", err)
+			return
+		}
+		if c.onSent == nil {
+			return
+		}
+		msg := client.Message{
+			ID: id, ChatJID: jid, FromMe: true, TS: time.Now().Unix(),
+			Attachment: &client.Attachment{Kind: "video", MimeType: "video/mp4", LocalPath: path, IsGIF: true, Width: r.Width, Height: r.Height},
+		}
+		glib.IdleAdd(func() { c.onSent(msg) })
+	}()
+}
 
 // pickAttachment opens a file-choose dialog (filtered to images/videos when
 // filter is non-nil) and, on a picked file, hands off to sendMedia. No-ops if
