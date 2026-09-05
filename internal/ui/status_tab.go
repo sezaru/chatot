@@ -771,9 +771,13 @@ func newStatusPane(cl *ChatList) *StatusPane {
 
 	p.footer = gtk.NewStack()
 	p.footer.AddCSSClass("chatot-status-footer")
+	// A stack is homogeneous by default, which would stretch the reply row
+	// to the "Viewed by" button's height and the entry with it.
+	p.footer.SetVhomogeneous(false)
 	replyRow := gtk.NewBox(gtk.OrientationHorizontal, 8)
 	p.reply = gtk.NewEntry()
 	p.reply.SetHExpand(true)
+	p.reply.SetVAlign(gtk.AlignCenter)
 	p.reply.AddCSSClass("chatot-status-reply")
 	p.reply.ConnectActivate(p.sendReply)
 	// Typing a reply holds the clock, as WhatsApp does; the hold lifts when
