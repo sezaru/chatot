@@ -54,6 +54,11 @@ type Whatsmeow struct {
 	wa        *whatsmeow.Client
 	mediaDir  string
 	avatarDir string
+	// stickerDir holds the sticker library (see stickers.go).
+	stickerDir string
+	// stickerFetch downloads a favourite sticker; nil means the media
+	// servers (tests set it).
+	stickerFetch stickerFetcher
 
 	events  *eventBus
 	qrCodes chan string
@@ -147,15 +152,16 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 	}
 
 	w := &Whatsmeow{
-		log:       clientLog,
-		container: container,
-		device:    device,
-		store:     msgStore,
-		mediaDir:  filepath.Join(stateDir, "media"),
-		avatarDir: avatarDir,
-		events:    newEventBus(clientLog.Warnf),
-		qrCodes:   make(chan string, 8),
-		blocked:   make(map[string]bool),
+		log:        clientLog,
+		container:  container,
+		device:     device,
+		store:      msgStore,
+		mediaDir:   filepath.Join(stateDir, "media"),
+		avatarDir:  avatarDir,
+		stickerDir: filepath.Join(stateDir, "stickers"),
+		events:     newEventBus(clientLog.Warnf),
+		qrCodes:    make(chan string, 8),
+		blocked:    make(map[string]bool),
 	}
 	// Chats written before LID DMs were filed under their number.
 	w.wa = w.newWAClient(device)
@@ -188,6 +194,9 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 		w.learnFromMessage(&v.Info)
 	}
 	if w.handleContactEvent(evt) {
+		return
+	}
+	if as, ok := evt.(*events.AppState); ok && w.handleStickerAppState(as) {
 		return
 	}
 	if hs, ok := evt.(*events.HistorySync); ok {
@@ -368,7 +377,9 @@ const syncWindowFallback = 90 * time.Second
 // phone already held before this build reaches the local store.
 // v2: chats are keyed by phone number since LID chats merged, so the
 // phone's read state is replayed once more onto the rows that now count.
-const appStateResyncKey = "appstate_full_resync_v2"
+// v3: favourite stickers are kept now (see stickers.go), so the phone's
+// existing favourites are pulled once.
+const appStateResyncKey = "appstate_full_resync_v3"
 
 // unreadRepairKey marks a store whose unread counts were capped once (see
 // store.RepairUnreadCounts) after LID chats merged into their number chats.
@@ -1563,6 +1574,7 @@ func (w *Whatsmeow) SendSticker(ctx context.Context, jid, path string) (string, 
 	if err != nil {
 		return "", fmt.Errorf("chatot/client: send sticker: read file: %w", err)
 	}
+	w.touchSticker(path)
 
 	mimeType := stickerMimetype
 	if sniffed := http.DetectContentType(data); sniffed != "image/webp" && sniffed != "application/octet-stream" {

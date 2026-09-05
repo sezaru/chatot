@@ -29,6 +29,8 @@ type Fake struct {
 	loggedIn bool
 	// markReads records MarkRead calls for tests (see MarkReadCalls).
 	markReads []MarkReadCall
+	// stickers is the picker library, most recent first.
+	stickers []Sticker
 	// pairing marks a demo account that never links: Start emits a demo QR
 	// instead of flipping loggedIn, so the add-account and relink dialogs
 	// have a code to render in CHATOT_FAKE=1 builds.
@@ -1715,4 +1717,39 @@ func withReaction(reactions map[string][]string, reactor, emoji string) map[stri
 	}
 	reactions[emoji] = append(reactions[emoji], reactor)
 	return reactions
+}
+
+// Stickers is the Fake's in-memory sticker library, most recent first.
+func (f *Fake) Stickers() ([]Sticker, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]Sticker(nil), f.stickers...), nil
+}
+
+// AddSticker records path as a library entry keyed by the path itself.
+func (f *Fake) AddSticker(path string) (Sticker, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	st := Sticker{Key: "file:" + path, Path: path}
+	for i, s := range f.stickers {
+		if s.Key == st.Key {
+			f.stickers = append(f.stickers[:i], f.stickers[i+1:]...)
+			break
+		}
+	}
+	f.stickers = append([]Sticker{st}, f.stickers...)
+	return st, nil
+}
+
+// RemoveSticker drops the entry with key.
+func (f *Fake) RemoveSticker(ctx context.Context, key string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, s := range f.stickers {
+		if s.Key == key {
+			f.stickers = append(f.stickers[:i], f.stickers[i+1:]...)
+			return nil
+		}
+	}
+	return nil
 }
