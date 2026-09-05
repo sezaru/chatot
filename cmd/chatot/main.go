@@ -797,6 +797,8 @@ func applySettings(s settings.Settings) {
 	ui.ShowWindowControls = s.ShowWindowControls
 	ui.ShowMessagePreviews = s.ShowMessagePreviews
 	ui.AutoDownload = s.AutoDownload
+	ui.GIFService = s.GIFService
+	ui.GIFAPIKey = s.GIFAPIKey
 	client.SetVerboseLogging(s.VerboseLogging)
 	ui.ApplyTheme(s.Theme)
 

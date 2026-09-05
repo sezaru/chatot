@@ -557,6 +557,28 @@ func prefNetwork(s *settings.Settings, onChange func(settings.Settings)) gtk.Wid
 			return autoDownloadLabel(s.AutoDownload)
 		}))
 
+	gifs := newSettingsCard()
+	services := make([]string, len(settings.GIFServices))
+	for i, id := range settings.GIFServices {
+		services[i] = gifServiceLabel(id)
+	}
+	gifs.Add(choiceRow("GIF search", "Giphy gives out free app keys at developers.giphy.com",
+		gifServiceLabel(s.GIFService), services, func(i int) string {
+			s.GIFService = settings.GIFServices[i]
+			GIFService = s.GIFService
+			onChange(*s)
+			return gifServiceLabel(s.GIFService)
+		}))
+	keyEntry := gtk.NewEntry()
+	keyEntry.SetText(s.GIFAPIKey)
+	keyEntry.SetPlaceholderText("API key")
+	keyEntry.ConnectChanged(func() {
+		s.GIFAPIKey = strings.TrimSpace(keyEntry.Text())
+		GIFAPIKey = s.GIFAPIKey
+		onChange(*s)
+	})
+	gifs.Add(entryRow("API key", "", keyEntry, 220))
+
 	accounts := newSettingsCard()
 	keep, _ := newSwitchRow("Keep inactive accounts connected",
 		"When off, only the account you're viewing stays online",
@@ -569,6 +591,7 @@ func prefNetwork(s *settings.Settings, onChange func(settings.Settings)) gtk.Wid
 	return prefPage(
 		newSettingsGroup("PROXY", proxy),
 		newSettingsGroup("MEDIA", media),
+		newSettingsGroup("GIFS", gifs),
 		newSettingsGroup("ACCOUNTS", accounts),
 	)
 }
@@ -729,4 +752,12 @@ func newPrivacyRow(c client.Client, name, value string) gtk.Widgetter {
 	}
 	row, valueLabel = newValueRow(name, "", client.PrivacySettingLabel(value), onClick)
 	return row
+}
+
+// gifServiceLabel names a settings.GIFServices value for the choice row.
+func gifServiceLabel(id string) string {
+	if id == "tenor" {
+		return "Tenor"
+	}
+	return "Giphy"
 }

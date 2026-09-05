@@ -4279,3 +4279,25 @@ button.chatot-mention-row-sel {
 	color: @window_fg_color;
 	box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
 }
+
+/* Picker grids (GIF and Stickers tabs): the mockup's 74px rounded tiles. */
+.chatot-picker-grid flowboxchild {
+	padding: 0;
+}
+
+.chatot-sticker-tile,
+.chatot-gif-tile {
+	border-radius: 8px;
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-sticker-tile:hover,
+.chatot-gif-tile:hover {
+	background-color: alpha(currentColor, 0.12);
+}
+
+.chatot-picker-footer {
+	border-top: 1px solid alpha(currentColor, 0.09);
+	padding-top: 6px;
+	font-size: 12px;
+}

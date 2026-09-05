@@ -1034,7 +1034,7 @@ func (w *Whatsmeow) SendMedia(ctx context.Context, jid string, m Attachment, rep
 		Attachment: &Attachment{
 			Kind: kind, Filename: attachmentFilename(m), MimeType: mimeType,
 			LocalPath: localPath, Caption: caption, ProtoBlob: marshalMedia(mediaProto),
-			Thumbnail: thumb, DurationSecs: m.DurationSecs, Size: int64(len(data)),
+			Thumbnail: thumb, DurationSecs: m.DurationSecs, Size: int64(len(data)), IsGIF: m.IsGIF,
 		},
 	}
 	if err := w.ingestMessage(&out); err != nil {
@@ -1472,6 +1472,10 @@ func buildMediaMessage(kind, mimeType string, m Attachment, resp *whatsmeow.Uplo
 			FileEncSHA256: resp.FileEncSHA256, FileSHA256: resp.FileSHA256, FileLength: &resp.FileLength,
 			Mimetype: proto.String(mimeType), Caption: proto.String(m.Caption), ContextInfo: ctxInfo,
 			JPEGThumbnail: thumb, Width: width, Height: height, Seconds: seconds,
+		}
+		if m.IsGIF {
+			// A GIF is an mp4 WhatsApp plays looped and muted.
+			vid.GifPlayback = proto.Bool(true)
 		}
 		return &waE2E.Message{VideoMessage: vid}, vid
 	case "audio":
