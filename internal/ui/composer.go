@@ -396,8 +396,6 @@ type Composer struct {
 	pickerStack   *gtk.Stack
 	pickerPopover *gtk.Popover
 
-	stickerRecents *stickerRecents
-
 	// tray is the send-preview an attach pick flows into; nil falls back to
 	// sending the first picked file directly.
 	tray *AttachTray
@@ -544,26 +542,25 @@ func NewComposer(c client.Client) *Composer {
 	strip.Append(recordRow)
 
 	comp := &Composer{
-		Box:            root,
-		c:              c,
-		quoteBar:       quoteBar,
-		quoteLabel:     quoteLabel,
-		quoteName:      quoteName,
-		editBar:        editBar,
-		entry:          entry,
-		attachBtn:      attachBtn,
-		emojiBtn:       emojiBtn,
-		recordBtn:      recordBtn,
-		entryRow:       entryRow,
-		recordRow:      recordRow,
-		recordTime:     recordTime,
-		recordDot:      recordDot,
-		recordTrace:    recordTrace,
-		recordPause:    recordPause,
-		sendBtn:        sendBtn,
-		gifProvider:    settingsProvider{},
-		typing:         newTypingModel(typingDebounce),
-		stickerRecents: newStickerRecents(stickerRecentsCap),
+		Box:         root,
+		c:           c,
+		quoteBar:    quoteBar,
+		quoteLabel:  quoteLabel,
+		quoteName:   quoteName,
+		editBar:     editBar,
+		entry:       entry,
+		attachBtn:   attachBtn,
+		emojiBtn:    emojiBtn,
+		recordBtn:   recordBtn,
+		entryRow:    entryRow,
+		recordRow:   recordRow,
+		recordTime:  recordTime,
+		recordDot:   recordDot,
+		recordTrace: recordTrace,
+		recordPause: recordPause,
+		sendBtn:     sendBtn,
+		gifProvider: settingsProvider{},
+		typing:      newTypingModel(typingDebounce),
 	}
 
 	pickerPopover, pickerStack := newPickerPopover(comp)
@@ -1260,17 +1257,22 @@ func (c *Composer) pickSticker(popover *gtk.Popover) {
 	})
 }
 
-// sendSticker sends path as a sticker to the active chat and records it in
-// the recents ring, mirroring sendMedia's goroutine + IdleAdd flow. No reply
-// support (stickers aren't quoted in practice, like voice notes).
+// sendSticker sends path as a sticker to the active chat and files it in
+// the library (a send moves it to the front), mirroring sendMedia's
+// goroutine + IdleAdd flow. No reply support (stickers aren't quoted in
+// practice, like voice notes).
 func (c *Composer) sendSticker(path string) {
 	jid := c.state.jid
 	if jid == "" || path == "" {
 		return
 	}
-	c.stickerRecents.Add(path)
 
 	go func() {
+		if st, err := c.c.AddSticker(path); err != nil {
+			log.Printf("chatot: add sticker to library: %v", err)
+		} else {
+			path = st.Path
+		}
 		id, err := c.c.SendSticker(context.Background(), jid, path)
 		if err != nil {
 			log.Printf("chatot: send sticker failed: %v", err)

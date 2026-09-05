@@ -568,6 +568,15 @@ type Client interface {
 	// Non-webp files are sent best-effort (no image->webp conversion here) and
 	// may not render as a sticker on other clients.
 	SendSticker(ctx context.Context, jid, path string) (string, error)
+	// Stickers lists the sticker picker's library, most recently used
+	// first: files added here plus the account's WhatsApp favourites.
+	Stickers() ([]Sticker, error)
+	// AddSticker files the picture at path in the library and marks it
+	// used now; the same picture added twice is one entry.
+	AddSticker(path string) (Sticker, error)
+	// RemoveSticker takes a library entry out. A WhatsApp favourite is only
+	// hidden on this device.
+	RemoveSticker(ctx context.Context, key string) error
 	// CreatePoll sends a poll with the given question and options; selectable
 	// is how many options a voter may pick (1 = single-choice).
 	CreatePoll(ctx context.Context, jid, name string, options []string, selectable int) (string, error)

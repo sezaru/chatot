@@ -191,3 +191,17 @@ CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- The sticker picker's library: every sticker the account can send again.
+-- A WhatsApp favourite (from_whatsapp = 1, key = its app-state index) is
+-- downloaded once into path; a local file is copied in under a content
+-- hash key. A removed favourite keeps its row with hidden = 1 so a replay of
+-- the same app-state mutation does not bring it back.
+CREATE TABLE IF NOT EXISTS stickers (
+    key TEXT PRIMARY KEY,
+    path TEXT NOT NULL DEFAULT '',
+    from_whatsapp INTEGER NOT NULL DEFAULT 0,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    added_ts INTEGER NOT NULL DEFAULT 0,
+    used_ts INTEGER NOT NULL DEFAULT 0
+);

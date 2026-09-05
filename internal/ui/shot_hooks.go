@@ -624,3 +624,16 @@ func (cl *ChatList) SearchList(text string) {
 	cl.search.GrabFocus()
 	cl.search.SetPosition(-1)
 }
+
+// SeedStickers files paths in the sticker library, so a screenshot of the
+// Stickers tab has something to show.
+func (c *Composer) SeedStickers(paths []string) {
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		if _, err := c.c.AddSticker(p); err != nil {
+			log.Printf("chatot: seed sticker %s: %v", p, err)
+		}
+	}
+}

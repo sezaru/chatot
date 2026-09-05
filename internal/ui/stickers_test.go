@@ -1,49 +1,18 @@
 package ui
 
-import "testing"
+import (
+	"testing"
 
-func TestStickerRecentsAddDedupsAndMovesToFront(t *testing.T) {
-	r := newStickerRecents(8)
-	r.Add("a.webp")
-	r.Add("b.webp")
-	r.Add("a.webp")
+	"chatot/internal/client"
+)
 
-	got := r.Items()
-	want := []string{"a.webp", "b.webp"}
-	if len(got) != len(want) {
-		t.Fatalf("Items() = %v, want %v", got, want)
+func TestStickerMenuNamesWhatRemovalMeans(t *testing.T) {
+	local := stickerMenuItems(client.Sticker{Key: "file:x"}, func() {})
+	if got := menuItemLabels(local); len(got) != 1 || got[0] != "Remove sticker" {
+		t.Errorf("local sticker menu = %v", got)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("Items()[%d] = %q, want %q", i, got[i], want[i])
-		}
-	}
-}
-
-func TestStickerRecentsCapsAtN(t *testing.T) {
-	r := newStickerRecents(2)
-	r.Add("a.webp")
-	r.Add("b.webp")
-	r.Add("c.webp")
-
-	got := r.Items()
-	want := []string{"c.webp", "b.webp"}
-	if len(got) != len(want) {
-		t.Fatalf("Items() = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("Items()[%d] = %q, want %q", i, got[i], want[i])
-		}
-	}
-}
-
-func TestStickerRecentsItemsIsACopy(t *testing.T) {
-	r := newStickerRecents(4)
-	r.Add("a.webp")
-	got := r.Items()
-	got[0] = "mutated"
-	if r.Items()[0] != "a.webp" {
-		t.Fatal("Items() returned a slice aliasing internal state")
+	fav := stickerMenuItems(client.Sticker{Key: "wa:x", FromWhatsApp: true}, func() {})
+	if got := menuItemLabels(fav); len(got) != 1 || got[0] != "Remove from this device" {
+		t.Errorf("favourite sticker menu = %v", got)
 	}
 }

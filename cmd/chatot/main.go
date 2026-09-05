@@ -1099,6 +1099,8 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	case "gif":
 		d.composer.PopPicker("gif")
 	case "stickers":
+		// CHATOT_SHOT_ARG lists picture paths to file in the library first.
+		d.composer.SeedStickers(strings.Split(arg, ","))
 		d.composer.PopPicker("stickers")
 	case "recording":
 		d.composer.ShowRecordingUI()

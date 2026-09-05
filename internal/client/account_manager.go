@@ -707,6 +707,12 @@ func (m *AccountManager) SendSticker(ctx context.Context, jid, path string) (str
 	return m.active().SendSticker(ctx, jid, path)
 }
 
+func (m *AccountManager) Stickers() ([]Sticker, error)            { return m.active().Stickers() }
+func (m *AccountManager) AddSticker(path string) (Sticker, error) { return m.active().AddSticker(path) }
+func (m *AccountManager) RemoveSticker(ctx context.Context, key string) error {
+	return m.active().RemoveSticker(ctx, key)
+}
+
 func (m *AccountManager) CreatePoll(ctx context.Context, jid, name string, options []string, selectable int) (string, error) {
 	return m.active().CreatePoll(ctx, jid, name, options, selectable)
 }
