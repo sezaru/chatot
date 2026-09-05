@@ -2848,8 +2848,13 @@ button.chatot-status-zone:active {
 }
 
 .chatot-status-reply,
-.chatot-status-reply:focus {
-	min-height: 36px;
+.chatot-status-reply:focus,
+.chatot-status-reply:focus-within {
+	/* 34px of content plus the 1px border: level with the 34px quick
+	   buttons beside it, as in the mockup. The inner text node is pinned
+	   too, since a user stylesheet can pad it. */
+	min-height: 34px;
+	margin: 0;
 	border-radius: 999px;
 	border: 1px solid rgba(255, 255, 255, 0.22);
 	background-color: rgba(255, 255, 255, 0.08);
@@ -2858,6 +2863,12 @@ button.chatot-status-zone:active {
 	font-size: 13px;
 	box-shadow: none;
 	caret-color: #ffffff;
+}
+
+.chatot-status-reply > text {
+	min-height: 0;
+	padding: 0;
+	margin: 0;
 }
 
 .chatot-status-reply placeholder,
@@ -2882,6 +2893,7 @@ button.chatot-status-quick:hover {
 
 button.chatot-status-viewers {
 	min-height: 36px;
+	padding: 0 14px;
 	border-radius: 999px;
 	border: none;
 	box-shadow: none;
