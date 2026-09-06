@@ -6,9 +6,11 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"chatot/internal/client"
@@ -310,7 +312,7 @@ func (cv *ConversationView) positionOf(msgID string) int {
 // (i.e. it would need a RequestMoreHistory round-trip to the phone) can't be
 // reached — search coverage matches whatever the store already has synced.
 // Must run on the GTK main loop.
-func (cv *ConversationView) jumpToMessage(msgID string) {
+func (cv *ConversationView) jumpToMessage(msgID string) bool {
 	pos := cv.positionOf(msgID)
 	for pos < 0 && cv.hasMore && !cv.loadingOlder {
 		older, err := cv.c.MessagesBefore(cv.jid, cv.oldestID, conversationPageSize)
@@ -322,9 +324,34 @@ func (cv *ConversationView) jumpToMessage(msgID string) {
 		pos = cv.positionOf(msgID)
 	}
 	if pos < 0 {
-		return
+		return false
 	}
 	cv.scrollToRow(pos)
+	return true
+}
+
+// rowFlashDuration is how long a jumped-to row keeps its highlight; matches
+// the chatot-row-flash animation in style.css.
+const rowFlashDuration = 1600 * time.Millisecond
+
+// jumpToQuoted takes the thread to the message a reply quotes and flashes
+// its row so the eye lands on it. A target outside local history (not
+// synced from the phone) gets a toast instead of a silent no-op.
+func (cv *ConversationView) jumpToQuoted(msgID string) {
+	if !cv.jumpToMessage(msgID) {
+		showToast(cv.toastOverlay, "The original message isn't available")
+		return
+	}
+	cv.flashID = msgID
+	trace(1, "jumpToQuoted %s -> row %d", msgID, cv.positionOf(msgID))
+	cv.refillRow(cv.positionOf(msgID))
+	glib.TimeoutAdd(uint(rowFlashDuration/time.Millisecond), func() bool {
+		if cv.flashID == msgID {
+			cv.flashID = ""
+			cv.refillRow(cv.positionOf(msgID))
+		}
+		return false
+	})
 }
 
 // touchRow re-renders the row at pos in place, for a highlight that came

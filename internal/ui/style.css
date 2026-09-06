@@ -4405,3 +4405,15 @@ button.chatot-reactor-btn {
 	min-height: 0;
 	border-radius: 8px;
 }
+
+/* The row a reply quote jumps to: a wash of accent that fades out, so the
+   eye lands on the original message (duration matches rowFlashDuration). */
+@keyframes chatot-row-flash {
+	0% { background-color: alpha(@accent_bg_color, 0.28); }
+	100% { background-color: alpha(@accent_bg_color, 0); }
+}
+
+.chatot-row-flash {
+	border-radius: 10px;
+	animation: chatot-row-flash 1.6s ease-out;
+}
