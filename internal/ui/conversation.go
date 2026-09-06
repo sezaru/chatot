@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sort"
 	"strconv"
@@ -55,6 +56,16 @@ type bubbleView struct {
 	TickRead bool
 	// StarGlyph/StarTooltip drive the bubble's star toggle; see starAffordanceVM.
 	StarGlyph   string
+	// Pending marks an own message whose send is still in flight (a clock
+	// where the tick goes); Failed one whose send errored (a red badge and
+	// a Retry button). Neither is in the store yet, so the bubble carries
+	// no affordances: there is no server-side message to act on.
+	Pending bool
+	Failed  bool
+	// CaptionText is the text under a picture, video or document: the
+	// attachment's caption, "" when it has none. Stickers and voice notes
+	// never carry one.
+	CaptionText string
 	StarTooltip string
 	// IsEmojiOnly marks a text message that's 1-3 emoji and nothing else: it
 	// renders large with no bubble, like a sticker.
@@ -128,6 +139,8 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 		v.TickText, v.TickRead = tickVM(m.Status)
 	}
 
+		v.Pending = m.Status == client.MessageStatusPending
+		v.Failed = m.Status == client.MessageStatusFailed
 	switch {
 	case m.Location != nil:
 		v.IsLocation = true
@@ -150,6 +163,7 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 		v.IsEmojiOnly = isEmojiOnly(m.Text)
 	}
 
+		v.CaptionText = captionText(*m.Attachment)
 	return v
 }
 
@@ -162,12 +176,33 @@ func tickVM(status int) (text string, read bool) {
 	}
 	return "✓", false
 }
+	if status < client.MessageStatusSent {
+		// Not (yet) sent: the pending clock or failed badge stands in.
+		return "", false
+	}
 
 // mediaChip is the one-line stand-in for an attachment (see
 // attachmentPreview).
 func mediaChip(a client.Attachment) string { return attachmentPreview(a) }
 
 func sameDay(a, b int64, loc *time.Location) bool {
+// captionText is what a media bubble prints under its picture, video or
+// document: the caption the sender typed, trimmed. Stickers and audio have
+// no caption field on WhatsApp, and a document's filename is its row
+// title, not a caption.
+func captionText(a client.Attachment) string {
+	switch a.Kind {
+	case "sticker", "audio":
+		return ""
+	case "document":
+		// A nameless document's caption already serves as its row title.
+		if a.Filename == "" {
+			return ""
+		}
+	}
+	return strings.TrimSpace(a.Caption)
+}
+
 	ta := time.Unix(a, 0).In(loc)
 	tb := time.Unix(b, 0).In(loc)
 	return ta.Year() == tb.Year() && ta.YearDay() == tb.YearDay()
@@ -291,7 +326,14 @@ type ConversationView struct {
 	onVote    func(msg client.Message, options []string)
 	onEdit    func(client.Message)
 	onDelete  func(client.Message)
+	// unsent holds, per chat, the optimistic rows the store does not have:
+	// sends in flight and sends that failed. Load appends them after the
+	// stored page and refreshInPlace leaves them out of its comparison
+	// with the store, so a receipt landing mid-send never drops them.
+	unsent map[string][]client.Message
+
 	onStar    func(client.Message)
+	onRetry   func(client.Message)
 	onForward func(client.Message)
 	// onUnreadSeen fires when the unread pill comes down because the reader
 	// has looked at it: the chat is read from that moment.
@@ -351,6 +393,11 @@ func (cv *ConversationView) OnReplyRequested(f func(client.Message)) { cv.onRepl
 func (cv *ConversationView) OnReactRequested(f func(msg client.Message, emoji string)) {
 	cv.onReact = f
 }
+// OnRetryRequested registers f to be called with a failed optimistic
+// message when the user presses its Retry; the row is gone by then, and f
+// is expected to send the content afresh (the composer's Resend).
+func (cv *ConversationView) OnRetryRequested(f func(client.Message)) { cv.onRetry = f }
+
 
 // OnVoteRequested registers f to be called when the user clicks a poll option;
 // options is the set the user selected (currently always one).
@@ -616,6 +663,7 @@ func NewConversationView(c client.Client) *ConversationView {
 		avatarSlot:    avatarSlot,
 		avatarCache:   newAvatarCache(),
 		titleLabel:    titleLabel,
+		unsent:        map[string][]client.Message{},
 		subtitleLabel: subtitleLabel,
 
 		menuBtn:              menuBtn,
@@ -847,8 +895,6 @@ func (cv *ConversationView) Load(jid string) {
 	if err != nil {
 		msgs = nil
 	}
-	cv.msgs = msgs
-	cv.byID = indexByID(msgs)
 	cv.hasMore = len(msgs) == conversationPageSize
 	if len(msgs) > 0 {
 		cv.oldestID = msgs[0].ID
@@ -863,6 +909,11 @@ func (cv *ConversationView) Load(jid string) {
 	// goes with it and is re-added below.
 	cv.typingShown = false
 	cv.model.Splice(0, cv.model.Len(), msgs...)
+	// The chat's sends in flight and failed sends live only here; they
+	// go after the stored page, where they were appended.
+	msgs = cv.withUnsent(jid, msgs)
+	cv.msgs = msgs
+	cv.byID = indexByID(msgs)
 
 	if len(msgs) == 0 {
 		cv.empty.SetLabel("No messages yet")
@@ -936,29 +987,31 @@ func (cv *ConversationView) refreshInPlace() {
 	if cv.jid == "" {
 		return
 	}
-	base := cv.threadLen()
-	n := base
+	// Only the stored rows are compared with the store: an optimistic
+	// row (a send in flight, or a failed one) has no counterpart there.
+	stored := cv.storedPositions()
+	n := len(stored)
 	if n < conversationPageSize {
 		n = conversationPageSize
 	}
 	msgs, err := cv.c.Messages(cv.jid, n)
-	if err != nil || len(msgs) != base {
+	if err != nil || len(msgs) != len(stored) {
 		cv.Load(cv.jid)
 		return
 	}
-	for i := range msgs {
-		if msgs[i].ID != cv.msgs[i].ID {
+	for k, i := range stored {
+		if msgs[k].ID != cv.msgs[i].ID {
 			cv.Load(cv.jid)
 			return
 		}
 	}
 	changed := 0
-	for i := range msgs {
-		if bubbleSig(msgs[i]) == bubbleSig(cv.msgs[i]) {
+	for k, i := range stored {
+		if bubbleSig(msgs[k]) == bubbleSig(cv.msgs[i]) {
 			continue
 		}
-		cv.msgs[i] = msgs[i]
-		cv.byID[msgs[i].ID] = msgs[i]
+		cv.msgs[i] = msgs[k]
+		cv.byID[msgs[k].ID] = msgs[k]
 		cv.refillRow(i)
 		changed++
 	}
@@ -975,6 +1028,19 @@ func (cv *ConversationView) loadOlder() {
 		cv.loadingOlder = false
 		return
 	}
+// storedPositions lists the positions in cv.msgs of the rows the store
+// holds: everything but the typing sentinel and the optimistic rows.
+func (cv *ConversationView) storedPositions() []int {
+	out := make([]int, 0, len(cv.msgs))
+	for i, m := range cv.msgs {
+		if m.ID == typingSentinelID || isUnsent(m) {
+			continue
+		}
+		out = append(out, i)
+	}
+	return out
+}
+
 	if len(older) == 0 {
 		request, exhausted := nextHistoryAction(len(older), cv.historyRequested)
 		trace(1, "loadOlder: store floor reached; request=%v exhausted=%v", request, exhausted)
@@ -1268,12 +1334,117 @@ func (cv *ConversationView) AppendSentMessage(msg client.Message) {
 // immediately, if chatJID is the currently-open chat. It reloads from the
 // store (idempotent), so a later echo EventReaction for the same reaction
 // re-runs the same reload harmlessly. Must run on the GTK main loop.
+	if isUnsent(msg) {
+		cv.unsent[msg.ChatJID] = append(cv.unsent[msg.ChatJID], msg)
+	}
 func (cv *ConversationView) ApplyOwnReaction(chatJID string) {
 	if chatJID != cv.jid {
 		return
 	}
 	cv.refreshInPlace()
 }
+// isUnsent reports whether msg is an optimistic row the store does not
+// hold: a send in flight or a failed one.
+func isUnsent(msg client.Message) bool { return msg.Status < client.MessageStatusSent }
+
+// ResolveSent settles the optimistic row localID once its send returns:
+// on success the row becomes the stored message (real id, sent status), on
+// failure it turns into the failed bubble with its Retry. Must run on the
+// GTK main loop.
+func (cv *ConversationView) ResolveSent(localID string, msg client.Message, err error) {
+	if err != nil {
+		msg.Status = client.MessageStatusFailed
+		msg.ID = localID
+	} else {
+		msg.Status = client.MessageStatusSent
+	}
+	rows := cv.unsent[msg.ChatJID]
+	for i := range rows {
+		if rows[i].ID != localID {
+			continue
+		}
+		if isUnsent(msg) {
+			rows[i] = msg
+		} else {
+			cv.unsent[msg.ChatJID] = append(rows[:i], rows[i+1:]...)
+		}
+		break
+	}
+	if msg.ChatJID != cv.jid {
+		return
+	}
+	pos := cv.positionOf(localID)
+	if pos < 0 {
+		return
+	}
+	// A reload (a receipt's refreshInPlace falling back to Load, a chat
+	// re-open) that ran after the client stored the sent message but
+	// before this callback already shows it under its real id, with the
+	// pending copy appended after it. The pending copy is the one to go.
+	if err == nil && cv.positionOf(msg.ID) >= 0 {
+		cv.removeRow(pos)
+		return
+	}
+	cv.msgs[pos] = msg
+	delete(cv.byID, localID)
+	cv.byID[msg.ID] = msg
+	if box := cv.rowFor(localID); box != nil {
+		cv.rowMsg[box] = msg.ID
+	}
+	cv.refillRow(pos)
+}
+
+// retrySend is a failed bubble's Retry: the failed row goes, and the
+// content is handed back to the composer to send as a fresh message at the
+// foot of the thread (WhatsApp moves a retried message to the end too).
+func (cv *ConversationView) retrySend(msg client.Message) {
+	if cv.onRetry == nil {
+		return
+	}
+	cv.dropUnsent(msg)
+	cv.onRetry(msg)
+}
+
+// dropUnsent removes the optimistic row msg from the thread and from the
+// per-chat unsent list. Must run on the GTK main loop.
+func (cv *ConversationView) dropUnsent(msg client.Message) {
+	rows := cv.unsent[msg.ChatJID]
+	for i := range rows {
+		if rows[i].ID == msg.ID {
+			cv.unsent[msg.ChatJID] = append(rows[:i], rows[i+1:]...)
+			break
+		}
+	}
+	if msg.ChatJID != cv.jid {
+		return
+	}
+	if pos := cv.positionOf(msg.ID); pos >= 0 {
+		cv.removeRow(pos)
+	}
+}
+
+// removeRow takes the row at pos out of the thread and its model. Must run
+// on the GTK main loop.
+func (cv *ConversationView) removeRow(pos int) {
+	if pos < 0 || pos >= len(cv.msgs) {
+		return
+	}
+	delete(cv.byID, cv.msgs[pos].ID)
+	cv.msgs = append(cv.msgs[:pos], cv.msgs[pos+1:]...)
+	cv.model.Splice(pos, 1)
+	// The row after the removed one may have leaned on it for its day
+	// separator.
+	cv.refillRow(pos)
+}
+
+// withUnsent appends the chat's optimistic rows after its stored page.
+func (cv *ConversationView) withUnsent(jid string, msgs []client.Message) []client.Message {
+	if rows := cv.unsent[jid]; len(rows) > 0 {
+		msgs = append(msgs[:len(msgs):len(msgs)], rows...)
+	}
+	return msgs
+}
+
 
 // appendMessage adds msg to the end of the currently-loaded thread. The
 // factory renders the new row when it realizes at the bottom. Must run on the
@@ -1577,6 +1748,20 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 		text.SetXAlign(0)
 		text.SetWrap(true)
 		// WrapWordChar so a long unbroken token (e.g. a URL) still breaks
+		if vm.CaptionText != "" {
+			// The caption reads like a text bubble's body, under the
+			// picture: links open, mentions resolve, the text copies.
+			caption := gtk.NewLabel("")
+			caption.AddCSSClass("chatot-bubble-text")
+			caption.AddCSSClass("chatot-bubble-caption")
+			caption.SetXAlign(0)
+			caption.SetWrap(true)
+			caption.SetWrapMode(pango.WrapWordChar)
+			caption.SetMaxWidthChars(48)
+			caption.SetMarkup(messageMarkup(vm.CaptionText, h.names, vm.FromMe, mentionAccentFor(), searchQuery))
+			caption.SetSelectable(true)
+			bubble.Append(caption)
+		}
 		// instead of forcing the bubble wider than the pane.
 		text.SetWrapMode(pango.WrapWordChar)
 		// Cap the natural width so a long paragraph wraps into a hugging bubble
@@ -1602,13 +1787,42 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 	timeLabel.SetXAlign(1)
 	footer.Append(timeLabel)
 
-	if vm.FromMe && vm.TickText != "" {
+	switch {
+	case vm.Pending:
+		clock := newClockGlyph(11)
+		clock.AddCSSClass("chatot-bubble-tick")
+		clock.SetTooltipText("Sending…")
+		footer.Append(clock)
+	case vm.Failed:
+		badge := gtk.NewLabel("!")
+		badge.AddCSSClass("chatot-bubble-failed")
+		badge.SetTooltipText("Not sent")
+		footer.Append(badge)
+	case vm.FromMe && vm.TickText != "":
 		tick := gtk.NewLabel(vm.TickText)
 		tick.AddCSSClass("chatot-bubble-tick")
 		if vm.TickRead {
 			tick.AddCSSClass("chatot-tick-read")
 		}
 		footer.Append(tick)
+	if vm.Failed {
+		// WhatsApp's failed send: a Retry beside the time and a red badge
+		// where the tick would be. Retrying re-sends the same content as
+		// a fresh message at the foot of the thread.
+		retry := gtk.NewButtonWithLabel("↻ Retry")
+		retry.AddCSSClass("flat")
+		retry.AddCSSClass("chatot-retry")
+		retry.SetTooltipText("Send again")
+		retry.SetVAlign(gtk.AlignCenter)
+		if h.onRetry == nil {
+			retry.SetSensitive(false)
+		} else {
+			m := msg
+			retry.ConnectClicked(func() { h.onRetry(m) })
+		}
+		footer.Append(retry)
+	}
+
 	}
 
 	bubble.Append(footer)
@@ -1653,7 +1867,7 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 		avatar.SetVAlign(gtk.AlignStart)
 		row.Append(avatar)
 	}
-	if vm.Deleted {
+	if vm.Deleted || vm.Pending || vm.Failed {
 		row.Append(bubbleStack)
 	} else {
 		// The 🙂 and ⌄ sit together just outside the bubble on the side
@@ -1832,6 +2046,11 @@ type bubbleHooks struct {
 // VoteAt casts a vote for option on the message at idx — a dev/screenshot
 // hook.
 func (cv *ConversationView) VoteAt(idx int, option string) {
+	// onRetry re-sends a failed optimistic message (the bubble's Retry).
+	onRetry func(client.Message)
+	// reactorName names a reaction's sender for the pill's tooltip and
+	// list ("You" for our own); nil prints the bare JID.
+	reactorName func(jid string) string
 	if m, ok := cv.MessageAt(idx); ok && cv.onVote != nil {
 		cv.onVote(m, []string{option})
 	}
@@ -1887,6 +2106,7 @@ func (cv *ConversationView) SetLocalPath(msgID, path string) {
 				return
 			}
 		}
+		onRetry: cv.retrySend, reactorName: cv.senderName,
 	}
 }
 
@@ -2236,6 +2456,34 @@ const (
 // case the popover falls back to GTK's default placement. A widget shown in
 // the same frame (the hover buttons under a dev hook) has no allocation and
 // reports 0×0, so fallback (the bubble) is measured instead.
+// newClockGlyph is the pending send's mark where the tick goes: a small
+// stroked clock face in the current colour, WhatsApp's "sending" clock.
+// Stroked with cairo rather than a theme icon so it inherits the outgoing
+// bubble's tick colour like the ✓ label does.
+func newClockGlyph(size int) *gtk.DrawingArea {
+	area := gtk.NewDrawingArea()
+	area.SetSizeRequest(size, size)
+	area.SetHAlign(gtk.AlignCenter)
+	area.SetVAlign(gtk.AlignCenter)
+	area.SetDrawFunc(func(area *gtk.DrawingArea, cr *cairo.Context, w, h int) {
+		c := area.Color()
+		cr.SetSourceRGBA(float64(c.Red()), float64(c.Green()), float64(c.Blue()), float64(c.Alpha()))
+		cr.SetLineWidth(1.2)
+		cr.SetLineCap(cairo.LineCapRound)
+		cx, cy := float64(w)/2, float64(h)/2
+		r := float64(size)/2 - 1
+		cr.Arc(cx, cy, r, 0, 2*3.141592653589793)
+		cr.Stroke()
+		// Hands at ten past ten: up to the twelve, out to the two.
+		cr.MoveTo(cx, cy)
+		cr.LineTo(cx, cy-r*0.6)
+		cr.MoveTo(cx, cy)
+		cr.LineTo(cx+r*0.45, cy)
+		cr.Stroke()
+	})
+	return area
+}
+
 func alignedRect(host, anchor, fallback gtk.Widgetter, width int, fromMe bool) *gdk.Rectangle {
 	if host == nil {
 		return nil
@@ -2386,30 +2634,120 @@ func newReactionPill(r reactionView, msg client.Message, h bubbleHooks) gtk.Widg
 	pill := gtk.NewButton()
 	pill.SetChild(row)
 	pill.AddCSSClass("chatot-reaction-pill")
-	pill.SetTooltipText(reactionTooltip(r, h.ownJID))
+	names := reactorNames(r.Reactors, h.reactorName)
+	pill.SetTooltipText(reactionTooltip(names))
 	mine := reactedBy(r.Reactors, h.ownJID)
 	if mine {
 		pill.AddCSSClass("chatot-reaction-pill-mine")
 	}
-	if h.onReact == nil {
-		pill.SetSensitive(false)
-		return pill
-	}
-	pick := r.Emoji
-	if mine {
-		pick = ""
-	}
-	pill.ConnectClicked(func() { h.onReact(msg, pick) })
+	open := func() { openReactorList(pill, r, names, msg, h) }
+	pill.ConnectClicked(open)
+	shotRegister(msg.ID, func(s *bubbleShot) {
+		if s.openReactors == nil {
+			s.openReactors = open
+		}
+	})
 	return pill
 }
 
-// reactionTooltip names the pill's action, since the pill itself is only an
-// emoji and a number.
-func reactionTooltip(r reactionView, ownJID string) string {
-	if reactedBy(r.Reactors, ownJID) {
-		return "Remove your reaction"
+// reactorNames resolves each reactor JID through name ("You" for our own),
+// falling back to the bare user part when there is no resolver.
+func reactorNames(reactors []string, name func(jid string) string) []string {
+	out := make([]string, 0, len(reactors))
+	for _, jid := range reactors {
+		n := ""
+		if name != nil {
+			n = name(jid)
+		}
+		if n == "" {
+			n = bareJIDUser(jid)
+		}
+		out = append(out, n)
 	}
-	return "React " + r.Emoji
+	return out
+}
+
+// reactionTooltip is the hover text of a pill: who reacted with it, the way
+// WhatsApp lists them ("You, Ana and Marco"). The names in order of
+// reacting, so the tooltip and the list read the same.
+func reactionTooltip(names []string) string {
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return names[0]
+	case 2:
+		return names[0] + " and " + names[1]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
+// openReactorList is a pill's click: WhatsApp's reactions sheet for that
+// emoji, one row per person with their avatar and name. Our own row says
+// so and removes the reaction when clicked; the others are only a list.
+func openReactorList(pill gtk.Widgetter, r reactionView, names []string, msg client.Message, h bubbleHooks) {
+	at := alignedRect(h.host, pill, nil, reactorListWidth, msg.FromMe)
+	pop := newBubblePopover(h.host, pill, at, func() {})
+	pop.SetPosition(gtk.PosBottom)
+	pop.AddCSSClass("chatot-reactor-list")
+
+	col := gtk.NewBox(gtk.OrientationVertical, 2)
+	col.SetSizeRequest(reactorListWidth, -1)
+	caption := gtk.NewLabel(strings.ToUpper(reactorListCaption(r)))
+	caption.SetXAlign(0)
+	caption.AddCSSClass("chatot-card-caption")
+	col.Append(caption)
+
+	for i, jid := range r.Reactors {
+		own := isOwnJID(jid, h.ownJID)
+		line := gtk.NewBox(gtk.OrientationHorizontal, 10)
+		line.AddCSSClass("chatot-reactor-row")
+		if h.avatars != nil {
+			line.Append(buildAvatar(h.c, h.avatars, nonADJID(jid), initialFor(names[i]), reactorAvatarSize))
+		}
+		text := gtk.NewBox(gtk.OrientationVertical, 0)
+		text.SetHExpand(true)
+		name := gtk.NewLabel(names[i])
+		name.SetXAlign(0)
+		name.SetEllipsize(pango.EllipsizeEnd)
+		name.AddCSSClass("chatot-reactor-name")
+		text.Append(name)
+		if own {
+			hint := gtk.NewLabel("Click to remove")
+			hint.SetXAlign(0)
+			hint.AddCSSClass("chatot-reactor-hint")
+			text.Append(hint)
+		}
+		line.Append(text)
+		emoji := gtk.NewLabel(r.Emoji)
+		emoji.AddCSSClass("chatot-reactor-emoji")
+		line.Append(emoji)
+
+		if own && h.onReact != nil {
+			b := gtk.NewButton()
+			b.SetChild(line)
+			b.AddCSSClass("flat")
+			b.AddCSSClass("chatot-reactor-btn")
+			b.ConnectClicked(func() {
+				pop.Popdown()
+				h.onReact(msg, "")
+			})
+			col.Append(b)
+		} else {
+			col.Append(line)
+		}
+	}
+	pop.SetChild(col)
+	pop.Popup()
+}
+
+// reactorListCaption heads the reactions sheet: the emoji and how many
+// picked it.
+func reactorListCaption(r reactionView) string {
+	if r.Count == 1 {
+		return r.Emoji + " · 1 reaction"
+	}
+	return fmt.Sprintf("%s · %d reactions", r.Emoji, r.Count)
 }
 
 // Header is the conversation's AdwHeaderBar (identity, search, ⋮ and the
@@ -2417,3 +2755,10 @@ func reactionTooltip(r reactionView, ownJID string) string {
 // stack that swaps the thread for the media and starred pages, so those
 // pages sit under the same header rather than replacing it.
 func (cv *ConversationView) Header() gtk.Widgetter { return cv.header }
+// reactorListWidth is the reactions sheet's card; reactorAvatarSize its
+// row avatars (the chat list's small size).
+const (
+	reactorListWidth  = 240
+	reactorAvatarSize = 28
+)
+

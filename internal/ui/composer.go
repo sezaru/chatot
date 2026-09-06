@@ -416,7 +416,9 @@ type Composer struct {
 
 	typing *typingModel // debounces our own composing/paused SendTyping calls
 
-	onSent func(client.Message)
+	onSent       func(client.Message)
+	onSendResult func(localID string, msg client.Message, err error)
+	localSeq     int // see localMessageID
 }
 
 // NewComposer builds an empty, disabled-until-SetChat Composer backed by c.
@@ -739,6 +741,9 @@ func (c *Composer) StartReply(msg client.Message) {
 	c.state.StartReply(msg)
 	c.refreshQuoteBar()
 	c.refreshEditBar()
+	// The reply is typed next: the caret goes to the entry, as WhatsApp
+	// does, instead of leaving the focus on the bubble's button.
+	c.FocusInput()
 }
 
 // StartEdit arms edit mode for msg: prefill the entry with its current text so
@@ -808,21 +813,80 @@ func (c *Composer) submit() {
 	c.mentionNames = nil
 	c.refreshQuoteBar()
 
+	c.dispatch(client.Message{
+		ChatJID: action.JID, FromMe: true,
+		Text: action.Text, ReplyTo: action.ReplyTo,
+	})
+}
+
+// dispatch sends msg the way WhatsApp does: the bubble appears at once with
+// a pending clock, and the send runs in the background. When it returns the
+// row settles into the sent message (its server id, a tick) or, on an
+// error, into a failed bubble with a Retry. msg carries everything needed
+// to send it, so a retry is a plain re-dispatch of the same value.
+func (c *Composer) dispatch(msg client.Message) {
+	msg.ID = c.localMessageID()
+	msg.Status = client.MessageStatusPending
+	msg.TS = time.Now().Unix()
+	if msg.ChatJID == "" {
+		return
+	}
+	if c.onSent != nil {
+		c.onSent(msg)
+	}
+	pending := msg
 	go func() {
-		id, err := c.c.SendText(context.Background(), action.JID, action.Text, action.ReplyTo)
+		id, err := c.send(pending)
 		if err != nil {
 			log.Printf("chatot: send failed: %v", err)
-			return
 		}
-		if c.onSent == nil {
-			return
-		}
-		msg := client.Message{
-			ID: id, ChatJID: action.JID, FromMe: true,
-			Text: action.Text, TS: time.Now().Unix(), ReplyTo: action.ReplyTo,
-		}
-		glib.IdleAdd(func() { c.onSent(msg) })
+		sent := pending
+		sent.ID = id
+		glib.IdleAdd(func() {
+			if c.onSendResult != nil {
+				c.onSendResult(pending.ID, sent, err)
+			}
+		})
 	}()
+}
+
+// send performs the network send for a dispatched message: text, or a file
+// attachment. Anything else is a programming error (those kinds go through
+// their own dialogs, not dispatch).
+func (c *Composer) send(msg client.Message) (string, error) {
+	ctx := context.Background()
+	if msg.Attachment == nil {
+		return c.c.SendText(ctx, msg.ChatJID, msg.Text, msg.ReplyTo)
+	}
+	a := *msg.Attachment
+	return c.c.SendMedia(ctx, msg.ChatJID, client.Attachment{
+		LocalPath: a.LocalPath, Filename: a.Filename, Caption: a.Caption,
+		Thumbnail: a.Thumbnail, DurationSecs: a.DurationSecs,
+		Width: a.Width, Height: a.Height,
+	}, msg.ReplyTo)
+}
+
+// Resend is a failed bubble's Retry: the same content goes out again as a
+// fresh pending message at the foot of the thread. Must run on the GTK main
+// loop.
+func (c *Composer) Resend(msg client.Message) {
+	msg.Reactions = nil
+	c.dispatch(msg)
+}
+
+// localMessageID mints the id an optimistic row carries until the server
+// hands back the real one. Distinct from any WhatsApp id (those are hex
+// upper-case), and unique within the process.
+func (c *Composer) localMessageID() string {
+	c.localSeq++
+	return fmt.Sprintf("local-%d-%d", time.Now().UnixNano(), c.localSeq)
+}
+
+// OnSendResult registers f to be called (on the GTK main loop) once a
+// dispatched send returns: localID is the optimistic row's id, msg the
+// message with its server id on success, err the failure otherwise.
+func (c *Composer) OnSendResult(f func(localID string, msg client.Message, err error)) {
+	c.onSendResult = f
 }
 
 // submitEdit resolves the current entry against edit mode and, if valid,
@@ -1118,13 +1182,51 @@ func (c *Composer) pickAttachment(filter *gtk.FileFilter) {
 			c.sendMedia(paths[0])
 			return
 		}
-		c.tray.Open(paths)
+		c.openTray(paths)
 	})
 }
 
 // SetTray gives the composer the send-preview tray its attach picks flow
 // into. Without one the composer sends straight from the file chooser.
-func (c *Composer) SetTray(tray *AttachTray) { c.tray = tray }
+func (c *Composer) SetTray(tray *AttachTray) {
+	c.tray = tray
+	if tray != nil {
+		tray.OnDiscard(c.restoreCaption)
+	}
+}
+
+// openTray queues paths into the tray. Text already typed in the entry goes
+// with the first file as its caption, the way WhatsApp carries a draft
+// into the attach preview, so hitting Enter in the tray sends the picture
+// with that text rather than dropping it. Files added to an open tray
+// leave the entry alone.
+func (c *Composer) openTray(paths []string) {
+	seed := ""
+	if c.tray.Empty() {
+		seed = c.entry.Text()
+	}
+	c.tray.Open(paths)
+	if seed != "" {
+		c.tray.SeedCaption(seed)
+		c.entry.SetText("")
+	}
+}
+
+// restoreCaption is the tray's Cancel: the caption that came from the
+// entry goes back there, unless something new was typed meanwhile.
+func (c *Composer) restoreCaption(caption string) {
+	if caption != "" && c.entry.Text() == "" {
+		c.entry.SetText(caption)
+		c.entry.SetPosition(-1)
+	}
+}
+
+// SubmitText types text into the entry and sends it, as Enter would. A
+// dev/screenshot aid for the send states.
+func (c *Composer) SubmitText(text string) {
+	c.entry.SetText(text)
+	c.submit()
+}
 
 // queueFiles takes files that arrived by paste or drop the way a file
 // chooser pick does: into the tray, or straight to a send without one.
@@ -1137,7 +1239,7 @@ func (c *Composer) queueFiles(paths []string) {
 		c.sendMedia(paths[0])
 		return
 	}
-	c.tray.Open(paths)
+	c.openTray(paths)
 }
 
 // queueImage takes a pasted or dropped picture: it is written out as a
@@ -1192,7 +1294,9 @@ func (c *Composer) SendTrayItems(items []trayItem) {
 // caption) against composeState and sends it in the background, mirroring
 // submit's clear-then-send-then-idle-append flow.
 func (c *Composer) sendMedia(path string) {
-	c.sendTrayItem(trayItem{Path: path, Caption: c.entry.Text()})
+	caption := c.entry.Text()
+	c.entry.SetText("")
+	c.sendTrayItem(trayItem{Path: path, Caption: caption})
 }
 
 // sendTrayItem sends one queued file with its own caption. The tray's
@@ -1204,37 +1308,20 @@ func (c *Composer) sendTrayItem(item trayItem) {
 	if !ok {
 		return
 	}
-	c.entry.SetText("")
+	// The entry is left alone: its text was moved into the tray's caption
+	// when the tray opened (or belongs to the next message), and a file
+	// send has no business clearing it.
 	c.refreshQuoteBar()
-	c.attachBtn.SetSensitive(false)
 
-	go func() {
-		att := client.Attachment{
-			LocalPath: action.Path, Filename: filepath.Base(action.Path), Caption: action.Caption,
+	c.dispatch(client.Message{
+		ChatJID: action.JID, FromMe: true, ReplyTo: action.ReplyTo,
+		Attachment: &client.Attachment{
+			Kind: guessAttachmentKind(action.Path), Filename: filepath.Base(action.Path),
+			LocalPath: action.Path, Caption: action.Caption,
 			Thumbnail: item.Preview.Image, DurationSecs: item.Preview.Seconds,
 			Width: item.Preview.Width, Height: item.Preview.Height,
-		}
-		id, err := c.c.SendMedia(context.Background(), action.JID, att, action.ReplyTo)
-		glib.IdleAdd(func() {
-			c.attachBtn.SetSensitive(c.state.jid != "")
-			if err != nil {
-				log.Printf("chatot: send media failed: %v", err)
-				return
-			}
-			if c.onSent == nil {
-				return
-			}
-			msg := client.Message{
-				ID: id, ChatJID: action.JID, FromMe: true, TS: time.Now().Unix(), ReplyTo: action.ReplyTo,
-				Attachment: &client.Attachment{
-					Kind: guessAttachmentKind(action.Path), Filename: att.Filename,
-					LocalPath: action.Path, Caption: action.Caption,
-					Thumbnail: att.Thumbnail, DurationSecs: att.DurationSecs,
-				},
-			}
-			c.onSent(msg)
-		})
-	}()
+		},
+	})
 }
 
 // pickSticker opens a file-choose dialog filtered to webp/images and, on a

@@ -3,12 +3,14 @@ package client
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -170,7 +172,7 @@ func NewFake() *Fake {
 		// alongside m8's video), a document (Docs tab) and a URL-bearing text
 		// message (Links tab).
 		{ID: "m10", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2500,
-			Attachment: &Attachment{Kind: "image", MimeType: "image/jpeg", Size: 860160}},
+			Attachment: &Attachment{Kind: "image", MimeType: "image/jpeg", Size: 860160, Caption: "The cabin's porch at sunset"}},
 		{ID: "m11", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2400,
 			Attachment: &Attachment{Kind: "document", Filename: "lease-2026.pdf", MimeType: "application/pdf", Size: 1258291}},
 		{ID: "m12", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2300,
@@ -454,7 +456,23 @@ func (f *Fake) SendText(ctx context.Context, jid, text string, replyTo *MsgRef) 
 	id := f.nextMsgID()
 	f.appendOutbound(jid, Message{ID: id, ChatJID: jid, FromJID: "me", FromMe: true, Text: text, TS: time.Now().Unix(), ReplyTo: replyTo})
 	return id, nil
+// fakeSendDelay holds a send for CHATOT_FAKE_SENDDELAY milliseconds and
+// fakeSendFail makes it error under CHATOT_FAKE_SENDFAIL: dev knobs for the
+// pending and failed bubble states.
+func fakeSendDelay() error {
+	if ms, err := strconv.Atoi(os.Getenv("CHATOT_FAKE_SENDDELAY")); err == nil && ms > 0 {
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+	}
+	if os.Getenv("CHATOT_FAKE_SENDFAIL") != "" {
+		return errors.New("chatot/client: fake send failure (CHATOT_FAKE_SENDFAIL)")
+	}
+	return nil
 }
+
+}
+	if err := fakeSendDelay(); err != nil {
+		return "", err
+	}
 
 func (f *Fake) SendMedia(ctx context.Context, jid string, m Attachment, replyTo *MsgRef) (string, error) {
 	f.mu.Lock()
@@ -463,6 +481,9 @@ func (f *Fake) SendMedia(ctx context.Context, jid string, m Attachment, replyTo 
 	f.appendOutbound(jid, Message{ID: id, ChatJID: jid, FromJID: "me", FromMe: true, Text: m.Caption, TS: time.Now().Unix(), ReplyTo: replyTo, Attachment: &m})
 	return id, nil
 }
+	if err := fakeSendDelay(); err != nil {
+		return "", err
+	}
 
 func (f *Fake) SendLocation(ctx context.Context, jid string, loc Location, replyTo *MsgRef) (string, error) {
 	f.mu.Lock()

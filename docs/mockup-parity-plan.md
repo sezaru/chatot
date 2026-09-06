@@ -73,11 +73,14 @@ warnings about `free` are noise). No `./.claude/verify` script exists.
   a 24 px shadow margin (1536×1056 for the main window).
 - App states: `CHATOT_SHOT=<state>` (+ `CHATOT_SHOT_CHAT=<jid>`,
   `CHATOT_SHOT_MSG=<idx, -1 newest>`): plusmenu appmenu chatmenu hover msgmenu
-  reactpill reactions reply emoji gif stickers recording draft search starred
+  reactpill reactions reactors reply send sendretry emoji gif stickers recording draft search starred
   archived newchat newgroup newcommunity joininvite labelspop rowmenu empty
   forward export clear groupinfo about shortcuts blocked privacy linking toast
   switcher addaccount manage. Legacy: `CHATOT_SHOT_ATTACH=1`,
-  `CHATOT_SHOT_PREFS=1`, `CHATOT_SHOT_MEDIA=1`. Fake JIDs: Ada
+  `CHATOT_SHOT_PREFS=1`, `CHATOT_SHOT_MEDIA=1`. Send states: `send` (+`CHATOT_SHOT_TEXT`)
+  with `CHATOT_FAKE_SENDDELAY=<ms>` for the pending clock or
+  `CHATOT_FAKE_SENDFAIL=1` for the failed bubble; `sendretry` fails then
+  retries; `reactors` (+`CHATOT_SHOT_MSG`) opens a pill's who-reacted sheet. Fake JIDs: Ada
   `1234567890@s.whatsapp.net` (3 texts: in, out-read "Yep!", in-forwarded),
   Grace `1112223333@s.whatsapp.net` (all media types), group
   `weekendtrip@g.us` (no messages, join banner).

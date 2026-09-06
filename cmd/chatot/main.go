@@ -323,6 +323,8 @@ func activate(app *adw.Application, c client.Client) {
 	composer.OnSent(func(msg client.Message) {
 		conversation.AppendSentMessage(msg)
 	})
+	composer.OnSendResult(conversation.ResolveSent)
+	conversation.OnRetryRequested(composer.Resend)
 	conversation.OnReplyRequested(composer.StartReply)
 	conversation.OnEditRequested(composer.StartEdit)
 	conversation.OnReactRequested(func(msg client.Message, emoji string) {
@@ -1065,6 +1067,11 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		if arg != "" {
 			paths = strings.Split(arg, ":")
 		}
+		// CHATOT_SHOT_TEXT is a draft already in the entry: it rides into
+		// the first file's caption.
+		if text := os.Getenv("CHATOT_SHOT_TEXT"); text != "" {
+			d.composer.SetDraft(text)
+		}
 		d.composer.ShowTray(paths)
 	case "scrolltop":
 		// CHATOT_SHOT_MSG doubles as a percent here (0..100) so a capture can
@@ -1081,6 +1088,19 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		d.conversation.PopupMessageMenu(msgIdx)
 	case "reactpill":
 		d.conversation.PopupReactPill(msgIdx)
+	case "reactors":
+		// A 👍 of ours on the bubble, then the pill's who-reacted sheet.
+		if m, ok := d.conversation.MessageAt(msgIdx); ok {
+			go func() {
+				if err := d.composer.ReactTo(m, "👍"); err != nil {
+					log.Printf("chatot: shot react: %v", err)
+				}
+				glib.IdleAdd(func() {
+					d.conversation.ApplyOwnReaction(m.ChatJID)
+					glib.TimeoutAdd(600, func() bool { d.conversation.PopupReactorList(msgIdx); return false })
+				})
+			}()
+		}
 	case "reactions":
 		if m, ok := d.conversation.MessageAt(msgIdx); ok {
 			go func() {
@@ -1094,6 +1114,24 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		if m, ok := d.conversation.MessageAt(msgIdx); ok {
 			d.composer.StartReply(m)
 		}
+	case "send":
+		// A text send through the optimistic path; pair with
+		// CHATOT_FAKE_SENDDELAY for the pending clock or
+		// CHATOT_FAKE_SENDFAIL for the failed bubble and its Retry.
+		text := os.Getenv("CHATOT_SHOT_TEXT")
+		if text == "" {
+			text = "Running late, order without me"
+		}
+		d.composer.SubmitText(text)
+	case "sendretry":
+		// A send that fails, then its Retry with the failure knob gone:
+		// the failed bubble goes and the message lands sent.
+		d.composer.SubmitText("Running late, order without me")
+		glib.TimeoutAdd(1500, func() bool {
+			os.Unsetenv("CHATOT_FAKE_SENDFAIL")
+			d.conversation.RetryLast()
+			return false
+		})
 	case "emoji":
 		d.composer.PopEmoji()
 	case "gif":

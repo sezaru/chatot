@@ -97,11 +97,18 @@ type StatusViewer struct {
 }
 
 // Outgoing message delivery/read states, mirrored 1:1 in the store's
-// messages.status column.
+// messages.status column. The negative states are the UI's own: a message
+// shown the moment Send is pressed, before (or instead of) the server
+// taking it. They never reach the store.
 const (
 	MessageStatusSent      = 0
 	MessageStatusDelivered = 1
 	MessageStatusRead      = 2
+	// MessageStatusPending is an optimistic row whose send is in flight.
+	MessageStatusPending = -1
+	// MessageStatusFailed is an optimistic row whose send errored; the
+	// bubble offers a retry.
+	MessageStatusFailed = -2
 )
 
 // Presence is a contact's overall online/offline state.
@@ -121,7 +128,8 @@ type ChatPresence struct {
 	Media   string // "audio" for a recording composing state, "text"/"" otherwise
 }
 
-// Call is an incoming/ongoing call notification.
+// Call is one step of a call's life: the incoming offer (Offer) and the
+// accept/terminate/reject signals that settle it.
 type Call struct {
 	ChatJID string
 	CallID  string
