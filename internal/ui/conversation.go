@@ -378,6 +378,9 @@ type ConversationView struct {
 	searchHits           []client.SearchHit
 	searchIdx            int
 	highlightedPositions map[int]bool
+	// flashID is the message whose row is being flashed after a jump from
+	// a reply quote, so fillRow can tag it; cleared when the flash ends.
+	flashID string
 
 	// joinBanner shows a "N people requested to join" strip above the thread
 	// when the open chat is a group with pending, admin-reviewable join
@@ -790,6 +793,10 @@ func (cv *ConversationView) fillRow(box *gtk.Box, pos int) {
 		vm.Author = cv.senderName(msg.FromJID)
 	}
 	cv.rowMsg[box] = msg.ID
+	box.RemoveCSSClass("chatot-row-flash")
+	if cv.flashID != "" && msg.ID == cv.flashID {
+		box.AddCSSClass("chatot-row-flash")
+	}
 	if cv.unreadAnchor != "" && msg.ID == cv.unreadAnchor {
 		vm.ShowUnreadSeparator = true
 		vm.UnreadText = unreadSeparatorText(cv.threadLen() - pos)
@@ -1725,6 +1732,15 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 		quote.AddCSSClass("chatot-bubble-quote")
 		quote.SetXAlign(0)
 		quote.SetWrap(true)
+		if h.onJumpTo != nil && msg.ReplyTo != nil {
+			// The quote is the way back to what it answers.
+			target := msg.ReplyTo.MsgID
+			click := gtk.NewGestureClick()
+			click.ConnectReleased(func(int, float64, float64) { h.onJumpTo(target) })
+			quote.AddController(click)
+			quote.SetCursorFromName("pointer")
+			quote.SetTooltipText("Go to the original message")
+		}
 		bubble.Append(quote)
 	}
 
@@ -2050,6 +2066,9 @@ type bubbleHooks struct {
 	onOpenViewer func(client.Message)
 	// onRetry re-sends a failed optimistic message (the bubble's Retry).
 	onRetry func(client.Message)
+	// onJumpTo scrolls the thread to msgID (the message a quote answers);
+	// nil leaves the quote inert.
+	onJumpTo func(msgID string)
 	// reactorName names a reaction's sender for the pill's tooltip and
 	// list ("You" for our own); nil prints the bare JID.
 	reactorName func(jid string) string
@@ -2108,7 +2127,7 @@ func (cv *ConversationView) hooks() bubbleHooks {
 		onReply: cv.onReply, onReact: cv.onReact, onVote: cv.onVote, onEdit: cv.onEdit,
 		onDelete: cv.onDelete, onStar: cv.onStar, onForward: cv.onForward, onStopLive: cv.onStopLive,
 		onOpenViewer: cv.onOpenViewer, onLocalPath: func(id, path string) { cv.setLocalPath(id, path) }, names: cv.mentionName, avatars: cv.avatarCache,
-		onRetry: cv.retrySend, reactorName: cv.senderName,
+		onRetry: cv.retrySend, reactorName: cv.senderName, onJumpTo: cv.jumpToQuoted,
 	}
 }
 

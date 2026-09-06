@@ -197,6 +197,14 @@ func (cv *ConversationView) MessageAt(idx int) (client.Message, bool) {
 	return cv.msgs[idx], true
 }
 
+// JumpToQuoted follows the reply quote on the bubble at idx, as a click on
+// the quote would: the thread scrolls to the original and flashes its row.
+func (cv *ConversationView) JumpToQuoted(idx int) {
+	if m, ok := cv.MessageAt(idx); ok && m.ReplyTo != nil {
+		cv.jumpToQuoted(m.ReplyTo.MsgID)
+	}
+}
+
 // ShowHoverActions reveals the ⌄ and 🙂 of the bubble at idx.
 func (cv *ConversationView) ShowHoverActions(idx int) {
 	if s := cv.shotFor(idx); s != nil && s.affordances.chevron != nil {
