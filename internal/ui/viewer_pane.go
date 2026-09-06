@@ -546,6 +546,7 @@ func (v *AttachmentViewer) show(i int) {
 	v.pdfCache = map[int]*gdk.Texture{}
 	v.mapZoom = 17
 	v.pic = nil
+	v.picTex = nil
 	v.anchor = zoomAnchor{}
 	v.mapView = nil
 	v.loading = false
@@ -900,10 +901,17 @@ func (v *AttachmentViewer) applyZoom() {
 	fit := v.fitScale()
 	mul := v.zoom
 	atFit := v.atFit()
-	if atFit {
+	switch {
+	case v.picTex == nil:
+		// Nothing decoded yet (a PDF page still rasterising): a nil
+		// *gdk.Texture must not reach SetPaintable as a Paintabler, since
+		// gotk4 dereferences any non-nil interface value.
+		v.pic.SetPaintable(nil)
+		v.pic.SetCanShrink(true)
+	case atFit:
 		v.pic.SetPaintable(v.picTex)
 		v.pic.SetCanShrink(true)
-	} else {
+	default:
 		// A GtkPicture never asks for less than its paintable's own size
 		// once it may not shrink, so a size request below that is ignored
 		// and the picture would jump to 100%. Show it through a paintable
