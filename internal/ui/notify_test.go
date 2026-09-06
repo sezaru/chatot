@@ -88,7 +88,7 @@ func TestMessageNotificationAttachmentPlaceholder(t *testing.T) {
 }
 
 func TestCallNotificationText(t *testing.T) {
-	title, body := callNotification("Grace Hopper")
+	title, body := callNotification("Grace Hopper", false)
 	if title != "Incoming call" || body != "Grace Hopper" {
 		t.Fatalf("got title=%q body=%q", title, body)
 	}
@@ -152,5 +152,23 @@ func TestNotifierAccountPrefix(t *testing.T) {
 				t.Errorf("accountPrefix() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestCallNotificationVideo(t *testing.T) {
+	title, body := callNotification("Grace Hopper", true)
+	if title != "Incoming video call" || body != "Grace Hopper" {
+		t.Fatalf("got title=%q body=%q", title, body)
+	}
+}
+
+func TestReactionNotificationText(t *testing.T) {
+	title, body := reactionNotification("Ada Lovelace", "", "👍", "see you at 7")
+	if title != "Ada Lovelace" || body != `Reacted 👍 to "see you at 7"` {
+		t.Fatalf("DM: got title=%q body=%q", title, body)
+	}
+	title, body = reactionNotification("Weekend Trip", "Ada", "😂", "📷 Sunset")
+	if title != "Weekend Trip" || body != `Ada: Reacted 😂 to "📷 Sunset"` {
+		t.Fatalf("group: got title=%q body=%q", title, body)
 	}
 }

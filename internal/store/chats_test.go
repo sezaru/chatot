@@ -566,3 +566,109 @@ func TestUpsertChatFlagsOlderSnapshotKeepsLiveUnread(t *testing.T) {
 		t.Fatalf("after a newer snapshot: %+v, want unread 5 at ts 300", chats[0])
 	}
 }
+
+func TestChatsPreviewCall(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "call:1", TS: 1, Kind: "call", Payload: `{"outcome":"missed"}`}))
+	if got := mustChats(t, s)[0].Preview; got != "📞 Missed voice call" {
+		t.Fatalf("missed voice: got %q", got)
+	}
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "call:2", TS: 2, Kind: "call", Payload: `{"video":true,"outcome":"answered"}`, FromMe: true}))
+	if got := mustChats(t, s)[0].Preview; got != "🎥 Video call" {
+		t.Fatalf("answered video (no You: prefix): got %q", got)
+	}
+}
+
+func TestCallText(t *testing.T) {
+	cases := []struct {
+		video   bool
+		outcome string
+		want    string
+	}{
+		{false, "missed", "Missed voice call"},
+		{true, "missed", "Missed video call"},
+		{false, "declined", "Declined voice call"},
+		{true, "failed", "Failed video call"},
+		{false, "answered", "Voice call"},
+		{true, "", "Video call"},
+	}
+	for _, tc := range cases {
+		if got := CallText(tc.video, tc.outcome); got != tc.want {
+			t.Errorf("CallText(%v, %q) = %q, want %q", tc.video, tc.outcome, got, tc.want)
+		}
+	}
+}
+
+func TestChatsLastReactionOnOwnMessageNewerThanLastMessage(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "see you at 7", TS: 10, FromMe: true}))
+	must(t, s.UpsertReaction(ReactionRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", ReactorJID: "a@s.whatsapp.net", Emoji: "👍", TS: 20}))
+
+	lr := mustChats(t, s)[0].LastReaction
+	if lr == nil {
+		t.Fatal("LastReaction = nil, want the 👍 on our message")
+	}
+	if lr.Emoji != "👍" || lr.ReactorJID != "a@s.whatsapp.net" || lr.TS != 20 || lr.TargetPreview != "see you at 7" {
+		t.Fatalf("got %+v", lr)
+	}
+}
+
+func TestChatsLastReactionOlderThanLastMessageIgnored(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "hi", TS: 10, FromMe: true}))
+	must(t, s.UpsertReaction(ReactionRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", ReactorJID: "a@s.whatsapp.net", Emoji: "👍", TS: 20}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m2", Text: "ok", TS: 30}))
+
+	c := mustChats(t, s)[0]
+	if c.LastReaction != nil {
+		t.Fatalf("LastReaction = %+v, want nil once a newer message exists", c.LastReaction)
+	}
+	if c.Preview != "ok" {
+		t.Fatalf("Preview = %q, want the newer message", c.Preview)
+	}
+}
+
+func TestChatsLastReactionOnOthersMessageIgnored(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "hi", TS: 10}))
+	must(t, s.UpsertReaction(ReactionRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", ReactorJID: "me@s.whatsapp.net", Emoji: "👍", TS: 20}))
+	if lr := mustChats(t, s)[0].LastReaction; lr != nil {
+		t.Fatalf("LastReaction = %+v, want nil for a reaction to someone else's message", lr)
+	}
+}
+
+func TestChatsLastReactionClearedFallsBack(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "hi", TS: 10, FromMe: true}))
+	must(t, s.UpsertReaction(ReactionRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", ReactorJID: "a@s.whatsapp.net", Emoji: "👍", TS: 20}))
+	must(t, s.UpsertReaction(ReactionRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", ReactorJID: "a@s.whatsapp.net", Emoji: "", TS: 25}))
+	if lr := mustChats(t, s)[0].LastReaction; lr != nil {
+		t.Fatalf("LastReaction = %+v, want nil once the reaction was taken back", lr)
+	}
+}
+
+func TestMessagePreview(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "hello", TS: 1, FromMe: true}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m2", TS: 2}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "m2", Kind: "image", Caption: "Sunset!"}))
+
+	preview, fromMe, ok, err := s.MessagePreview("a@s.whatsapp.net", "m1")
+	must(t, err)
+	if !ok || !fromMe || preview != "hello" {
+		t.Fatalf("m1: ok=%v fromMe=%v preview=%q, want our plain text with no You: prefix", ok, fromMe, preview)
+	}
+	preview, fromMe, ok, err = s.MessagePreview("a@s.whatsapp.net", "m2")
+	must(t, err)
+	if !ok || fromMe || preview != "📷 Sunset!" {
+		t.Fatalf("m2: ok=%v fromMe=%v preview=%q", ok, fromMe, preview)
+	}
+	if _, _, ok, err = s.MessagePreview("a@s.whatsapp.net", "nope"); err != nil || ok {
+		t.Fatalf("unknown: ok=%v err=%v, want ok=false", ok, err)
+	}
+}

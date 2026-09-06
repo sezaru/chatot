@@ -209,7 +209,7 @@ func hasPayload(m *waProto.Message) bool {
 // share, a poll vote, a history-sync notification) never reach the store.
 func hasContent(msg *Message) bool {
 	return msg.Text != "" || msg.Attachment != nil || msg.Location != nil ||
-		msg.Contact != nil || msg.Poll != nil || msg.EventInvite != nil
+		msg.Contact != nil || msg.Poll != nil || msg.EventInvite != nil || msg.CallLog != nil
 }
 
 func orUnsupported(s string) string {

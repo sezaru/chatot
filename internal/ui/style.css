@@ -486,6 +486,35 @@ window {
 	padding-top: 5px;
 }
 
+/* Call log: the medium's glyph in a tinted disc beside WhatsApp's wording
+   ("Missed voice call", in the alert colour; "Video call · 2:31"). */
+.chatot-call-row {
+	padding: 2px 4px 2px 0;
+	min-width: 180px;
+}
+
+.chatot-call-glyph {
+	min-width: 34px;
+	min-height: 34px;
+	border-radius: 999px;
+	background-color: alpha(currentColor, 0.08);
+	font-size: 15px;
+}
+
+.chatot-call-title {
+	font-size: 13px;
+	font-weight: bold;
+}
+
+.chatot-call-missed {
+	color: #c01c28;
+}
+
+.chatot-call-detail {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
 .chatot-event-title {
 	font-weight: bold;
 	color: @chatot_accent_text_soft;

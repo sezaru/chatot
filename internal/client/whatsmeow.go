@@ -344,6 +344,19 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 	if e.Kind == EventMessage && e.Message != nil {
 		e.Synced = w.syncing.Load() || time.Since(time.Unix(e.Message.TS, 0)) > syncedMessageAge
 	}
+	if e.Kind == EventReaction && e.Reaction != nil {
+		e.Synced = w.syncing.Load() || time.Since(time.Unix(e.Reaction.TS, 0)) > syncedMessageAge
+	}
+	if e.Kind == EventCall && e.Call != nil {
+		// The server replays a call that rang while this device was away
+		// (asleep, offline) with its original timestamp: it is logged, not
+		// rung. Judged by age rather than the sync window, so a real call
+		// right after connecting still rings.
+		e.Synced = callIsStale(e.Call.TS, time.Now(), w.syncing.Load())
+		w.log.Infof("chatot/client: call %s from %s offer=%v outcome=%q age=%s stale=%v",
+			e.Call.CallID, e.Call.CallerJID, e.Call.Offer, e.Call.Outcome,
+			time.Since(time.Unix(e.Call.TS, 0)).Round(time.Second), e.Synced)
+	}
 	if r := e.Receipt; r != nil && r.ReaderJID != "" && jidUserIn(r.ReaderJID, w.ownUsers()) {
 		// Our own device reporting a read is us catching up, not a reader.
 		r.ReaderJID = ""
@@ -360,7 +373,13 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 	}
 }
 
-func (w *Whatsmeow) pushEvent(e Event) { w.events.Publish(e) }
+func (w *Whatsmeow) pushEvent(e Event) {
+	if w.events == nil {
+		// A store-only fixture (ingest tests) has nobody to tell.
+		return
+	}
+	w.events.Publish(e)
+}
 
 // syncedMessageAge is how old a "live" message has to be before it is
 // treated as catch-up rather than news: the phone replaying a backlog hands
@@ -531,6 +550,16 @@ func (w *Whatsmeow) Chats(limit int) ([]Chat, error) {
 		// "You", not as the account's own number.
 		if w.isSelfJID(out[i].JID) {
 			out[i].Name = "You"
+		}
+		// Someone reacted to our message after the last message: WhatsApp
+		// previews the chat with the reaction. Our own reaction from
+		// another device is not news.
+		if lr := c.LastReaction; lr != nil && !jidUserIn(lr.ReactorJID, w.ownUsers()) {
+			reactor := ""
+			if c.IsGroup {
+				reactor = w.personName(lr.ReactorJID)
+			}
+			out[i].Preview = ReactionText(reactor, lr.Emoji, lr.TargetPreview)
 		}
 	}
 	return out, nil

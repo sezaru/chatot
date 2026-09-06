@@ -22,6 +22,20 @@ type Chat struct {
 	Muted         bool
 	Archived      bool
 	IsGroup       bool
+	// LastReaction is the newest reaction left on one of our messages when
+	// it is more recent than the chat's last message, nil otherwise:
+	// WhatsApp then previews the chat as "Reacted 👍 to "..."". The reactor
+	// may be ourselves from another device; the caller tells.
+	LastReaction *ChatReaction
+}
+
+// ChatReaction is a reaction to one of our own messages, with the preview
+// of the message it landed on.
+type ChatReaction struct {
+	ReactorJID    string
+	Emoji         string
+	TS            int64
+	TargetPreview string
 }
 
 // Message is a resolved conversation message, ready for display.

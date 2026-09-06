@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	waBinary "go.mau.fi/whatsmeow/binary"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
@@ -77,11 +79,28 @@ func translate(evt interface{}) *Event {
 			Media:   string(v.Media),
 		}}
 	case *events.CallOffer:
-		return &Event{Kind: EventCall, Call: &Call{
-			ChatJID: v.From.String(),
-			CallID:  v.CallID,
-			Offer:   true,
-		}}
+		c := translateCallMeta(v.BasicCallMeta)
+		c.Offer = true
+		c.Video = callOfferIsVideo(v.Data)
+		return &Event{Kind: EventCall, Call: c}
+	case *events.CallOfferNotice:
+		// A group call rings as an offer notice rather than an offer.
+		c := translateCallMeta(v.BasicCallMeta)
+		c.Offer = true
+		c.Video = v.Media == "video"
+		return &Event{Kind: EventCall, Call: c}
+	case *events.CallAccept:
+		c := translateCallMeta(v.BasicCallMeta)
+		c.Outcome = CallAnswered
+		return &Event{Kind: EventCall, Call: c}
+	case *events.CallTerminate:
+		c := translateCallMeta(v.BasicCallMeta)
+		c.Outcome = callTerminateOutcome(v.Reason)
+		return &Event{Kind: EventCall, Call: c}
+	case *events.CallReject:
+		c := translateCallMeta(v.BasicCallMeta)
+		c.Outcome = CallDeclined
+		return &Event{Kind: EventCall, Call: c}
 	case *events.Connected:
 		return &Event{Kind: EventConnection, Connection: &Connection{Connected: true}}
 	case *events.Disconnected:
@@ -133,6 +152,74 @@ func translateMessage(v *events.Message) *Event {
 		return nil
 	}
 	return &Event{Kind: EventMessage, Message: &msg}
+}
+
+// translateCallMeta maps the part every call signal shares: the chat it
+// belongs to (the group for a group call, else the peer), the caller, the
+// call id and the signal's timestamp.
+func translateCallMeta(m types.BasicCallMeta) *Call {
+	chat := m.From
+	if !m.GroupJID.IsEmpty() {
+		chat = m.GroupJID
+	}
+	caller := m.CallCreator
+	if caller.IsEmpty() {
+		caller = m.From
+	}
+	var ts int64
+	if !m.Timestamp.IsZero() {
+		ts = m.Timestamp.Unix()
+	}
+	return &Call{
+		ChatJID:   chat.String(),
+		CallID:    m.CallID,
+		CallerJID: caller.ToNonAD().String(),
+		TS:        ts,
+	}
+}
+
+// callOfferIsVideo tells a video call from a voice call by the offer's
+// media description: a voice offer lists only <audio> codecs, a video one
+// adds a <video> element.
+func callOfferIsVideo(offer *waBinary.Node) bool {
+	if offer == nil {
+		return false
+	}
+	for _, child := range offer.GetChildren() {
+		if child.Tag == "video" {
+			return true
+		}
+	}
+	return false
+}
+
+// callTerminateOutcome reads a terminate signal's reason: a call nobody
+// picked up ends with "timeout" and is a missed call; any other reason (the
+// caller hung up after it connected, a busy line, ...) settles nothing on
+// its own.
+func callTerminateOutcome(reason string) string {
+	if reason == "timeout" {
+		return CallMissed
+	}
+	return ""
+}
+
+// translateCallLog maps the phone's own record of a call (a CallLogMessage,
+// which WhatsApp sends to its linked devices once a call ends) to a CallLog.
+func translateCallLog(cl *waE2E.CallLogMessage) *CallLog {
+	out := &CallLog{Video: cl.GetIsVideo(), DurationSecs: int(cl.GetDurationSecs())}
+	switch cl.GetCallOutcome() {
+	case waE2E.CallLogMessage_MISSED, waE2E.CallLogMessage_SILENCED_BY_DND, waE2E.CallLogMessage_SILENCED_UNKNOWN_CALLER:
+		out.Outcome = CallMissed
+	case waE2E.CallLogMessage_REJECTED:
+		out.Outcome = CallDeclined
+	case waE2E.CallLogMessage_FAILED:
+		out.Outcome = CallFailed
+	default:
+		// CONNECTED, ACCEPTED_ELSEWHERE, ONGOING: the call was picked up.
+		out.Outcome = CallAnswered
+	}
+	return out
 }
 
 // translateReaction maps a reaction update (delivered as an events.Message
@@ -243,6 +330,8 @@ func extractText(m *waProto.Message, msg *Message) {
 			Canceled: ev.GetIsCanceled(),
 		}
 		ctx = ev.GetContextInfo()
+	case m.GetCallLogMesssage() != nil:
+		msg.CallLog = translateCallLog(m.GetCallLogMesssage())
 	case pollCreation(m) != nil:
 		poll := pollCreation(m)
 		opts := poll.GetOptions()

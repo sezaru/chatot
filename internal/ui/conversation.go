@@ -43,6 +43,8 @@ type bubbleView struct {
 	Poll             pollView
 	IsEvent          bool
 	Event            eventView
+	IsCall           bool
+	Call             callView
 	Edited           bool
 	EditedMarker     string
 	Deleted          bool
@@ -54,8 +56,6 @@ type bubbleView struct {
 	// (status == read) rather than the plain dim tick.
 	TickText string
 	TickRead bool
-	// StarGlyph/StarTooltip drive the bubble's star toggle; see starAffordanceVM.
-	StarGlyph   string
 	// Pending marks an own message whose send is still in flight (a clock
 	// where the tick goes); Failed one whose send errored (a red badge and
 	// a Retry button). Neither is in the store yet, so the bubble carries
@@ -66,6 +66,8 @@ type bubbleView struct {
 	// attachment's caption, "" when it has none. Stickers and voice notes
 	// never carry one.
 	CaptionText string
+	// StarGlyph/StarTooltip drive the bubble's star toggle; see starAffordanceVM.
+	StarGlyph   string
 	StarTooltip string
 	// IsEmojiOnly marks a text message that's 1-3 emoji and nothing else: it
 	// renders large with no bubble, like a sticker.
@@ -137,10 +139,10 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 
 	if m.FromMe {
 		v.TickText, v.TickRead = tickVM(m.Status)
-	}
-
 		v.Pending = m.Status == client.MessageStatusPending
 		v.Failed = m.Status == client.MessageStatusFailed
+	}
+
 	switch {
 	case m.Location != nil:
 		v.IsLocation = true
@@ -154,16 +156,19 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 	case m.EventInvite != nil:
 		v.IsEvent = true
 		v.Event = eventVM(m)
+	case m.CallLog != nil:
+		v.IsCall = true
+		v.Call = callVM(m)
 	case m.Attachment != nil:
 		v.IsMedia = true
 		v.Media = mediaVM(m)
 		v.MediaChip = v.Media.Chip
+		v.CaptionText = captionText(*m.Attachment)
 	default:
 		v.Text = m.Text
 		v.IsEmojiOnly = isEmojiOnly(m.Text)
 	}
 
-		v.CaptionText = captionText(*m.Attachment)
 	return v
 }
 
@@ -171,21 +176,16 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 // tick glyph: 0 (sent) -> single check, 1 (delivered) or 2 (read) -> double
 // check, the latter flagged for accent-color rendering.
 func tickVM(status int) (text string, read bool) {
+	if status < client.MessageStatusSent {
+		// Not (yet) sent: the pending clock or failed badge stands in.
+		return "", false
+	}
 	if status >= client.MessageStatusDelivered {
 		return "✓✓", status >= client.MessageStatusRead
 	}
 	return "✓", false
 }
-	if status < client.MessageStatusSent {
-		// Not (yet) sent: the pending clock or failed badge stands in.
-		return "", false
-	}
 
-// mediaChip is the one-line stand-in for an attachment (see
-// attachmentPreview).
-func mediaChip(a client.Attachment) string { return attachmentPreview(a) }
-
-func sameDay(a, b int64, loc *time.Location) bool {
 // captionText is what a media bubble prints under its picture, video or
 // document: the caption the sender typed, trimmed. Stickers and audio have
 // no caption field on WhatsApp, and a document's filename is its row
@@ -203,6 +203,11 @@ func captionText(a client.Attachment) string {
 	return strings.TrimSpace(a.Caption)
 }
 
+// mediaChip is the one-line stand-in for an attachment (see
+// attachmentPreview).
+func mediaChip(a client.Attachment) string { return attachmentPreview(a) }
+
+func sameDay(a, b int64, loc *time.Location) bool {
 	ta := time.Unix(a, 0).In(loc)
 	tb := time.Unix(b, 0).In(loc)
 	return ta.Year() == tb.Year() && ta.YearDay() == tb.YearDay()
@@ -321,19 +326,19 @@ type ConversationView struct {
 	// names land.
 	names map[string]string
 
-	onReply   func(client.Message)
-	onReact   func(msg client.Message, emoji string)
-	onVote    func(msg client.Message, options []string)
-	onEdit    func(client.Message)
-	onDelete  func(client.Message)
 	// unsent holds, per chat, the optimistic rows the store does not have:
 	// sends in flight and sends that failed. Load appends them after the
 	// stored page and refreshInPlace leaves them out of its comparison
 	// with the store, so a receipt landing mid-send never drops them.
 	unsent map[string][]client.Message
 
-	onStar    func(client.Message)
+	onReply   func(client.Message)
 	onRetry   func(client.Message)
+	onReact   func(msg client.Message, emoji string)
+	onVote    func(msg client.Message, options []string)
+	onEdit    func(client.Message)
+	onDelete  func(client.Message)
+	onStar    func(client.Message)
 	onForward func(client.Message)
 	// onUnreadSeen fires when the unread pill comes down because the reader
 	// has looked at it: the chat is read from that moment.
@@ -388,16 +393,16 @@ type ConversationView struct {
 // affordance on a bubble; the composer wires this to StartReply.
 func (cv *ConversationView) OnReplyRequested(f func(client.Message)) { cv.onReply = f }
 
-// OnReactRequested registers f to be called when the user picks an emoji
-// from a bubble's react affordance; msg carries the ChatJID needed to send.
-func (cv *ConversationView) OnReactRequested(f func(msg client.Message, emoji string)) {
-	cv.onReact = f
-}
 // OnRetryRequested registers f to be called with a failed optimistic
 // message when the user presses its Retry; the row is gone by then, and f
 // is expected to send the content afresh (the composer's Resend).
 func (cv *ConversationView) OnRetryRequested(f func(client.Message)) { cv.onRetry = f }
 
+// OnReactRequested registers f to be called when the user picks an emoji
+// from a bubble's react affordance; msg carries the ChatJID needed to send.
+func (cv *ConversationView) OnReactRequested(f func(msg client.Message, emoji string)) {
+	cv.onReact = f
+}
 
 // OnVoteRequested registers f to be called when the user clicks a poll option;
 // options is the set the user selected (currently always one).
@@ -658,12 +663,12 @@ func NewConversationView(c client.Client) *ConversationView {
 		c:             c,
 		events:        c.Events(),
 		rowMsg:        map[*gtk.Box]string{},
+		unsent:        map[string][]client.Message{},
 		header:        header,
 		headerContent: headerContent,
 		avatarSlot:    avatarSlot,
 		avatarCache:   newAvatarCache(),
 		titleLabel:    titleLabel,
-		unsent:        map[string][]client.Message{},
 		subtitleLabel: subtitleLabel,
 
 		menuBtn:              menuBtn,
@@ -904,16 +909,16 @@ func (cv *ConversationView) Load(jid string) {
 	if cv.unreadAnchor == "" {
 		cv.unreadAnchor = unreadAnchorFor(msgs, chat.UnreadCount)
 	}
-
-	// Replace every row with the new page; the typing sentinel (if any)
-	// goes with it and is re-added below.
-	cv.typingShown = false
-	cv.model.Splice(0, cv.model.Len(), msgs...)
 	// The chat's sends in flight and failed sends live only here; they
 	// go after the stored page, where they were appended.
 	msgs = cv.withUnsent(jid, msgs)
 	cv.msgs = msgs
 	cv.byID = indexByID(msgs)
+
+	// Replace every row with the new page; the typing sentinel (if any)
+	// goes with it and is re-added below.
+	cv.typingShown = false
+	cv.model.Splice(0, cv.model.Len(), msgs...)
 
 	if len(msgs) == 0 {
 		cv.empty.SetLabel("No messages yet")
@@ -959,6 +964,11 @@ func bubbleSig(m client.Message) string {
 			b.WriteString(strings.Join(r.Reactors, ","))
 			b.WriteByte(';')
 		}
+	}
+	if m.CallLog != nil {
+		// An accept turns a missed call into an answered one in place.
+		b.WriteByte('|')
+		b.WriteString(m.CallLog.Outcome)
 	}
 	if m.Poll != nil {
 		b.WriteByte('|')
@@ -1018,16 +1028,6 @@ func (cv *ConversationView) refreshInPlace() {
 	trace(1, "refreshInPlace: %d rows changed", changed)
 }
 
-// loadOlder prepends the next older page. Must run on the GTK main loop.
-func (cv *ConversationView) loadOlder() {
-	cv.loadingOlder = true
-
-	older, err := cv.c.MessagesBefore(cv.jid, cv.oldestID, conversationPageSize)
-	if err != nil {
-		cv.hasMore = false
-		cv.loadingOlder = false
-		return
-	}
 // storedPositions lists the positions in cv.msgs of the rows the store
 // holds: everything but the typing sentinel and the optimistic rows.
 func (cv *ConversationView) storedPositions() []int {
@@ -1041,6 +1041,16 @@ func (cv *ConversationView) storedPositions() []int {
 	return out
 }
 
+// loadOlder prepends the next older page. Must run on the GTK main loop.
+func (cv *ConversationView) loadOlder() {
+	cv.loadingOlder = true
+
+	older, err := cv.c.MessagesBefore(cv.jid, cv.oldestID, conversationPageSize)
+	if err != nil {
+		cv.hasMore = false
+		cv.loadingOlder = false
+		return
+	}
 	if len(older) == 0 {
 		request, exhausted := nextHistoryAction(len(older), cv.historyRequested)
 		trace(1, "loadOlder: store floor reached; request=%v exhausted=%v", request, exhausted)
@@ -1324,25 +1334,15 @@ func (cv *ConversationView) chatName(jid string) string {
 // it belongs to the currently-open chat. Must run on the GTK main loop
 // (the composer calls it from within a glib.IdleAdd).
 func (cv *ConversationView) AppendSentMessage(msg client.Message) {
+	if isUnsent(msg) {
+		cv.unsent[msg.ChatJID] = append(cv.unsent[msg.ChatJID], msg)
+	}
 	if msg.ChatJID != cv.jid {
 		return
 	}
 	cv.appendMessage(msg)
 }
 
-// ApplyOwnReaction re-renders the thread so a just-sent own reaction shows
-// immediately, if chatJID is the currently-open chat. It reloads from the
-// store (idempotent), so a later echo EventReaction for the same reaction
-// re-runs the same reload harmlessly. Must run on the GTK main loop.
-	if isUnsent(msg) {
-		cv.unsent[msg.ChatJID] = append(cv.unsent[msg.ChatJID], msg)
-	}
-func (cv *ConversationView) ApplyOwnReaction(chatJID string) {
-	if chatJID != cv.jid {
-		return
-	}
-	cv.refreshInPlace()
-}
 // isUnsent reports whether msg is an optimistic row the store does not
 // hold: a send in flight or a failed one.
 func isUnsent(msg client.Message) bool { return msg.Status < client.MessageStatusSent }
@@ -1445,6 +1445,16 @@ func (cv *ConversationView) withUnsent(jid string, msgs []client.Message) []clie
 	return msgs
 }
 
+// ApplyOwnReaction re-renders the thread so a just-sent own reaction shows
+// immediately, if chatJID is the currently-open chat. It reloads from the
+// store (idempotent), so a later echo EventReaction for the same reaction
+// re-runs the same reload harmlessly. Must run on the GTK main loop.
+func (cv *ConversationView) ApplyOwnReaction(chatJID string) {
+	if chatJID != cv.jid {
+		return
+	}
+	cv.refreshInPlace()
+}
 
 // appendMessage adds msg to the end of the currently-loaded thread. The
 // factory renders the new row when it realizes at the bottom. Must run on the
@@ -1734,20 +1744,10 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 		bubble.Append(buildPollContent(msg, vm.Poll, onVote))
 	} else if vm.IsEvent {
 		bubble.Append(buildEventContent(vm.Event))
+	} else if vm.IsCall {
+		bubble.Append(buildCallContent(vm.Call))
 	} else if vm.IsMedia {
 		bubble.Append(buildMediaContent(msg, vm.Media, c, h.mediaOpener(msg)))
-	} else {
-		text := gtk.NewLabel("")
-		text.AddCSSClass("chatot-bubble-text")
-		if vm.Deleted {
-			text.AddCSSClass("chatot-bubble-deleted")
-		}
-		if vm.IsEmojiOnly {
-			text.AddCSSClass("chatot-emoji-only")
-		}
-		text.SetXAlign(0)
-		text.SetWrap(true)
-		// WrapWordChar so a long unbroken token (e.g. a URL) still breaks
 		if vm.CaptionText != "" {
 			// The caption reads like a text bubble's body, under the
 			// picture: links open, mentions resolve, the text copies.
@@ -1762,6 +1762,18 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 			caption.SetSelectable(true)
 			bubble.Append(caption)
 		}
+	} else {
+		text := gtk.NewLabel("")
+		text.AddCSSClass("chatot-bubble-text")
+		if vm.Deleted {
+			text.AddCSSClass("chatot-bubble-deleted")
+		}
+		if vm.IsEmojiOnly {
+			text.AddCSSClass("chatot-emoji-only")
+		}
+		text.SetXAlign(0)
+		text.SetWrap(true)
+		// WrapWordChar so a long unbroken token (e.g. a URL) still breaks
 		// instead of forcing the bubble wider than the pane.
 		text.SetWrapMode(pango.WrapWordChar)
 		// Cap the natural width so a long paragraph wraps into a hugging bubble
@@ -1781,6 +1793,24 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 
 	footer := gtk.NewBox(gtk.OrientationHorizontal, 4)
 	footer.SetHAlign(gtk.AlignEnd)
+
+	if vm.Failed {
+		// WhatsApp's failed send: a Retry beside the time and a red badge
+		// where the tick would be. Retrying re-sends the same content as
+		// a fresh message at the foot of the thread.
+		retry := gtk.NewButtonWithLabel("↻ Retry")
+		retry.AddCSSClass("flat")
+		retry.AddCSSClass("chatot-retry")
+		retry.SetTooltipText("Send again")
+		retry.SetVAlign(gtk.AlignCenter)
+		if h.onRetry == nil {
+			retry.SetSensitive(false)
+		} else {
+			m := msg
+			retry.ConnectClicked(func() { h.onRetry(m) })
+		}
+		footer.Append(retry)
+	}
 
 	timeLabel := gtk.NewLabel(vm.TimeText + vm.EditedMarker)
 	timeLabel.AddCSSClass("chatot-bubble-time")
@@ -1805,24 +1835,6 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 			tick.AddCSSClass("chatot-tick-read")
 		}
 		footer.Append(tick)
-	if vm.Failed {
-		// WhatsApp's failed send: a Retry beside the time and a red badge
-		// where the tick would be. Retrying re-sends the same content as
-		// a fresh message at the foot of the thread.
-		retry := gtk.NewButtonWithLabel("↻ Retry")
-		retry.AddCSSClass("flat")
-		retry.AddCSSClass("chatot-retry")
-		retry.SetTooltipText("Send again")
-		retry.SetVAlign(gtk.AlignCenter)
-		if h.onRetry == nil {
-			retry.SetSensitive(false)
-		} else {
-			m := msg
-			retry.ConnectClicked(func() { h.onRetry(m) })
-		}
-		footer.Append(retry)
-	}
-
 	}
 
 	bubble.Append(footer)
@@ -1855,7 +1867,7 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 
 	// Editing is a text-only, own-message affordance (WhatsApp only edits text);
 	// a deleted bubble gets no affordances at all (nothing left to act on).
-	canEdit := !vm.Deleted && msg.FromMe && !vm.IsMedia && !vm.IsLocation && !vm.IsContact && !vm.IsPoll && !vm.IsEvent
+	canEdit := !vm.Deleted && msg.FromMe && !vm.IsMedia && !vm.IsLocation && !vm.IsContact && !vm.IsPoll && !vm.IsEvent && !vm.IsCall
 	// Anyone's message can be deleted for this account (the prompt offers
 	// "for everyone" only on own ones); a tombstone has no menu at all.
 	canDelete := !vm.Deleted
@@ -1923,6 +1935,8 @@ func copyableText(m client.Message) string {
 			lines = append(lines, "• "+o.Name)
 		}
 		return strings.Join(lines, "\n")
+	case m.CallLog != nil:
+		return client.CallText(m.CallLog.Video, m.CallLog.Outcome)
 	case m.Attachment != nil:
 		return m.Attachment.Caption
 	}
@@ -2032,6 +2046,11 @@ type bubbleHooks struct {
 	// onOpenViewer opens msg's attachment in the viewer pane; nil falls
 	// back to the standalone photo/video windows.
 	onOpenViewer func(client.Message)
+	// onRetry re-sends a failed optimistic message (the bubble's Retry).
+	onRetry func(client.Message)
+	// reactorName names a reaction's sender for the pill's tooltip and
+	// list ("You" for our own); nil prints the bare JID.
+	reactorName func(jid string) string
 	// onLocalPath records that msgID's attachment now sits at path (the
 	// bubble downloaded it), so later reads of the view's messages see it.
 	onLocalPath func(msgID, path string)
@@ -2046,11 +2065,6 @@ type bubbleHooks struct {
 // VoteAt casts a vote for option on the message at idx — a dev/screenshot
 // hook.
 func (cv *ConversationView) VoteAt(idx int, option string) {
-	// onRetry re-sends a failed optimistic message (the bubble's Retry).
-	onRetry func(client.Message)
-	// reactorName names a reaction's sender for the pill's tooltip and
-	// list ("You" for our own); nil prints the bare JID.
-	reactorName func(jid string) string
 	if m, ok := cv.MessageAt(idx); ok && cv.onVote != nil {
 		cv.onVote(m, []string{option})
 	}
@@ -2092,6 +2106,7 @@ func (cv *ConversationView) hooks() bubbleHooks {
 		onReply: cv.onReply, onReact: cv.onReact, onVote: cv.onVote, onEdit: cv.onEdit,
 		onDelete: cv.onDelete, onStar: cv.onStar, onForward: cv.onForward, onStopLive: cv.onStopLive,
 		onOpenViewer: cv.onOpenViewer, onLocalPath: func(id, path string) { cv.setLocalPath(id, path) }, names: cv.mentionName, avatars: cv.avatarCache,
+		onRetry: cv.retrySend, reactorName: cv.senderName,
 	}
 }
 
@@ -2106,7 +2121,6 @@ func (cv *ConversationView) SetLocalPath(msgID, path string) {
 				return
 			}
 		}
-		onRetry: cv.retrySend, reactorName: cv.senderName,
 	}
 }
 
@@ -2442,20 +2456,6 @@ func newChevronGlyph(size int) *gtk.DrawingArea {
 	return area
 }
 
-// Popover card widths the pointing rectangles are sized for: the menu and
-// reaction row are .chatot-menu > contents' 230px plus its padding and
-// border; the picker is the mockup's 322px card plus the same.
-const (
-	bubbleMenuWidth      = 244
-	reactPickerCardWidth = reactPickerWidth + 14
-)
-
-// alignedRect is the rectangle a popover of about width px should point at
-// so it hangs off anchor aligned to the bubble's outer edge (see
-// bubbleAffordances.popover); nil when nothing is allocated yet, in which
-// case the popover falls back to GTK's default placement. A widget shown in
-// the same frame (the hover buttons under a dev hook) has no allocation and
-// reports 0×0, so fallback (the bubble) is measured instead.
 // newClockGlyph is the pending send's mark where the tick goes: a small
 // stroked clock face in the current colour, WhatsApp's "sending" clock.
 // Stroked with cairo rather than a theme icon so it inherits the outgoing
@@ -2484,6 +2484,20 @@ func newClockGlyph(size int) *gtk.DrawingArea {
 	return area
 }
 
+// Popover card widths the pointing rectangles are sized for: the menu and
+// reaction row are .chatot-menu > contents' 230px plus its padding and
+// border; the picker is the mockup's 322px card plus the same.
+const (
+	bubbleMenuWidth      = 244
+	reactPickerCardWidth = reactPickerWidth + 14
+)
+
+// alignedRect is the rectangle a popover of about width px should point at
+// so it hangs off anchor aligned to the bubble's outer edge (see
+// bubbleAffordances.popover); nil when nothing is allocated yet, in which
+// case the popover falls back to GTK's default placement. A widget shown in
+// the same frame (the hover buttons under a dev hook) has no allocation and
+// reports 0×0, so fallback (the bubble) is measured instead.
 func alignedRect(host, anchor, fallback gtk.Widgetter, width int, fromMe bool) *gdk.Rectangle {
 	if host == nil {
 		return nil
@@ -2750,11 +2764,6 @@ func reactorListCaption(r reactionView) string {
 	return fmt.Sprintf("%s · %d reactions", r.Emoji, r.Count)
 }
 
-// Header is the conversation's AdwHeaderBar (identity, search, ⋮ and the
-// window controls). It is built here but packed by the window, above the
-// stack that swaps the thread for the media and starred pages, so those
-// pages sit under the same header rather than replacing it.
-func (cv *ConversationView) Header() gtk.Widgetter { return cv.header }
 // reactorListWidth is the reactions sheet's card; reactorAvatarSize its
 // row avatars (the chat list's small size).
 const (
@@ -2762,3 +2771,8 @@ const (
 	reactorAvatarSize = 28
 )
 
+// Header is the conversation's AdwHeaderBar (identity, search, ⋮ and the
+// window controls). It is built here but packed by the window, above the
+// stack that swaps the thread for the media and starred pages, so those
+// pages sit under the same header rather than replacing it.
+func (cv *ConversationView) Header() gtk.Widgetter { return cv.header }
