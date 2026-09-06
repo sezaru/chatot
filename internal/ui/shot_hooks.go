@@ -22,6 +22,8 @@ type bubbleShot struct {
 	affordances bubbleAffordances
 	// reactPlus is the open quick-reaction row's ＋ (nil until it shows).
 	reactPlus *gtk.Button
+	// openReactors opens the first reaction pill's who-reacted sheet.
+	openReactors func()
 }
 
 var shotRegistry map[string]*bubbleShot
@@ -211,6 +213,25 @@ func (cv *ConversationView) PopupMessageMenu(idx int) {
 	}
 }
 
+// RetryLast presses Retry on the newest bubble when it is a failed send.
+func (cv *ConversationView) RetryLast() {
+	n := cv.threadLen()
+	if n == 0 {
+		return
+	}
+	if m := cv.msgs[n-1]; m.Status == client.MessageStatusFailed {
+		cv.retrySend(m)
+	}
+}
+
+// PopupReactorList opens the who-reacted sheet of the first reaction pill
+// under the bubble at idx.
+func (cv *ConversationView) PopupReactorList(idx int) {
+	if s := cv.shotFor(idx); s != nil && s.openReactors != nil {
+		s.openReactors()
+	}
+}
+
 // PopupReactPill opens the 🙂 quick-reaction row of the bubble at idx.
 func (cv *ConversationView) PopupReactPill(idx int) {
 	cv.ShowHoverActions(idx)
@@ -303,7 +324,7 @@ func (cv *ConversationView) ShowBlockConfirm(name string) {
 // ShowTray opens the attachment tray on the given files (screenshot only).
 func (c *Composer) ShowTray(paths []string) {
 	if c.tray != nil {
-		c.tray.Open(paths)
+		c.openTray(paths)
 	}
 }
 

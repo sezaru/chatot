@@ -4313,3 +4313,66 @@ button.chatot-mention-row-sel {
 	padding-top: 6px;
 	font-size: 12px;
 }
+
+/* Send states (WhatsApp): a pending message carries a small clock where
+   its tick goes; a failed one a red "!" badge and a Retry beside the time.
+   The red is the mockup's error tone (#c01c28, its failed download). */
+.chatot-bubble-failed {
+	font-size: 9px;
+	font-weight: bold;
+	color: #ffffff;
+	background-color: #c01c28;
+	border-radius: 999px;
+	min-width: 13px;
+	min-height: 13px;
+	padding: 0;
+}
+
+button.chatot-retry {
+	font-size: 11px;
+	font-weight: bold;
+	color: #c01c28;
+	min-height: 0;
+	min-width: 0;
+	padding: 0 6px;
+	margin-right: 4px;
+}
+
+.chatot-bubble-out button.chatot-retry {
+	color: #ffffff;
+	background-color: alpha(#c01c28, 0.85);
+}
+
+/* A picture's caption sits under it, set like a text bubble's body. */
+.chatot-bubble-caption {
+	margin-top: 2px;
+}
+
+/* The reactions sheet a pill opens: who picked this emoji, one row each. */
+.chatot-reactor-list > contents {
+	padding: 8px;
+}
+
+.chatot-reactor-row {
+	padding: 4px 6px;
+	min-height: 32px;
+}
+
+.chatot-reactor-name {
+	font-size: 13px;
+}
+
+.chatot-reactor-hint {
+	font-size: 11px;
+	opacity: 0.55;
+}
+
+.chatot-reactor-emoji {
+	font-size: 16px;
+}
+
+button.chatot-reactor-btn {
+	padding: 0;
+	min-height: 0;
+	border-radius: 8px;
+}

@@ -152,6 +152,13 @@ func mediaVM(m client.Message) mediaView {
 	if caption == "" {
 		caption = a.Filename
 	}
+	// A document row is titled by its filename; its caption is printed
+	// under the row by the bubble (bubbleView.CaptionText), not here, or
+	// a captioned PDF would show the caption twice. Only a nameless
+	// document borrows the caption as its title.
+	if a.Kind == "document" && a.Filename != "" {
+		caption = a.Filename
+	}
 	v := mediaView{
 		IsMedia: true, Kind: a.Kind, Chip: mediaChip(a), Caption: caption,
 		IsGIF: a.IsGIF, ViewOnce: a.ViewOnce, Viewed: a.Viewed,

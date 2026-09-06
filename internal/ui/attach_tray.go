@@ -92,6 +92,9 @@ type AttachTray struct {
 	strip    *gtk.Box
 	onSend   func([]trayItem)
 	onAddReq func()
+	// onDiscard runs on Cancel with the first item's caption, so a draft
+	// the composer moved into the tray can go back to the entry.
+	onDiscard func(caption string)
 	// previews caches the helper results per path for the tray's lifetime,
 	// so redraws (every caption keystroke rebuilds the strip) never rerun
 	// ffmpeg or pdftoppm. An entry with Done=false is still being built.
@@ -116,7 +119,7 @@ func NewAttachTray(onSend func([]trayItem), onAddReq func()) *AttachTray {
 	// Centred, not filled: a GtkBox stretches its children to the row's
 	// 47px otherwise, which turned both buttons into full-height slabs.
 	cancel.SetVAlign(gtk.AlignCenter)
-	cancel.ConnectClicked(t.Close)
+	cancel.ConnectClicked(t.discard)
 	header.Append(cancel)
 
 	titleCol := gtk.NewBox(gtk.OrientationVertical, 0)
@@ -197,6 +200,35 @@ func (t *AttachTray) Open(paths []string) {
 	}
 	t.SetVisible(true)
 	t.refresh()
+}
+
+// OnDiscard registers f to run when the tray is cancelled; see onDiscard.
+func (t *AttachTray) OnDiscard(f func(caption string)) { t.onDiscard = f }
+
+// Empty reports whether nothing is queued (the tray is closed).
+func (t *AttachTray) Empty() bool { return len(t.items) == 0 }
+
+// SeedCaption gives the first queued item text as its caption when it has
+// none yet: the composer's draft, carried into the tray.
+func (t *AttachTray) SeedCaption(text string) {
+	if len(t.items) == 0 || t.items[0].Caption != "" {
+		return
+	}
+	t.items[0].Caption = text
+	t.refresh()
+}
+
+// discard is the Cancel button: the first caption is handed back before
+// the queue goes.
+func (t *AttachTray) discard() {
+	caption := ""
+	if len(t.items) > 0 {
+		caption = t.items[0].Caption
+	}
+	t.Close()
+	if t.onDiscard != nil {
+		t.onDiscard(caption)
+	}
 }
 
 // Close discards every queued item and hides the tray.
