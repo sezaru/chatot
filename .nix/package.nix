@@ -46,7 +46,7 @@
         ${webp-pixbuf-loader}/${gdk-pixbuf.moduleDir}/*.so \
         > $out
     '';
-  version = "0.3.0-beta";
+  version = "0.4.0-beta";
 in
   buildGoModule {
     pname = "chatot";

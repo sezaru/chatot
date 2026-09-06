@@ -79,6 +79,11 @@
   </recommends>
 
   <releases>
+    <release version="0.4.0-beta" date="2026-09-06">
+      <description>
+        <p>Calls are logged in the thread and the chat list, and a call that rang while the machine was asleep no longer rings on resume. Reactions to your messages notify and show as the chat preview. Sends show at once with a pending clock and offer a retry on failure. GIF search, a sticker library and WhatsApp favourites.</p>
+      </description>
+    </release>
     <release version="0.3.0-beta" date="2026-09-04">
       <description>
         <p>The conversation thread is a GtkListView with relative scrolling, so older pages load without flicker. Preferences are fully wired: font size, window controls, notification sound and text privacy, message previews, tray icon, proxy, auto-download, storage and a log file. Packages can ship their own notification sound.</p>
