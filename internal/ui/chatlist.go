@@ -1095,10 +1095,13 @@ func composingPreviewText(kind string) string {
 	return "typing…"
 }
 
-// starredSnippet renders a starred message's preview line, falling back to a
-// kind label for non-text bodies like the chat-list preview does.
-func starredSnippet(m client.Message) string {
+// messageSnippet renders a message's one-line stand-in wherever it is
+// summarised (a starred row, the quote on a reply), falling back to a kind
+// label for non-text bodies like the chat-list preview does.
+func messageSnippet(m client.Message) string {
 	switch {
+	case m.Deleted:
+		return tombstoneText
 	case m.Text != "":
 		return m.Text
 	case m.Attachment != nil:
@@ -1109,6 +1112,13 @@ func starredSnippet(m client.Message) string {
 		return "👤 Contact"
 	case m.Poll != nil:
 		return "📊 " + m.Poll.Name
+	case m.EventInvite != nil:
+		return "📅 " + m.EventInvite.Name
+	case m.CallLog != nil:
+		if m.CallLog.Video {
+			return "🎥 Video call"
+		}
+		return "📞 Voice call"
 	default:
 		return ""
 	}

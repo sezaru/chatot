@@ -197,6 +197,10 @@ func NewFake() *Fake {
 			CallLog: &CallLog{Outcome: CallMissed}},
 		{ID: "m18", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 1800,
 			CallLog: &CallLog{Video: true, Outcome: CallAnswered, DurationSecs: 151}},
+		// m19 replies to a captionless picture, so the quote has no text to
+		// show and falls back to the kind label ("📷 Photo").
+		{ID: "m19", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 1700,
+			Text: "Is this the room upstairs?", ReplyTo: &MsgRef{ChatJID: "1112223333@s.whatsapp.net", MsgID: "m13"}},
 	}
 
 	f.messages[statusBroadcastJID] = []Message{
