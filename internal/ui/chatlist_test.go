@@ -235,7 +235,7 @@ func TestComposingPreviewText(t *testing.T) {
 	}
 }
 
-func TestStarredSnippet(t *testing.T) {
+func TestMessageSnippet(t *testing.T) {
 	cases := []struct {
 		name string
 		msg  client.Message
@@ -246,11 +246,15 @@ func TestStarredSnippet(t *testing.T) {
 		{"location", client.Message{Location: &client.Location{Name: "Home"}}, "📍 Location"},
 		{"contact", client.Message{Contact: &client.Contact{DisplayName: "Ada"}}, "👤 Contact"},
 		{"poll", client.Message{Poll: &client.Poll{Name: "Lunch?"}}, "📊 Lunch?"},
+		{"event", client.Message{EventInvite: &client.EventInvite{Name: "Standup"}}, "📅 Standup"},
+		{"voice call", client.Message{CallLog: &client.CallLog{Outcome: "missed"}}, "📞 Voice call"},
+		{"video call", client.Message{CallLog: &client.CallLog{Video: true}}, "🎥 Video call"},
+		{"deleted", client.Message{Text: "gone", Deleted: true}, tombstoneText},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := starredSnippet(tc.msg); got != tc.want {
-				t.Errorf("starredSnippet(%+v) = %q, want %q", tc.msg, got, tc.want)
+			if got := messageSnippet(tc.msg); got != tc.want {
+				t.Errorf("messageSnippet(%+v) = %q, want %q", tc.msg, got, tc.want)
 			}
 		})
 	}

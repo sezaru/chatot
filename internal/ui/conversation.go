@@ -121,7 +121,9 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 	if m.ReplyTo != nil {
 		v.HasQuote = true
 		if q, ok := byID[m.ReplyTo.MsgID]; ok {
-			v.QuotedText = q.Text
+			// A picture, voice note or poll has no Text: quote its kind
+			// label ("📷 Photo") the way the chat list previews it.
+			v.QuotedText = messageSnippet(q)
 			if v.QuotedText == "" {
 				v.QuotedText = "↩ reply"
 			}

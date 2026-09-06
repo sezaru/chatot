@@ -155,7 +155,7 @@ func (p *StarredPage) newStarredRow(msg client.Message, chatName string) gtk.Wid
 	name.SetEllipsize(pango.EllipsizeEnd)
 	name.AddCSSClass("chatot-starred-chat")
 	col.Append(name)
-	text := gtk.NewLabel(starredSnippet(msg))
+	text := gtk.NewLabel(messageSnippet(msg))
 	text.SetXAlign(0)
 	text.SetEllipsize(pango.EllipsizeEnd)
 	text.AddCSSClass("chatot-starred-text")

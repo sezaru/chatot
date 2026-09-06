@@ -47,6 +47,20 @@ func TestBubbleVM_ReplyResolved(t *testing.T) {
 	}
 }
 
+func TestBubbleVM_ReplyToMediaQuotesKind(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+	byID := map[string]client.Message{
+		"pic":   {ID: "pic", Attachment: &client.Attachment{Kind: "image"}},
+		"voice": {ID: "voice", Attachment: &client.Attachment{Kind: "audio", DurationSecs: 12}},
+	}
+	for id, want := range map[string]string{"pic": "📷 Photo", "voice": "🎤 0:12"} {
+		m := client.Message{ID: "2", Text: "Como assim no app", TS: now.Unix(), ReplyTo: &client.MsgRef{MsgID: id}}
+		if got := bubbleVM(m, nil, byID, now).QuotedText; got != want {
+			t.Errorf("reply to %s: QuotedText = %q, want %q", id, got, want)
+		}
+	}
+}
+
 func TestBubbleVM_ReplyNotFoundFallback(t *testing.T) {
 	now := mustParse(t, "2026-08-30 12:00:00")
 	m := client.Message{ID: "2", Text: "reply text", TS: now.Unix(), ReplyTo: &client.MsgRef{MsgID: "missing"}}
