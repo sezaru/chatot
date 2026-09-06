@@ -65,6 +65,13 @@ type eventPayload struct {
 	Canceled    bool   `json:"canceled,omitempty"`
 }
 
+// callPayload is the JSON shape stored when Kind == "call".
+type callPayload struct {
+	Video        bool   `json:"video,omitempty"`
+	Outcome      string `json:"outcome"`
+	DurationSecs int    `json:"duration_secs,omitempty"`
+}
+
 // hashPollOption returns the SHA-256 of an option name, the form WhatsApp
 // transmits votes in and poll_votes stores. Vote tallying matches these
 // against the poll's option names.
@@ -122,6 +129,14 @@ func storeMessageRow(m *Message) store.MessageRow {
 		}
 		if b, err := json.Marshal(pollPayload{
 			Name: m.Poll.Name, Options: names, Selectable: m.Poll.SelectableCount,
+		}); err == nil {
+			row.Payload = string(b)
+		}
+	}
+	if m.CallLog != nil {
+		row.Kind = "call"
+		if b, err := json.Marshal(callPayload{
+			Video: m.CallLog.Video, Outcome: m.CallLog.Outcome, DurationSecs: m.CallLog.DurationSecs,
 		}); err == nil {
 			row.Payload = string(b)
 		}
@@ -223,6 +238,11 @@ func messageFromStore(m store.Message, selfJID string) Message {
 		var p pollPayload
 		if err := json.Unmarshal([]byte(m.Payload), &p); err == nil {
 			out.Poll = pollFromStore(p, m.PollVotes, selfJID)
+		}
+	case "call":
+		var p callPayload
+		if err := json.Unmarshal([]byte(m.Payload), &p); err == nil {
+			out.CallLog = &CallLog{Video: p.Video, Outcome: p.Outcome, DurationSecs: p.DurationSecs}
 		}
 	case "event":
 		var p eventPayload

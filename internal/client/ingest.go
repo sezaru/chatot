@@ -2,9 +2,13 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
+	"time"
 
 	"go.mau.fi/whatsmeow/types"
+
+	"chatot/internal/store"
 )
 
 // ingestEvent routes a normalized Event onto the local store. It runs
@@ -30,6 +34,8 @@ func (w *Whatsmeow) ingestEvent(e Event) {
 		err = w.ingestReaction(e.Reaction)
 	case EventRevoke:
 		err = w.ingestRevoke(e.Revoke)
+	case EventCall:
+		err = w.ingestCall(e.Call)
 	}
 	if err != nil {
 		w.log.Warnf("store ingest failed (kind=%d): %v", e.Kind, err)
@@ -192,11 +198,105 @@ func (w *Whatsmeow) canonicalUser(jid string) string {
 	return parsed.User
 }
 
+// ingestReaction stores the reaction and, for one somebody else left on a
+// message of ours, describes the target on the event (for the "Reacted 👍
+// to ..." notification) and bumps the chat so it surfaces in the list the
+// way WhatsApp does. Reacting to someone else's message, or to our own from
+// another device, is nobody's news.
 func (w *Whatsmeow) ingestReaction(r *Reaction) error {
 	if r == nil {
 		return nil
 	}
-	return w.store.UpsertReaction(storeReactionRow(r))
+	if err := w.store.UpsertReaction(storeReactionRow(r)); err != nil {
+		return err
+	}
+	if r.ReactorJID == "" || jidUserIn(r.ReactorJID, w.ownUsers()) {
+		return nil
+	}
+	preview, fromMe, ok, err := w.store.MessagePreview(r.ChatJID, r.MsgID)
+	if err != nil || !ok || !fromMe {
+		return err
+	}
+	r.TargetFromMe, r.TargetPreview = true, preview
+	if r.Emoji == "" {
+		return nil
+	}
+	if err := w.store.BumpChatActivity(r.ChatJID, strings.HasSuffix(r.ChatJID, "@g.us"), r.TS, 0); err != nil {
+		return err
+	}
+	// The sidebar ignores reaction events (they are most of a busy
+	// account's traffic); this one changed the row's preview and order.
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: r.ChatJID}})
+	return nil
+}
+
+// ingestCall logs a call in its chat the way WhatsApp does. The offer
+// writes the row, as a missed call: this device never answers, and a call
+// nobody picks up is exactly that. A later accept (the phone took it) or
+// reject turns the row into an answered or declined call. The row is
+// pushed as a synced message so an open thread appends it without ringing.
+func (w *Whatsmeow) ingestCall(c *Call) error {
+	if c == nil || c.CallID == "" {
+		return nil
+	}
+	id := callMsgID(c.CallID)
+	row, known, err := w.store.MessageByID(c.ChatJID, id)
+	if err != nil {
+		return err
+	}
+	if c.Offer {
+		if known {
+			return nil
+		}
+		msg := Message{
+			ID: id, ChatJID: c.ChatJID, FromJID: c.CallerJID, TS: c.TS,
+			CallLog: &CallLog{Video: c.Video, Outcome: CallMissed},
+		}
+		if msg.FromJID == "" {
+			msg.FromJID = c.ChatJID
+		}
+		if msg.TS == 0 {
+			msg.TS = time.Now().Unix()
+		}
+		// A missed call is unread, like WhatsApp's badge on the chat; an
+		// accept below takes it back.
+		if err := w.ingestMessageUnread(&msg, 1); err != nil {
+			return err
+		}
+		w.pushEvent(Event{Kind: EventMessage, Synced: true, Message: &msg})
+		return nil
+	}
+	if !known || row.Kind != "call" || c.Outcome == "" || c.Outcome == CallMissed {
+		// Missed is what the row already says; nothing else to settle.
+		return nil
+	}
+	var p callPayload
+	if err := json.Unmarshal([]byte(row.Payload), &p); err != nil {
+		return err
+	}
+	if p.Outcome == c.Outcome {
+		return nil
+	}
+	wasMissed := p.Outcome == CallMissed
+	p.Outcome = c.Outcome
+	b, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	if err := w.store.UpsertMessage(store.MessageRow{
+		ChatJID: c.ChatJID, MsgID: id, FromJID: row.FromJID, FromMe: row.FromMe, TS: row.TS,
+		Kind: "call", Payload: string(b),
+	}); err != nil {
+		return err
+	}
+	if wasMissed {
+		if err := w.store.BumpChatActivity(c.ChatJID, strings.HasSuffix(c.ChatJID, "@g.us"), 0, -1); err != nil {
+			return err
+		}
+	}
+	w.pushEvent(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: c.ChatJID, MsgID: id}})
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: c.ChatJID}})
+	return nil
 }
 
 func (w *Whatsmeow) ingestRevoke(r *Revoke) error {

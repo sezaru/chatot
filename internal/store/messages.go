@@ -71,11 +71,11 @@ func (s *Store) SetMessageStarred(chatJID, msgID string, starred bool) error {
 // (callers needing those should use Messages). ok is false if not found.
 func (s *Store) MessageByID(chatJID, msgID string) (m Message, ok bool, err error) {
 	row := s.db.QueryRow(`
-		SELECT msg_id, from_jid, from_me, COALESCE(text, ''), ts
+		SELECT msg_id, from_jid, from_me, COALESCE(text, ''), ts, kind, COALESCE(payload, '')
 		FROM messages WHERE chat_jid = ? AND msg_id = ?
 	`, chatJID, msgID)
 	var fromMe int
-	if err := row.Scan(&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS); err != nil {
+	if err := row.Scan(&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.Kind, &m.Payload); err != nil {
 		if err == sql.ErrNoRows {
 			return Message{}, false, nil
 		}
@@ -84,6 +84,30 @@ func (s *Store) MessageByID(chatJID, msgID string) (m Message, ok bool, err erro
 	m.ChatJID = chatJID
 	m.FromMe = fromMe != 0
 	return m, true, nil
+}
+
+// MessagePreview is a message's one-line preview, the way the chat list
+// would show it but without the "You: " prefix, plus whether it is ours:
+// what a reaction notification quotes. ok is false if the message isn't
+// stored.
+func (s *Store) MessagePreview(chatJID, msgID string) (preview string, fromMe bool, ok bool, err error) {
+	row := s.db.QueryRow(`
+		SELECT m.from_me, COALESCE(m.text, ''), m.kind, COALESCE(m.payload, ''),
+			COALESCE(md.kind, ''), COALESCE(md.caption, ''), COALESCE(md.filename, ''), COALESCE(md.duration_secs, 0), COALESCE(md.is_gif, 0)
+		FROM messages m
+		LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id
+		WHERE m.chat_jid = ? AND m.msg_id = ?
+	`, chatJID, msgID)
+	var in previewInput
+	var fromMeInt, isGIF int
+	if err := row.Scan(&fromMeInt, &in.Text, &in.Kind, &in.Payload, &in.MediaKind, &in.MediaCaption, &in.MediaFilename, &in.MediaSeconds, &isGIF); err != nil {
+		if err == sql.ErrNoRows {
+			return "", false, false, nil
+		}
+		return "", false, false, err
+	}
+	in.MediaIsGIF = isGIF != 0
+	return buildPreview(in), fromMeInt != 0, true, nil
 }
 
 // statusBroadcastJID is the special chat every WhatsApp status ("story")

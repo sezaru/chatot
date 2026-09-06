@@ -109,7 +109,10 @@ func messageNotification(chatName string, msg client.Message) (title, body strin
 }
 
 // callNotification builds the title/body for an incoming-call notification.
-func callNotification(callerName string) (title, body string) {
+func callNotification(callerName string, video bool) (title, body string) {
+	if video {
+		return "Incoming video call", callerName
+	}
 	return "Incoming call", callerName
 }
 
@@ -167,12 +170,86 @@ func (n *Notifier) watchEvents() {
 			if ev.Message != nil && !ev.Synced {
 				n.handleMessage(*ev.Message)
 			}
+		case client.EventReaction:
+			// Someone reacting to our message is news the way a message is
+			// (WhatsApp notifies it); a replayed one, a cleared one, or an
+			// internal refresh (no reactor) is not.
+			if r := ev.Reaction; r != nil && !ev.Synced && r.TargetFromMe && r.Emoji != "" && r.ReactorJID != "" {
+				n.handleReaction(*r)
+			}
 		case client.EventCall:
-			if ev.Call != nil && ev.Call.Offer {
+			if ev.Call == nil {
+				continue
+			}
+			switch {
+			case ev.Call.Offer && !ev.Synced:
 				n.handleCall(*ev.Call)
+			case !ev.Call.Offer:
+				// The call settled (picked up on the phone, timed out,
+				// declined): whatever was ringing here comes down.
+				jid := ev.Call.ChatJID
+				glib.IdleAdd(func() { n.app.WithdrawNotification("chatot-call-" + jid) })
 			}
 		}
 	}
+}
+
+// hiddenReactionBody stands in for the reaction when NotificationText is
+// off.
+const hiddenReactionBody = "New reaction"
+
+// reactionNotification builds the title/body for someone reacting to one of
+// our messages: the chat's name over `Reacted 👍 to "..."`, the reactor
+// named first in a group (reactor is "" for a DM).
+func reactionNotification(chatName, reactor, emoji, target string) (title, body string) {
+	return chatName, client.ReactionText(reactor, emoji, target)
+}
+
+// handleReaction runs on the background events goroutine, like
+// handleMessage; the same message policy applies (muted chats and the open,
+// focused chat stay quiet).
+func (n *Notifier) handleReaction(r client.Reaction) {
+	name, muted := n.chatInfo(r.ChatJID)
+	reactor := ""
+	if strings.HasSuffix(r.ChatJID, "@g.us") {
+		reactor = n.personName(r.ReactorJID)
+	}
+	title, body := reactionNotification(name, reactor, r.Emoji, r.TargetPreview)
+	if !NotificationText {
+		body = hiddenReactionBody
+	}
+	title = accountPrefixedTitle(title, n.accountPrefix())
+	glib.IdleAdd(func() {
+		focused, openJID := n.focused()
+		if !decideNotify(notifyInput{
+			Kind: "message", ChatJID: r.ChatJID,
+			Muted: muted, Enabled: NotificationsEnabled,
+			AppFocused: focused, OpenJID: openJID,
+		}) {
+			return
+		}
+		notif := gio.NewNotification(title)
+		notif.SetBody(body)
+		notif.SetDefaultActionAndTarget("app.open-chat", glib.NewVariantString(r.ChatJID))
+		// Shares the chat's message id: the reaction is the chat's latest
+		// news and replaces an older toast for it.
+		n.app.SendNotification("chatot-chat-"+r.ChatJID, notif)
+		if NotificationSound {
+			playNotificationSound()
+		}
+	})
+}
+
+// personName is the reactor's display name: the contact name chatot knows,
+// else the phone number.
+func (n *Notifier) personName(jid string) string {
+	if name := n.c.ContactName(jid); name != "" {
+		return name
+	}
+	if strings.HasSuffix(jid, "@lid") {
+		return nonADJID(jid)
+	}
+	return phoneFromJID(jid)
 }
 
 // handleMessage runs on the background events goroutine. chatInfo (a plain
@@ -210,7 +287,7 @@ func (n *Notifier) handleMessage(msg client.Message) {
 
 func (n *Notifier) handleCall(call client.Call) {
 	name, _ := n.chatInfo(call.ChatJID)
-	title, body := callNotification(name)
+	title, body := callNotification(name, call.Video)
 	title = accountPrefixedTitle(title, n.accountPrefix())
 	glib.IdleAdd(func() {
 		if !decideNotify(notifyInput{Kind: "call", ChatJID: call.ChatJID, Enabled: NotificationsEnabled}) {

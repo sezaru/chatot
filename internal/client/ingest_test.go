@@ -303,3 +303,100 @@ func TestIngestRepeatedMessageCountsUnreadOnce(t *testing.T) {
 		t.Errorf("UnreadCount = %d, want 1 after the same message twice", c.UnreadCount)
 	}
 }
+
+func TestIngestCallOfferLogsMissedCall(t *testing.T) {
+	w := newIngestFixture(t)
+	must(t, w.ingestCall(&Call{ChatJID: "1234567890@s.whatsapp.net", CallerJID: "1234567890@s.whatsapp.net", CallID: "C1", Offer: true, TS: 500}))
+
+	c, ok := chatByJID(t, w, "1234567890@s.whatsapp.net")
+	if !ok {
+		t.Fatal("chat not created for the call")
+	}
+	if c.UnreadCount != 1 || c.LastMessageTS != 500 || c.Preview != "📞 Missed voice call" {
+		t.Fatalf("got unread=%d ts=%d preview=%q", c.UnreadCount, c.LastMessageTS, c.Preview)
+	}
+	rows, err := w.store.Messages("1234567890@s.whatsapp.net", 10)
+	must(t, err)
+	if len(rows) != 1 || rows[0].ID != "call:C1" || rows[0].Kind != "call" || rows[0].TS != 500 {
+		t.Fatalf("rows = %+v, want one call row stamped with the call time", rows)
+	}
+	// The server replaying the same offer is not a second call.
+	must(t, w.ingestCall(&Call{ChatJID: "1234567890@s.whatsapp.net", CallID: "C1", Offer: true, TS: 500}))
+	c, _ = chatByJID(t, w, "1234567890@s.whatsapp.net")
+	if c.UnreadCount != 1 {
+		t.Fatalf("unread = %d after a replayed offer, want 1", c.UnreadCount)
+	}
+}
+
+func TestIngestCallAcceptSettlesAnswered(t *testing.T) {
+	w := newIngestFixture(t)
+	jid := "1234567890@s.whatsapp.net"
+	must(t, w.ingestCall(&Call{ChatJID: jid, CallID: "C1", Offer: true, TS: 500, Video: true}))
+	must(t, w.ingestCall(&Call{ChatJID: jid, CallID: "C1", Outcome: CallAnswered, TS: 510}))
+
+	c, _ := chatByJID(t, w, jid)
+	if c.UnreadCount != 0 || c.Preview != "🎥 Video call" {
+		t.Fatalf("got unread=%d preview=%q, want the answered call and no badge", c.UnreadCount, c.Preview)
+	}
+	// The store read directly: Messages() also wants a live session for
+	// the own-JID poll marking.
+	readCall := func() *CallLog {
+		rows, err := w.store.Messages(jid, 10)
+		must(t, err)
+		if len(rows) != 1 {
+			t.Fatalf("rows = %+v, want one", rows)
+		}
+		return messageFromStore(rows[0], "").CallLog
+	}
+	if cl := readCall(); cl == nil || cl.Outcome != CallAnswered || !cl.Video {
+		t.Fatalf("call = %+v", cl)
+	}
+	// A late timeout can't turn an answered call back into a missed one.
+	must(t, w.ingestCall(&Call{ChatJID: jid, CallID: "C1", Outcome: CallMissed, TS: 560}))
+	if cl := readCall(); cl.Outcome != CallAnswered {
+		t.Fatalf("outcome = %q after a late timeout, want answered", cl.Outcome)
+	}
+}
+
+func TestIngestCallSignalWithoutOfferIsIgnored(t *testing.T) {
+	w := newIngestFixture(t)
+	must(t, w.ingestCall(&Call{ChatJID: "1234567890@s.whatsapp.net", CallID: "C9", Outcome: CallAnswered, TS: 5}))
+	if _, ok := chatByJID(t, w, "1234567890@s.whatsapp.net"); ok {
+		t.Fatal("an accept for a call never offered here must not create a chat")
+	}
+}
+
+func TestIngestReactionOnOwnMessageDescribesTargetAndBumpsChat(t *testing.T) {
+	w := newIngestFixture(t)
+	jid := "1234567890@s.whatsapp.net"
+	must(t, w.ingestMessage(&Message{ChatJID: jid, ID: "m1", Text: "see you at 7", TS: 10, FromMe: true}))
+	r := &Reaction{ChatJID: jid, MsgID: "m1", ReactorJID: jid, Emoji: "👍", TS: 20}
+	must(t, w.ingestReaction(r))
+
+	if !r.TargetFromMe || r.TargetPreview != "see you at 7" {
+		t.Fatalf("reaction not described: %+v", r)
+	}
+	c, _ := chatByJID(t, w, jid)
+	if c.LastMessageTS != 20 || c.UnreadCount != 0 {
+		t.Fatalf("got ts=%d unread=%d, want the chat bumped to the reaction and no badge", c.LastMessageTS, c.UnreadCount)
+	}
+	if c.LastReaction == nil || c.LastReaction.Emoji != "👍" {
+		t.Fatalf("LastReaction = %+v", c.LastReaction)
+	}
+}
+
+func TestIngestReactionOnOthersMessageIsQuiet(t *testing.T) {
+	w := newIngestFixture(t)
+	jid := "1234567890@s.whatsapp.net"
+	must(t, w.ingestMessage(&Message{ChatJID: jid, ID: "m1", Text: "hi", TS: 10}))
+	r := &Reaction{ChatJID: jid, MsgID: "m1", ReactorJID: jid, Emoji: "👍", TS: 20}
+	must(t, w.ingestReaction(r))
+
+	if r.TargetFromMe || r.TargetPreview != "" {
+		t.Fatalf("a reaction to their own message is not ours: %+v", r)
+	}
+	c, _ := chatByJID(t, w, jid)
+	if c.LastMessageTS != 10 {
+		t.Fatalf("ts = %d, want the chat left where the message put it", c.LastMessageTS)
+	}
+}

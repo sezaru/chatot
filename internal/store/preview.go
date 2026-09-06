@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // previewInput is what the chat list's one-line preview is derived from:
@@ -35,6 +36,10 @@ func buildPreview(in previewInput) string {
 		body = "📊 " + firstNonEmpty(payloadString(in.Payload, "name"), "Poll")
 	case "event":
 		body = "📅 " + firstNonEmpty(payloadString(in.Payload, "name"), "Event")
+	case "call":
+		// A call is logged as "Missed voice call", never "You: ..." — the
+		// wording already says whose call it was.
+		return callPreview(in.Payload)
 	}
 	if in.MediaKind != "" {
 		body = mediaPreview(in)
@@ -66,6 +71,40 @@ func mediaPreview(in previewInput) string {
 		return "📄 " + firstNonEmpty(in.MediaCaption, in.MediaFilename, "Document")
 	}
 	return "📎 " + firstNonEmpty(in.MediaCaption, in.MediaFilename, "Attachment")
+}
+
+// callPreview is the chat-list line for a logged call: the glyph for the
+// call's medium and WhatsApp's wording for its outcome.
+func callPreview(payload string) string {
+	var p struct {
+		Video   bool   `json:"video"`
+		Outcome string `json:"outcome"`
+	}
+	_ = json.Unmarshal([]byte(payload), &p)
+	glyph := "📞"
+	if p.Video {
+		glyph = "🎥"
+	}
+	return glyph + " " + CallText(p.Video, p.Outcome)
+}
+
+// CallText is WhatsApp's wording for a logged call: "Missed voice call",
+// "Video call", "Declined voice call". Shared (through package client) by
+// the chat-list preview, the thread bubble and the notification.
+func CallText(video bool, outcome string) string {
+	medium := "voice call"
+	if video {
+		medium = "video call"
+	}
+	switch outcome {
+	case "missed":
+		return "Missed " + medium
+	case "declined":
+		return "Declined " + medium
+	case "failed":
+		return "Failed " + medium
+	}
+	return strings.ToUpper(medium[:1]) + medium[1:]
 }
 
 // locationNoun tells a live share from a static point when the payload

@@ -130,12 +130,16 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 	// limit <= 0 is every chat (as the fake reads it): the list and every
 	// name lookup go through here, and a chat quiet since last year is
 	// still a chat.
+	lastReactions, err := s.latestOwnMessageReactions()
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.Query(`
 		SELECT
 			c.jid, c.is_group, COALESCE(c.name, ''), c.pinned, c.muted, c.archived, c.unread_count, c.last_message_ts,
 			COALESCE(g.name, ''), COALESCE(g.is_parent, 0), COALESCE(g.linked_parent_jid, ''),
 			COALESCE(ct.business_name, ''), COALESCE(ct.full_name, ''), COALESCE(ct.push_name, ''), COALESCE(ct.system_name, ''), COALESCE(ct.pn_jid, ''),
-			COALESCE(lm.from_me, 0), COALESCE(lm.text, ''), COALESCE(lm.kind, ''), COALESCE(lm.payload, ''),
+			COALESCE(lm.from_me, 0), COALESCE(lm.text, ''), COALESCE(lm.kind, ''), COALESCE(lm.payload, ''), COALESCE(lm.ts, 0),
 			COALESCE(md.kind, ''), COALESCE(md.caption, ''), COALESCE(md.filename, ''), COALESCE(md.duration_secs, 0), COALESCE(md.is_gif, 0)
 		FROM chats c
 		LEFT JOIN groups g ON g.jid = c.jid
@@ -167,11 +171,12 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		var business, full, push, system, pnJID string
 		var lastText, lastKind, lastPayload, mediaKind, mediaCaption, mediaFilename string
 		var mediaSecs, mediaGIF int
+		var lastTS int64
 		if err := rows.Scan(
 			&c.JID, &isGroup, &chatName, &pinned, &muted, &archived, &c.UnreadCount, &c.LastMessageTS,
 			&groupName, &groupIsParent, &groupLinkedParent,
 			&business, &full, &push, &system, &pnJID,
-			&fromMe, &lastText, &lastKind, &lastPayload,
+			&fromMe, &lastText, &lastKind, &lastPayload, &lastTS,
 			&mediaKind, &mediaCaption, &mediaFilename, &mediaSecs, &mediaGIF,
 		); err != nil {
 			return nil, err
@@ -193,6 +198,10 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 			MediaKind: mediaKind, MediaCaption: mediaCaption, MediaFilename: mediaFilename,
 			MediaSeconds: mediaSecs, MediaIsGIF: mediaGIF != 0,
 		})
+		if lr, ok := lastReactions[c.JID]; ok && lr.TS > lastTS {
+			r := lr
+			c.LastReaction = &r
+		}
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -213,6 +222,43 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+// latestOwnMessageReactions is, per chat, the newest reaction on a message
+// of ours (the only reactions WhatsApp surfaces in the chat list), with the
+// target's preview. One query for every chat, so Chats stays a fixed number
+// of statements however long the list.
+func (s *Store) latestOwnMessageReactions() (map[string]ChatReaction, error) {
+	// SQLite's bare columns beside MAX() come from the row holding the max.
+	rows, err := s.db.Query(`
+		SELECT r.chat_jid, r.reactor_jid, r.emoji, MAX(r.ts),
+			COALESCE(tm.text, ''), tm.kind, COALESCE(tm.payload, ''),
+			COALESCE(md.kind, ''), COALESCE(md.caption, ''), COALESCE(md.filename, ''), COALESCE(md.duration_secs, 0), COALESCE(md.is_gif, 0)
+		FROM reactions r
+		JOIN messages tm ON tm.chat_jid = r.chat_jid AND tm.msg_id = r.msg_id AND tm.from_me = 1
+		LEFT JOIN media md ON md.chat_jid = tm.chat_jid AND md.msg_id = tm.msg_id
+		GROUP BY r.chat_jid
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]ChatReaction{}
+	for rows.Next() {
+		var jid string
+		var r ChatReaction
+		var in previewInput
+		var isGIF int
+		if err := rows.Scan(&jid, &r.ReactorJID, &r.Emoji, &r.TS,
+			&in.Text, &in.Kind, &in.Payload,
+			&in.MediaKind, &in.MediaCaption, &in.MediaFilename, &in.MediaSeconds, &isGIF); err != nil {
+			return nil, err
+		}
+		in.MediaIsGIF = isGIF != 0
+		r.TargetPreview = buildPreview(in)
+		out[jid] = r
+	}
+	return out, rows.Err()
 }
 
 // resolveChatName implements the reference name-resolution fix: prefer an

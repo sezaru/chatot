@@ -191,6 +191,12 @@ func NewFake() *Fake {
 		// undownloaded, so it renders the "🎤 Voice message · 0:12" row.
 		{ID: "m16", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 1900,
 			Attachment: &Attachment{Kind: "audio", MimeType: "audio/ogg", Size: 49152, DurationSecs: 12}},
+		// m17/m18 seed the call-log bubbles: a missed voice call the way a
+		// live offer logs one, and a video call the phone answered.
+		{ID: "call:m17", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 1850,
+			CallLog: &CallLog{Outcome: CallMissed}},
+		{ID: "m18", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 1800,
+			CallLog: &CallLog{Video: true, Outcome: CallAnswered, DurationSecs: 151}},
 	}
 
 	f.messages[statusBroadcastJID] = []Message{
@@ -450,12 +456,6 @@ func (f *Fake) Receive(jid, sender, text string) {
 	f.PushEvent(Event{Kind: EventMessage, Message: &msg})
 }
 
-func (f *Fake) SendText(ctx context.Context, jid, text string, replyTo *MsgRef) (string, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	id := f.nextMsgID()
-	f.appendOutbound(jid, Message{ID: id, ChatJID: jid, FromJID: "me", FromMe: true, Text: text, TS: time.Now().Unix(), ReplyTo: replyTo})
-	return id, nil
 // fakeSendDelay holds a send for CHATOT_FAKE_SENDDELAY milliseconds and
 // fakeSendFail makes it error under CHATOT_FAKE_SENDFAIL: dev knobs for the
 // pending and failed bubble states.
@@ -469,21 +469,27 @@ func fakeSendDelay() error {
 	return nil
 }
 
-}
+func (f *Fake) SendText(ctx context.Context, jid, text string, replyTo *MsgRef) (string, error) {
 	if err := fakeSendDelay(); err != nil {
 		return "", err
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id := f.nextMsgID()
+	f.appendOutbound(jid, Message{ID: id, ChatJID: jid, FromJID: "me", FromMe: true, Text: text, TS: time.Now().Unix(), ReplyTo: replyTo})
+	return id, nil
+}
 
 func (f *Fake) SendMedia(ctx context.Context, jid string, m Attachment, replyTo *MsgRef) (string, error) {
+	if err := fakeSendDelay(); err != nil {
+		return "", err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	id := f.nextMsgID()
 	f.appendOutbound(jid, Message{ID: id, ChatJID: jid, FromJID: "me", FromMe: true, Text: m.Caption, TS: time.Now().Unix(), ReplyTo: replyTo, Attachment: &m})
 	return id, nil
 }
-	if err := fakeSendDelay(); err != nil {
-		return "", err
-	}
 
 func (f *Fake) SendLocation(ctx context.Context, jid string, loc Location, replyTo *MsgRef) (string, error) {
 	f.mu.Lock()

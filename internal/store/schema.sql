@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS reactions (
     ts INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat_jid, msg_id, reactor_jid)
 );
+CREATE INDEX IF NOT EXISTS idx_reactions_chat_ts ON reactions(chat_jid, ts);
 
 -- poll_votes holds decrypted poll votes: one row per (voter, selected
 -- option). option_hash is the SHA-256 of the option name (WhatsApp transmits

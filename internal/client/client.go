@@ -133,8 +133,38 @@ type ChatPresence struct {
 type Call struct {
 	ChatJID string
 	CallID  string
-	Video   bool
-	Offer   bool // true = incoming offer, false = ended/rejected
+	// CallerJID is who placed the call: the peer in a DM, the creator of a
+	// group call.
+	CallerJID string
+	Video     bool
+	Offer     bool // true = incoming offer, false = a later signal
+	// Outcome is what a non-offer signal says about the call: CallAnswered
+	// for an accept, CallMissed for a terminate that timed out, CallDeclined
+	// for a reject; "" when the signal settles nothing (a relay latency
+	// notice, a terminate whose reason isn't a timeout).
+	Outcome string
+	// TS is when the signal was sent (unix seconds); a stale offer replayed
+	// after a reconnect carries the original call time.
+	TS int64
+}
+
+// Call outcomes, shared by Call.Outcome and CallLog.Outcome.
+const (
+	CallMissed   = "missed"
+	CallAnswered = "answered"
+	CallDeclined = "declined"
+	CallFailed   = "failed"
+)
+
+// CallLog is a call recorded in the thread ("Missed voice call"), the way
+// WhatsApp logs every call in the chat it belongs to. A live incoming call
+// writes one as CallMissed and a later accept turns it CallAnswered; the
+// phone's own log (a CallLogMessage, or a history-sync stub) carries the
+// settled outcome and, for a connected call, its length.
+type CallLog struct {
+	Video        bool
+	Outcome      string
+	DurationSecs int
 }
 
 // Connection reports transport-level state changes.
@@ -216,6 +246,9 @@ type Message struct {
 	// EventInvite is non-nil for a scheduled-event message (a calendar-style
 	// invite posted in a chat, typically a group).
 	EventInvite *EventInvite
+	// CallLog is non-nil for a call logged in the thread (missed, answered,
+	// declined); it has no text of its own.
+	CallLog *CallLog
 }
 
 // Poll is a poll-creation message with its immutable definition (Name,
@@ -292,6 +325,12 @@ type Reaction struct {
 	ReactorJID string
 	Emoji      string // "" clears the reaction
 	TS         int64
+	// TargetFromMe and TargetPreview describe the message reacted to, for
+	// the "Reacted 👍 to "..."" notification: whether it is ours, and its
+	// one-line preview. Filled from the store on ingest; zero when the
+	// target isn't known.
+	TargetFromMe  bool
+	TargetPreview string
 }
 
 // Revoke is a "delete for everyone" applied to a message.

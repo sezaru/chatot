@@ -110,6 +110,10 @@ func (w *Whatsmeow) applyHistoryMessage(chatJID string, wmi *waWeb.WebMessageInf
 		// History keeps a deleted message as a content-less REVOKE stub; keep
 		// the "This message was deleted" tombstone the live path would leave.
 		msg.Deleted = true
+	case waWeb.WebMessageInfo_CALL_MISSED_VOICE, waWeb.WebMessageInfo_CALL_MISSED_GROUP_VOICE:
+		msg.CallLog = &CallLog{Outcome: CallMissed}
+	case waWeb.WebMessageInfo_CALL_MISSED_VIDEO, waWeb.WebMessageInfo_CALL_MISSED_GROUP_VIDEO:
+		msg.CallLog = &CallLog{Video: true, Outcome: CallMissed}
 	case waWeb.WebMessageInfo_UNKNOWN:
 		extractText(wmi.GetMessage(), &msg)
 		if !hasContent(&msg) {

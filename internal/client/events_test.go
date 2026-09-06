@@ -7,6 +7,7 @@ import (
 
 	"chatot/internal/store"
 
+	waBinary "go.mau.fi/whatsmeow/binary"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -927,5 +928,180 @@ func TestTranslateMessageStoresBareSender(t *testing.T) {
 	}
 	if e.Message.FromJID != "257157073207386@lid" {
 		t.Errorf("FromJID = %q, want the sender without its device part", e.Message.FromJID)
+	}
+}
+
+func callMeta(t *testing.T, from string, ts time.Time) types.BasicCallMeta {
+	t.Helper()
+	return types.BasicCallMeta{
+		From: mustJID(t, from), CallCreator: mustJID(t, from),
+		Timestamp: ts, CallID: "CALL1",
+	}
+}
+
+func TestTranslateCallOfferVoice(t *testing.T) {
+	ts := time.Unix(1700000600, 0)
+	evt := &events.CallOffer{
+		BasicCallMeta: callMeta(t, "1234567890@s.whatsapp.net", ts),
+		Data:          &waBinary.Node{Tag: "offer", Content: []waBinary.Node{{Tag: "audio"}, {Tag: "audio"}}},
+	}
+	e := translate(evt)
+	if e == nil || e.Kind != EventCall || e.Call == nil {
+		t.Fatalf("expected EventCall, got %+v", e)
+	}
+	c := e.Call
+	if !c.Offer || c.Video || c.Outcome != "" {
+		t.Errorf("offer=%v video=%v outcome=%q, want a voice offer", c.Offer, c.Video, c.Outcome)
+	}
+	if c.ChatJID != "1234567890@s.whatsapp.net" || c.CallerJID != "1234567890@s.whatsapp.net" {
+		t.Errorf("chat=%q caller=%q", c.ChatJID, c.CallerJID)
+	}
+	if c.CallID != "CALL1" || c.TS != ts.Unix() {
+		t.Errorf("id=%q ts=%d, want CALL1 at %d", c.CallID, c.TS, ts.Unix())
+	}
+}
+
+func TestTranslateCallOfferVideo(t *testing.T) {
+	evt := &events.CallOffer{
+		BasicCallMeta: callMeta(t, "1234567890@s.whatsapp.net", time.Unix(1, 0)),
+		Data:          &waBinary.Node{Tag: "offer", Content: []waBinary.Node{{Tag: "audio"}, {Tag: "video"}}},
+	}
+	e := translate(evt)
+	if e == nil || e.Call == nil || !e.Call.Video {
+		t.Fatalf("expected a video offer, got %+v", e)
+	}
+}
+
+func TestTranslateGroupCallOfferNotice(t *testing.T) {
+	meta := callMeta(t, "1234567890@s.whatsapp.net", time.Unix(1, 0))
+	meta.GroupJID = mustJID(t, "120363000000000000@g.us")
+	e := translate(&events.CallOfferNotice{BasicCallMeta: meta, Media: "video", Type: "group"})
+	if e == nil || e.Call == nil {
+		t.Fatalf("expected EventCall, got %+v", e)
+	}
+	if e.Call.ChatJID != "120363000000000000@g.us" || !e.Call.Offer || !e.Call.Video {
+		t.Errorf("got %+v, want a video offer filed under the group", e.Call)
+	}
+	if e.Call.CallerJID != "1234567890@s.whatsapp.net" {
+		t.Errorf("caller = %q, want the call creator", e.Call.CallerJID)
+	}
+}
+
+func TestTranslateCallSignalsSettleOutcome(t *testing.T) {
+	meta := callMeta(t, "1234567890@s.whatsapp.net", time.Unix(1, 0))
+	cases := []struct {
+		name string
+		evt  interface{}
+		want string
+	}{
+		{"accept", &events.CallAccept{BasicCallMeta: meta}, CallAnswered},
+		{"terminate timeout", &events.CallTerminate{BasicCallMeta: meta, Reason: "timeout"}, CallMissed},
+		{"terminate other", &events.CallTerminate{BasicCallMeta: meta, Reason: "busy"}, ""},
+		{"reject", &events.CallReject{BasicCallMeta: meta}, CallDeclined},
+	}
+	for _, tc := range cases {
+		e := translate(tc.evt)
+		if e == nil || e.Kind != EventCall || e.Call == nil {
+			t.Fatalf("%s: expected EventCall, got %+v", tc.name, e)
+		}
+		if e.Call.Offer {
+			t.Errorf("%s: Offer = true, want false", tc.name)
+		}
+		if e.Call.Outcome != tc.want {
+			t.Errorf("%s: Outcome = %q, want %q", tc.name, e.Call.Outcome, tc.want)
+		}
+	}
+}
+
+func TestTranslateCallLogMessage(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+			ID:            "CL1", Timestamp: time.Unix(1700000700, 0),
+		},
+		Message: &waProto.Message{
+			CallLogMesssage: &waE2E.CallLogMessage{
+				IsVideo:      proto.Bool(true),
+				CallOutcome:  waE2E.CallLogMessage_CONNECTED.Enum(),
+				DurationSecs: proto.Int64(151),
+			},
+		},
+	}
+	e := translate(evt)
+	if e == nil || e.Kind != EventMessage || e.Message == nil || e.Message.CallLog == nil {
+		t.Fatalf("expected a call-log message, got %+v", e)
+	}
+	cl := e.Message.CallLog
+	if !cl.Video || cl.Outcome != CallAnswered || cl.DurationSecs != 151 {
+		t.Errorf("got %+v, want an answered 151s video call", cl)
+	}
+
+	outcomes := map[waE2E.CallLogMessage_CallOutcome]string{
+		waE2E.CallLogMessage_MISSED:             CallMissed,
+		waE2E.CallLogMessage_SILENCED_BY_DND:    CallMissed,
+		waE2E.CallLogMessage_REJECTED:           CallDeclined,
+		waE2E.CallLogMessage_FAILED:             CallFailed,
+		waE2E.CallLogMessage_ACCEPTED_ELSEWHERE: CallAnswered,
+	}
+	for in, want := range outcomes {
+		got := translateCallLog(&waE2E.CallLogMessage{CallOutcome: in.Enum()})
+		if got.Outcome != want {
+			t.Errorf("outcome %v -> %q, want %q", in, got.Outcome, want)
+		}
+	}
+}
+
+func TestCallStoreRoundTrip(t *testing.T) {
+	s, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	in := &Message{
+		ID: "call:C1", ChatJID: "1234567890@s.whatsapp.net", FromJID: "1234567890@s.whatsapp.net", TS: 100,
+		CallLog: &CallLog{Video: true, Outcome: CallAnswered, DurationSecs: 42},
+	}
+	if err := s.UpsertMessage(storeMessageRow(in)); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.Messages(in.ChatJID, 10)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("Messages: %v, %d rows", err, len(rows))
+	}
+	out := messageFromStore(rows[0], "")
+	if out.CallLog == nil || *out.CallLog != *in.CallLog {
+		t.Fatalf("round trip = %+v, want %+v", out.CallLog, in.CallLog)
+	}
+	if rows[0].Kind != "call" {
+		t.Errorf("kind = %q, want call", rows[0].Kind)
+	}
+}
+
+func TestCallIsStale(t *testing.T) {
+	now := time.Unix(1700000000, 0)
+	if callIsStale(now.Add(-5*time.Second).Unix(), now, true) {
+		t.Error("a five-second-old offer is live even inside the sync window")
+	}
+	if !callIsStale(now.Add(-58*time.Minute).Unix(), now, false) {
+		t.Error("an offer from 58 minutes ago was replayed and must not ring")
+	}
+	if !callIsStale(now.Add(-3*time.Minute).Unix(), now, false) {
+		t.Error("an offer older than a ring's length is stale")
+	}
+	if callIsStale(0, now, false) || !callIsStale(0, now, true) {
+		t.Error("an unstamped signal follows the sync window")
+	}
+}
+
+func TestReactionText(t *testing.T) {
+	if got := ReactionText("", "👍", "see you at 7"); got != `Reacted 👍 to "see you at 7"` {
+		t.Errorf("DM: got %q", got)
+	}
+	if got := ReactionText("Alice", "😂", "📷 Sunset"); got != `Alice: Reacted 😂 to "📷 Sunset"` {
+		t.Errorf("group: got %q", got)
+	}
+	if got := ReactionText("", "❤️", ""); got != "Reacted ❤️ to " {
+		t.Errorf("unknown target: got %q", got)
 	}
 }
