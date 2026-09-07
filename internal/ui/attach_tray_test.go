@@ -150,3 +150,20 @@ func TestTraySelectionFollowsRemoval(t *testing.T) {
 		t.Errorf("out-of-range remove changed the queue")
 	}
 }
+
+func TestDiscardTrayText(t *testing.T) {
+	title, body := discardTrayText("Marco", 1)
+	if title != "Discard attachment?" {
+		t.Errorf("title = %q", title)
+	}
+	if body != "Opening another chat drops the file waiting to be sent to Marco." {
+		t.Errorf("body = %q", body)
+	}
+	title, body = discardTrayText("", 3)
+	if title != "Discard attachments?" {
+		t.Errorf("plural title = %q", title)
+	}
+	if body != "Opening another chat drops the 3 files waiting to be sent to this chat." {
+		t.Errorf("plural body = %q", body)
+	}
+}

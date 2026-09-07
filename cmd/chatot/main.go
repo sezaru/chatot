@@ -353,6 +353,20 @@ func activate(app *adw.Application, c client.Client) {
 	// openChat is the single "show this chat" path: the chat-list click and
 	// the notification's click-to-open action both funnel through it.
 	openChat = func(jid string) {
+		// Opening another chat would throw away the files queued in the
+		// attachment tray, so an open tray asks first. Declining keeps the
+		// current chat and puts the list highlight back on it; the same
+		// chat clicked again is left alone so the tray keeps the keyboard.
+		if !attachTray.Empty() {
+			current := conversation.CurrentJID()
+			if jid == current {
+				return
+			}
+			attachTray.ConfirmDiscard(chatNameFor(c, current),
+				func() { openChat(jid) },
+				func() { chatList.SetSelected(current) })
+			return
+		}
 		// A chat click lands on the thread: the viewer, starred and media
 		// pages belong to the chat that was open before.
 		if name := rightPane.VisibleChildName(); name != "chat" {

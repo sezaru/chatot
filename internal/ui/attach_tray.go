@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -200,6 +201,69 @@ func (t *AttachTray) Open(paths []string) {
 	}
 	t.SetVisible(true)
 	t.refresh()
+	t.focusCaption()
+}
+
+// focusCaption puts the keyboard in the caption entry so the user can type
+// and hit Enter to send without reaching for the mouse. The file chooser
+// that fed Open hands focus back to the composer entry as it goes away,
+// which can land after this call, so the grab is repeated once idle.
+// Without-selecting: a draft carried in from the composer stays as typed
+// rather than being replaced by the next keystroke.
+func (t *AttachTray) focusCaption() {
+	grab := func() {
+		t.caption.GrabFocusWithoutSelecting()
+		t.caption.SetPosition(-1)
+	}
+	grab()
+	glib.IdleAdd(func() {
+		if t.Visible() && len(t.items) > 0 {
+			grab()
+		}
+	})
+}
+
+// ConfirmDiscard asks before the queue is thrown away for a reason other
+// than Cancel (opening another chat). chatName names the chat the files
+// were meant for. onDiscard runs after the tray has closed; onKeep when the
+// user backs out, so the caller can undo whatever prompted the question.
+func (t *AttachTray) ConfirmDiscard(chatName string, onDiscard, onKeep func()) {
+	title, body := discardTrayText(chatName, len(t.items))
+	dialog := adw.NewAlertDialog(title, body)
+	dialog.AddResponse("keep", "Keep editing")
+	dialog.AddResponse("discard", "Discard")
+	dialog.SetResponseAppearance("discard", adw.ResponseDestructive)
+	dialog.SetDefaultResponse("keep")
+	dialog.SetCloseResponse("keep")
+	dialog.ConnectResponse(func(response string) {
+		if response != "discard" {
+			if onKeep != nil {
+				onKeep()
+			}
+			return
+		}
+		t.Close()
+		if onDiscard != nil {
+			onDiscard()
+		}
+	})
+	dialog.Present(t)
+}
+
+// discardTrayText is ConfirmDiscard's copy: singular or plural by the queue
+// size, naming the chat the files were for when it is known.
+func discardTrayText(chatName string, n int) (title, body string) {
+	title = "Discard attachments?"
+	files := fmt.Sprintf("the %d files", n)
+	if n == 1 {
+		title = "Discard attachment?"
+		files = "the file"
+	}
+	if chatName == "" {
+		chatName = "this chat"
+	}
+	body = fmt.Sprintf("Opening another chat drops %s waiting to be sent to %s.", files, chatName)
+	return title, body
 }
 
 // OnDiscard registers f to run when the tray is cancelled; see onDiscard.
@@ -216,6 +280,7 @@ func (t *AttachTray) SeedCaption(text string) {
 	}
 	t.items[0].Caption = text
 	t.refresh()
+	t.caption.SetPosition(-1)
 }
 
 // discard is the Cancel button: the first caption is handed back before
