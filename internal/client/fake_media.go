@@ -59,6 +59,20 @@ func (f *Fake) seedDevMedia(dir string, now int64) {
 			},
 		})
 	}
+	// A clip that hasn't been downloaded, carrying the sender's portrait
+	// thumbnail (thumb-portrait.jpg) under a caption: the not-downloaded
+	// tile whose GtkPicture height used to leave a blank band at the
+	// bubble's foot.
+	if thumb, err := os.ReadFile(filepath.Join(dir, "thumb-portrait.jpg")); err == nil {
+		ts += 60
+		f.messages[jid] = append(f.messages[jid], Message{
+			ID: "dmtall", ChatJID: jid, FromJID: jid, TS: ts, Status: MessageStatusRead,
+			Attachment: &Attachment{
+				Kind: "video", MimeType: "video/mp4", Filename: "tall.mp4", Caption: "Fez os sprintes na mão.. pedi a fase 1 do super mario world",
+				Size: 13100000, DurationSecs: 41, Thumbnail: thumb, Width: 720, Height: 1280,
+			},
+		})
+	}
 	f.seedDevStatuses(dir, now)
 }
 

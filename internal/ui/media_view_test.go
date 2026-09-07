@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/diamondburned/gotk4/pkg/gdkpixbuf/v2"
+
 	"chatot/internal/client"
 )
 
@@ -206,5 +208,29 @@ func TestNextZoomStepSnapsToDesignSteps(t *testing.T) {
 		if got := nextZoomStep(c.z, c.d); got != c.want {
 			t.Errorf("nextZoomStep(%v,%d) = %v, want %v", c.z, c.d, got, c.want)
 		}
+	}
+}
+
+func TestAttachmentTileSize(t *testing.T) {
+	portrait := gdkpixbuf.NewPixbuf(gdkpixbuf.ColorspaceRGB, false, 8, 90, 160)
+	// A video placeholder is the downloaded clip tile whatever the aspect:
+	// a tall clip used to grow the bubble past its caption.
+	if w, h := attachmentTileSize("video", portrait); w != videoTileW || h != videoTileH {
+		t.Errorf("video = %dx%d, want %dx%d", w, h, videoTileW, videoTileH)
+	}
+	// A photo placeholder takes the downloaded picture's size, clamped.
+	if w, h := attachmentTileSize("image", portrait); w != inlinePhotoSide || h != inlinePhotoMaxH {
+		t.Errorf("portrait image = %dx%d, want %dx%d", w, h, inlinePhotoSide, inlinePhotoMaxH)
+	}
+	wide := gdkpixbuf.NewPixbuf(gdkpixbuf.ColorspaceRGB, false, 8, 160, 90)
+	if w, h := attachmentTileSize("image", wide); w != inlinePhotoSide || h != inlinePhotoHeight(160, 90) {
+		t.Errorf("wide image = %dx%d", w, h)
+	}
+	// No thumbnail: the mockup's hatch.
+	if w, h := attachmentTileSize("image", nil); w != 280 || h != 115 {
+		t.Errorf("no-thumb image = %dx%d", w, h)
+	}
+	if w, h := attachmentTileSize("sticker", portrait); w != stickerRenderSize || h != stickerRenderSize {
+		t.Errorf("sticker = %dx%d", w, h)
 	}
 }

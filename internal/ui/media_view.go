@@ -10,6 +10,7 @@ import (
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/gdkpixbuf/v2"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -257,21 +258,21 @@ func buildAttachmentTile(mv *mediaView, msg client.Message, c client.Client, slo
 	// The mockup's undownloaded tile is 280x115 with the download disc centred
 	// and the "📷 Photo" label directly beneath it, not pinned to the tile's
 	// bottom edge.
-	w, h := 280, 115
-	if mv.Kind == "sticker" {
-		w, h = stickerRenderSize, stickerRenderSize
-	}
-
 	overlay := gtk.NewOverlay()
+	var pixbuf *gdkpixbuf.Pixbuf
 	if mv.HasThumbnail {
-		if texture, err := gdk.NewTextureFromBytes(glib.NewBytesWithGo(mv.Thumbnail)); err == nil {
-			pic := gtk.NewPictureForPaintable(texture)
-			pic.SetCanShrink(true)
-			pic.SetContentFit(gtk.ContentFitCover)
-			pic.SetSizeRequest(w, h)
-			pic.AddCSSClass("chatot-media-tile")
-			overlay.SetChild(pic)
-		}
+		pixbuf, _ = pixbufFromBytes(mv.Thumbnail)
+	}
+	w, h := attachmentTileSize(mv.Kind, pixbuf)
+	if pixbuf != nil {
+		// A fixed-size drawing rather than a GtkPicture: the picture's
+		// natural height follows the thumbnail's aspect at whatever width
+		// it is measured for, and the thread measures the bubble wider than
+		// the tile ends up, so a portrait clip left a blank band under its
+		// caption. The drawing area measures the same at every width.
+		overlay.AddCSSClass("chatot-media-tile")
+		overlay.SetOverflow(gtk.OverflowHidden)
+		overlay.SetChild(coverThumb(pixbuf, w, h, 10, false))
 	}
 	if overlay.Child() == nil {
 		hatch := gtk.NewBox(gtk.OrientationVertical, 0)
@@ -303,6 +304,22 @@ func buildAttachmentTile(mv *mediaView, msg client.Message, c client.Client, slo
 	overlay.AddController(click)
 	maybeAutoDownload(func() { downloadAndSwap(mv, msg, c, slot, overlay, circle, open) }, mv.Kind, msg.TS)
 	return overlay
+}
+
+// attachmentTileSize is the not-downloaded tile's footprint for kind, given
+// the sender's thumbnail (nil when there is none). A photo takes the size
+// its downloaded picture will have, so the bubble doesn't jump when the
+// download lands; a video matches the downloaded clip tile; a sticker is
+// its square. Without a thumbnail the hatch is the mockup's 280x115.
+func attachmentTileSize(kind string, thumb *gdkpixbuf.Pixbuf) (w, h int) {
+	switch {
+	case kind == "sticker":
+		return stickerRenderSize, stickerRenderSize
+	case kind == "image" && thumb != nil:
+		return inlinePhotoSide, inlinePhotoHeight(thumb.Width(), thumb.Height())
+	default:
+		return videoTileW, videoTileH
+	}
 }
 
 // buildMediaRow is the audio/document not-downloaded state: a small green ⬇
