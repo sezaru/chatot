@@ -180,6 +180,64 @@ func (cl *ChatList) ReconcileCheck() {
 	glib.TimeoutAdd(500, tick)
 }
 
+// StickyTopCheck (dev hook CHATOT_SHOT=stickytop, fake account) delivers
+// a message into a chat further down the list twice: once with the list
+// at its top, which must follow the chat up to first place, and once
+// scrolled down, which must leave the viewport where it was. receive
+// delivers a message into the given chat. The seeded pinned chats are
+// unpinned first so a chat with a new message can take first place.
+func (cl *ChatList) StickyTopCheck(receive func(jid string)) {
+	if len(cl.rowJIDs) < 14 {
+		log.Printf("stickytop: need 14+ rows, have %d", len(cl.rowJIDs))
+		return
+	}
+	adj := cl.listScroller.VAdjustment()
+	first, second := cl.rowJIDs[10], cl.rowJIDs[12]
+	ctx := context.Background()
+	fails := 0
+	var before float64
+	check := func(step string, ok bool) {
+		if !ok {
+			fails++
+		}
+		log.Printf("stickytop: %s: value=%.0f upper=%.0f top=%s ok=%v", step, adj.Value(), adj.Upper(), cl.rowJIDs[0], ok)
+	}
+	steps := []struct {
+		act   func()
+		check func()
+	}{
+		{func() {
+			for i := 0; i < cl.chatModel.Len(); i++ {
+				if it := cl.chatModel.At(i); it.vm.Pinned {
+					cl.c.PinChat(ctx, it.vm.JID, false)
+				}
+			}
+		}, func() { vm, _ := cl.rowVM(cl.rowJIDs[0]); check("unpin", !vm.Pinned) }},
+		{func() { adj.SetValue(0) }, func() { check("top", adj.Value() == 0) }},
+		{func() { receive(first) }, func() { check("received at top", adj.Value() == 0 && cl.rowJIDs[0] == first) }},
+		{func() { adj.SetValue(200) }, func() { before = adj.Value(); check("scrolled down", before > 100) }},
+		// Scrolled down, the row under the viewport's top edge stays
+		// there: the value grows by the row that came in above it.
+		{func() { receive(second) }, func() { check("received scrolled", adj.Value() > before && cl.rowJIDs[0] == second) }},
+	}
+	i := 0
+	var tick func() bool
+	tick = func() bool {
+		if i > 0 {
+			steps[i-1].check()
+		}
+		if i == len(steps) {
+			log.Printf("stickytop: done, %d failures", fails)
+			return false
+		}
+		steps[i].act()
+		i++
+		glib.TimeoutAdd(600, tick)
+		return false
+	}
+	glib.TimeoutAdd(600, tick)
+}
+
 // AnchorCheck (dev hook CHATOT_SHOT=anchorcheck) records where the first
 // bubble under the viewport's top edge sits on screen, loads an older page
 // into the open thread, and logs how far that bubble moved once the page

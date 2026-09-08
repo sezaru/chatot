@@ -461,6 +461,11 @@ func (f *Fake) Receive(jid, sender, text string) {
 			f.chats[i].Preview = text
 			f.chats[i].LastMessageTS = msg.TS
 			f.chats[i].UnreadCount++
+			// The store lists chats newest message first, so the chat
+			// moves to the head, as it does on a real account.
+			c := f.chats[i]
+			copy(f.chats[1:i+1], f.chats[:i])
+			f.chats[0] = c
 			break
 		}
 	}

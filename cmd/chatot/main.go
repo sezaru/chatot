@@ -929,6 +929,14 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		d.chatList.RefreshBreakdown()
 	case "reconcilecheck":
 		d.chatList.ReconcileCheck()
+	case "stickytop":
+		var active client.Client = d.c
+		if d.am != nil {
+			active = d.am.ActiveClient()
+		}
+		if f, ok := active.(*client.Fake); ok {
+			d.chatList.StickyTopCheck(func(jid string) { f.Receive(jid, jid, "Sticky top ping") })
+		}
 	case "anchorcheck":
 		d.conversation.AnchorCheck()
 	case "flingcheck":
