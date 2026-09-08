@@ -82,6 +82,14 @@ func (cl *ChatList) reconcileRows(kind string, want []wantRow) {
 		cl.listKind = kind
 	}
 	cl.listStack.SetVisibleChildName("chats")
+	// Read before the model changes: the value only moves at the next
+	// layout, so this is where the reader was.
+	atTop := cl.listAtTop()
+	defer func() {
+		if atTop {
+			cl.scrollListToTop()
+		}
+	}()
 
 	m := cl.chatModel
 	wanted := make(map[string]bool, len(want))
@@ -112,6 +120,29 @@ func (cl *ChatList) reconcileRows(kind string, want []wantRow) {
 		}
 		m.Splice(i, 0, item)
 	}
+}
+
+// Following the head of the chat list, the way the thread follows its
+// foot (thread_scroll.go): a reader at the very top sees a chat that just
+// got a message move up into first place; one who has scrolled down is
+// left where they are. GtkListView anchors the row at the top of the
+// viewport across model changes, so on its own a row spliced in above
+// that anchor lands out of view and the list appears to have scrolled
+// down one row.
+
+// listAtTop reports whether the chat list is scrolled to its first row.
+func (cl *ChatList) listAtTop() bool {
+	return cl.listScroller.VAdjustment().Value() < 1
+}
+
+// scrollListToTop makes the first row the list's anchor, so the layout
+// after a reorder keeps the head in view instead of the old first row.
+func (cl *ChatList) scrollListToTop() {
+	if cl.chatModel.Len() == 0 {
+		return
+	}
+	cl.listScroller.VAdjustment().SetValue(0)
+	cl.chatView.ScrollTo(0, gtk.ListScrollNone, nil)
 }
 
 // invalidateRow forces jid's row(s) to rebind with a fresh avatar on the
