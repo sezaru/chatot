@@ -132,20 +132,28 @@ type messageMenuActions struct {
 	Pin     func()
 	Info    func()
 	Delete  func()
+	// AddToStickers files a sticker bubble's picture in the picker's library.
+	AddToStickers func()
 }
 
 // messageMenuItems is a message bubble's ⋯ menu.
 //
-// "Edit message" is the one row with no counterpart in the mockup: chatot can
-// edit its own sent messages and the design never drew that affordance, so it
-// sits in the closest slot rather than being dropped.
+// "Edit message" and "Add to stickers" are the rows with no counterpart in
+// the mockup: chatot can edit its own sent messages and save a sticker from
+// a chat into the picker, and the design never drew those affordances, so
+// they sit in the closest slots rather than being dropped.
 func messageMenuItems(msg client.Message, a messageMenuActions) []menuItem {
 	items := []menuItem{
 		{Icon: "↩", Label: "Reply", OnActivate: a.Reply},
 		{Icon: "↪", Label: "Forward", OnActivate: a.Forward},
-		{Icon: "⭐", Label: starMenuItemLabel(msg.Starred), OnActivate: a.Star},
-		{Icon: "📋", Label: "Copy text", OnActivate: a.Copy},
 	}
+	if isStickerMessage(msg) {
+		items = append(items, menuItem{Icon: "🙂", Label: "Add to stickers", OnActivate: a.AddToStickers})
+	}
+	items = append(items,
+		menuItem{Icon: "⭐", Label: starMenuItemLabel(msg.Starred), OnActivate: a.Star},
+		menuItem{Icon: "📋", Label: "Copy text", OnActivate: a.Copy},
+	)
 	if msg.FromMe {
 		items = append(items, menuItem{Icon: "✎", Label: "Edit message", OnActivate: a.Edit})
 	}
@@ -155,6 +163,11 @@ func messageMenuItems(msg client.Message, a messageMenuActions) []menuItem {
 		menuItem{Icon: "ℹ", Label: "Message info", OnActivate: a.Info},
 		menuItem{Icon: "🗑", Label: "Delete message", Destructive: true, OnActivate: a.Delete},
 	)
+}
+
+// isStickerMessage reports whether msg carries a sticker.
+func isStickerMessage(msg client.Message) bool {
+	return msg.Attachment != nil && msg.Attachment.Kind == "sticker"
 }
 
 // starMenuItemLabel is the message menu's star row for the message's current

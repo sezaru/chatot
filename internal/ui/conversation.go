@@ -2455,6 +2455,35 @@ func (h bubbleHooks) pinMessage(msg client.Message) {
 	}()
 }
 
+// addToStickers files msg's sticker in the picker's library, downloading
+// it first when the bubble has not, and reports the outcome.
+func (h bubbleHooks) addToStickers(msg client.Message) {
+	go func() {
+		path := ""
+		if msg.Attachment != nil && fileExists(msg.Attachment.LocalPath) {
+			path = msg.Attachment.LocalPath
+		}
+		var err error
+		if path == "" {
+			path, err = h.c.DownloadMedia(context.Background(), msg.ID)
+			if err == nil && h.onLocalPath != nil {
+				glib.IdleAdd(func() { h.onLocalPath(msg.ID, path) })
+			}
+		}
+		if err == nil {
+			_, err = h.c.AddSticker(path)
+		}
+		glib.IdleAdd(func() {
+			if err != nil {
+				log.Printf("chatot: add sticker to library: %v", err)
+				showToast(h.toasts, "Couldn't add the sticker")
+				return
+			}
+			showToast(h.toasts, "Added to your stickers")
+		})
+	}()
+}
+
 // menuItemsFor is the bubble's ⋮ menu wired to msg. A row whose action this
 // bubble can't offer (nothing to copy, someone else's message for Edit) is
 // left inert rather than omitted, so the menu keeps the design's shape.
@@ -2477,6 +2506,9 @@ func (h bubbleHooks) menuItemsFor(msg client.Message, canEdit, canDelete bool) [
 	}
 	if h.c != nil {
 		actions.Pin = func() { h.pinMessage(msg) }
+		if isStickerMessage(msg) {
+			actions.AddToStickers = func() { h.addToStickers(msg) }
+		}
 	}
 	actions.Info = func() { showMessageInfoDialog(h.window, msg) }
 	if canDelete && h.onDelete != nil {
