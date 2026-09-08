@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>com.sezdm.chatot</id>
-  <name>chatot</name>
-  <summary>WhatsApp for the GNOME desktop</summary>
+  <name>Chatot</name>
+  <summary>Unofficial WhatsApp client</summary>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>MIT</project_license>
+  <project_license>GPL-3.0-or-later</project_license>
   <developer id="com.sezdm">
     <name>Eduardo Barreto Alexandre</name>
   </developer>
+  <update_contact>chatot@sezdm.com</update_contact>
 
   <description>
     <p>
-      chatot is a native WhatsApp client for GNOME. It links to your phone as a
-      companion device, like WhatsApp Web, and keeps your chats, groups,
-      communities, channels and status updates in a GTK4 and libadwaita window
-      that follows the system's light and dark styles.
+      Chatot is a GTK4 native WhatsApp client for the desktop. It links to
+      your phone as a companion device, like WhatsApp Web, and keeps your
+      chats, groups, communities, channels and status updates.
     </p>
     <p>Features:</p>
     <ul>
@@ -28,7 +28,7 @@
       <li>Desktop notifications and a tray item with the unread count</li>
     </ul>
     <p>
-      chatot is an unofficial client built on the whatsmeow library. It is not
+      Chatot is an unofficial client built on the whatsmeow library. It is not
       affiliated with, endorsed by or supported by WhatsApp or Meta. Using an
       unofficial client may be against WhatsApp's terms of service.
     </p>
@@ -50,15 +50,19 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/sezaru/chatot/master/data/screenshots/chat.png</image>
-      <caption>A group conversation with replies and mentions</caption>
+      <image>https://raw.githubusercontent.com/sezaru/chatot/v0.5.0-beta/data/screenshots/chat.png</image>
+      <caption>A chat with a link preview, a live location, an event and a voice note</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/sezaru/chatot/master/data/screenshots/media.png</image>
+      <image>https://raw.githubusercontent.com/sezaru/chatot/v0.5.0-beta/data/screenshots/media.png</image>
       <caption>Photos, clips, voice notes and documents in a chat</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/sezaru/chatot/master/data/screenshots/chat-dark.png</image>
+      <image>https://raw.githubusercontent.com/sezaru/chatot/v0.5.0-beta/data/screenshots/group.png</image>
+      <caption>A group conversation with replies and mentions</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/sezaru/chatot/v0.5.0-beta/data/screenshots/chat-dark.png</image>
       <caption>The dark style</caption>
     </screenshot>
   </screenshots>
@@ -79,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.5.0-beta" date="2026-09-08">
+      <description>
+        <p>First release on Flathub. Link previews under pasted links, sharp previews for pictures and clips that are not downloaded yet, and Copy image in the viewer. Voice notes remember their played state and position and advance to the next one. A reply quote jumps to the original message, and the chat list names who sent a group's last message. Sidebar refreshes and thread paging moved off the main loop, so long chats scroll smoothly.</p>
+      </description>
+    </release>
     <release version="0.4.0-beta" date="2026-09-06">
       <description>
         <p>Calls are logged in the thread and the chat list, and a call that rang while the machine was asleep no longer rings on resume. Reactions to your messages notify and show as the chat preview. Sends show at once with a pending clock and offer a retry on failure. GIF search, a sticker library and WhatsApp favourites.</p>

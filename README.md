@@ -1,6 +1,6 @@
 # chatot
 
-A native WhatsApp client for GNOME: GTK4 + libadwaita, talking to WhatsApp
+A native WhatsApp client for the desktop: GTK4 + libadwaita, talking to WhatsApp
 through [whatsmeow](https://github.com/tulir/whatsmeow) in-process. Unofficial,
 not affiliated with WhatsApp or Meta. Beta.
 
@@ -47,10 +47,13 @@ flatpak run --command=flatpak-builder-lint org.flatpak.Builder appstream data/co
 flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo build-aux/flatpak/repo
 ```
 
-The Flathub submission uses this manifest with the `chatot` module's
-`type: dir` source replaced by the tagged release commit
-(`type: git`, `url`, `tag`, `commit`). Screenshots referenced by the AppStream
-metadata live in `data/screenshots/`.
+`build-aux/flatpak/flathub/` holds the Flathub copy of the manifest: the same
+file with the `chatot` module built from the tagged release commit and
+checker data on every source, plus links to `go.mod.yml` and `modules.txt`.
+To release, tag the commit, put its hash in that manifest, then copy the
+directory's contents (`cp -rL`) into the `flathub/com.sezdm.chatot` checkout.
+Screenshots referenced by the AppStream metadata live in `data/screenshots/`,
+captured from the fake account (`CHATOT_FAKE=1`).
 
 ## Development
 
@@ -79,3 +82,7 @@ chatot.override { notificationSound = ./my-tone.oga; }
 That sets `CHATOT_NOTIFY_SOUND` in the wrapper to the file. Precedence, first
 wins: the file picked in Preferences, the drop-in in the config dir, the
 packaged `CHATOT_NOTIFY_SOUND` file, the built-in chime.
+
+## License
+
+GPL-3.0-or-later. See `LICENSE`.
