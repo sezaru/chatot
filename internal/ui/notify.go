@@ -1,7 +1,13 @@
 package ui
 
 import (
+	"bytes"
+	"context"
+	"log"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -131,6 +137,61 @@ type Notifier struct {
 	// accounts, for the per-account title prefix. Nil in the single-client
 	// (non-manager) case.
 	account func() (label string, count int)
+	// markPath is the app mark written out for notifications ("" until the
+	// first one, or when writing failed); see iconPath.
+	markPath string
+}
+
+// avatarLookupTimeout bounds how long a notification waits for a chat's
+// picture: a cached one answers at once, and a first fetch that is slow is
+// not worth holding the toast for.
+const avatarLookupTimeout = 3 * time.Second
+
+// iconPath is the picture a notification for jid shows: the chat's own
+// (contact or group), else the app mark, else "" (the shell then falls
+// back to the desktop entry). Runs on the events goroutine, since a picture
+// not cached yet is a round trip.
+func (n *Notifier) iconPath(jid string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), avatarLookupTimeout)
+	defer cancel()
+	if path, err := n.c.Avatar(ctx, jid); err == nil && path != "" && fileExists(path) {
+		return path
+	}
+	if n.markPath == "" {
+		path, err := writeAppMarkIcon(filepath.Join(cacheDir(), "notify"))
+		if err != nil {
+			log.Printf("chatot: notification icon: %v", err)
+			return ""
+		}
+		n.markPath = path
+	}
+	return n.markPath
+}
+
+// writeAppMarkIcon puts the app mark under dir as a PNG the notification
+// daemon can read by path (GLib passes a file icon to the desktop as
+// "image-path"; a bytes icon never reaches a freedesktop daemon) and
+// returns its path. An up-to-date copy is left alone.
+func writeAppMarkIcon(dir string) (string, error) {
+	path := filepath.Join(dir, "app-mark.png")
+	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, appMarkPNG) {
+		return path, nil
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, appMarkPNG, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// fileIcon is the notification icon for the picture at path; nil for "".
+func fileIcon(path string) gio.Iconner {
+	if path == "" {
+		return nil
+	}
+	return gio.NewFileIcon(gio.NewFileForPath(path))
 }
 
 // NewNotifier starts watching c.Events() in its own goroutine. focused
@@ -219,6 +280,7 @@ func (n *Notifier) handleReaction(r client.Reaction) {
 		body = hiddenReactionBody
 	}
 	title = accountPrefixedTitle(title, n.accountPrefix())
+	icon := n.iconPath(r.ChatJID)
 	glib.IdleAdd(func() {
 		focused, openJID := n.focused()
 		if !decideNotify(notifyInput{
@@ -230,6 +292,9 @@ func (n *Notifier) handleReaction(r client.Reaction) {
 		}
 		notif := gio.NewNotification(title)
 		notif.SetBody(body)
+		if ic := fileIcon(icon); ic != nil {
+			notif.SetIcon(ic)
+		}
 		notif.SetDefaultActionAndTarget("app.open-chat", glib.NewVariantString(r.ChatJID))
 		// Shares the chat's message id: the reaction is the chat's latest
 		// news and replaces an older toast for it.
@@ -264,6 +329,7 @@ func (n *Notifier) handleMessage(msg client.Message) {
 		body = hiddenNotificationBody
 	}
 	title = accountPrefixedTitle(title, n.accountPrefix())
+	icon := n.iconPath(msg.ChatJID)
 	glib.IdleAdd(func() {
 		focused, openJID := n.focused()
 		if !decideNotify(notifyInput{
@@ -275,6 +341,9 @@ func (n *Notifier) handleMessage(msg client.Message) {
 		}
 		notif := gio.NewNotification(title)
 		notif.SetBody(body)
+		if ic := fileIcon(icon); ic != nil {
+			notif.SetIcon(ic)
+		}
 		notif.SetDefaultActionAndTarget("app.open-chat", glib.NewVariantString(msg.ChatJID))
 		// One id per chat: a newer message notification replaces rather than
 		// stacks alongside an unread one for the same chat.
@@ -289,12 +358,16 @@ func (n *Notifier) handleCall(call client.Call) {
 	name, _ := n.chatInfo(call.ChatJID)
 	title, body := callNotification(name, call.Video)
 	title = accountPrefixedTitle(title, n.accountPrefix())
+	icon := n.iconPath(call.ChatJID)
 	glib.IdleAdd(func() {
 		if !decideNotify(notifyInput{Kind: "call", ChatJID: call.ChatJID, Enabled: NotificationsEnabled}) {
 			return
 		}
 		notif := gio.NewNotification(title)
 		notif.SetBody(body)
+		if ic := fileIcon(icon); ic != nil {
+			notif.SetIcon(ic)
+		}
 		notif.SetPriority(gio.NotificationPriorityUrgent)
 		notif.SetDefaultActionAndTarget("app.open-chat", glib.NewVariantString(call.ChatJID))
 		notif.AddButtonWithTarget("Decline", "app.reject-call", glib.NewVariantString(encodeCallActionParam(call.ChatJID, call.CallID)))
