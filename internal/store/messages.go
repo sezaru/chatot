@@ -114,21 +114,22 @@ func (s *Store) MessageByID(chatJID, msgID string) (m Message, ok bool, err erro
 // stored.
 func (s *Store) MessagePreview(chatJID, msgID string) (preview string, fromMe bool, ok bool, err error) {
 	row := s.db.QueryRow(`
-		SELECT m.from_me, COALESCE(m.text, ''), m.kind, COALESCE(m.payload, ''),
+		SELECT m.from_me, COALESCE(m.text, ''), m.kind, COALESCE(m.payload, ''), m.deleted,
 			COALESCE(md.kind, ''), COALESCE(md.caption, ''), COALESCE(md.filename, ''), COALESCE(md.duration_secs, 0), COALESCE(md.is_gif, 0)
 		FROM messages m
 		LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id
 		WHERE m.chat_jid = ? AND m.msg_id = ?
 	`, chatJID, msgID)
 	var in previewInput
-	var fromMeInt, isGIF int
-	if err := row.Scan(&fromMeInt, &in.Text, &in.Kind, &in.Payload, &in.MediaKind, &in.MediaCaption, &in.MediaFilename, &in.MediaSeconds, &isGIF); err != nil {
+	var fromMeInt, deleted, isGIF int
+	if err := row.Scan(&fromMeInt, &in.Text, &in.Kind, &in.Payload, &deleted, &in.MediaKind, &in.MediaCaption, &in.MediaFilename, &in.MediaSeconds, &isGIF); err != nil {
 		if err == sql.ErrNoRows {
 			return "", false, false, nil
 		}
 		return "", false, false, err
 	}
 	in.MediaIsGIF = isGIF != 0
+	in.Deleted = deleted != 0
 	return buildPreview(in), fromMeInt != 0, true, nil
 }
 
