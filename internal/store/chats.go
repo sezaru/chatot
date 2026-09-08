@@ -139,7 +139,7 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 			c.jid, c.is_group, COALESCE(c.name, ''), c.pinned, c.muted, c.archived, c.unread_count, c.last_message_ts,
 			COALESCE(g.name, ''), COALESCE(g.is_parent, 0), COALESCE(g.linked_parent_jid, ''),
 			COALESCE(ct.business_name, ''), COALESCE(ct.full_name, ''), COALESCE(ct.push_name, ''), COALESCE(ct.system_name, ''), COALESCE(ct.pn_jid, ''),
-			COALESCE(lm.from_me, 0), COALESCE(lm.text, ''), COALESCE(lm.kind, ''), COALESCE(lm.payload, ''), COALESCE(lm.ts, 0),
+			COALESCE(lm.from_me, 0), COALESCE(lm.from_jid, ''), COALESCE(lm.text, ''), COALESCE(lm.kind, ''), COALESCE(lm.payload, ''), COALESCE(lm.ts, 0), COALESCE(lm.deleted, 0),
 			COALESCE(md.kind, ''), COALESCE(md.caption, ''), COALESCE(md.filename, ''), COALESCE(md.duration_secs, 0), COALESCE(md.is_gif, 0)
 		FROM chats c
 		LEFT JOIN groups g ON g.jid = c.jid
@@ -164,19 +164,20 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 	defer rows.Close()
 
 	var out []Chat
+	var senders []pendingSender
 	for rows.Next() {
 		var c Chat
-		var isGroup, pinned, muted, archived, groupIsParent, fromMe int
+		var isGroup, pinned, muted, archived, groupIsParent, fromMe, lastDeleted int
 		var chatName, groupName, groupLinkedParent string
 		var business, full, push, system, pnJID string
-		var lastText, lastKind, lastPayload, mediaKind, mediaCaption, mediaFilename string
+		var lastFromJID, lastText, lastKind, lastPayload, mediaKind, mediaCaption, mediaFilename string
 		var mediaSecs, mediaGIF int
 		var lastTS int64
 		if err := rows.Scan(
 			&c.JID, &isGroup, &chatName, &pinned, &muted, &archived, &c.UnreadCount, &c.LastMessageTS,
 			&groupName, &groupIsParent, &groupLinkedParent,
 			&business, &full, &push, &system, &pnJID,
-			&fromMe, &lastText, &lastKind, &lastPayload, &lastTS,
+			&fromMe, &lastFromJID, &lastText, &lastKind, &lastPayload, &lastTS, &lastDeleted,
 			&mediaKind, &mediaCaption, &mediaFilename, &mediaSecs, &mediaGIF,
 		); err != nil {
 			return nil, err
@@ -193,11 +194,17 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 				c.Phone = p
 			}
 		}
-		c.Preview = buildPreview(previewInput{
+		in := previewInput{
 			FromMe: fromMe != 0, Kind: lastKind, Text: lastText, Payload: lastPayload,
 			MediaKind: mediaKind, MediaCaption: mediaCaption, MediaFilename: mediaFilename,
-			MediaSeconds: mediaSecs, MediaIsGIF: mediaGIF != 0,
-		})
+			MediaSeconds: mediaSecs, MediaIsGIF: mediaGIF != 0, Deleted: lastDeleted != 0,
+		}
+		c.Preview = buildPreview(in)
+		if c.IsGroup && fromMe == 0 && lastFromJID != "" && lastFromJID != c.JID {
+			// Named after the loop: the lookup is another query, and the
+			// store's one connection is busy with this result set.
+			senders = append(senders, pendingSender{idx: len(out), jid: lastFromJID, in: in})
+		}
 		if lr, ok := lastReactions[c.JID]; ok && lr.TS > lastTS {
 			r := lr
 			c.LastReaction = &r
@@ -206,6 +213,12 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	rows.Close()
+	names := map[string]string{}
+	for _, p := range senders {
+		p.in.Sender = s.senderName(p.jid, names)
+		out[p.idx].Preview = buildPreview(p.in)
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
@@ -222,6 +235,36 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+// pendingSender is a group chat whose preview still needs its sender's
+// name once the chat rows are read.
+type pendingSender struct {
+	idx int
+	jid string
+	in  previewInput
+}
+
+// senderName is a group message's sender for the chat list's "Name: …"
+// preview prefix: the contact's name, else the phone number, else the bare
+// identity, so a group's newest message always says who wrote it. memo
+// dedups the lookups across one Chats call (a busy group's sender answers
+// for every group they were last to write in).
+func (s *Store) senderName(jid string, memo map[string]string) string {
+	jid = nonADJID(jid)
+	if n, ok := memo[jid]; ok {
+		return n
+	}
+	n, err := s.ContactName(jid)
+	if err != nil || n == "" {
+		if p, ok := phoneFromJID(jid); ok {
+			n = "+" + p
+		} else {
+			n, _, _ = strings.Cut(jid, "@")
+		}
+	}
+	memo[jid] = n
+	return n
 }
 
 // latestOwnMessageReactions is, per chat, the newest reaction on a message

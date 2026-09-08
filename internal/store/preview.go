@@ -19,6 +19,22 @@ type previewInput struct {
 	MediaFilename string
 	MediaSeconds  int
 	MediaIsGIF    bool
+	// Deleted is a revoked ("delete for everyone") message: the preview is
+	// the tombstone, whatever the message used to be.
+	Deleted bool
+	// Sender is the display name of a group message's sender ("" for a DM
+	// or an unknown sender): the preview is prefixed "Sender: " the way a
+	// from-me one is prefixed "You: ", as in WhatsApp's chat list.
+	Sender string
+}
+
+// deletedPreview is the chat list's line for a revoked newest message,
+// WhatsApp's wording for either side.
+func deletedPreview(fromMe bool) string {
+	if fromMe {
+		return "🚫 You deleted this message"
+	}
+	return "🚫 This message was deleted"
 }
 
 // buildPreview renders the chat list's preview line the way the design's
@@ -26,6 +42,13 @@ type previewInput struct {
 // would want to read (caption, filename, place, question, voice length) —
 // never a raw "[image]" placeholder. A from-me message is prefixed "You: ".
 func buildPreview(in previewInput) string {
+	if in.Deleted {
+		// The tombstone already says whose it was when it is ours.
+		if !in.FromMe && in.Sender != "" {
+			return in.Sender + ": " + deletedPreview(false)
+		}
+		return deletedPreview(in.FromMe)
+	}
 	body := in.Text
 	switch in.Kind {
 	case "location":
@@ -44,8 +67,19 @@ func buildPreview(in previewInput) string {
 	if in.MediaKind != "" {
 		body = mediaPreview(in)
 	}
-	if in.FromMe && body != "" {
+	return withSender(in, body)
+}
+
+// withSender prefixes body with who sent it: "You: " for our own message,
+// "Name: " for someone else's in a group, nothing in a DM.
+func withSender(in previewInput, body string) string {
+	switch {
+	case body == "":
+		return body
+	case in.FromMe:
 		return "You: " + body
+	case in.Sender != "":
+		return in.Sender + ": " + body
 	}
 	return body
 }

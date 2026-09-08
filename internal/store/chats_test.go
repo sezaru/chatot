@@ -113,6 +113,71 @@ func TestChatsPreviewMediaWithCaption(t *testing.T) {
 	}
 }
 
+// TestChatsPreviewDeleted: a revoked newest message previews as the
+// tombstone, not as the photo it used to be.
+func TestChatsPreviewDeleted(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", FromMe: true, TS: 1}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Kind: "image", Caption: "Sunset!"}))
+	must(t, s.MarkMessageDeleted("a@s.whatsapp.net", "m1", 2))
+
+	chats := mustChats(t, s)
+	if chats[0].Preview != "🚫 You deleted this message" {
+		t.Fatalf("got %q, want the tombstone preview", chats[0].Preview)
+	}
+	// MessagePreview leaves the "You" side to its caller, like every
+	// other preview it renders.
+	preview, _, ok, err := s.MessagePreview("a@s.whatsapp.net", "m1")
+	if err != nil || !ok || preview != "🚫 This message was deleted" {
+		t.Fatalf("MessagePreview = %q, %v, %v; want the tombstone", preview, ok, err)
+	}
+}
+
+// TestChatsPreviewGroupSender: a group's newest message from someone else
+// is prefixed with their name (or number), the way "You: " marks ours; a
+// DM never is.
+func TestChatsPreviewGroupSender(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "g@g.us", IsGroup: true, Name: "Group"}))
+	must(t, s.UpsertContact(ContactRow{JID: "5511999@s.whatsapp.net", PushName: "Paulo"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "g@g.us", MsgID: "m1", FromJID: "5511999:3@s.whatsapp.net", Text: "https://x.com/p", TS: 1}))
+	must(t, s.UpsertChat(ChatRow{JID: "5511999@s.whatsapp.net", Name: "Paulo"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "5511999@s.whatsapp.net", MsgID: "d1", FromJID: "5511999@s.whatsapp.net", Text: "hi", TS: 1}))
+
+	byJID := func() map[string]string {
+		out := map[string]string{}
+		for _, c := range mustChats(t, s) {
+			out[c.JID] = c.Preview
+		}
+		return out
+	}
+	p := byJID()
+	if p["g@g.us"] != "Paulo: https://x.com/p" {
+		t.Fatalf("group preview = %q, want the sender prefixed", p["g@g.us"])
+	}
+	if p["5511999@s.whatsapp.net"] != "hi" {
+		t.Fatalf("DM preview = %q, want no prefix", p["5511999@s.whatsapp.net"])
+	}
+
+	// An unnamed sender shows as their number; a photo keeps its glyph
+	// after the name; a revoked message is still attributed.
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "g@g.us", MsgID: "m2", FromJID: "5522888@s.whatsapp.net", TS: 2}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "g@g.us", MsgID: "m2", Kind: "image"}))
+	if p := byJID()["g@g.us"]; p != "+5522888: 📷 Photo" {
+		t.Fatalf("unnamed sender preview = %q", p)
+	}
+	must(t, s.MarkMessageDeleted("g@g.us", "m2", 3))
+	if p := byJID()["g@g.us"]; p != "+5522888: 🚫 This message was deleted" {
+		t.Fatalf("deleted preview = %q", p)
+	}
+	// Ours stays "You: ".
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "g@g.us", MsgID: "m3", FromMe: true, Text: "ok", TS: 4}))
+	if p := byJID()["g@g.us"]; p != "You: ok" {
+		t.Fatalf("own preview = %q", p)
+	}
+}
+
 func TestChatsPreviewMediaFilenameFallback(t *testing.T) {
 	s := newTestStore(t)
 	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
