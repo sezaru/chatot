@@ -52,6 +52,7 @@ func translate(evt interface{}) *Event {
 			Read:    status == MessageStatusRead,
 			Status:  status,
 			TS:      v.Timestamp.Unix(),
+			Played:  v.Type == types.ReceiptTypePlayed || v.Type == types.ReceiptTypePlayedSelf,
 		}
 		// Someone else read our message (a self receipt is our other
 		// device catching up, not a reader). whatsmeow always fills Sender

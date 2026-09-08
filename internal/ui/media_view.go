@@ -41,6 +41,15 @@ type mediaView struct {
 	Filename     string
 	// FromMe picks the outgoing-bubble colours for inline players.
 	FromMe bool
+	// MsgID and ChatJID name the message, for the voice hooks below.
+	MsgID, ChatJID string
+	// Played is the message's listened-to flag (an incoming voice note
+	// draws blue once set); PlayPosMS where its playback last stopped.
+	Played    bool
+	PlayPosMS int
+	// voice, when set by the bubble, is told when the note plays, stops
+	// and ends (see voiceHooks).
+	voice voiceHooks
 }
 
 // mediaTileLabel is the caption under a picture tile's download disc:
@@ -164,6 +173,7 @@ func mediaVM(m client.Message) mediaView {
 		IsMedia: true, Kind: a.Kind, Chip: mediaChip(a), Caption: caption,
 		IsGIF: a.IsGIF, ViewOnce: a.ViewOnce, Viewed: a.Viewed,
 		Size: a.Size, DurationSecs: a.DurationSecs, FromMe: m.FromMe,
+		MsgID: m.ID, ChatJID: m.ChatJID, Played: m.Played, PlayPosMS: a.PlayPosMS,
 	}
 	// A document's own name belongs in the title, not repeated in the meta
 	// line, so remember the MIME type separately for docTypeLabel.
@@ -817,7 +827,17 @@ func newVoiceBubble(mv mediaView, open func(path string)) gtk.Widgetter {
 		path := mv.LocalPath
 		onOpen = func() { open(path) }
 	}
-	row := newVoiceRow(player, mv.FromMe, onOpen)
+	// The disc starts the note through playVoice (played flag, resume
+	// position, the hooks) and pauses it directly.
+	bindVoiceHooks(player, mv, mv.voice)
+	toggle := func() {
+		if player.Playing() {
+			player.Pause()
+			return
+		}
+		playVoice(mv, mv.voice)
+	}
+	row := newVoiceRow(player, mv.FromMe, mv.Played, toggle, onOpen)
 	slot.Append(row)
 	swapped := false
 	player.watchUntilDestroyed(row, func() {

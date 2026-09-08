@@ -1687,13 +1687,47 @@ func (w *Whatsmeow) MarkRead(ctx context.Context, jid string, msgIDs []string, n
 	if len(msgIDs) == 0 {
 		return nil
 	}
+	kind := types.ReceiptTypeRead
+	if !notifySender {
+		kind = types.ReceiptTypeReadSelf
+	}
+	if err := w.sendReceipts(ctx, jid, msgIDs, kind); err != nil {
+		return fmt.Errorf("chatot/client: mark read: %w", err)
+	}
+	return w.ClearUnread(jid)
+}
+
+// MarkPlayed flags the voice note msgID in jid as listened to and sends
+// the played receipt: to the sender (who sees the blue microphone) when
+// notifySender is set, else the played-self form that only syncs the
+// account's other devices. The open chat is asked to redraw the bubble.
+func (w *Whatsmeow) MarkPlayed(ctx context.Context, jid, msgID string, notifySender bool) error {
+	if err := w.store.SetMessagesPlayed(jid, []string{msgID}); err != nil {
+		return fmt.Errorf("chatot/client: mark played: %w", err)
+	}
+	w.pushEvent(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: jid, MsgID: msgID}})
+	kind := types.ReceiptTypePlayed
+	if !notifySender {
+		kind = types.ReceiptTypePlayedSelf
+	}
+	if err := w.sendReceipts(ctx, jid, []string{msgID}, kind); err != nil {
+		return fmt.Errorf("chatot/client: mark played: %w", err)
+	}
+	return nil
+}
+
+// SetPlayPosition stores where msgID's audio stopped; see Client.
+func (w *Whatsmeow) SetPlayPosition(jid, msgID string, ms int) error {
+	return w.store.SetMediaPlayPos(jid, msgID, ms)
+}
+
+// sendReceipts sends one receipt of the given kind per sender for msgIDs
+// in jid (WhatsApp wants a group receipt to name the message's sender, so
+// the ids go out in one batch per sender).
+func (w *Whatsmeow) sendReceipts(ctx context.Context, jid string, msgIDs []string, kind types.ReceiptType) error {
 	chat, err := types.ParseJID(jid)
 	if err != nil {
-		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
-	}
-	var kind []types.ReceiptType
-	if !notifySender {
-		kind = append(kind, types.ReceiptTypeReadSelf)
+		return fmt.Errorf("parse jid %q: %w", jid, err)
 	}
 	batches := readBatches(msgIDs, func(id string) string {
 		m, ok, err := w.store.MessageByID(jid, id)
@@ -1708,15 +1742,15 @@ func (w *Whatsmeow) MarkRead(ctx context.Context, jid string, msgIDs []string, n
 	for _, b := range batches {
 		sender, err := types.ParseJID(b.Sender)
 		if err != nil {
-			return fmt.Errorf("chatot/client: parse sender %q: %w", b.Sender, err)
+			return fmt.Errorf("parse sender %q: %w", b.Sender, err)
 		}
 		ids := make([]types.MessageID, len(b.MsgIDs))
 		copy(ids, b.MsgIDs)
-		if err := w.wa.MarkRead(ctx, ids, time.Now(), receiptTarget(chat, sender), sender, kind...); err != nil {
-			return fmt.Errorf("chatot/client: mark read: %w", err)
+		if err := w.wa.MarkRead(ctx, ids, time.Now(), receiptTarget(chat, sender), sender, kind); err != nil {
+			return err
 		}
 	}
-	return w.ClearUnread(jid)
+	return nil
 }
 
 // StopLiveLocation marks an own live share as ended in the store (WhatsApp

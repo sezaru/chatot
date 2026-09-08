@@ -675,6 +675,10 @@ func TestTranslateReceiptStatusMapping(t *testing.T) {
 			if e.Receipt.Read != c.wantRead {
 				t.Errorf("Read = %v, want %v", e.Receipt.Read, c.wantRead)
 			}
+			wantPlayed := c.typ == types.ReceiptTypePlayed || c.typ == types.ReceiptTypePlayedSelf
+			if e.Receipt.Played != wantPlayed {
+				t.Errorf("Played = %v, want %v", e.Receipt.Played, wantPlayed)
+			}
 		})
 	}
 }

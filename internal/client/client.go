@@ -87,6 +87,10 @@ type Receipt struct {
 	// ChatJID is status@broadcast and ReaderJID the viewer.
 	ReaderJID string
 	TS        int64
+	// Played marks a played/played-self receipt: someone listened to a
+	// voice note. With ReaderJID empty it is the account's other device
+	// reporting that it played MsgIDs, which are then flagged Played here.
+	Played bool
 }
 
 // StatusViewer is one contact who viewed an update of ours, from the read
@@ -243,6 +247,11 @@ type Message struct {
 	// Forwarded is true once WhatsApp's forwarded flag (ContextInfo.IsForwarded)
 	// was set on this message; drives the "↩ Forwarded" marker.
 	Forwarded bool
+	// Played is true once an inbound voice note or audio file was listened
+	// to, here (MarkPlayed) or on another of the account's devices (a
+	// played-self receipt). Always false for our own messages, whose
+	// listened state is Status (a played receipt counts as read).
+	Played bool
 	// EventInvite is non-nil for a scheduled-event message (a calendar-style
 	// invite posted in a chat, typically a group).
 	EventInvite *EventInvite
@@ -485,6 +494,10 @@ type Attachment struct {
 	// DurationSecs is the playback length of an audio or video attachment,
 	// shown as "0:12". 0 when unknown.
 	DurationSecs int
+	// PlayPosMS is where playback of an audio attachment last stopped, in
+	// milliseconds from the start (0 = the start, also once it played
+	// through), so the next play resumes there. See SetPlayPosition.
+	PlayPosMS int
 }
 
 // MediaItem is one image/video attachment in a chat, for the media/links/docs
@@ -645,6 +658,15 @@ type Client interface {
 	// devices always, so their badges clear, and to the senders too when
 	// notifySender is set. It clears the local badge as well.
 	MarkRead(ctx context.Context, jid string, msgIDs []string, notifySender bool) error
+	// MarkPlayed reports the inbound voice note or audio msgID in jid as
+	// listened to: it is flagged Played locally, the account's other
+	// devices hear of it always, and the sender too (their blue microphone)
+	// when notifySender is set. A refresh event follows for the open chat.
+	MarkPlayed(ctx context.Context, jid, msgID string, notifySender bool) error
+	// SetPlayPosition remembers where playback of msgID's audio stopped
+	// (ms from the start; 0 once it played through) so it resumes there.
+	// Local only, no event.
+	SetPlayPosition(jid, msgID string, ms int) error
 	// ClearUnread zeroes jid's local unread badge without telling anyone.
 	ClearUnread(jid string) error
 	// CheckOnWhatsApp looks up an E.164 phone number and reports its canonical

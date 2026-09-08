@@ -400,3 +400,44 @@ func TestIngestReactionOnOthersMessageIsQuiet(t *testing.T) {
 		t.Fatalf("ts = %d, want the chat left where the message put it", c.LastMessageTS)
 	}
 }
+
+func TestIngestPlayedSelfReceiptFlagsVoiceNotePlayed(t *testing.T) {
+	w := newIngestFixture(t)
+	must(t, w.ingestMessage(&Message{ChatJID: "1234567890@s.whatsapp.net", ID: "v1", TS: 10, FromMe: false,
+		Attachment: &Attachment{Kind: "audio", MimeType: "audio/ogg", DurationSecs: 12}}))
+	must(t, w.ingestMessage(&Message{ChatJID: "1234567890@s.whatsapp.net", ID: "v2", TS: 11, FromMe: false,
+		Attachment: &Attachment{Kind: "audio", MimeType: "audio/ogg", DurationSecs: 3}}))
+
+	// The phone played v1: a played-self receipt, nobody else's read.
+	must(t, w.ingestReceipt(&Receipt{ChatJID: "1234567890@s.whatsapp.net", MsgIDs: []string{"v1"}, Read: true, Status: MessageStatusRead, Played: true}))
+
+	msgs, err := w.store.Messages("1234567890@s.whatsapp.net", 50)
+	must(t, err)
+	if len(msgs) != 2 || msgs[0].ID != "v1" {
+		t.Fatalf("got %+v, want v1 then v2", msgs)
+	}
+	if !msgs[0].Played {
+		t.Error("v1.Played = false after the phone's played-self receipt")
+	}
+	if msgs[1].Played {
+		t.Error("v2.Played = true; only v1 was in the receipt")
+	}
+}
+
+func TestIngestPlayedReceiptFromReaderDoesNotFlagOurRows(t *testing.T) {
+	w := newIngestFixture(t)
+	must(t, w.ingestMessage(&Message{ChatJID: "1234567890@s.whatsapp.net", ID: "v1", TS: 10, FromMe: true,
+		Attachment: &Attachment{Kind: "audio", MimeType: "audio/ogg", DurationSecs: 12}}))
+
+	// The peer listened to our voice note: blue ticks, nothing else.
+	must(t, w.ingestReceipt(&Receipt{ChatJID: "1234567890@s.whatsapp.net", MsgIDs: []string{"v1"}, Read: true, Status: MessageStatusRead, Played: true, ReaderJID: "1234567890@s.whatsapp.net", TS: 20}))
+
+	msgs, err := w.store.Messages("1234567890@s.whatsapp.net", 50)
+	must(t, err)
+	if msgs[0].Status != MessageStatusRead {
+		t.Errorf("Status = %d, want read", msgs[0].Status)
+	}
+	if msgs[0].Played {
+		t.Error("Played = true on our own message; the flag is for inbound audio only")
+	}
+}

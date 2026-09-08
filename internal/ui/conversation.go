@@ -962,6 +962,10 @@ func bubbleSig(m client.Message) string {
 	if m.Starred {
 		b.WriteByte('S')
 	}
+	if m.Played {
+		// A listened-to voice note recolours its row.
+		b.WriteByte('P')
+	}
 	b.WriteByte('|')
 	b.WriteString(m.Text)
 	if len(m.Reactions) > 0 {
@@ -1765,7 +1769,9 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 	} else if vm.IsCall {
 		bubble.Append(buildCallContent(vm.Call))
 	} else if vm.IsMedia {
-		bubble.Append(buildMediaContent(msg, vm.Media, c, h.mediaOpener(msg)))
+		media := vm.Media
+		media.voice = h.voice
+		bubble.Append(buildMediaContent(msg, media, c, h.mediaOpener(msg)))
 		if vm.CaptionText != "" {
 			// The caption reads like a text bubble's body, under the
 			// picture: links open, mentions resolve, the text copies.
@@ -2075,6 +2081,9 @@ type bubbleHooks struct {
 	// onLocalPath records that msgID's attachment now sits at path (the
 	// bubble downloaded it), so later reads of the view's messages see it.
 	onLocalPath func(msgID, path string)
+	// voice hears a voice note start, stop and end (played flag, resume
+	// position, auto-advance); zero leaves the rows self-contained.
+	voice voiceHooks
 	// names resolves the numeric user part of an @mention to a display
 	// name ("" when unknown); nil leaves mentions as typed.
 	names func(user string) string
@@ -2128,7 +2137,83 @@ func (cv *ConversationView) hooks() bubbleHooks {
 		onDelete: cv.onDelete, onStar: cv.onStar, onForward: cv.onForward, onStopLive: cv.onStopLive,
 		onOpenViewer: cv.onOpenViewer, onLocalPath: func(id, path string) { cv.setLocalPath(id, path) }, names: cv.mentionName, avatars: cv.avatarCache,
 		onRetry: cv.retrySend, reactorName: cv.senderName, onJumpTo: cv.jumpToQuoted,
+		voice:            voiceHooks{onPlay: cv.voicePlayed, onStop: cv.voiceStopped, onEnded: cv.voiceEnded},
 	}
+}
+
+// voicePlayed marks the voice note msgID as listened to the moment it
+// starts: the row turns blue at once, the store and (receipts allowing) the
+// sender hear of it in the background. Our own notes and ones already
+// played need nothing. Must run on the GTK main loop.
+func (cv *ConversationView) voicePlayed(msgID string) {
+	pos := cv.positionOf(msgID)
+	if pos < 0 {
+		return
+	}
+	m := cv.msgs[pos]
+	if m.FromMe || m.Played || m.Attachment == nil {
+		return
+	}
+	m.Played = true
+	cv.msgs[pos] = m
+	cv.byID[msgID] = m
+	trace(1, "voice played: %s", msgID)
+	// The row is rebuilt once its own click handler has returned.
+	glib.IdleAdd(func() {
+		if pos := cv.positionOf(msgID); pos >= 0 {
+			cv.refillRow(pos)
+		}
+	})
+	c, jid := cv.c, m.ChatJID
+	go func() {
+		if err := c.MarkPlayed(context.Background(), jid, msgID, SendReadReceipts); err != nil {
+			log.Printf("chatot: mark played failed: %v", err)
+		}
+	}()
+}
+
+// voiceStopped remembers where msgID's playback stopped (0 once it played
+// through), in the view's copy and the store, so the next play resumes
+// there. The row is not rebuilt: the shared player already sits at that
+// position. Must run on the GTK main loop.
+func (cv *ConversationView) voiceStopped(msgID string, ms int) {
+	pos := cv.positionOf(msgID)
+	if pos < 0 {
+		return
+	}
+	m := cv.msgs[pos]
+	if m.Attachment == nil {
+		return
+	}
+	a := *m.Attachment
+	a.PlayPosMS = ms
+	m.Attachment = &a
+	cv.msgs[pos] = m
+	cv.byID[msgID] = m
+	trace(1, "voice stopped: %s at %dms", msgID, ms)
+	c, jid := cv.c, m.ChatJID
+	go func() {
+		if err := c.SetPlayPosition(jid, msgID, ms); err != nil {
+			log.Printf("chatot: save play position failed: %v", err)
+		}
+	}()
+}
+
+// voiceEnded plays on into the next voice note when one directly follows
+// msgID (WhatsApp keeps a run of notes going until something else comes
+// between), provided it is downloaded. Must run on the GTK main loop.
+func (cv *ConversationView) voiceEnded(msgID string) {
+	next, ok := nextVoiceMessage(cv.Messages(), msgID)
+	if !ok {
+		return
+	}
+	mv := mediaVM(next)
+	if !mv.HasLocal || mv.ViewOnce {
+		return
+	}
+	mv.voice = cv.hooks().voice
+	trace(1, "voice chain: %s -> %s", msgID, next.ID)
+	playVoice(mv, mv.voice)
 }
 
 // SetLocalPath records that msgID's attachment was downloaded to path (by

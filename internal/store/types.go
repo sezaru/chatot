@@ -71,6 +71,9 @@ type Message struct {
 	Starred bool
 	// Forwarded is true once the message carried WhatsApp's forwarded flag.
 	Forwarded bool
+	// Played is true once an inbound audio message has been played, here or
+	// on another of the account's devices. See SetMessagesPlayed.
+	Played bool
 }
 
 // PollVoteRow is a single voter's selection of one poll option, identified by
@@ -109,6 +112,9 @@ type Attachment struct {
 	// DurationSecs is the playback length of an audio/video attachment,
 	// 0 when unknown.
 	DurationSecs int
+	// PlayPosMS is where playback of an audio attachment last stopped, in
+	// milliseconds (0 = the start). See SetMediaPlayPos.
+	PlayPosMS int
 }
 
 // SearchHit is a single Search result: either a message match (MsgID set,

@@ -29,8 +29,10 @@ type Fake struct {
 	events   *eventBus
 	qrCodes  chan string
 	loggedIn bool
-	// markReads records MarkRead calls for tests (see MarkReadCalls).
-	markReads []MarkReadCall
+	// markReads records MarkRead calls for tests (see MarkReadCalls);
+	// markPlayed the MarkPlayed ones.
+	markReads  []MarkReadCall
+	markPlayed []MarkPlayedCall
 	// stickers is the picker library, most recent first.
 	stickers []Sticker
 	// pairing marks a demo account that never links: Start emits a demo QR
@@ -783,6 +785,59 @@ func (f *Fake) MarkReadCalls() []MarkReadCall {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]MarkReadCall(nil), f.markReads...)
+}
+
+// MarkPlayedCall records one Fake.MarkPlayed, for tests of the voice path.
+type MarkPlayedCall struct {
+	JID          string
+	MsgID        string
+	NotifySender bool
+}
+
+// MarkPlayed flags the message Played and records the call; like the real
+// client it asks the open chat to redraw the bubble.
+func (f *Fake) MarkPlayed(ctx context.Context, jid, msgID string, notifySender bool) error {
+	f.mu.Lock()
+	f.markPlayed = append(f.markPlayed, MarkPlayedCall{JID: jid, MsgID: msgID, NotifySender: notifySender})
+	msgs := f.messages[jid]
+	found := false
+	for i := range msgs {
+		if msgs[i].ID == msgID {
+			msgs[i].Played = true
+			found = true
+		}
+	}
+	f.mu.Unlock()
+	if !found {
+		return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, jid)
+	}
+	f.events.Publish(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: jid, MsgID: msgID}})
+	return nil
+}
+
+// MarkPlayedCalls lists every MarkPlayed so far, oldest first.
+func (f *Fake) MarkPlayedCalls() []MarkPlayedCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]MarkPlayedCall(nil), f.markPlayed...)
+}
+
+// SetPlayPosition stores the playhead on the message's attachment.
+func (f *Fake) SetPlayPosition(jid, msgID string, ms int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if ms < 0 {
+		ms = 0
+	}
+	for i, m := range f.messages[jid] {
+		if m.ID == msgID && m.Attachment != nil {
+			a := *m.Attachment
+			a.PlayPosMS = ms
+			f.messages[jid][i].Attachment = &a
+			return nil
+		}
+	}
+	return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, jid)
 }
 
 func (f *Fake) StopLiveLocation(ctx context.Context, chatJID, msgID string) error {

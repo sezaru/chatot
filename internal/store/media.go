@@ -89,3 +89,14 @@ func (s *Store) NullMediaLocalPathByPath(localPath string) error {
 	_, err := s.db.Exec(`UPDATE media SET local_path = NULL WHERE local_path = ?`, localPath)
 	return err
 }
+
+// SetMediaPlayPos remembers where playback of msgID's audio stopped, in
+// milliseconds from the start (0 once it played through), so the next play
+// resumes there. Local only: never synced, never touched by UpsertMedia.
+func (s *Store) SetMediaPlayPos(chatJID, msgID string, ms int) error {
+	if ms < 0 {
+		ms = 0
+	}
+	_, err := s.db.Exec(`UPDATE media SET play_pos_ms = ? WHERE chat_jid = ? AND msg_id = ?`, ms, chatJID, msgID)
+	return err
+}

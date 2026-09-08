@@ -109,6 +109,14 @@ func (w *Whatsmeow) ingestReceipt(r *Receipt) error {
 	if !r.Read || r.ReaderJID != "" {
 		return nil
 	}
+	if r.Played {
+		// The phone played these voice notes: they stop reading as unheard
+		// here too. (Our own messages carry no played flag; the update is
+		// a no-op on them.)
+		if err := w.store.SetMessagesPlayed(r.ChatJID, r.MsgIDs); err != nil {
+			return err
+		}
+	}
 	return w.store.MarkChatRead(r.ChatJID)
 }
 
