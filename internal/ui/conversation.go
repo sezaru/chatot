@@ -269,8 +269,8 @@ type ConversationView struct {
 	// lastUpper and lastPage are the geometry seen by the last scroll
 	// event, to tell a re-layout from the reader scrolling.
 	lastUpper, lastPage float64
-	// flingGen tells a running fling (thread_input.go) from a stopped one.
-	flingGen int
+	// glide runs the thread's own flings (thread_input.go).
+	glide    *glider
 	empty    *gtk.Label
 	emptyBox *gtk.Box
 
@@ -297,6 +297,17 @@ type ConversationView struct {
 	// second scroll can't prematurely mark the thread exhausted.
 	historyRequested bool
 	historyInFlight  bool
+	// loadGen bumps on every Load: a page or a refresh the store hands
+	// back for an earlier generation belongs to a thread no longer shown
+	// and is dropped.
+	loadGen int
+	// refreshInFlight and refreshDirty coalesce refreshInPlace: one store
+	// read at a time, and a request made while one is out runs once more
+	// after it lands. refreshRetried marks the one re-read allowed when a
+	// page does not line up with the loaded rows.
+	refreshInFlight bool
+	refreshDirty    bool
+	refreshRetried  bool
 
 	// presence is the UI's own view of contact/chat presence, built from
 	// EventPresence/EventChatPresence on Events() — chosen over growing the
@@ -911,6 +922,9 @@ func (cv *ConversationView) Load(jid string) {
 	cv.loadingOlder = false
 	cv.historyRequested = false
 	cv.historyInFlight = false
+	cv.loadGen++
+	cv.refreshDirty = false
+	cv.refreshRetried = false
 	cv.refreshHeader()
 	cv.refreshJoinBanner()
 
@@ -1019,24 +1033,81 @@ func (cv *ConversationView) refreshInPlace() {
 	if cv.jid == "" {
 		return
 	}
+	// One read at a time: the store is read off the main loop, and every
+	// request that arrives meanwhile is served by one more read after.
+	if cv.refreshInFlight {
+		cv.refreshDirty = true
+		return
+	}
+	cv.refreshInFlight = true
 	// Only the stored rows are compared with the store: an optimistic
 	// row (a send in flight, or a failed one) has no counterpart there.
-	stored := cv.storedPositions()
-	n := len(stored)
+	n := len(cv.storedPositions())
 	if n < conversationPageSize {
 		n = conversationPageSize
 	}
-	msgs, err := cv.c.Messages(cv.jid, n)
-	if err != nil || len(msgs) != len(stored) {
-		cv.Load(cv.jid)
-		return
+	jid, gen := cv.jid, cv.loadGen
+	go func() {
+		msgs, err := cv.c.Messages(jid, n)
+		glib.IdleAdd(func() {
+			cv.refreshInFlight = false
+			if gen != cv.loadGen || jid != cv.jid {
+				cv.refreshDirty = false
+				return
+			}
+			cv.applyRefresh(msgs, err)
+			if cv.refreshDirty {
+				cv.refreshDirty = false
+				cv.refreshInPlace()
+			}
+		})
+	}()
+}
+
+// applyReceipt advances the status of the loaded messages r names and
+// re-renders their rows, the way the store does (a status never goes
+// back), without reading the store: on a busy group every member's
+// delivery and read receipt is one such event. It reports false for a
+// receipt that carries no status, which the caller resolves from the
+// store instead.
+func (cv *ConversationView) applyReceipt(r client.Receipt) bool {
+	if r.Status == 0 {
+		return false
 	}
-	for k, i := range stored {
-		if msgs[k].ID != cv.msgs[i].ID {
+	for _, id := range r.MsgIDs {
+		pos := cv.positionOf(id)
+		if pos < 0 || cv.msgs[pos].Status >= r.Status {
+			continue
+		}
+		cv.msgs[pos].Status = r.Status
+		cv.byID[id] = cv.msgs[pos]
+		cv.refillRow(pos)
+	}
+	return true
+}
+
+// applyRefresh patches the loaded rows from msgs, the store's newest page
+// as long as the thread was when the read started. A page that no longer
+// lines up with the rows is read once more before the thread is reloaded
+// outright: a message appended while the read was out is the usual
+// reason, a genuine add or remove the rare one.
+func (cv *ConversationView) applyRefresh(msgs []client.Message, err error) {
+	stored := cv.storedPositions()
+	aligned := err == nil && len(msgs) == len(stored)
+	for k := 0; aligned && k < len(stored); k++ {
+		aligned = msgs[k].ID == cv.msgs[stored[k]].ID
+	}
+	if !aligned {
+		if cv.refreshRetried {
+			cv.refreshRetried = false
 			cv.Load(cv.jid)
 			return
 		}
+		cv.refreshRetried = true
+		cv.refreshDirty = true
+		return
 	}
+	cv.refreshRetried = false
 	changed := 0
 	for k, i := range stored {
 		if bubbleSig(msgs[k]) == bubbleSig(cv.msgs[i]) {
@@ -1063,21 +1134,38 @@ func (cv *ConversationView) storedPositions() []int {
 	return out
 }
 
-// loadOlder prepends the next older page. Must run on the GTK main loop.
+// loadOlder fetches the next older page off the main loop and prepends it
+// once it lands; a page read for a thread no longer open is dropped. The
+// store read used to run on the main loop, and on a long thread it was the
+// frame that stalled at every page boundary of a fling. Must run on the
+// GTK main loop.
 func (cv *ConversationView) loadOlder() {
 	cv.loadingOlder = true
+	jid, oldestID, gen := cv.jid, cv.oldestID, cv.loadGen
+	go func() {
+		older, err := cv.c.MessagesBefore(jid, oldestID, conversationPageSize)
+		glib.IdleAdd(func() {
+			if gen != cv.loadGen || jid != cv.jid {
+				return
+			}
+			cv.loadingOlder = false
+			cv.olderPageLanded(older, err)
+		})
+	}()
+}
 
-	older, err := cv.c.MessagesBefore(cv.jid, cv.oldestID, conversationPageSize)
+// olderPageLanded applies what loadOlder read: an error ends paging, an
+// empty page asks the phone for more history (once), a real page is
+// prepended.
+func (cv *ConversationView) olderPageLanded(older []client.Message, err error) {
 	if err != nil {
 		cv.hasMore = false
-		cv.loadingOlder = false
 		return
 	}
 	if len(older) == 0 {
 		request, exhausted := nextHistoryAction(len(older), cv.historyRequested)
 		trace(1, "loadOlder: store floor reached; request=%v exhausted=%v", request, exhausted)
 		cv.hasMore = !exhausted
-		cv.loadingOlder = false
 		if request {
 			cv.historyRequested = true
 			cv.historyInFlight = true
@@ -1093,7 +1181,6 @@ func (cv *ConversationView) loadOlder() {
 	// sync). The list view keeps the row under the reader where it is.
 	trace(1, "loadOlder: prepend %d (oldest %s)", len(older), cv.oldestID)
 	cv.prependOlder(older)
-	cv.loadingOlder = false
 }
 
 // prependOlder splices older (oldest-first) onto the front of the currently
@@ -1151,12 +1238,14 @@ func (cv *ConversationView) watchEvents() {
 			if ev.Receipt == nil {
 				continue
 			}
-			chatJID := ev.Receipt.ChatJID
+			r := *ev.Receipt
 			glib.IdleAdd(func() {
-				if chatJID != cv.jid {
+				if r.ChatJID != cv.jid {
 					return
 				}
-				cv.refreshInPlace()
+				if !cv.applyReceipt(r) {
+					cv.refreshInPlace()
+				}
 			})
 		case client.EventReaction:
 			if ev.Reaction == nil {

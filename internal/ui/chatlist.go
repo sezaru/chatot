@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
+	"github.com/diamondburned/gotk4/pkg/core/gioutil"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -118,14 +119,27 @@ type ChatList struct {
 
 	c      client.Client
 	events <-chan client.Event
-	list   *gtk.ListBox
-	// listScroller is the scrolled window around list.
+	// list holds what is not a chat row: search hits and the empty state.
+	list *gtk.ListBox
+	// The chat rows are a GtkListView over chatModel (chatlist_rows.go);
+	// listStack shows it or list, and listScroller is the view's scroller.
+	chatModel    *gioutil.ListModel[chatRowItem]
+	chatSel      *gtk.SingleSelection
+	chatView     *gtk.ListView
+	listStack    *gtk.Stack
 	listScroller *gtk.ScrolledWindow
-	searchEntry  *gtk.SearchEntry
-	railSig      string
-	// rows are the reconciled chat rows by key (jid, or account|jid when
-	// merged) and listKind says which mode built them; see chatlist_rows.go.
-	rows     map[string]*rowEntry
+	// rowWidgets maps a row widget (by native pointer) to its Go side and
+	// boundRows the rows currently bound, by key; avatarGens counts avatar
+	// changes per jid so a rebind swaps the picture.
+	rowWidgets map[uintptr]*chatRowWidget
+	boundRows  map[string]*chatRowWidget
+	avatarGens map[string]int
+	// reselecting marks a selection change made by reselectRow, not the
+	// reader.
+	reselecting bool
+	searchEntry *gtk.SearchEntry
+	railSig     string
+	// listKind says which mode built the chat rows; see chatlist_rows.go.
 	listKind string
 	// lastChips is the chip strip as last built, so a refresh that changes
 	// no chip leaves the strip (and its scroll position) alone.
@@ -136,6 +150,11 @@ type ChatList struct {
 	// backfill publishes hundreds of events in a row and each full rebuild
 	// of the rows costs a store query per chat.
 	refreshQueued atomic.Bool
+	// refreshInFlight, refreshDirty and refreshGen belong to refreshAsync
+	// (chatlist_refresh.go).
+	refreshInFlight bool
+	refreshDirty    bool
+	refreshGen      int
 	// syncBanner is the "Syncing older messages" strip above the rows.
 	syncBanner *gtk.Box
 	syncLabel  *gtk.Label
@@ -444,32 +463,53 @@ func NewChatList(c client.Client) *ChatList {
 	syncBanner.SetVisible(false)
 	listCol.Append(syncBanner)
 
+	// list holds what is not a chat row: search hits and the empty state.
 	list := gtk.NewListBox()
 	list.AddCSSClass("navigation-sidebar")
 	list.SetVExpand(true)
 
-	// The list MUST live in a height-constrained scroller. GtkListBox is NOT
-	// virtualized, so its minimum height is the sum of EVERY chat row; with a
-	// real account (dozens of chats) that minimum (~3500px) propagates up and
-	// forces the whole window taller than the screen — shoving the composer
-	// off the bottom and leaving nothing for either pane to scroll. Wrapping in
-	// a ScrolledWindow is necessary but NOT sufficient: MinContentHeight(0)
-	// does not override a GtkListBox child's propagated minimum here, but an
-	// explicit SetSizeRequest minimum does. VExpand then grows it to fill the
-	// pane and it scrolls internally. hscrollbar Never so a long chat name
-	// can't widen the sidebar.
-	listScroller := gtk.NewScrolledWindow()
-	listScroller.SetChild(list)
-	listScroller.SetVExpand(true)
-	listScroller.SetPropagateNaturalHeight(false)
-	listScroller.SetMinContentHeight(0)
-	listScroller.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
-	listScroller.SetSizeRequest(-1, 80)
-	listCol.Append(listScroller)
+	// The chat rows are a GtkListView over chatModel (chatlist_rows.go);
+	// listStack shows it or list.
+	chatModel := chatRowModelType.New()
+	chatSel := gtk.NewSingleSelection(chatModel)
+	chatSel.SetAutoselect(false)
+	chatSel.SetCanUnselect(true)
+
+	// Both lists MUST live in a height-constrained scroller. GtkListBox is
+	// NOT virtualized, so its minimum height is the sum of EVERY row; with
+	// a real account that minimum (~3500px) propagates up and forces the
+	// whole window taller than the screen — shoving the composer off the
+	// bottom and leaving nothing for either pane to scroll. Wrapping in a
+	// ScrolledWindow is necessary but NOT sufficient: MinContentHeight(0)
+	// does not override a child's propagated minimum here, but an explicit
+	// SetSizeRequest minimum does. VExpand then grows it to fill the pane
+	// and it scrolls internally. hscrollbar Never so a long chat name can't
+	// widen the sidebar. A wheel notch glides rather than jumps, as in the
+	// thread.
+	newListScroller := func() *gtk.ScrolledWindow {
+		s := gtk.NewScrolledWindow()
+		s.SetVExpand(true)
+		s.SetPropagateNaturalHeight(false)
+		s.SetMinContentHeight(0)
+		s.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
+		s.SetSizeRequest(-1, 80)
+		smoothWheel(s)
+		return s
+	}
+	listScroller := newListScroller()
+	otherScroller := newListScroller()
+	otherScroller.SetChild(list)
+	listStack := gtk.NewStack()
+	listStack.SetVExpand(true)
+	listStack.AddNamed(listScroller, "chats")
+	listStack.AddNamed(otherScroller, "other")
+	listCol.Append(listStack)
 
 	cl := &ChatList{
 		searchEntry: search,
-		Box:         root, c: c, events: c.Events(), list: list, listScroller: listScroller,
+		Box:         root, c: c, events: c.Events(), list: list, listScroller: listScroller, listStack: listStack,
+		chatModel: chatModel, chatSel: chatSel,
+		rowWidgets: map[uintptr]*chatRowWidget{}, boundRows: map[string]*chatRowWidget{}, avatarGens: map[string]int{},
 		syncBanner: syncBanner, syncLabel: syncLabel, syncBar: syncBar,
 		composingJIDs: make(map[string]string), composingGen: make(map[string]int), names: make(map[string]string), avatarCache: newAvatarCache(),
 		chipRow: chipRow, chipScroller: chipScroller, rail: rail,
@@ -483,6 +523,8 @@ func NewChatList(c client.Client) *ChatList {
 		tab:         "chats",
 		discoverCat: "All",
 	}
+	cl.chatView = cl.newChatView()
+	listScroller.SetChild(cl.chatView)
 
 	// The other tabs' sidebar pages and content panes. The pages join the
 	// same stack the in-sidebar forms use; the panes are handed to main.go
@@ -510,8 +552,9 @@ func NewChatList(c client.Client) *ChatList {
 		mb.SetPopover(cl.buildAccountPopover())
 	})
 
-	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
-		idx := row.Index()
+	// activate opens the chat behind row idx of rowJIDs, whichever list
+	// (chat rows, search hits) it came from.
+	activate := func(idx int) {
 		if idx < 0 || idx >= len(cl.rowJIDs) {
 			return
 		}
@@ -541,7 +584,20 @@ func NewChatList(c client.Client) *ChatList {
 		if cl.onSelect != nil {
 			cl.onSelect(jid)
 		}
+	}
+	list.ConnectRowActivated(func(row *gtk.ListBoxRow) { activate(row.Index()) })
+	// A click on a chat row selects it, and a selection the reader made
+	// opens the chat; one made by reselectRow is the list catching up with
+	// a chat opened elsewhere. Enter on a focused row activates it too.
+	chatSel.ConnectSelectionChanged(func(_, _ uint) {
+		if cl.reselecting {
+			return
+		}
+		if pos := chatSel.Selected(); pos != gtk.InvalidListPosition {
+			activate(int(pos))
+		}
 	})
+	cl.chatView.ConnectActivate(func(pos uint) { activate(int(pos)) })
 
 	search.ConnectSearchChanged(func() {
 		cl.query = strings.TrimSpace(search.Text())
@@ -762,40 +818,14 @@ func (cl *ChatList) OpenGlobalSearch(query string) {
 	cl.search.GrabFocus()
 }
 
-// refresh rebuilds the row widgets from Statuses (status mode),
-// StarredMessages (starred mode), Search (query set) or Chats (none of the
-// above). Must run on the GTK main loop.
-func (cl *ChatList) refresh() {
-	chats, err := cl.c.Chats(0)
-	if err != nil {
-		log.Printf("chatot: list chats: %v", err)
-		return
-	}
-	cl.updateChipRow(chats)
-	switch {
-	case cl.tab == "communities":
-		cl.refreshCommunities()
-	case cl.tab == "channels" && cl.discover:
-		cl.refreshDiscover()
-	case cl.tab == "channels":
-		cl.refreshChannels()
-	case cl.tab == "status":
-		cl.refreshStatus()
-	case cl.query != "":
-		cl.refreshSearch()
-	default:
-		cl.refreshChats(chats)
-	}
-	cl.updateTabBadges(chats)
-	cl.refreshRailBadges()
-}
-
-func (cl *ChatList) refreshChats(chats []client.Chat) {
+// refreshChats rebuilds the chat rows from d. Must run on the GTK main
+// loop.
+func (cl *ChatList) refreshChats(d *sidebarData) {
 	if cl.merged {
-		cl.refreshMergedChats()
+		cl.refreshMergedChats(d)
 		return
 	}
-	chats = pinnedFirst(chats)
+	chats := pinnedFirst(d.chats)
 	cl.archivedTitle.SetText(archivedTitleText(countArchived(chats)))
 
 	now := time.Now()
@@ -806,7 +836,7 @@ func (cl *ChatList) refreshChats(chats []client.Chat) {
 		if !showChatInList(chat, cl.showArchived) {
 			continue
 		}
-		if !chatVisible(cl.c, chat, cl.filter) {
+		if !chatMatchesFilter(chat, d.chatLabels[chat.JID], cl.filter) {
 			continue
 		}
 		vm := chatRowVM(chat, now)
@@ -815,13 +845,8 @@ func (cl *ChatList) refreshChats(chats []client.Chat) {
 			vm.Preview = composingPreviewText(kind)
 			vm.Typing = true
 		}
-		vm.Blocked = cl.c.IsBlocked(chat.JID)
-		chat := chat
-		want = append(want, wantRow{key: vm.JID, vm: vm, build: func() *gtk.Box {
-			row := buildChatRow(cl.c, cl.avatarCache, vm)
-			cl.attachRowMenu(row, chat)
-			return row
-		}})
+		vm.Blocked = d.blocked[chat.JID]
+		want = append(want, wantRow{key: vm.JID, vm: vm, chat: chat, client: cl.c})
 		cl.rowJIDs = append(cl.rowJIDs, vm.JID)
 	}
 
@@ -836,13 +861,12 @@ func (cl *ChatList) refreshChats(chats []client.Chat) {
 // Clicking a row still opens it through the normal path, which reads the
 // ACTIVE account — so a row from another account switches to that account
 // first, otherwise the conversation pane would come up empty.
-func (cl *ChatList) refreshMergedChats() {
-	source := cl.mergedSource()
-	if source == nil {
+func (cl *ChatList) refreshMergedChats(d *sidebarData) {
+	if cl.mergedSource() == nil {
 		// Nothing to merge (single-account build): fall back rather than
 		// leaving the list blank.
 		cl.merged = false
-		cl.refreshChats(chatsOrEmpty(cl.c))
+		cl.refreshChats(d)
 		return
 	}
 
@@ -850,32 +874,19 @@ func (cl *ChatList) refreshMergedChats() {
 	cl.rowJIDs = nil
 	cl.rowAccounts = nil
 	var want []wantRow
-	for _, mc := range source.MergedChats(0) {
+	for _, r := range d.merged {
+		mc := r.mc
 		if !showChatInList(mc.Chat, cl.showArchived) {
 			continue
 		}
-		// Every per-row lookup below MUST go through the row's own account.
-		// cl.c is the manager, whose methods all forward to the ACTIVE account
-		// — using it here would read another account's store for this JID:
-		// wrong avatar, no blocked badge, and a label filter that hides every
-		// row not belonging to the active account.
-		rowClient := source.ClientFor(mc.AccountID)
-		if rowClient == nil {
-			continue
-		}
-		if !chatVisible(rowClient, mc.Chat, cl.filter) {
+		if !chatMatchesFilter(mc.Chat, r.labels, cl.filter) {
 			continue
 		}
 		vm := chatRowVM(mc.Chat, now)
 		vm.Preview = mergedPreview(mc.AccountName, vm.Preview)
 		vm.AccountColor = avatarColorClass(mc.AccountID)
-		vm.Blocked = rowClient.IsBlocked(mc.Chat.JID)
-		chat := mc.Chat
-		want = append(want, wantRow{key: mc.AccountID + "|" + vm.JID, vm: vm, build: func() *gtk.Box {
-			row := buildChatRow(rowClient, cl.avatarCache, vm)
-			cl.attachRowMenu(row, chat)
-			return row
-		}})
+		vm.Blocked = r.blocked
+		want = append(want, wantRow{key: mc.AccountID + "|" + vm.JID, vm: vm, chat: mc.Chat, client: r.client})
 		cl.rowJIDs = append(cl.rowJIDs, vm.JID)
 		cl.rowAccounts = append(cl.rowAccounts, mc.AccountID)
 	}
@@ -932,17 +943,27 @@ func (cl *ChatList) refreshSearch() {
 // list keeps pointing at the chat that is actually open. Nothing is selected
 // when that chat is filtered out of the current rows.
 func (cl *ChatList) reselectRow() {
+	cl.reselecting = true
+	defer func() { cl.reselecting = false }()
 	cl.list.UnselectAll()
+	if cl.chatSel.Selected() != gtk.InvalidListPosition {
+		cl.chatSel.SetSelected(gtk.InvalidListPosition)
+	}
 	if cl.selectedJID == "" {
 		return
 	}
 	for i, jid := range cl.rowJIDs {
-		if jid == cl.selectedJID {
+		if jid != cl.selectedJID {
+			continue
+		}
+		if cl.listKind == listOther {
 			if row := cl.list.RowAtIndex(i); row != nil {
 				cl.list.SelectRow(row)
 			}
-			return
+		} else if i < cl.chatModel.Len() {
+			cl.chatSel.SetSelected(uint(i))
 		}
+		return
 	}
 }
 
@@ -1171,7 +1192,7 @@ func (cl *ChatList) watchEvents() {
 						return false
 					})
 				}
-				cl.refresh()
+				cl.queueRefresh()
 			})
 			continue
 		}
@@ -1192,13 +1213,7 @@ func (cl *ChatList) watchEvents() {
 			glib.IdleAdd(func() {
 				cl.avatarCache.invalidate(jid)
 				cl.invalidateRow(jid)
-				cl.refresh()
-			})
-			continue
-		}
-		if ev.Kind == client.EventLabelUpdate {
-			glib.IdleAdd(func() {
-				cl.refresh()
+				cl.queueRefresh()
 			})
 			continue
 		}
@@ -1247,7 +1262,7 @@ func (cl *ChatList) queueRefresh() {
 	}
 	glib.TimeoutAdd(refreshDebounceMS, func() bool {
 		cl.refreshQueued.Store(false)
-		cl.refresh()
+		cl.refreshAsync()
 		return false
 	})
 }
@@ -1267,135 +1282,6 @@ func (cl *ChatList) SetSyncProgress(text string, fraction float64) {
 // HideSyncProgress retires the backfill banner.
 func (cl *ChatList) HideSyncProgress() { cl.syncBanner.SetVisible(false) }
 
-// chatRowAvatarSize is the chat-list row avatar's fixed square size in px.
-const chatRowAvatarSize = 38
-
-// chatRowTimeClass returns the extra CSS class the row's timestamp carries,
-// or "" for none. The mockup renders an unread chat's timestamp in accent
-// green at full opacity instead of the usual dim grey.
-func chatRowTimeClass(showUnread bool) string {
-	if showUnread {
-		return "chatot-chat-time-unread"
-	}
-	return ""
-}
-
-// buildChatRow constructs the GTK widget tree for a single row from its
-// pre-computed view-model. The avatar renders vm.Initial immediately and
-// swaps in the real picture asynchronously via cache/c.Avatar (see
-// buildAvatar).
-func buildChatRow(c client.Client, cache *avatarCache, vm chatRowView) *gtk.Box {
-	row := gtk.NewBox(gtk.OrientationHorizontal, 8)
-	// Mockup padding: 7px vertical, 8px horizontal, giving a 53px row around
-	// the 38px avatar. The GtkListBoxRow around this box contributes none.
-	row.SetMarginTop(7)
-	row.SetMarginBottom(7)
-	row.SetMarginStart(8)
-	row.SetMarginEnd(8)
-
-	// Merged mode only: a 3px account-coloured stripe at the row's leading
-	// edge, so two chats from different accounts are told apart at a glance.
-	if vm.AccountColor != "" {
-		stripe := gtk.NewBox(gtk.OrientationVertical, 0)
-		stripe.AddCSSClass("chatot-row-stripe")
-		stripe.AddCSSClass(vm.AccountColor)
-		stripe.SetSizeRequest(3, chatRowAvatarSize)
-		stripe.SetVAlign(gtk.AlignCenter)
-		row.Append(stripe)
-	}
-
-	row.Append(buildAvatar(c, cache, vm.JID, vm.Initial, chatRowAvatarSize))
-
-	textCol := gtk.NewBox(gtk.OrientationVertical, 2)
-	textCol.SetHExpand(true)
-
-	nameLabel := gtk.NewLabel(vm.Name)
-	nameLabel.SetXAlign(0)
-	nameLabel.SetEllipsize(pango.EllipsizeEnd)
-	nameLabel.SetMaxWidthChars(1)
-	nameLabel.SetHExpand(true)
-	nameLabel.AddCSSClass("chatot-chat-name")
-	textCol.Append(nameLabel)
-
-	// Single line, ellipsized. MaxWidthChars(1) keeps the label's natural
-	// width tiny so a long message can't stretch the row wider than the
-	// sidebar; HExpand lets it fill whatever width the sidebar does give.
-	previewText := vm.Preview
-	if !ShowMessagePreviews && !vm.Typing {
-		previewText = ""
-	}
-	previewLabel := gtk.NewLabel(previewText)
-	previewLabel.SetXAlign(0)
-	// SingleLineMode as well as Ellipsize: Pango ellipsizes per line, so a
-	// preview holding a newline still rendered as two lines and grew the row.
-	previewLabel.SetSingleLineMode(true)
-	previewLabel.SetEllipsize(pango.EllipsizeEnd)
-	previewLabel.SetMaxWidthChars(1)
-	previewLabel.SetHExpand(true)
-	previewLabel.AddCSSClass("chatot-chat-preview")
-	if vm.Typing {
-		previewLabel.AddCSSClass("chatot-chat-typing")
-	}
-	textCol.Append(previewLabel)
-
-	row.Append(textCol)
-
-	metaCol := gtk.NewBox(gtk.OrientationVertical, 4)
-	metaCol.SetVAlign(gtk.AlignStart)
-
-	// Mockup: pin/mute/block are small glyphs beside the timestamp on the
-	// right, never prefixes on the chat name.
-	metaTop := gtk.NewBox(gtk.OrientationHorizontal, 3)
-	metaTop.SetHAlign(gtk.AlignEnd)
-	for _, f := range []struct {
-		glyph string
-		on    bool
-	}{{"📌", vm.Pinned}, {"🔇", vm.Muted}, {"🚫", vm.Blocked}} {
-		if f.on {
-			flagLabel := gtk.NewLabel(f.glyph)
-			flagLabel.AddCSSClass("chatot-chat-flag")
-			metaTop.Append(flagLabel)
-		}
-	}
-	timeLabel := gtk.NewLabel(vm.TimeText)
-	timeLabel.AddCSSClass("chatot-chat-time")
-	if cls := chatRowTimeClass(vm.ShowUnread); cls != "" {
-		timeLabel.AddCSSClass(cls)
-	}
-	metaTop.Append(timeLabel)
-	metaCol.Append(metaTop)
-
-	if vm.ShowUnread {
-		badge := gtk.NewLabel(vm.UnreadText)
-		badge.AddCSSClass("chatot-unread-badge")
-		badge.SetHAlign(gtk.AlignEnd)
-		metaCol.Append(badge)
-	}
-
-	row.Append(metaCol)
-
-	return row
-}
-
-// attachChatContextMenu wires a secondary-click (right-click) gesture on row
-// that pops a small menu of Pin/Mute/Archive/Mark-unread actions for chat.
-// Each action calls the matching Client method in a goroutine; the resulting
-// EventChatUpdate (or, for the fake, the equivalent) drives the list refresh
-// via ChatList.watchEvents, so nothing here touches the row directly.
-func attachChatContextMenu(host gtk.Widgetter, row *gtk.Box, c client.Client, chat client.Chat, window *gtk.Window) {
-	attachChatContextMenuWith(host, row, chat, func() []menuItem { return chatRowMenuItemsFor(c, chat, window) })
-}
-
-// attachRowMenu wires the row's right-click menu: the app-supplied one
-// (the conversation's ⋮ menu for that chat) when set, else the design's.
-func (cl *ChatList) attachRowMenu(row *gtk.Box, chat client.Chat) {
-	if cl.rowMenu == nil {
-		attachChatContextMenu(cl, row, cl.c, chat, cl.window)
-		return
-	}
-	attachChatContextMenuWith(cl, row, chat, func() []menuItem { return cl.rowMenu(chat) })
-}
-
 // rowMenuItems is what a chat row's right-click menu shows right now.
 func (cl *ChatList) rowMenuItems(chat client.Chat) []menuItem {
 	if cl.rowMenu != nil {
@@ -1406,15 +1292,6 @@ func (cl *ChatList) rowMenuItems(chat client.Chat) []menuItem {
 
 // SetRowMenu supplies the rows of every chat row's right-click menu.
 func (cl *ChatList) SetRowMenu(f func(chat client.Chat) []menuItem) { cl.rowMenu = f }
-
-func attachChatContextMenuWith(host gtk.Widgetter, row *gtk.Box, chat client.Chat, items func() []menuItem) {
-	gesture := gtk.NewGestureClick()
-	gesture.SetButton(gdk.BUTTON_SECONDARY)
-	gesture.ConnectPressed(func(nPress int, x, y float64) {
-		showChatContextMenu(host, row, items(), x, y)
-	})
-	row.AddController(gesture)
-}
 
 // clearComposing drops jid's typing/recording preview override.
 func (cl *ChatList) clearComposing(jid string) {

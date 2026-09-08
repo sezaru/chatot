@@ -207,26 +207,23 @@ func (cl *ChatList) setFilter(f chatFilter) {
 // filter, unless nothing on it changed. Must run on the GTK main loop;
 // called from refresh so the chips (unread count, active state, inline
 // label) always track live data.
-func (cl *ChatList) updateChipRow(chats []client.Chat) {
-	scoped := make([]client.Chat, 0, len(chats))
-	for _, c := range chats {
+func (cl *ChatList) updateChipRow(d *sidebarData) {
+	scoped := make([]client.Chat, 0, len(d.chats))
+	for _, c := range d.chats {
 		if showChatInList(c, cl.showArchived) {
 			scoped = append(scoped, c)
 		}
 	}
 	counts := computeChatCounts(scoped)
 
-	labels, err := cl.c.Labels()
-	if err != nil {
-		labels = nil
-	}
+	labels := d.labels
 	if cl.filter.Kind == filterLabel && !labelExists(labels, cl.filter.LabelID) {
 		cl.filter = chatFilter{}
 	}
 
 	chatLabels := make(map[string][]string, len(scoped))
 	for _, c := range scoped {
-		if ids, err := cl.c.LabelsForChat(c.JID); err == nil {
+		if ids, ok := d.chatLabels[c.JID]; ok {
 			chatLabels[c.JID] = ids
 		}
 	}

@@ -2,7 +2,6 @@ package ui
 
 import (
 	"math"
-	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -38,6 +37,7 @@ const scrollSurfaceFactor = 2.5
 // scrolled window's own, before it.
 func (cv *ConversationView) installScrollInput() {
 	cv.scroller.SetKineticScrolling(false)
+	cv.glide = newGlider(cv.scroller)
 	ctl := gtk.NewEventControllerScroll(gtk.EventControllerScrollVertical | gtk.EventControllerScrollKinetic)
 	ctl.SetPropagationPhase(gtk.PhaseCapture)
 	ctl.ConnectScrollBegin(func() { cv.stopFling() })
@@ -82,29 +82,8 @@ func (cv *ConversationView) scrollBy(delta float64) {
 // startFling scrolls on at velocity (value units per second), decaying
 // by e^-friction per second, until it is spent or the thread ends.
 func (cv *ConversationView) startFling(velocity, friction float64) {
-	cv.flingGen++
-	gen := cv.flingGen
-	last := time.Now()
-	gtk.BaseWidget(cv.scroller).AddTickCallback(func(_ gtk.Widgetter, _ gdk.FrameClocker) bool {
-		if gen != cv.flingGen {
-			return false
-		}
-		now := time.Now()
-		dt := now.Sub(last).Seconds()
-		last = now
-		if dt > 0.1 {
-			dt = 0.1
-		}
-		adj := cv.scroller.VAdjustment()
-		before := adj.Value()
-		cv.scrollBy(velocity * dt)
-		velocity *= math.Exp(-friction * dt)
-		if math.Abs(velocity) < 2 || adj.Value() == before {
-			return false
-		}
-		return true
-	})
+	cv.glide.start(velocity, friction)
 }
 
 // stopFling ends a fling in progress.
-func (cv *ConversationView) stopFling() { cv.flingGen++ }
+func (cv *ConversationView) stopFling() { cv.glide.stop() }
