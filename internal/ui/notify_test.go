@@ -1,7 +1,11 @@
 package ui
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"chatot/internal/client"
 )
@@ -170,5 +174,38 @@ func TestReactionNotificationText(t *testing.T) {
 	title, body = reactionNotification("Weekend Trip", "Ada", "😂", "📷 Sunset")
 	if title != "Weekend Trip" || body != `Ada: Reacted 😂 to "📷 Sunset"` {
 		t.Fatalf("group: got title=%q body=%q", title, body)
+	}
+}
+
+// The app mark is written out once for the notification daemon to read by
+// path, and a copy already there is reused.
+func TestWriteAppMarkIconWritesOnceAndReuses(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "notify")
+	path, err := writeAppMarkIcon(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(data, appMarkPNG) {
+		t.Fatalf("written mark = %d bytes, err %v; want the embedded PNG (%d bytes)", len(data), err, len(appMarkPNG))
+	}
+	info1, _ := os.Stat(path)
+	time.Sleep(20 * time.Millisecond)
+	again, err := writeAppMarkIcon(dir)
+	if err != nil || again != path {
+		t.Fatalf("second write = %q, %v; want %q", again, err, path)
+	}
+	if info2, _ := os.Stat(path); !info2.ModTime().Equal(info1.ModTime()) {
+		t.Error("an up-to-date mark was rewritten")
+	}
+	// A stale copy (an older build's mark) is replaced.
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writeAppMarkIcon(dir); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(path); !bytes.Equal(data, appMarkPNG) {
+		t.Error("a stale mark was not replaced")
 	}
 }
