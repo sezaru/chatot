@@ -817,6 +817,7 @@ func (w *Whatsmeow) DeleteMessage(ctx context.Context, chatJID, msgID string) er
 		w.log.Warnf("chatot/client: optimistic mark-deleted failed: %v", err)
 	}
 	w.pushEvent(Event{Kind: EventRevoke, Revoke: &Revoke{ChatJID: chatJID, MsgID: msgID, TS: ts}})
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: chatJID}})
 	return nil
 }
 
