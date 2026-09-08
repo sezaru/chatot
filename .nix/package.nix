@@ -46,7 +46,7 @@
         ${webp-pixbuf-loader}/${gdk-pixbuf.moduleDir}/*.so \
         > $out
     '';
-  version = "0.4.0-beta";
+  version = "0.5.0-beta";
 in
   buildGoModule {
     pname = "chatot";
@@ -128,7 +128,7 @@ in
     meta = {
       description = "A native WhatsApp client for GNOME (GTK4 + libadwaita, whatsmeow)";
       homepage = "https://github.com/sezdm/chatot";
-      license = lib.licenses.mit;
+      license = lib.licenses.gpl3Plus;
       mainProgram = "chatot";
       platforms = lib.platforms.linux;
     };

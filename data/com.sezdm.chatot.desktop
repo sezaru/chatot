@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=chatot
-Comment=WhatsApp for the GNOME desktop
+Name=Chatot
+Comment=Unofficial WhatsApp client
 Exec=chatot
 Icon=com.sezdm.chatot
 Terminal=false
-Categories=Network;InstantMessaging;GTK;GNOME;
+Categories=Network;InstantMessaging;GTK;
 Keywords=WhatsApp;chat;messaging;messages;
 StartupNotify=true
 StartupWMClass=com.sezdm.chatot
