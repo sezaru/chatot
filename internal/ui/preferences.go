@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -249,10 +250,62 @@ func prefAppearance(parent *gtk.Window, s *settings.Settings, c client.Client, o
 	})
 	list.Add(previews)
 
+	// The picture behind an open chat, as WhatsApp Web's custom wallpaper.
+	// Not in the mockup, so it takes the closest shape: the Sound file rows.
+	wallpaper := newSettingsCard()
+	var wallSub *gtk.Label
+	var resetRow gtk.Widgetter
+	refreshWallpaper := func() {
+		wallSub.SetText(wallpaperText(s.ChatWallpaper))
+		gtk.BaseWidget(resetRow).SetSensitive(s.ChatWallpaper != "")
+	}
+	setWallpaper := func(path string) {
+		s.ChatWallpaper = path
+		ApplyChatWallpaper(path)
+		onChange(*s)
+		refreshWallpaper()
+	}
+	pictureRow, _ := newActionRowLabel("Chat wallpaper", "", "Choose…", false, func() {
+		pickImageFile(parent, func(src string) {
+			// A picture GTK cannot decode would leave the thread plain with
+			// only a console warning; check before keeping it.
+			if _, err := gdk.NewTextureFromFilename(src); err != nil {
+				prefToast("Couldn't read that picture")
+				return
+			}
+			dest, err := installChatWallpaper(src, chatWallpaperDir())
+			if err != nil {
+				prefToast("Couldn't keep that picture: " + err.Error())
+				return
+			}
+			setWallpaper(dest)
+		})
+	})
+	wallSub = rowSubLabel(pictureRow)
+	wallpaper.Add(pictureRow)
+	resetRow = newActionRow("Use the plain background", "", "Reset", false, func() {
+		clearChatWallpaper(chatWallpaperDir(), "")
+		setWallpaper("")
+	})
+	wallpaper.Add(resetRow)
+	refreshWallpaper()
+
 	return prefPage(
 		newSettingsGroup("THEME", theme),
 		newSettingsGroup("CHAT LIST", list),
+		newSettingsGroup("CHAT WALLPAPER", wallpaper),
 	)
+}
+
+// wallpaperText is the Chat wallpaper row's subtitle for the saved path.
+func wallpaperText(path string) string {
+	if path == "" {
+		return "Plain background"
+	}
+	if !fileExists(path) {
+		return "Picture missing; showing the plain background"
+	}
+	return filepath.Base(path)
 }
 
 // soundSourceText describes where the chime comes from, for the Sound

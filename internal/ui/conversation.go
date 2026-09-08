@@ -756,6 +756,9 @@ func NewConversationView(c client.Client) *ConversationView {
 	scroller.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 	cv.listView = cv.newThreadList()
 	scroller.SetChild(cv.listView)
+	// The chat wallpaper (see wallpaper.go) paints on the scroller, behind
+	// the list; the empty state is a sibling, so it stays plain.
+	scroller.AddCSSClass("chatot-conv-thread")
 	scroller.SetVisible(false)
 
 	// The thread sits under a floating "back to the newest message"
