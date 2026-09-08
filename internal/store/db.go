@@ -123,6 +123,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
 	}
+	if err := migrateAddColumn(db, "messages", "link_preview", "TEXT"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
+	}
 	if err := migrateAddColumn(db, "messages", "played", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: migrate: %w", err)

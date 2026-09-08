@@ -67,6 +67,10 @@ CREATE TABLE IF NOT EXISTS messages (
     -- of the account's devices (a played-self receipt); sticky like starred
     -- and never touched by UpsertMessage. Meaningless for our own messages.
     played INTEGER NOT NULL DEFAULT 0,
+    -- The link card a text message carries (JSON only package client
+    -- reads: title, description, canonical URL, JPEG thumbnail), NULL for
+    -- a message without one. Kept across a re-upsert that lacks it.
+    link_preview TEXT,
     PRIMARY KEY (chat_jid, msg_id)
 );
 

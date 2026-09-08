@@ -258,6 +258,18 @@ type Message struct {
 	// CallLog is non-nil for a call logged in the thread (missed, answered,
 	// declined); it has no text of its own.
 	CallLog *CallLog
+	// LinkPreview is non-nil for a text message carrying a card for a link
+	// in it: the page's title, description and thumbnail, fetched by the
+	// sender the way WhatsApp does.
+	LinkPreview *LinkPreview
+}
+
+// LinkPreview is the card under a link in a text message.
+type LinkPreview struct {
+	URL         string // the link as written in the message
+	Title       string
+	Description string
+	Thumbnail   []byte // JPEG, nil when the page had no image
 }
 
 // Poll is a poll-creation message with its immutable definition (Name,

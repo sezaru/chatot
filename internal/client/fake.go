@@ -179,7 +179,12 @@ func NewFake() *Fake {
 		{ID: "m11", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2400,
 			Attachment: &Attachment{Kind: "document", Filename: "lease-2026.pdf", MimeType: "application/pdf", Size: 1258291}},
 		{ID: "m12", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2300,
-			Text: "Cabin listing — 3 bedrooms: https://stay.example.com/cabin/4412"},
+			Text: "Cabin listing — 3 bedrooms: https://stay.example.com/cabin/4412",
+			LinkPreview: &LinkPreview{
+				URL: "https://stay.example.com/cabin/4412", Title: "Lakeside cabin · 3 bedrooms · sleeps 8",
+				Description: "A quiet cabin on the north shore with a wood stove, a dock and a view of the hills. Kayaks included.",
+				Thumbnail:   fakeMapThumbnail(),
+			}},
 		// m13 seeds F49's view-once bubble: unopened, so it renders the
 		// "Click to open · closes after viewing" placeholder.
 		{ID: "m13", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2200,
