@@ -200,7 +200,7 @@ func NewAttachmentViewer(c client.Client, onBack func()) *AttachmentViewer {
 	body.Append(v.details)
 
 	keys := gtk.NewEventControllerKey()
-	keys.ConnectKeyPressed(func(keyval, _ uint, _ gdk.ModifierType) bool { return v.onKey(keyval) })
+	keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool { return v.onKey(keyval, state) })
 	root.AddController(keys)
 
 	return v
@@ -324,8 +324,10 @@ func (v *AttachmentViewer) buildHeader() gtk.Widgetter {
 	v.infoBtn = v.headerButton("ℹ", "Details", v.toggleDetails)
 	h.Append(v.infoBtn)
 	v.menuBtn = v.headerButton("⋯", "More", func() {
-		if m, ok := v.Current(); ok && v.onMenu != nil {
-			popupMenuBelow(v.menuBtn, v.onMenu(m))
+		if m, ok := v.Current(); ok {
+			if items := v.menuItemsFor(m); len(items) > 0 {
+				popupMenuBelow(v.menuBtn, items)
+			}
 		}
 	})
 	h.Append(v.menuBtn)
@@ -403,10 +405,15 @@ func (v *AttachmentViewer) step(d int) {
 	v.show(n)
 }
 
-func (v *AttachmentViewer) onKey(keyval uint) bool {
+func (v *AttachmentViewer) onKey(keyval uint, state gdk.ModifierType) bool {
 	switch keyval {
 	case gdk.KEY_Escape:
 		v.back()
+	case gdk.KEY_c:
+		if state&gdk.ControlMask == 0 {
+			return false
+		}
+		v.copyCurrent()
 	case gdk.KEY_Left:
 		v.step(-1)
 	case gdk.KEY_Right:
@@ -1879,6 +1886,41 @@ func (v *AttachmentViewer) showInFiles(m client.Message) {
 	})
 }
 
+// menuItemsFor is the ⋯ menu for m: the viewer's own row first — a
+// downloaded photo goes to the clipboard from here as well as from the
+// Details sidebar, which is easy to miss — then the message's menu.
+func (v *AttachmentViewer) menuItemsFor(m client.Message) []menuItem {
+	var items []menuItem
+	if path, ok := copyablePhoto(m); ok {
+		items = append(items,
+			menuItem{Icon: "📋", Label: "Copy image", Accel: "Ctrl+C", OnActivate: func() { v.copyImage(path) }},
+			menuSeparator(),
+		)
+	}
+	if v.onMenu != nil {
+		items = append(items, v.onMenu(m)...)
+	}
+	return items
+}
+
+// copyablePhoto is the local file of a photo that can go to the clipboard
+// as a picture: a downloaded photo, not a clip, document or location.
+func copyablePhoto(m client.Message) (path string, ok bool) {
+	if viewerKind(m) != "photo" {
+		return "", false
+	}
+	return hasLocal(m)
+}
+
+// copyCurrent is Ctrl+C: the photo on the stage to the clipboard.
+func (v *AttachmentViewer) copyCurrent() {
+	if m, ok := v.Current(); ok {
+		if path, ok := copyablePhoto(m); ok {
+			v.copyImage(path)
+		}
+	}
+}
+
 func (v *AttachmentViewer) copyImage(path string) {
 	texture, err := gdk.NewTextureFromFilename(path)
 	if err != nil {
@@ -1888,6 +1930,9 @@ func (v *AttachmentViewer) copyImage(path string) {
 	gdk.DisplayGetDefault().Clipboard().SetTexture(texture)
 	showToast(v.toasts, "Copied to clipboard")
 }
+
+// PopupMenu opens the header's ⋯ menu — a dev/screenshot hook.
+func (v *AttachmentViewer) PopupMenu() { v.menuBtn.Activate() }
 
 // Fullscreen is the ⤢ action — a dev/screenshot hook.
 func (v *AttachmentViewer) Fullscreen() { v.fullscreen() }
