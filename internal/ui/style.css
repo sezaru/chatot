@@ -3737,6 +3737,12 @@ button.chatot-member-more {
 	background-color: alpha(#ffffff, 0.22);
 }
 
+/* An incoming voice note that has been listened to: WhatsApp's microphone
+   blue takes over from the green (the track's knob follows, in cairo). */
+.chatot-voice-play.chatot-voice-played {
+	background-color: #53bdeb;
+}
+
 .chatot-voice-time {
 	font-family: "JetBrains Mono", monospace;
 	font-size: 11px;

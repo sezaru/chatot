@@ -204,7 +204,7 @@ func messageFromStore(m store.Message, selfJID string) Message {
 	out := Message{
 		ID: m.ID, ChatJID: m.ChatJID, FromJID: m.FromJID, FromMe: m.FromMe,
 		Text: m.Text, TS: m.TS, Reactions: m.Reactions, Edited: m.Edited, Deleted: m.Deleted,
-		Status: m.Status, Starred: m.Starred, Forwarded: m.Forwarded,
+		Status: m.Status, Starred: m.Starred, Forwarded: m.Forwarded, Played: m.Played,
 	}
 	if m.ReplyToMsgID != "" {
 		out.ReplyTo = &MsgRef{ChatJID: m.ChatJID, MsgID: m.ReplyToMsgID}
@@ -216,6 +216,7 @@ func messageFromStore(m store.Message, selfJID string) Message {
 			Caption: m.Attachment.Caption, Thumbnail: m.Attachment.Thumbnail,
 			IsGIF: m.Attachment.IsGif, ViewOnce: m.Attachment.ViewOnce, Viewed: m.Attachment.Viewed,
 			Size: m.Attachment.FileSize, DurationSecs: m.Attachment.DurationSecs,
+			PlayPosMS: m.Attachment.PlayPosMS,
 		}
 	}
 	switch m.Kind {

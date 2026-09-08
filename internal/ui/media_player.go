@@ -37,6 +37,12 @@ type mediaPlayer struct {
 	pending bool
 	// muted and loop are the settings a stream gets when built.
 	muted, loop bool
+	// onStop, when set, gets the playhead in seconds each time playback
+	// stops short of the end (a pause, a chat switch), so the caller can
+	// remember where to resume; onEnded runs when the stream plays through.
+	// Both run on the main loop. Rebound by whoever starts the player.
+	onStop  func(secs float64)
+	onEnded func()
 }
 
 // newMediaPlayer prepares path for playback without starting it; the
@@ -95,6 +101,17 @@ func (p *mediaPlayer) attach(stream *gtk.MediaFile) {
 	stream.NotifyProperty("ended", func() {
 		if current() && stream.Ended() {
 			p.ended = true
+			if p.onEnded != nil {
+				p.onEnded()
+			}
+		}
+	})
+	// A stop before the end is a pause worth resuming from; GTK freezes
+	// notifications while ending a stream, so at the end Ended() is
+	// already true here and onEnded above covers it.
+	stream.NotifyProperty("playing", func() {
+		if current() && !stream.Playing() && !stream.Ended() && p.onStop != nil {
+			p.onStop(p.Elapsed())
 		}
 	})
 	// GTK refuses Play and Seek on a stream that is not prepared yet; a
@@ -329,11 +346,18 @@ const voiceTrackH = 12
 
 // newVoiceRow builds the mockup's voice-note row: a 28px round play disc, a
 // 4px track with a 10px knob and the mono length, 260px wide. onGreen picks
-// the outgoing-bubble colours. onOpen, when set, is the mono length's
-// click-to-open (the viewer); the track itself seeks.
-func newVoiceRow(p *mediaPlayer, onGreen bool, onOpen func()) gtk.Widgetter {
+// the outgoing-bubble colours; played swaps an incoming row's accent for
+// the listened-to blue, the way WhatsApp's microphone turns blue. onToggle
+// is the disc's click (nil plays/pauses the player directly). onOpen, when
+// set, is the mono length's click-to-open (the viewer); the track itself
+// seeks.
+func newVoiceRow(p *mediaPlayer, onGreen, played bool, onToggle, onOpen func()) gtk.Widgetter {
 	row := gtk.NewBox(gtk.OrientationHorizontal, 10)
 	row.AddCSSClass("chatot-voice")
+	played = played && !onGreen
+	if onToggle == nil {
+		onToggle = p.Toggle
+	}
 
 	glyph := gtk.NewDrawingArea()
 	glyph.SetSizeRequest(11, 11)
@@ -343,9 +367,12 @@ func newVoiceRow(p *mediaPlayer, onGreen bool, onOpen func()) gtk.Widgetter {
 	play := newRoundButton(glyph, 28)
 	play.RemoveCSSClass("chatot-round-btn")
 	play.AddCSSClass("chatot-voice-play")
+	if played {
+		play.AddCSSClass("chatot-voice-played")
+	}
 	play.SetFocusOnClick(false)
 	play.SetTooltipText("Play")
-	play.ConnectClicked(p.Toggle)
+	play.ConnectClicked(onToggle)
 	play.SetSensitive(p.Ready())
 	row.Append(play)
 
@@ -355,7 +382,7 @@ func newVoiceRow(p *mediaPlayer, onGreen bool, onOpen func()) gtk.Widgetter {
 	track.SetSizeRequest(120, voiceTrackH)
 	track.SetCursorFromName("pointer")
 	track.SetDrawFunc(func(_ *gtk.DrawingArea, cr *cairo.Context, w, h int) {
-		drawVoiceTrack(cr, float64(w), float64(h), p.Progress(), onGreen, isDark())
+		drawVoiceTrack(cr, float64(w), float64(h), p.Progress(), onGreen, played, isDark())
 	})
 	seek := gtk.NewGestureClick()
 	seek.ConnectReleased(func(_ int, x, _ float64) {
@@ -396,8 +423,12 @@ func newVoiceRow(p *mediaPlayer, onGreen bool, onOpen func()) gtk.Widgetter {
 	return row
 }
 
+// voicePlayedRGB is the accent of an incoming voice note that has been
+// listened to: WhatsApp's microphone blue, in place of the green.
+var voicePlayedRGB = [3]float64{0x53 / 255.0, 0xbd / 255.0, 0xeb / 255.0}
+
 // drawVoiceTrack paints the 4px track, its played part and the 10px knob.
-func drawVoiceTrack(cr *cairo.Context, w, h, progress float64, onGreen, dark bool) {
+func drawVoiceTrack(cr *cairo.Context, w, h, progress float64, onGreen, played, dark bool) {
 	cy := h / 2
 	// Track background: white at 30% on green, grey at 28% elsewhere.
 	if onGreen {
@@ -407,10 +438,14 @@ func drawVoiceTrack(cr *cairo.Context, w, h, progress float64, onGreen, dark boo
 	}
 	roundedRectPath(cr, 0, cy-2, w, 4, 2)
 	cr.Fill()
-	// Played part and knob: white on green, the accent elsewhere.
-	if onGreen {
+	// Played part and knob: white on green, the accent elsewhere (blue
+	// once the note has been listened to).
+	switch {
+	case onGreen:
 		cr.SetSourceRGB(1, 1, 1)
-	} else {
+	case played:
+		cr.SetSourceRGB(voicePlayedRGB[0], voicePlayedRGB[1], voicePlayedRGB[2])
+	default:
 		cr.SetSourceRGB(0x1b/255.0, 0x8c/255.0, 0x72/255.0)
 	}
 	x := progress * w

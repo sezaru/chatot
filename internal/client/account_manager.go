@@ -741,6 +741,14 @@ func (m *AccountManager) MarkRead(ctx context.Context, jid string, msgIDs []stri
 	return m.active().MarkRead(ctx, jid, msgIDs, notifySender)
 }
 
+func (m *AccountManager) MarkPlayed(ctx context.Context, jid, msgID string, notifySender bool) error {
+	return m.active().MarkPlayed(ctx, jid, msgID, notifySender)
+}
+
+func (m *AccountManager) SetPlayPosition(jid, msgID string, ms int) error {
+	return m.active().SetPlayPosition(jid, msgID, ms)
+}
+
 func (m *AccountManager) ClearUnread(jid string) error { return m.active().ClearUnread(jid) }
 
 func (m *AccountManager) StopLiveLocation(ctx context.Context, chatJID, msgID string) error {

@@ -538,3 +538,50 @@ func TestRemoveMessageDropsRowAndAttachments(t *testing.T) {
 		t.Fatalf("%d receipts left for A", n)
 	}
 }
+
+func TestSetMessagesPlayedIsSticky(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "v1", TS: 1}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "v1", Kind: "audio", DurationSecs: 12}))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if msgs[0].Played {
+		t.Fatal("a fresh voice note reads as played")
+	}
+
+	must(t, s.SetMessagesPlayed("a@s.whatsapp.net", []string{"v1", "missing"}))
+	// A redelivery of the message (history sync) must not make it unheard.
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "v1", TS: 1}))
+
+	msgs, err = s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if !msgs[0].Played {
+		t.Fatal("played flag lost after a redelivery; want sticky")
+	}
+}
+
+func TestSetMediaPlayPosRoundTrips(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "v1", TS: 1}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "v1", Kind: "audio", DurationSecs: 12}))
+
+	must(t, s.SetMediaPlayPos("a@s.whatsapp.net", "v1", 4500))
+	// The attachment metadata being upserted again keeps the playhead.
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "v1", Kind: "audio", LocalPath: "/tmp/v1.ogg"}))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if got := msgs[0].Attachment.PlayPosMS; got != 4500 {
+		t.Fatalf("PlayPosMS = %d, want 4500", got)
+	}
+
+	must(t, s.SetMediaPlayPos("a@s.whatsapp.net", "v1", -3))
+	msgs, err = s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if got := msgs[0].Attachment.PlayPosMS; got != 0 {
+		t.Fatalf("PlayPosMS after a negative save = %d, want 0", got)
+	}
+}

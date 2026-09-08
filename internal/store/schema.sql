@@ -63,6 +63,10 @@ CREATE TABLE IF NOT EXISTS messages (
     -- 1 for a message whose ContextInfo.IsForwarded was set on the wire (or,
     -- for an outbound forward, set optimistically); sticky like edited.
     forwarded INTEGER NOT NULL DEFAULT 0,
+    -- 1 once an inbound voice note/audio has been played here or on another
+    -- of the account's devices (a played-self receipt); sticky like starred
+    -- and never touched by UpsertMessage. Meaningless for our own messages.
+    played INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat_jid, msg_id)
 );
 
@@ -152,6 +156,10 @@ CREATE TABLE IF NOT EXISTS media (
     file_size INTEGER NOT NULL DEFAULT 0,
     -- playback length in seconds for audio/video (0 when unknown).
     duration_secs INTEGER NOT NULL DEFAULT 0,
+    -- where playback of an audio attachment stopped, in milliseconds, so it
+    -- resumes there (0 = from the start). Local only; UpsertMedia never
+    -- touches it.
+    play_pos_ms INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat_jid, msg_id)
 );
 

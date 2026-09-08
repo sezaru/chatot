@@ -46,6 +46,28 @@ func (s *Store) SetMessagesStatus(chatJID string, msgIDs []string, status int) e
 	return err
 }
 
+// SetMessagesPlayed flags msgIDs in chatJID as played (an inbound voice note
+// or audio file that was listened to, here or on another device). Sticky:
+// nothing clears it, and UpsertMessage never writes the column, so a
+// redelivery of the message can't make it unheard again. No-op for ids not
+// found.
+func (s *Store) SetMessagesPlayed(chatJID string, msgIDs []string) error {
+	if len(msgIDs) == 0 {
+		return nil
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(msgIDs)), ",")
+	args := make([]any, 0, len(msgIDs)+1)
+	args = append(args, chatJID)
+	for _, id := range msgIDs {
+		args = append(args, id)
+	}
+	_, err := s.db.Exec(`
+		UPDATE messages SET played = 1
+		WHERE chat_jid = ? AND msg_id IN (`+placeholders+`)
+	`, args...)
+	return err
+}
+
 // MarkMessageDeleted applies a "delete for everyone" (REVOKE) to msgID: it
 // sets deleted=1 sticky, inserting a minimal stub row if the original message
 // hasn't been seen yet (a revoke can arrive before, or without, the original).
@@ -149,8 +171,8 @@ func (s *Store) Statuses(since int64, limit int) ([]Message, error) {
 const messageSelect = `
 	SELECT
 		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
-		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status, m.starred, m.forwarded,
-		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, COALESCE(md.is_gif, 0), COALESCE(md.view_once, 0), COALESCE(md.viewed, 0), COALESCE(md.file_size, 0), COALESCE(md.duration_secs, 0)
+		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status, m.starred, m.forwarded, m.played,
+		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, COALESCE(md.is_gif, 0), COALESCE(md.view_once, 0), COALESCE(md.viewed, 0), COALESCE(md.file_size, 0), COALESCE(md.duration_secs, 0), COALESCE(md.play_pos_ms, 0)
 	FROM messages m
 	LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id`
 
@@ -207,16 +229,16 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 	var out []Message
 	for rows.Next() {
 		var m Message
-		var fromMe, edited, deleted, starred, forwarded int
+		var fromMe, edited, deleted, starred, forwarded, played int
 		var mediaKind, mediaFilename, mediaCaption, mediaMime, mediaLocal string
 		var mediaThumb []byte
 		var mediaIsGif, mediaViewOnce, mediaViewed int
 		var mediaSize int64
-		var mediaSecs int
+		var mediaSecs, mediaPos int
 		if err := rows.Scan(
 			&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID,
-			&m.Kind, &m.Payload, &edited, &deleted, &m.Status, &starred, &forwarded,
-			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb, &mediaIsGif, &mediaViewOnce, &mediaViewed, &mediaSize, &mediaSecs,
+			&m.Kind, &m.Payload, &edited, &deleted, &m.Status, &starred, &forwarded, &played,
+			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb, &mediaIsGif, &mediaViewOnce, &mediaViewed, &mediaSize, &mediaSecs, &mediaPos,
 		); err != nil {
 			return nil, err
 		}
@@ -226,12 +248,13 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 		m.Deleted = deleted != 0
 		m.Starred = starred != 0
 		m.Forwarded = forwarded != 0
+		m.Played = played != 0
 		if mediaKind != "" {
 			m.Attachment = &Attachment{
 				Kind: mediaKind, Filename: mediaFilename, Caption: mediaCaption,
 				MimeType: mediaMime, LocalPath: mediaLocal, Thumbnail: mediaThumb, IsGif: mediaIsGif != 0,
 				ViewOnce: mediaViewOnce != 0, Viewed: mediaViewed != 0,
-				FileSize: mediaSize, DurationSecs: mediaSecs,
+				FileSize: mediaSize, DurationSecs: mediaSecs, PlayPosMS: mediaPos,
 			}
 		}
 		out = append(out, m)

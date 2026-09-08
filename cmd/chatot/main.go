@@ -1076,6 +1076,10 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		d.conversation.ShowHoverActions(msgIdx)
 	case "quotejump":
 		d.conversation.JumpToQuoted(msgIdx)
+	case "voiceplay":
+		// ARG: "" plays, "pause:MS" pauses MS later, "resume:MS" starts
+		// as if it had stopped at MS before.
+		d.conversation.PlayVoiceAt(msgIdx, arg)
 	case "tray":
 		// Two files so the thumbnail strip, its ✕ and the ＋ tile all render;
 		// CHATOT_SHOT_ARG=a.mp4:b.pdf queues those instead.

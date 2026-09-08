@@ -3,6 +3,8 @@ package ui
 import (
 	"context"
 	"log"
+	"strconv"
+	"strings"
 
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -664,5 +666,31 @@ func (c *Composer) SeedStickers(paths []string) {
 		if _, err := c.c.AddSticker(p); err != nil {
 			log.Printf("chatot: seed sticker %s: %v", p, err)
 		}
+	}
+}
+
+// PlayVoiceAt starts the downloaded voice note at idx the way its play disc
+// does (played flag, resume position, auto-advance). arg is "" to just
+// play, "pause:MS" to pause that many milliseconds later (the position
+// gets saved), or "resume:MS" to pretend it stopped at MS last time.
+func (cv *ConversationView) PlayVoiceAt(idx int, arg string) {
+	m, ok := cv.MessageAt(idx)
+	if !ok {
+		return
+	}
+	mv := mediaVM(m)
+	if !mv.HasLocal || mv.Kind != "audio" {
+		trace(1, "PlayVoiceAt %d: not a downloaded audio message", idx)
+		return
+	}
+	mv.voice = cv.hooks().voice
+	kind, ms, _ := strings.Cut(arg, ":")
+	n, _ := strconv.Atoi(ms)
+	if kind == "resume" {
+		mv.PlayPosMS = n
+	}
+	p := playVoice(mv, mv.voice)
+	if kind == "pause" && n > 0 {
+		glib.TimeoutAdd(uint(n), func() bool { p.Pause(); return false })
 	}
 }
