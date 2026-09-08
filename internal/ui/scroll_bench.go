@@ -108,30 +108,23 @@ func (cl *ChatList) RefreshBench(n int) {
 }
 
 // RefreshBreakdown times the pieces of one refresh on the current store
-// (dev hook CHATOT_SHOT=refreshbreakdown).
+// (dev hook CHATOT_SHOT=refreshbreakdown): the store reads, which
+// queueRefresh runs off the main loop, and the widget work that stays on it.
 func (cl *ChatList) RefreshBreakdown() {
 	t := time.Now()
-	chats, _ := cl.c.Chats(0)
-	dChats := time.Since(t)
+	d := cl.loadSidebarData(cl.sidebarParams())
+	dLoad := time.Since(t)
 	t = time.Now()
-	for _, c := range chats {
-		cl.c.LabelsForChat(c.JID)
-	}
-	dLabels := time.Since(t)
-	t = time.Now()
-	cl.updateChipRow(chats)
+	cl.updateChipRow(d)
 	dChip := time.Since(t)
 	t = time.Now()
-	cl.refreshChats(chats)
+	cl.refreshChats(d)
 	dRows := time.Since(t)
 	t = time.Now()
-	cl.updateTabBadges(chats)
+	cl.updateTabBadges(d)
 	dBadges := time.Since(t)
-	t = time.Now()
-	cl.loadStatusFeed()
-	dStatus := time.Since(t)
-	log.Printf("refreshbreakdown: %d chats; Chats %v; LabelsForChat×N %v; updateChipRow %v; refreshChats %v; updateTabBadges %v (loadStatusFeed %v)",
-		len(chats), dChats, dLabels, dChip, dRows, dBadges, dStatus)
+	log.Printf("refreshbreakdown: %d chats; load (off the main loop) %v; on it: updateChipRow %v; refreshChats %v; updateTabBadges %v",
+		len(d.chats), dLoad, dChip, dRows, dBadges)
 }
 
 // ReconcileCheck (dev hook CHATOT_SHOT=reconcilecheck, fake account) walks
@@ -163,10 +156,10 @@ func (cl *ChatList) ReconcileCheck() {
 		act   func()
 		check func()
 	}{
-		{func() { cl.c.PinChat(ctx, pin, true) }, func() { check("pin", index(pin) < 10 && cl.rows[pin].vm.Pinned) }},
-		{func() { cl.c.ArchiveChat(ctx, arch, true) }, func() { check("archive", index(arch) < 0 && cl.rows[arch] == nil) }},
+		{func() { cl.c.PinChat(ctx, pin, true) }, func() { vm, _ := cl.rowVM(pin); check("pin", index(pin) < 10 && vm.Pinned) }},
+		{func() { cl.c.ArchiveChat(ctx, arch, true) }, func() { _, ok := cl.rowVM(arch); check("archive", index(arch) < 0 && !ok) }},
 		{func() { cl.c.ArchiveChat(ctx, arch, false) }, func() { check("unarchive", index(arch) >= 0) }},
-		{func() { cl.c.MarkChatUnread(ctx, unread, true) }, func() { check("unread", cl.rows[unread] != nil && cl.rows[unread].vm.ShowUnread) }},
+		{func() { cl.c.MarkChatUnread(ctx, unread, true) }, func() { vm, ok := cl.rowVM(unread); check("unread", ok && vm.ShowUnread) }},
 		{func() { cl.c.PinChat(ctx, pin, false) }, func() { check("unpin", index(pin) > 0) }},
 	}
 	i := 0

@@ -101,20 +101,21 @@ func (cl *ChatList) updateTabBarVisibility() {
 // updateTabBadges refreshes the unread bubbles: chats with unread
 // messages, contacts with unviewed status updates, and unread in
 // community groups. Channels carry no unread state the client exposes.
-// chats is the current chat list, shared with the rest of refresh.
-func (cl *ChatList) updateTabBadges(chats []client.Chat) {
+// d is what the refresh read; its status count is -1 when the Status tab
+// is open and shows no badge.
+func (cl *ChatList) updateTabBadges(d *sidebarData) {
 	if cl.tabBar == nil {
 		return
 	}
 	unreadChats := 0
-	for _, ch := range chats {
+	for _, ch := range d.chats {
 		if ch.UnreadCount > 0 && !ch.Archived {
 			unreadChats++
 		}
 	}
 	cl.tabBar.SetBadge("chats", unreadChats)
-	if cl.tab != "status" {
-		cl.tabBar.SetBadge("status", len(cl.loadStatusFeed().Recent))
+	if d.statusRecent >= 0 {
+		cl.tabBar.SetBadge("status", d.statusRecent)
 	}
 	if cl.tab != "communities" {
 		total := 0

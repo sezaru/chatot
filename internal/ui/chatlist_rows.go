@@ -1,111 +1,383 @@
 package ui
 
 import (
+	"github.com/diamondburned/gotk4/pkg/core/gioutil"
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
+
+	"chatot/internal/client"
 )
 
-// The sidebar's rows are reconciled, not rebuilt. On a live account every
-// message and receipt reaches refresh, and rebuilding 500+ rows from
-// scratch cost ~150 ms of main-loop time each time (measured on a 546-chat
-// store): that was the scroll stutter in both panes. A row whose view-model
-// is unchanged keeps its widget, a changed one gets a fresh child, and rows
-// only move when the order did.
+// The sidebar's chat rows are a GtkListView over a list model of row
+// view-models. Only the rows near the viewport exist as widgets, so
+// scrolling 500 chats lays out and paints what scrolling 20 does (a
+// GtkListBox realized every row: 5-9 ms of each frame on a 553-chat
+// store), and a refresh touches only the model entries that changed; the
+// view rebinds those rows, and a rebind updates the row's labels in place.
+// Rows are 53 px whatever they show, so the view's height estimate is
+// exact and nothing jumps.
 
-// What the ListBox holds; rows are only reused across refreshes of the
-// same kind.
+// What the chat model holds; the rows are only kept across refreshes of
+// the same kind. listOther means the ListBox page (search hits, the empty
+// state) is showing instead.
 const (
 	listOther  = ""
 	listChats  = "chats"
 	listMerged = "merged"
 )
 
-// rowEntry is one rendered chat row: what it was built from and its row.
-type rowEntry struct {
-	vm  chatRowView
-	row *gtk.ListBoxRow
+// chatRowItem is one model entry: the row's identity, its view-model, the
+// chat behind it and the client that answers for it (its own account's in
+// merged mode). avatarGen changes when the chat's picture did, so the row
+// swaps it in on rebind.
+type chatRowItem struct {
+	key       string
+	vm        chatRowView
+	chat      client.Chat
+	client    client.Client
+	avatarGen int
 }
 
-// wantRow is one row the list should show: its identity, view-model, and
-// how to build the widget when the current one can't be kept.
+var chatRowModelType = gioutil.NewListModelType[chatRowItem]()
+
+// wantRow is one row the list should show.
 type wantRow struct {
-	key   string
-	vm    chatRowView
-	build func() *gtk.Box
+	key    string
+	vm     chatRowView
+	chat   client.Chat
+	client client.Client
 }
 
-// resetList empties the ListBox and forgets the reconciled rows. Every
-// non-chat filler (search hits, the empty state) goes through here.
+// clearChatModel empties the chat model.
+func (cl *ChatList) clearChatModel() {
+	if n := cl.chatModel.Len(); n > 0 {
+		cl.chatModel.Splice(0, n)
+	}
+}
+
+// resetList shows the ListBox page, emptied, and forgets the chat rows.
+// Every non-chat filler (search hits, the empty state) goes through here.
 func (cl *ChatList) resetList() {
 	cl.list.RemoveAll()
-	cl.rows = nil
+	cl.clearChatModel()
 	cl.listKind = listOther
+	cl.listStack.SetVisibleChildName("other")
 }
 
-// reconcileRows makes the ListBox show exactly want, in order, keeping
-// every row whose view-model is unchanged. kind guards against reusing
-// rows built for another mode. Must run on the GTK main loop.
+// reconcileRows makes the chat model hold exactly want, in order, leaving
+// every entry whose view-model is unchanged alone (its row keeps its
+// widget and its place). kind guards against reusing rows built for
+// another mode. Must run on the GTK main loop.
 func (cl *ChatList) reconcileRows(kind string, want []wantRow) {
 	if len(want) == 0 {
 		cl.resetList()
 		cl.list.Append(cl.newListEmptyState())
 		return
 	}
-	if cl.listKind != kind || cl.rows == nil {
-		cl.resetList()
-		cl.rows = make(map[string]*rowEntry, len(want))
+	if cl.listKind != kind {
+		cl.list.RemoveAll()
+		cl.clearChatModel()
 		cl.listKind = kind
 	}
-	keep := make(map[string]bool, len(want))
+	cl.listStack.SetVisibleChildName("chats")
+
+	m := cl.chatModel
+	wanted := make(map[string]bool, len(want))
 	for _, w := range want {
-		keep[w.key] = true
+		wanted[w.key] = true
 	}
-	for key, e := range cl.rows {
-		if !keep[key] {
-			cl.list.Remove(e.row)
-			delete(cl.rows, key)
+	// Rows no longer wanted go first, from the end so positions hold.
+	for i := m.Len() - 1; i >= 0; i-- {
+		if !wanted[m.At(i).key] {
+			m.Remove(i)
 		}
 	}
 	for i, w := range want {
-		e := cl.rows[w.key]
-		if e == nil {
-			row := gtk.NewListBoxRow()
-			row.SetChild(w.build())
-			cl.list.Insert(row, i)
-			cl.rows[w.key] = &rowEntry{vm: w.vm, row: row}
+		item := chatRowItem{key: w.key, vm: w.vm, chat: w.chat, client: w.client, avatarGen: cl.avatarGens[w.vm.JID]}
+		if i < m.Len() && m.At(i).key == w.key {
+			cur := m.At(i)
+			if cur.vm != item.vm || cur.avatarGen != item.avatarGen || cur.client != item.client {
+				m.Splice(i, 1, item)
+			}
 			continue
 		}
-		if e.vm != w.vm {
-			e.row.SetChild(w.build())
-			e.vm = w.vm
+		// The row sits further down (it moved up), or it is new.
+		for j := i + 1; j < m.Len(); j++ {
+			if m.At(j).key == w.key {
+				m.Remove(j)
+				break
+			}
 		}
-		if e.row.Index() != i {
-			cl.list.Remove(e.row)
-			cl.list.Insert(e.row, i)
-		}
+		m.Splice(i, 0, item)
 	}
 }
 
-// invalidateRow forces jid's row(s) to be rebuilt on the next refresh, for
-// a change the view-model doesn't carry (a new avatar picture).
+// invalidateRow forces jid's row(s) to rebind with a fresh avatar on the
+// next refresh, for a change the view-model doesn't carry (a new picture).
 func (cl *ChatList) invalidateRow(jid string) {
-	for _, e := range cl.rows {
-		if e.vm.JID == jid {
-			e.vm = chatRowView{}
-		}
-	}
+	cl.avatarGens[jid]++
 }
 
-// rowsInOrder reports whether every reconciled row sits where rowJIDs says
-// (dev hooks).
+// rowVM is the view-model of jid's row, if the model has one (dev hooks).
+func (cl *ChatList) rowVM(jid string) (chatRowView, bool) {
+	for i := 0; i < cl.chatModel.Len(); i++ {
+		if it := cl.chatModel.At(i); it.vm.JID == jid {
+			return it.vm, true
+		}
+	}
+	return chatRowView{}, false
+}
+
+// rowsInOrder reports whether the model lines up with rowJIDs (dev hooks).
 func (cl *ChatList) rowsInOrder() bool {
 	if cl.listKind != listChats {
 		return true
 	}
+	if cl.chatModel.Len() != len(cl.rowJIDs) {
+		return false
+	}
 	for i, jid := range cl.rowJIDs {
-		e := cl.rows[jid]
-		if e == nil || e.row.Index() != i {
+		if cl.chatModel.At(i).vm.JID != jid {
 			return false
 		}
 	}
-	return cl.list.RowAtIndex(len(cl.rowJIDs)) == nil
+	return true
 }
+
+// newChatView builds the list view over cl.chatModel and its row factory.
+// Setup builds a row's widgets once; bind fills them from the model entry
+// at the row's position and teardown forgets them.
+func (cl *ChatList) newChatView() *gtk.ListView {
+	widgetOf := func(item *gtk.ListItem) *chatRowWidget {
+		child := item.Child()
+		if child == nil {
+			return nil
+		}
+		return cl.rowWidgets[widgetKey(child)]
+	}
+	factory := gtk.NewSignalListItemFactory()
+	factory.ConnectSetup(func(obj *glib.Object) {
+		item := obj.Cast().(*gtk.ListItem)
+		w := cl.newChatRowWidget()
+		cl.rowWidgets[widgetKey(w.root)] = w
+		item.SetChild(w.root)
+	})
+	factory.ConnectBind(func(obj *glib.Object) {
+		item := obj.Cast().(*gtk.ListItem)
+		w := widgetOf(item)
+		pos := int(item.Position())
+		if w == nil || pos < 0 || pos >= cl.chatModel.Len() {
+			return
+		}
+		trace(2, "bind chat row %d", pos)
+		w.bind(cl.chatModel.At(pos), cl.avatarCache)
+		cl.boundRows[w.key] = w
+	})
+	factory.ConnectUnbind(func(obj *glib.Object) {
+		item := obj.Cast().(*gtk.ListItem)
+		if w := widgetOf(item); w != nil && cl.boundRows[w.key] == w {
+			delete(cl.boundRows, w.key)
+		}
+	})
+	factory.ConnectTeardown(func(obj *glib.Object) {
+		item := obj.Cast().(*gtk.ListItem)
+		if w := widgetOf(item); w != nil {
+			delete(cl.rowWidgets, widgetKey(w.root))
+		}
+	})
+	lv := gtk.NewListView(cl.chatSel, &factory.ListItemFactory)
+	lv.AddCSSClass("navigation-sidebar")
+	lv.SetVExpand(true)
+	return lv
+}
+
+// chatRowAvatarSize is the chat-list row avatar's fixed square size in px.
+const chatRowAvatarSize = 38
+
+// chatRowTimeClass returns the extra CSS class the row's timestamp carries,
+// or "" for none. The mockup renders an unread chat's timestamp in accent
+// green at full opacity instead of the usual dim grey.
+func chatRowTimeClass(showUnread bool) string {
+	if showUnread {
+		return "chatot-chat-time-unread"
+	}
+	return ""
+}
+
+// chatRowWidget is one chat row's widgets, built once per list item and
+// refilled from a chatRowItem on every bind. Everything a row may show
+// (stripe, flags, badge) exists from the start and is shown or hidden.
+type chatRowWidget struct {
+	root       *gtk.Box
+	stripe     *gtk.Box
+	avatarSlot *gtk.Box
+	name       *gtk.Label
+	preview    *gtk.Label
+	time       *gtk.Label
+	flags      [3]*gtk.Label // pinned, muted, blocked
+	badge      *gtk.Label
+
+	key         string
+	chat        client.Chat
+	stripeClass string
+	timeClass   string
+	// What the avatar in avatarSlot was built for.
+	avatarJID     string
+	avatarInitial string
+	avatarClient  client.Client
+	avatarGen     int
+}
+
+// newChatRowWidget builds an empty row. The avatar renders the initial
+// immediately and swaps in the real picture asynchronously (buildAvatar).
+func (cl *ChatList) newChatRowWidget() *chatRowWidget {
+	w := &chatRowWidget{}
+	row := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	// Mockup padding: 7px vertical, 8px horizontal, giving a 53px row around
+	// the 38px avatar. The list item around this box contributes none.
+	row.SetMarginTop(7)
+	row.SetMarginBottom(7)
+	row.SetMarginStart(8)
+	row.SetMarginEnd(8)
+	w.root = row
+
+	// Merged mode only: a 3px account-coloured stripe at the row's leading
+	// edge, so two chats from different accounts are told apart at a glance.
+	w.stripe = gtk.NewBox(gtk.OrientationVertical, 0)
+	w.stripe.AddCSSClass("chatot-row-stripe")
+	w.stripe.SetSizeRequest(3, chatRowAvatarSize)
+	w.stripe.SetVAlign(gtk.AlignCenter)
+	w.stripe.SetVisible(false)
+	row.Append(w.stripe)
+
+	w.avatarSlot = gtk.NewBox(gtk.OrientationVertical, 0)
+	w.avatarSlot.SetVAlign(gtk.AlignCenter)
+	row.Append(w.avatarSlot)
+
+	textCol := gtk.NewBox(gtk.OrientationVertical, 2)
+	textCol.SetHExpand(true)
+
+	w.name = gtk.NewLabel("")
+	w.name.SetXAlign(0)
+	w.name.SetEllipsize(pango.EllipsizeEnd)
+	w.name.SetMaxWidthChars(1)
+	w.name.SetHExpand(true)
+	w.name.AddCSSClass("chatot-chat-name")
+	textCol.Append(w.name)
+
+	// Single line, ellipsized. MaxWidthChars(1) keeps the label's natural
+	// width tiny so a long message can't stretch the row wider than the
+	// sidebar; HExpand lets it fill whatever width the sidebar does give.
+	// SingleLineMode as well as Ellipsize: Pango ellipsizes per line, so a
+	// preview holding a newline still rendered as two lines and grew the row.
+	w.preview = gtk.NewLabel("")
+	w.preview.SetXAlign(0)
+	w.preview.SetSingleLineMode(true)
+	w.preview.SetEllipsize(pango.EllipsizeEnd)
+	w.preview.SetMaxWidthChars(1)
+	w.preview.SetHExpand(true)
+	w.preview.AddCSSClass("chatot-chat-preview")
+	textCol.Append(w.preview)
+
+	row.Append(textCol)
+
+	metaCol := gtk.NewBox(gtk.OrientationVertical, 4)
+	metaCol.SetVAlign(gtk.AlignStart)
+
+	// Mockup: pin/mute/block are small glyphs beside the timestamp on the
+	// right, never prefixes on the chat name.
+	metaTop := gtk.NewBox(gtk.OrientationHorizontal, 3)
+	metaTop.SetHAlign(gtk.AlignEnd)
+	for i, glyph := range [...]string{"📌", "🔇", "🚫"} {
+		flag := gtk.NewLabel(glyph)
+		flag.AddCSSClass("chatot-chat-flag")
+		flag.SetVisible(false)
+		metaTop.Append(flag)
+		w.flags[i] = flag
+	}
+	w.time = gtk.NewLabel("")
+	w.time.AddCSSClass("chatot-chat-time")
+	metaTop.Append(w.time)
+	metaCol.Append(metaTop)
+
+	w.badge = gtk.NewLabel("")
+	w.badge.AddCSSClass("chatot-unread-badge")
+	w.badge.SetHAlign(gtk.AlignEnd)
+	w.badge.SetVisible(false)
+	metaCol.Append(w.badge)
+
+	row.Append(metaCol)
+
+	// The right-click menu reads the chat bound at the time of the click.
+	gesture := gtk.NewGestureClick()
+	gesture.SetButton(gdk.BUTTON_SECONDARY)
+	gesture.ConnectPressed(func(_ int, x, y float64) {
+		showChatContextMenu(cl, row, cl.rowMenuItems(w.chat), x, y)
+	})
+	row.AddController(gesture)
+	return w
+}
+
+// bind fills the row from item. The avatar is rebuilt only when the chat,
+// its initial, its account or its picture changed: a rebind for a new
+// preview keeps the picture already showing.
+func (w *chatRowWidget) bind(item chatRowItem, cache *avatarCache) {
+	vm := item.vm
+	w.key, w.chat = item.key, item.chat
+
+	if vm.AccountColor != w.stripeClass {
+		if w.stripeClass != "" {
+			w.stripe.RemoveCSSClass(w.stripeClass)
+		}
+		if vm.AccountColor != "" {
+			w.stripe.AddCSSClass(vm.AccountColor)
+		}
+		w.stripeClass = vm.AccountColor
+	}
+	w.stripe.SetVisible(vm.AccountColor != "")
+
+	if w.avatarSlot.FirstChild() == nil || w.avatarJID != vm.JID || w.avatarInitial != vm.Initial ||
+		w.avatarClient != item.client || w.avatarGen != item.avatarGen {
+		removeAllChildren(w.avatarSlot)
+		w.avatarSlot.Append(buildAvatar(item.client, cache, vm.JID, vm.Initial, chatRowAvatarSize))
+		w.avatarJID, w.avatarInitial, w.avatarClient, w.avatarGen = vm.JID, vm.Initial, item.client, item.avatarGen
+	}
+
+	w.name.SetText(vm.Name)
+	previewText := vm.Preview
+	if !ShowMessagePreviews && !vm.Typing {
+		previewText = ""
+	}
+	w.preview.SetText(previewText)
+	setCSSClass(w.preview, "chatot-chat-typing", vm.Typing)
+
+	for i, on := range [...]bool{vm.Pinned, vm.Muted, vm.Blocked} {
+		w.flags[i].SetVisible(on)
+	}
+	w.time.SetText(vm.TimeText)
+	if cls := chatRowTimeClass(vm.ShowUnread); cls != w.timeClass {
+		if w.timeClass != "" {
+			w.time.RemoveCSSClass(w.timeClass)
+		}
+		if cls != "" {
+			w.time.AddCSSClass(cls)
+		}
+		w.timeClass = cls
+	}
+	w.badge.SetText(vm.UnreadText)
+	w.badge.SetVisible(vm.ShowUnread)
+}
+
+// setCSSClass adds or removes class on w.
+func setCSSClass(w gtk.Widgetter, class string, on bool) {
+	if on {
+		gtk.BaseWidget(w).AddCSSClass(class)
+	} else {
+		gtk.BaseWidget(w).RemoveCSSClass(class)
+	}
+}
+
+// widgetKey identifies a widget by its object pointer, for the row maps.
+func widgetKey(w gtk.Widgetter) uintptr { return glib.BaseObject(w).Native() }

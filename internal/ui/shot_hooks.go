@@ -62,27 +62,10 @@ func (cl *ChatList) PopupLabelOverflow() {
 
 // PopupRowMenu opens the right-click context menu on the row for jid.
 func (cl *ChatList) PopupRowMenu(jid string) {
-	chats, err := cl.c.Chats(0)
-	if err != nil {
-		return
-	}
-	for i, id := range cl.rowJIDs {
-		if id != jid {
-			continue
-		}
-		row := cl.list.RowAtIndex(i)
-		if row == nil {
+	for _, w := range cl.boundRows {
+		if w.chat.JID == jid {
+			showChatContextMenu(cl, w.root, cl.rowMenuItems(w.chat), 120, 24)
 			return
-		}
-		box, ok := glib.BaseObject(row.Child()).Cast().(*gtk.Box)
-		if !ok {
-			return
-		}
-		for _, chat := range chats {
-			if chat.JID == jid {
-				showChatContextMenu(cl, box, cl.rowMenuItems(chat), 120, 24)
-				return
-			}
 		}
 	}
 }
