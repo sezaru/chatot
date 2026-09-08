@@ -233,7 +233,7 @@ func (n *Notifier) handleReaction(r client.Reaction) {
 		notif.SetDefaultActionAndTarget("app.open-chat", glib.NewVariantString(r.ChatJID))
 		// Shares the chat's message id: the reaction is the chat's latest
 		// news and replaces an older toast for it.
-		n.app.SendNotification("chatot-chat-"+r.ChatJID, notif)
+		n.send("chatot-chat-"+r.ChatJID, notif)
 		if NotificationSound {
 			playNotificationSound()
 		}
@@ -278,7 +278,7 @@ func (n *Notifier) handleMessage(msg client.Message) {
 		notif.SetDefaultActionAndTarget("app.open-chat", glib.NewVariantString(msg.ChatJID))
 		// One id per chat: a newer message notification replaces rather than
 		// stacks alongside an unread one for the same chat.
-		n.app.SendNotification("chatot-chat-"+msg.ChatJID, notif)
+		n.send("chatot-chat-"+msg.ChatJID, notif)
 		if NotificationSound {
 			playNotificationSound()
 		}
@@ -298,11 +298,24 @@ func (n *Notifier) handleCall(call client.Call) {
 		notif.SetPriority(gio.NotificationPriorityUrgent)
 		notif.SetDefaultActionAndTarget("app.open-chat", glib.NewVariantString(call.ChatJID))
 		notif.AddButtonWithTarget("Decline", "app.reject-call", glib.NewVariantString(encodeCallActionParam(call.ChatJID, call.CallID)))
-		n.app.SendNotification("chatot-call-"+call.ChatJID, notif)
+		n.send("chatot-call-"+call.ChatJID, notif)
 		if NotificationSound {
 			playNotificationSound()
 		}
 	})
+}
+
+// send posts notif under id, first withdrawing whatever chatot still has
+// under that id. GLib reuses the daemon's own id for a repeat send (the
+// spec's replaces_id), and a shell that never signals NotificationClosed
+// for a popup that quietly expired (quickshell, 2026-09) then takes the
+// repeat as an update to a notification it has already put away: nothing
+// pops up, so only a chat's first message ever notified. Withdrawing first
+// makes every send a fresh popup there; on GNOME the old banner is simply
+// swapped for the new one.
+func (n *Notifier) send(id string, notif *gio.Notification) {
+	n.app.WithdrawNotification(id)
+	n.app.SendNotification(id, notif)
 }
 
 // chatInfo resolves jid's display name and muted flag from the client's
