@@ -163,6 +163,24 @@ func TestMessageMenuItems(t *testing.T) {
 		}
 	})
 
+	t.Run("sticker messages offer Add to stickers after Forward", func(t *testing.T) {
+		sticker := client.Message{Attachment: &client.Attachment{Kind: "sticker"}}
+		got := labelsOf(messageMenuItems(sticker, messageMenuActions{}))
+		want := []string{
+			"Reply", "Forward", "Add to stickers", "Star message", "Copy text", "Pin in chat", "---",
+			"Message info", "Delete message",
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("messageMenuItems(sticker) = %v, want %v", got, want)
+		}
+		photo := client.Message{Attachment: &client.Attachment{Kind: "image"}}
+		for _, l := range labelsOf(messageMenuItems(photo, messageMenuActions{})) {
+			if l == "Add to stickers" {
+				t.Errorf("a photo offers Add to stickers")
+			}
+		}
+	})
+
 	t.Run("delete is the only destructive row", func(t *testing.T) {
 		for _, it := range messageMenuItems(client.Message{FromMe: true}, messageMenuActions{}) {
 			if it.Destructive != (it.Label == "Delete message") {
