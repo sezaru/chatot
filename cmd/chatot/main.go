@@ -1314,11 +1314,15 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		}
 	case "viewer":
 		// Opens the attachment viewer on the message at CHATOT_SHOT_MSG;
-		// CHATOT_SHOT_ARG=info also opens the details sidebar.
+		// CHATOT_SHOT_ARG=info also opens the details sidebar, =menu the
+		// header's ⋯ menu.
 		if m, ok := d.conversation.MessageAt(msgIdx); ok {
 			d.conversation.OpenViewer(m)
-			if arg == "info" {
+			switch arg {
+			case "info":
 				glib.TimeoutAdd(300, func() bool { d.viewer.ToggleDetails(); return false })
+			case "menu":
+				glib.TimeoutAdd(300, func() bool { d.viewer.PopupMenu(); return false })
 			}
 		}
 	case "deletedialog":
