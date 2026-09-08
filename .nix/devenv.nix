@@ -41,6 +41,10 @@ in {
   # set, which it isn't here).
   modules.node.enable = true;
 
+  # `gh` for the Flathub submission and release PRs; config/state stay under
+  # DEVENV_STATE and the token comes from the sops-nix `github/token` secret.
+  modules.gh.enable = true;
+
   # `tidewave` CLI — lets a running app session be inspected/driven directly,
   # an alternative to chromium+playwright for visual mockup confirmation.
   modules.tidewave.enable = true;
