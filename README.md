@@ -83,6 +83,13 @@ That sets `CHATOT_NOTIFY_SOUND` in the wrapper to the file. Precedence, first
 wins: the file picked in Preferences, the drop-in in the config dir, the
 packaged `CHATOT_NOTIFY_SOUND` file, the built-in chime.
 
+## Chat wallpaper
+
+Preferences › Appearance › Chat wallpaper puts a picture of your own behind
+an open chat's messages, as WhatsApp Web's custom wallpaper does. The app
+keeps a copy under `$XDG_CONFIG_HOME/chatot/wallpaper/`, so the original can
+move afterwards; Reset returns to the plain surface.
+
 ## License
 
 GPL-3.0-or-later. See `LICENSE`.

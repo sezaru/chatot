@@ -69,6 +69,10 @@ type Settings struct {
 	// GIFAPIKey is that service's API key; "" leaves the GIF tab explaining
 	// how to get one.
 	GIFAPIKey string `json:"gifApiKey"`
+	// ChatWallpaper is the picture painted behind an open chat's messages:
+	// the path of a copy the app keeps under its config dir, or "" for the
+	// plain surface.
+	ChatWallpaper string `json:"chatWallpaper"`
 }
 
 // GIFServices lists the GIFService values in display order.

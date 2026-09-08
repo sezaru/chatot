@@ -25,6 +25,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		KeepInactiveConnected:   false,
 		FontSize:                "default",
 		AutoDownload:            "photos",
+		ChatWallpaper:           "/home/me/.config/chatot/wallpaper/wallpaper-0badc0de.jpg",
 	}
 	if err := Save(dir, want); err != nil {
 		t.Fatalf("Save: %v", err)
