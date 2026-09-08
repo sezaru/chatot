@@ -4423,3 +4423,34 @@ button.chatot-reactor-btn {
 	border-radius: 10px;
 	animation: chatot-row-flash 1.6s ease-out;
 }
+
+/* Link card: WhatsApp's preview of a pasted link, above the text. A wash
+   like the quote's so it reads as part of the bubble; the picture is clipped
+   to the card's top corners by the card's own overflow. */
+.chatot-link-card {
+	background-color: alpha(currentColor, 0.07);
+	border-radius: 10px;
+	margin: 1px 0 5px 0;
+}
+
+.chatot-bubble-out .chatot-link-card {
+	background-color: alpha(#000000, 0.16);
+}
+
+.chatot-link-card-body {
+	padding: 7px 9px 8px 9px;
+}
+
+.chatot-link-title {
+	font-weight: 700;
+}
+
+.chatot-link-desc {
+	font-size: 0.9em;
+	opacity: 0.72;
+}
+
+.chatot-link-host {
+	font-size: 0.9em;
+	opacity: 0.72;
+}

@@ -253,6 +253,13 @@ func extractText(m *waProto.Message, msg *Message) {
 		ext := m.GetExtendedTextMessage()
 		msg.Text = ext.GetText()
 		ctx = ext.GetContextInfo()
+		if ext.GetTitle() != "" || len(ext.GetJPEGThumbnail()) > 0 {
+			msg.LinkPreview = &LinkPreview{
+				URL:   ext.GetMatchedText(),
+				Title: ext.GetTitle(), Description: ext.GetDescription(),
+				Thumbnail: ext.GetJPEGThumbnail(),
+			}
+		}
 	case m.GetImageMessage() != nil:
 		img := m.GetImageMessage()
 		msg.Attachment = &Attachment{Kind: "image", MimeType: img.GetMimetype(), Caption: img.GetCaption(), ProtoBlob: marshalMedia(img), Thumbnail: img.GetJPEGThumbnail(), ViewOnce: img.GetViewOnce(), Size: int64(img.GetFileLength())}

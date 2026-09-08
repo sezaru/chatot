@@ -74,6 +74,9 @@ type Message struct {
 	// Played is true once an inbound audio message has been played, here or
 	// on another of the account's devices. See SetMessagesPlayed.
 	Played bool
+	// LinkPreview is the opaque JSON card of a text message's link ("" for
+	// none); like Payload, only package client reads it.
+	LinkPreview string
 }
 
 // PollVoteRow is a single voter's selection of one poll option, identified by
@@ -159,6 +162,10 @@ type MessageRow struct {
 	// Starred is unused by UpsertMessage, same as Status: only
 	// SetMessageStarred ever changes it, so a re-upsert can't unstar.
 	Starred bool
+	// LinkPreview is the opaque JSON link card, "" for none. Sticky in the
+	// store: a re-upsert without one (the server's echo of our own send)
+	// keeps the card already recorded.
+	LinkPreview string
 }
 
 // ContactRow is the upsert seam for the contacts table. Empty fields leave

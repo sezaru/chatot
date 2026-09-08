@@ -585,3 +585,23 @@ func TestSetMediaPlayPosRoundTrips(t *testing.T) {
 		t.Fatalf("PlayPosMS after a negative save = %d, want 0", got)
 	}
 }
+
+// TestMessageLinkPreviewSticky: the link card round-trips, and a later
+// upsert without one (the server echoing our own send) keeps it.
+func TestMessageLinkPreviewSticky(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", FromMe: true, Text: "https://x.com/p", TS: 1, LinkPreview: `{"title":"A post"}`}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", FromMe: true, Text: "https://x.com/p", TS: 1}))
+	msgs, err := s.Messages("a@s.whatsapp.net", 10)
+	must(t, err)
+	if len(msgs) != 1 || msgs[0].LinkPreview != `{"title":"A post"}` {
+		t.Fatalf("got %+v", msgs)
+	}
+	must(t, s.SetMessageStarred("a@s.whatsapp.net", "m1", true))
+	starred, err := s.StarredMessages(10)
+	must(t, err)
+	if len(starred) != 1 || starred[0].LinkPreview != `{"title":"A post"}` {
+		t.Fatalf("starred: got %+v", starred)
+	}
+}

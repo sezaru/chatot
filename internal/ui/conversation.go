@@ -46,9 +46,11 @@ type bubbleView struct {
 	Event            eventView
 	IsCall           bool
 	Call             callView
-	Edited           bool
-	EditedMarker     string
-	Deleted          bool
+	// Link is the card a text message shows for a link in it, nil for none.
+	Link         *linkView
+	Edited       bool
+	EditedMarker string
+	Deleted      bool
 	// Forwarded marks a message that carried WhatsApp's forwarded flag; drives
 	// the "↩ Forwarded" label above the bubble content.
 	Forwarded bool
@@ -138,6 +140,9 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 	if m.Edited {
 		v.Edited = true
 		v.EditedMarker = " · edited"
+	}
+	if m.LinkPreview != nil {
+		v.Link = linkVM(m.LinkPreview)
 	}
 
 	if m.FromMe {
@@ -1834,6 +1839,9 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 			bubble.Append(caption)
 		}
 	} else {
+		if vm.Link != nil {
+			bubble.Append(buildLinkCard(*vm.Link))
+		}
 		text := gtk.NewLabel("")
 		text.AddCSSClass("chatot-bubble-text")
 		if vm.Deleted {

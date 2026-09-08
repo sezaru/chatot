@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,6 +30,7 @@ import (
 	wastore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 
+	"chatot/internal/linkpreview"
 	"chatot/internal/media"
 	"chatot/internal/store"
 )
@@ -744,7 +746,8 @@ func (w *Whatsmeow) SendText(ctx context.Context, jid, text string, replyTo *Msg
 
 	waMsg := &waE2E.Message{}
 	mentions := w.mentionedJIDs(ctx, text)
-	if replyTo == nil && len(mentions) == 0 {
+	preview := w.linkPreviewFor(ctx, text)
+	if replyTo == nil && len(mentions) == 0 && preview == nil {
 		waMsg.Conversation = proto.String(text)
 	} else {
 		ext := &waE2E.ExtendedTextMessage{Text: proto.String(text)}
@@ -757,6 +760,15 @@ func (w *Whatsmeow) SendText(ctx context.Context, jid, text string, replyTo *Msg
 			}
 			ext.ContextInfo.MentionedJID = mentions
 		}
+		if preview != nil {
+			ext.MatchedText = proto.String(preview.URL)
+			ext.Title = proto.String(preview.Title)
+			if preview.Description != "" {
+				ext.Description = proto.String(preview.Description)
+			}
+			ext.JPEGThumbnail = preview.Thumbnail
+			ext.PreviewType = waE2E.ExtendedTextMessage_NONE.Enum()
+		}
 		waMsg.ExtendedTextMessage = ext
 	}
 
@@ -765,11 +777,53 @@ func (w *Whatsmeow) SendText(ctx context.Context, jid, text string, replyTo *Msg
 		return "", fmt.Errorf("chatot/client: send text: %w", err)
 	}
 
-	out := Message{ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, Text: text, TS: time.Now().Unix(), ReplyTo: replyTo}
+	out := Message{ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, Text: text, TS: time.Now().Unix(), ReplyTo: replyTo, LinkPreview: preview}
 	if err := w.ingestMessage(&out); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of sent message failed: %v", err)
 	}
 	return id, nil
+}
+
+// linkPreviewTimeout bounds the fetch of a link's card before a send: the
+// message goes out without one rather than wait on a slow site.
+const linkPreviewTimeout = 8 * time.Second
+
+// linkPreviewFor is the card for the first link in text, the way WhatsApp
+// fetches one before sending: nil when there is no link, the page has
+// nothing to show, or it does not answer in time. Best effort, logged only.
+func (w *Whatsmeow) linkPreviewFor(ctx context.Context, text string) *LinkPreview {
+	rawURL := linkpreview.FirstURL(text)
+	if rawURL == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, linkPreviewTimeout)
+	defer cancel()
+	p, err := linkpreview.Fetch(ctx, rawURL, w.previewHTTPClient())
+	if err != nil {
+		w.log.Infof("chatot/client: no link preview for %s: %v", rawURL, err)
+		return nil
+	}
+	return &LinkPreview{
+		URL: p.URL, Title: p.Title,
+		Description: p.Description, Thumbnail: p.Thumbnail,
+	}
+}
+
+// previewHTTPClient fetches link cards through the same proxy the
+// WhatsApp session uses (per-account override, then CHATOT_PROXY), so a
+// proxied account never reaches a site directly.
+func (w *Whatsmeow) previewHTTPClient() *http.Client {
+	tr := &http.Transport{Proxy: http.ProxyFromEnvironment}
+	proxy := w.proxyOverride
+	if proxy == "" {
+		proxy = os.Getenv("CHATOT_PROXY")
+	}
+	if proxy != "" {
+		if u, err := url.Parse(proxy); err == nil {
+			tr.Proxy = http.ProxyURL(u)
+		}
+	}
+	return &http.Client{Transport: tr, Timeout: linkPreviewTimeout}
 }
 
 // EditMessage edits an own text message (WhatsApp's ~15-min window) via

@@ -65,6 +65,15 @@ type eventPayload struct {
 	Canceled    bool   `json:"canceled,omitempty"`
 }
 
+// linkPayload is the JSON shape stored in a message row's link_preview
+// column: the card a text message carries for a link in it.
+type linkPayload struct {
+	URL         string `json:"url,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	Thumbnail   []byte `json:"thumb,omitempty"`
+}
+
 // callPayload is the JSON shape stored when Kind == "call".
 type callPayload struct {
 	Video        bool   `json:"video,omitempty"`
@@ -99,6 +108,14 @@ func storeMessageRow(m *Message) store.MessageRow {
 	}
 	if m.ReplyTo != nil {
 		row.ReplyToMsgID = m.ReplyTo.MsgID
+	}
+	if lp := m.LinkPreview; lp != nil {
+		if b, err := json.Marshal(linkPayload{
+			URL: lp.URL, Title: lp.Title,
+			Description: lp.Description, Thumbnail: lp.Thumbnail,
+		}); err == nil {
+			row.LinkPreview = string(b)
+		}
 	}
 	// Rich kinds serialize their typed body into the opaque payload. Adding a
 	// future kind (contact, poll) is another case here + in messageFromStore.
@@ -217,6 +234,15 @@ func messageFromStore(m store.Message, selfJID string) Message {
 			IsGIF: m.Attachment.IsGif, ViewOnce: m.Attachment.ViewOnce, Viewed: m.Attachment.Viewed,
 			Size: m.Attachment.FileSize, DurationSecs: m.Attachment.DurationSecs,
 			PlayPosMS: m.Attachment.PlayPosMS,
+		}
+	}
+	if m.LinkPreview != "" {
+		var p linkPayload
+		if err := json.Unmarshal([]byte(m.LinkPreview), &p); err == nil {
+			out.LinkPreview = &LinkPreview{
+				URL: p.URL, Title: p.Title,
+				Description: p.Description, Thumbnail: p.Thumbnail,
+			}
 		}
 	}
 	switch m.Kind {
