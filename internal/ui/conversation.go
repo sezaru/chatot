@@ -1164,8 +1164,9 @@ func (cv *ConversationView) watchEvents() {
 			if ev.Revoke == nil {
 				continue
 			}
-			chatJID := ev.Revoke.ChatJID
+			chatJID, msgID := ev.Revoke.ChatJID, ev.Revoke.MsgID
 			glib.IdleAdd(func() {
+				cv.applyRevoke(chatJID, msgID)
 				if chatJID != cv.jid {
 					return
 				}
@@ -1474,6 +1475,19 @@ func (cv *ConversationView) ApplyOwnReaction(chatJID string) {
 // GTK main loop.
 func (cv *ConversationView) appendMessage(msg client.Message) {
 	trace(1, "appendMessage %s", msg.ID)
+	// A redelivery of a loaded message (the store keeps one row per id)
+	// updates its row rather than adding a second one: a duplicate row
+	// would keep rendering the stale copy after the real one changes.
+	if pos := cv.positionOf(msg.ID); pos >= 0 {
+		if cv.msgs[pos].Deleted {
+			// A revoke is sticky, as in the store.
+			msg.Deleted = true
+		}
+		cv.msgs[pos] = msg
+		cv.byID[msg.ID] = msg
+		cv.refillRow(pos)
+		return
+	}
 	if !cv.typingShown {
 		cv.msgs = append(cv.msgs, msg)
 	}
@@ -1506,6 +1520,31 @@ func (cv *ConversationView) appendMessage(msg client.Message) {
 	}
 	if follow {
 		cv.scrollToBottom()
+	}
+}
+
+// applyRevoke turns every loaded copy of msgID into a tombstone, and the
+// chat's optimistic copies too, without going through the store: a row the
+// in-place refresh cannot line up with the store (a send still settling,
+// a duplicate) would otherwise keep showing the message. Must run on the
+// GTK main loop.
+func (cv *ConversationView) applyRevoke(chatJID, msgID string) {
+	rows := cv.unsent[chatJID]
+	for i := range rows {
+		if rows[i].ID == msgID {
+			rows[i].Deleted = true
+		}
+	}
+	if chatJID != cv.jid {
+		return
+	}
+	for i := range cv.msgs {
+		if cv.msgs[i].ID != msgID || cv.msgs[i].Deleted {
+			continue
+		}
+		cv.msgs[i].Deleted = true
+		cv.byID[msgID] = cv.msgs[i]
+		cv.refillRow(i)
 	}
 }
 

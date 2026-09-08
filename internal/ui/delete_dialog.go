@@ -27,17 +27,22 @@ func ShowDeleteMessageDialog(parent *gtk.Window, c client.Client, msg client.Mes
 	d.SetDefaultResponse("cancel")
 	d.SetCloseResponse("cancel")
 	d.ConnectResponse(func(response string) {
+		log.Printf("chatot: delete dialog response %q for %s/%s", response, msg.ChatJID, msg.ID)
 		switch response {
 		case "me":
 			go func() {
 				if err := c.DeleteMessageForMe(context.Background(), msg.ChatJID, msg.ID); err != nil {
-					log.Printf("chatot: delete message for me failed: %v", err)
+					log.Printf("chatot: delete message %s/%s for me failed: %v", msg.ChatJID, msg.ID, err)
+				} else {
+					log.Printf("chatot: deleted message %s/%s for me", msg.ChatJID, msg.ID)
 				}
 			}()
 		case "everyone":
 			go func() {
 				if err := c.DeleteMessage(context.Background(), msg.ChatJID, msg.ID); err != nil {
-					log.Printf("chatot: delete message failed: %v", err)
+					log.Printf("chatot: delete message %s/%s for everyone failed: %v", msg.ChatJID, msg.ID, err)
+				} else {
+					log.Printf("chatot: deleted message %s/%s for everyone", msg.ChatJID, msg.ID)
 				}
 			}()
 		}
