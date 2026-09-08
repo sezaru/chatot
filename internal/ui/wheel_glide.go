@@ -16,6 +16,10 @@ type glider struct {
 	scroller *gtk.ScrolledWindow
 	// gen tells a running glide from a stopped one.
 	gen int
+	// velocity and friction are the running glide's; running is set
+	// while its tick callback is alive.
+	velocity, friction float64
+	running            bool
 }
 
 func newGlider(scroller *gtk.ScrolledWindow) *glider {
@@ -23,13 +27,31 @@ func newGlider(scroller *gtk.ScrolledWindow) *glider {
 }
 
 // stop ends a glide in progress.
-func (g *glider) stop() { g.gen++ }
+func (g *glider) stop() {
+	g.gen++
+	g.running = false
+}
+
+// add puts velocity on top of a glide in progress with the same friction,
+// or starts one. A glide covers velocity/friction in all; adding to it
+// adds that distance, so a wheel notch arriving before the previous one
+// is spent (a few frames, at wheelStepFriction) still scrolls its full
+// step. Restarting instead dropped what was left of every notch but the
+// last, and a quick spin of the wheel moved a fraction of its notches.
+func (g *glider) add(velocity, friction float64) {
+	if g.running && g.friction == friction {
+		g.velocity += velocity
+		return
+	}
+	g.start(velocity, friction)
+}
 
 // start scrolls on at velocity (value units per second), decaying by
 // e^-friction per second, until it is spent or the content ends.
 func (g *glider) start(velocity, friction float64) {
 	g.gen++
 	gen := g.gen
+	g.velocity, g.friction, g.running = velocity, friction, true
 	last := time.Now()
 	gtk.BaseWidget(g.scroller).AddTickCallback(func(_ gtk.Widgetter, _ gdk.FrameClocker) bool {
 		if gen != g.gen {
@@ -43,9 +65,10 @@ func (g *glider) start(velocity, friction float64) {
 		}
 		adj := g.scroller.VAdjustment()
 		before := adj.Value()
-		adj.SetValue(before + velocity*dt)
-		velocity *= math.Exp(-friction * dt)
-		if math.Abs(velocity) < 2 || adj.Value() == before {
+		adj.SetValue(before + g.velocity*dt)
+		g.velocity *= math.Exp(-g.friction * dt)
+		if math.Abs(g.velocity) < 2 || adj.Value() == before {
+			g.running = false
 			return false
 		}
 		return true
@@ -66,7 +89,7 @@ func smoothWheel(scroller *gtk.ScrolledWindow) {
 			return false
 		}
 		step := math.Pow(scroller.VAdjustment().PageSize(), 2.0/3.0)
-		g.start(dy*step*wheelStepFriction, wheelStepFriction)
+		g.add(dy*step*wheelStepFriction, wheelStepFriction)
 		return true
 	})
 	scroller.AddController(ctl)

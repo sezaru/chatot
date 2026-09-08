@@ -47,8 +47,9 @@ func (cv *ConversationView) installScrollInput() {
 		}
 		step := cv.scrollStep(ctl.Unit())
 		if ctl.Unit() == gdk.ScrollUnitWheel {
-			// A notch: glide over its step rather than jump it.
-			cv.startFling(dy*step*wheelStepFriction, wheelStepFriction)
+			// A notch: glide over its step rather than jump it, on top
+			// of whatever is left of the notch before.
+			cv.glide.add(dy*step*wheelStepFriction, wheelStepFriction)
 		} else {
 			cv.stopFling()
 			cv.scrollBy(dy * step)
