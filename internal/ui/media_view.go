@@ -32,6 +32,9 @@ type mediaView struct {
 	LocalPath    string
 	HasThumbnail bool
 	Thumbnail    []byte
+	// fetchThumb, when set by the bubble, asks for the attachment's
+	// high-quality preview once the tile finds it only has a stamp.
+	fetchThumb   func()
 	IsGIF        bool
 	ViewOnce     bool
 	Viewed       bool
@@ -254,6 +257,20 @@ func buildMediaContent(msg client.Message, mv mediaView, c client.Client, open f
 	return slot
 }
 
+// stampMaxSide is the size under which an embedded preview is WhatsApp's
+// ~100px stamp rather than a real thumbnail: stretched over a 280px tile
+// it blurs, so a better one is worth fetching.
+const stampMaxSide = 200
+
+// thumbnailIsStamp reports whether a tile's preview (nil for none) is too
+// small to look like anything but a blur at tile size.
+func thumbnailIsStamp(pixbuf *gdkpixbuf.Pixbuf) bool {
+	if pixbuf == nil {
+		return true
+	}
+	return pixbuf.Width() < stampMaxSide && pixbuf.Height() < stampMaxSide
+}
+
 // isVisualKind reports whether the attachment renders as a picture-shaped tile
 // (image/video/sticker) rather than a document/voice row.
 func isVisualKind(kind string) bool {
@@ -274,6 +291,11 @@ func buildAttachmentTile(mv *mediaView, msg client.Message, c client.Client, slo
 		pixbuf, _ = pixbufFromBytes(mv.Thumbnail)
 	}
 	w, h := attachmentTileSize(mv.Kind, pixbuf)
+	if mv.fetchThumb != nil && mv.Kind != "sticker" && thumbnailIsStamp(pixbuf) {
+		// The message's own preview is a stamp stretched over the tile:
+		// ask for the sender's high-quality one, which rebinds the row.
+		mv.fetchThumb()
+	}
 	if pixbuf != nil {
 		// A fixed-size drawing rather than a GtkPicture: the picture's
 		// natural height follows the thumbnail's aspect at whatever width
