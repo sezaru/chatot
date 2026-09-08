@@ -995,6 +995,10 @@ func (m *AccountManager) DownloadMedia(ctx context.Context, msgID string) (strin
 	return m.active().DownloadMedia(ctx, msgID)
 }
 
+func (m *AccountManager) DownloadThumbnail(ctx context.Context, msgID string) ([]byte, error) {
+	return m.active().DownloadThumbnail(ctx, msgID)
+}
+
 func (m *AccountManager) MarkViewOnceOpened(ctx context.Context, chatJID, msgID string) error {
 	return m.active().MarkViewOnceOpened(ctx, chatJID, msgID)
 }

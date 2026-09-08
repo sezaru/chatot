@@ -607,6 +607,7 @@ func (v *AttachmentViewer) show(i int) {
 		v.player = newMediaPlayer(path, m.Attachment.DurationSecs)
 		v.player.SetLoop(kind == "gif")
 		stage := newVideoStage(v.player, m.Attachment.Thumbnail)
+		v.posterFromFile(stage, path)
 		v.stage.SetChild(v.centred(stage, true))
 		v.bottom.Append(newTransportBar(v.player, v.fullscreen))
 	case kind == "audio":
@@ -765,6 +766,25 @@ func (v *AttachmentViewer) photoStage(path string) gtk.Widgetter {
 	v.picTex = texture
 	v.picW, v.picH = texture.Width(), texture.Height()
 	return v.pictureScroller()
+}
+
+// posterFromFile replaces the stage's poster — the message's small embedded
+// thumbnail, a blur at stage size — with a frame grabbed from the clip
+// itself, unless the viewer has moved on or playback already started.
+func (v *AttachmentViewer) posterFromFile(stage *videoStage, path string) {
+	gen := v.gen
+	go func() {
+		jpeg, err := media.VideoPoster(context.Background(), path)
+		if err != nil {
+			log.Printf("chatot: viewer poster for %s: %v", filepath.Base(path), err)
+			return
+		}
+		glib.IdleAdd(func() {
+			if v.gen == gen {
+				stage.SetPoster(jpeg)
+			}
+		})
+	}()
 }
 
 // pictureScroller hosts v.pic, centred, in a scroller for zoomed sizes.

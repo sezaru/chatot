@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -1720,6 +1721,32 @@ func (f *Fake) DownloadMedia(ctx context.Context, msgID string) (string, error) 
 		}
 	}
 	return "", fmt.Errorf("chatot/client: message %q not found for download", msgID)
+}
+
+// DownloadThumbnail hands out a preview for msgID's attachment the way the
+// real client fetches WhatsApp's high-quality one: photo.jpg from
+// CHATOT_FAKE_MEDIA (the dev fixtures), so the crisp-tile path can be seen
+// offline; ErrNoThumbnail without that file.
+func (f *Fake) DownloadThumbnail(ctx context.Context, msgID string) ([]byte, error) {
+	dir := os.Getenv("CHATOT_FAKE_MEDIA")
+	if dir == "" {
+		return nil, ErrNoThumbnail
+	}
+	jpeg, err := os.ReadFile(filepath.Join(dir, "photo.jpg"))
+	if err != nil {
+		return nil, ErrNoThumbnail
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, msgs := range f.messages {
+		for i := range msgs {
+			if msgs[i].ID == msgID && msgs[i].Attachment != nil {
+				msgs[i].Attachment.Thumbnail = jpeg
+				return jpeg, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("chatot/client: message %q not found for thumbnail", msgID)
 }
 
 // MarkViewOnceOpened marks msgID's attachment as viewed, mirroring the store

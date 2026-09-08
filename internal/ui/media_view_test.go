@@ -234,3 +234,19 @@ func TestAttachmentTileSize(t *testing.T) {
 		t.Errorf("sticker = %dx%d", w, h)
 	}
 }
+
+// TestThumbnailIsStamp: no preview or a ~100px one is a stamp worth
+// replacing; a real thumbnail is kept.
+func TestThumbnailIsStamp(t *testing.T) {
+	if !thumbnailIsStamp(nil) {
+		t.Fatal("no preview should count as a stamp")
+	}
+	small := gdkpixbuf.NewPixbuf(gdkpixbuf.ColorspaceRGB, false, 8, 100, 56)
+	if !thumbnailIsStamp(small) {
+		t.Fatal("a 100×56 preview should count as a stamp")
+	}
+	wide := gdkpixbuf.NewPixbuf(gdkpixbuf.ColorspaceRGB, false, 8, 480, 120)
+	if thumbnailIsStamp(wide) {
+		t.Fatal("a 480px-wide preview is a real thumbnail")
+	}
+}

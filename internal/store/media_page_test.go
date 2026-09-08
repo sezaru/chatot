@@ -96,3 +96,16 @@ func TestChatMediaDocsLinks(t *testing.T) {
 		t.Errorf("ChatLinks = %+v, want one link item m3", links)
 	}
 }
+
+func TestSetMediaThumbnail(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "A"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", TS: 1}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Kind: "video", Thumbnail: []byte{1}}))
+	must(t, s.SetMediaThumbnail("a@s.whatsapp.net", "m1", []byte{2, 3}))
+	msgs, err := s.Messages("a@s.whatsapp.net", 10)
+	must(t, err)
+	if len(msgs) != 1 || msgs[0].Attachment == nil || string(msgs[0].Attachment.Thumbnail) != "\x02\x03" {
+		t.Fatalf("got %+v", msgs)
+	}
+}

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -327,6 +328,9 @@ type ConversationView struct {
 	// dropped on EventChatUpdate, which the contact sync fires once new
 	// names land.
 	names map[string]string
+	// thumbTried is every message whose high-quality preview this view
+	// already asked for, so a rebound row does not ask again.
+	thumbTried map[string]bool
 
 	// unsent holds, per chat, the optimistic rows the store does not have:
 	// sends in flight and sends that failed. Load appends them after the
@@ -1809,6 +1813,10 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 		bubble.Append(buildCallContent(vm.Call))
 	} else if vm.IsMedia {
 		media := vm.Media
+		if h.onFetchThumbnail != nil {
+			m := msg
+			media.fetchThumb = func() { h.onFetchThumbnail(m) }
+		}
 		media.voice = h.voice
 		bubble.Append(buildMediaContent(msg, media, c, h.mediaOpener(msg)))
 		if vm.CaptionText != "" {
@@ -2120,6 +2128,9 @@ type bubbleHooks struct {
 	// onLocalPath records that msgID's attachment now sits at path (the
 	// bubble downloaded it), so later reads of the view's messages see it.
 	onLocalPath func(msgID, path string)
+	// onFetchThumbnail asks for msg's high-quality preview (the tile only
+	// has the message's ~100px stamp); nil leaves the stamp.
+	onFetchThumbnail func(msg client.Message)
 	// voice hears a voice note start, stop and end (played flag, resume
 	// position, auto-advance); zero leaves the rows self-contained.
 	voice voiceHooks
@@ -2176,6 +2187,7 @@ func (cv *ConversationView) hooks() bubbleHooks {
 		onDelete: cv.onDelete, onStar: cv.onStar, onForward: cv.onForward, onStopLive: cv.onStopLive,
 		onOpenViewer: cv.onOpenViewer, onLocalPath: func(id, path string) { cv.setLocalPath(id, path) }, names: cv.mentionName, avatars: cv.avatarCache,
 		onRetry: cv.retrySend, reactorName: cv.senderName, onJumpTo: cv.jumpToQuoted,
+		onFetchThumbnail: cv.fetchThumbnail,
 		voice:            voiceHooks{onPlay: cv.voicePlayed, onStop: cv.voiceStopped, onEnded: cv.voiceEnded},
 	}
 }
@@ -2253,6 +2265,48 @@ func (cv *ConversationView) voiceEnded(msgID string) {
 	mv.voice = cv.hooks().voice
 	trace(1, "voice chain: %s -> %s", msgID, next.ID)
 	playVoice(mv, mv.voice)
+}
+
+// fetchThumbnail fetches msg's high-quality preview once per session and
+// rebinds its bubble with it, so an undownloaded picture or clip shows a
+// crisp frame instead of the stamp the message embeds. Must run on the
+// GTK main loop.
+func (cv *ConversationView) fetchThumbnail(msg client.Message) {
+	if cv.thumbTried == nil {
+		cv.thumbTried = make(map[string]bool)
+	}
+	if cv.thumbTried[msg.ID] || msg.Attachment == nil {
+		return
+	}
+	cv.thumbTried[msg.ID] = true
+	id, chatJID := msg.ID, msg.ChatJID
+	go func() {
+		jpeg, err := cv.c.DownloadThumbnail(context.Background(), id)
+		if err != nil {
+			if !errors.Is(err, client.ErrNoThumbnail) {
+				log.Printf("chatot: thumbnail for %s: %v", id, err)
+			}
+			return
+		}
+		glib.IdleAdd(func() { cv.setThumbnail(chatJID, id, jpeg) })
+	}()
+}
+
+// setThumbnail swaps the loaded message's attachment preview for jpeg and
+// rebinds its row. Must run on the GTK main loop.
+func (cv *ConversationView) setThumbnail(chatJID, msgID string, jpeg []byte) {
+	if chatJID != cv.jid {
+		return
+	}
+	pos := cv.positionOf(msgID)
+	if pos < 0 || cv.msgs[pos].Attachment == nil || cv.msgs[pos].Attachment.LocalPath != "" {
+		return
+	}
+	a := *cv.msgs[pos].Attachment
+	a.Thumbnail = jpeg
+	cv.msgs[pos].Attachment = &a
+	cv.byID[msgID] = cv.msgs[pos]
+	cv.refillRow(pos)
 }
 
 // SetLocalPath records that msgID's attachment was downloaded to path (by

@@ -77,6 +77,13 @@ func (s *Store) SetMediaProtoBlob(chatJID, msgID string, blob []byte) error {
 	return err
 }
 
+// SetMediaThumbnail replaces a media row's embedded preview with a better
+// one (WhatsApp's separately fetched high-quality thumbnail).
+func (s *Store) SetMediaThumbnail(chatJID, msgID string, jpeg []byte) error {
+	_, err := s.db.Exec(`UPDATE media SET thumbnail = ? WHERE chat_jid = ? AND msg_id = ?`, jpeg, chatJID, msgID)
+	return err
+}
+
 // SetMediaLocalPath records where a downloaded attachment was cached to disk.
 func (s *Store) SetMediaLocalPath(chatJID, msgID, localPath string) error {
 	_, err := s.db.Exec(`UPDATE media SET local_path = ? WHERE chat_jid = ? AND msg_id = ?`, localPath, chatJID, msgID)

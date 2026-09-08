@@ -2179,6 +2179,37 @@ func (w *Whatsmeow) DownloadMedia(ctx context.Context, msgID string) (string, er
 	return path, nil
 }
 
+// DownloadThumbnail fetches the high-quality preview WhatsApp keeps beside
+// the attachment (the sender's phone uploads it with the file, and the
+// message carries its path and keys), stores it as the media row's
+// thumbnail and returns it. The embedded thumbnail in the message is a
+// ~100px stamp; this one is what WhatsApp Desktop shows before a download.
+func (w *Whatsmeow) DownloadThumbnail(ctx context.Context, msgID string) ([]byte, error) {
+	row, ok, err := w.store.MediaByMsgID(msgID)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: download thumbnail: lookup: %w", err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("chatot/client: download thumbnail: no media for message %s", msgID)
+	}
+	downloadable, err := decodeDownloadable(row.Kind, row.ProtoBlob)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: download thumbnail: %w", err)
+	}
+	dt, ok := downloadable.(whatsmeow.DownloadableThumbnail)
+	if !ok || dt.GetThumbnailDirectPath() == "" {
+		return nil, ErrNoThumbnail
+	}
+	jpeg, err := w.wa.DownloadThumbnail(ctx, dt)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: download thumbnail: %w", err)
+	}
+	if err := w.store.SetMediaThumbnail(row.ChatJID, row.MsgID, jpeg); err != nil {
+		w.log.Warnf("chatot/client: set media thumbnail: %v", err)
+	}
+	return jpeg, nil
+}
+
 // MarkViewOnceOpened records that a view-once attachment has been opened.
 // This is a local-only tombstone (WhatsApp doesn't sync it via app-state);
 // once set the UI never re-offers the attachment for opening.

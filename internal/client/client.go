@@ -859,6 +859,12 @@ type Client interface {
 
 	// media
 	DownloadMedia(ctx context.Context, msgID string) (localPath string, err error)
+	// DownloadThumbnail fetches the high-quality preview WhatsApp stores
+	// beside msgID's picture, clip or document — a few tens of kilobytes,
+	// nothing like the attachment itself — records it as the attachment's
+	// thumbnail and returns the JPEG. ErrNoThumbnail when the message
+	// carries none.
+	DownloadThumbnail(ctx context.Context, msgID string) ([]byte, error)
 	// MarkViewOnceOpened marks msgID's view-once attachment as viewed, a
 	// local-only tombstone: once set, the UI never re-offers it for opening.
 	MarkViewOnceOpened(ctx context.Context, chatJID, msgID string) error
@@ -867,3 +873,7 @@ type Client interface {
 	// it's not visible to us) — that's normal, not an error.
 	Avatar(ctx context.Context, jid string) (localPath string, err error)
 }
+
+// ErrNoThumbnail is DownloadThumbnail's answer for an attachment WhatsApp
+// stored no separate preview for.
+var ErrNoThumbnail = errors.New("chatot/client: attachment has no downloadable thumbnail")

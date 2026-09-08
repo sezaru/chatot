@@ -501,15 +501,7 @@ func newVideoStage(p *mediaPlayer, poster []byte) *videoStage {
 	overlay.SetChild(pic)
 	s := &videoStage{Overlay: overlay, pic: pic}
 
-	if len(poster) > 0 {
-		if texture, err := gdk.NewTextureFromBytes(glib.NewBytesWithGo(poster)); err == nil {
-			s.poster = gtk.NewPictureForPaintable(texture)
-			s.poster.SetCanShrink(true)
-			s.poster.SetContentFit(gtk.ContentFitContain)
-			s.poster.SetCanTarget(false)
-			overlay.AddOverlay(s.poster)
-		}
-	}
+	s.SetPoster(poster)
 	// A click on the picture toggles playback; the stage has no other
 	// control of its own.
 	click := gtk.NewGestureClick()
@@ -519,6 +511,30 @@ func newVideoStage(p *mediaPlayer, poster []byte) *videoStage {
 
 	s.bind(p)
 	return s
+}
+
+// SetPoster shows jpeg over the stage until playback starts (nothing for
+// empty bytes); a later call swaps the picture, unless the poster has
+// already gone because the clip is playing.
+func (s *videoStage) SetPoster(jpeg []byte) {
+	if len(jpeg) == 0 {
+		return
+	}
+	texture, err := gdk.NewTextureFromBytes(glib.NewBytesWithGo(jpeg))
+	if err != nil {
+		return
+	}
+	if s.poster != nil {
+		if s.poster.Visible() {
+			s.poster.SetPaintable(texture)
+		}
+		return
+	}
+	s.poster = gtk.NewPictureForPaintable(texture)
+	s.poster.SetCanShrink(true)
+	s.poster.SetContentFit(gtk.ContentFitContain)
+	s.poster.SetCanTarget(false)
+	s.Overlay.AddOverlay(s.poster)
 }
 
 // bind points the stage at p's stream: the media file is the picture's
