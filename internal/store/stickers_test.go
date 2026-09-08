@@ -70,3 +70,30 @@ func TestStickerByPathSkipsHidden(t *testing.T) {
 		t.Error("a hidden favourite should not be found by path")
 	}
 }
+
+// An explicit add brings a removed WhatsApp sticker back, still marked as
+// WhatsApp's so the next removal hides it again.
+func TestAddStickerUnhidesARemovedEntry(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertSticker(StickerRow{Key: "file:a", Path: "/s/a.webp", FromWhatsApp: true, AddedTS: 10}))
+	if _, err := s.RemoveSticker("file:a"); err != nil {
+		t.Fatal(err)
+	}
+	// A plain upsert (a sync replay) leaves it hidden...
+	must(t, s.UpsertSticker(StickerRow{Key: "file:a", Path: "/s/a.webp", FromWhatsApp: true, AddedTS: 20}))
+	if got, _ := s.Stickers(); len(got) != 0 {
+		t.Fatalf("Stickers after upsert of a hidden entry = %+v, want none", got)
+	}
+	// ...an add brings it back.
+	must(t, s.AddSticker(StickerRow{Key: "file:a", Path: "/s/a.webp", AddedTS: 30, UsedTS: 30}))
+	got, _ := s.Stickers()
+	if len(got) != 1 || got[0].Key != "file:a" || !got[0].FromWhatsApp || got[0].Hidden {
+		t.Fatalf("Stickers after AddSticker = %+v, want file:a visible and still from WhatsApp", got)
+	}
+	if path, _ := s.RemoveSticker("file:a"); path != "/s/a.webp" {
+		t.Errorf("RemoveSticker path = %q", path)
+	}
+	if st, ok, _ := s.Sticker("file:a"); !ok || !st.Hidden {
+		t.Errorf("a re-added WhatsApp sticker should hide on removal, got %+v", st)
+	}
+}
