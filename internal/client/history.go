@@ -37,6 +37,10 @@ func (w *Whatsmeow) applyHistorySync(data *waHistorySync.HistorySync) {
 			w.upsertContact(store.ContactRow{JID: m.GetLidJID(), PNJID: m.GetPnJID()})
 		}
 	}
+	// The phone's recent stickers ride on the non-blocking chunk of the
+	// initial sync; that is how the picker gets the collection the phone
+	// shows.
+	w.importRecentStickers(data.GetRecentStickers())
 }
 
 func (w *Whatsmeow) applyHistoryConversation(conv *waHistorySync.Conversation) {

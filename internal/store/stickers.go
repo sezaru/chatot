@@ -27,6 +27,23 @@ func (s *Store) UpsertSticker(row StickerRow) error {
 	return err
 }
 
+// AddSticker files row as the user asked for it: like UpsertSticker, but a
+// removed (hidden) entry comes back, and an entry that was a WhatsApp
+// sticker stays one so a later removal hides it again instead of letting
+// a resync resurrect it.
+func (s *Store) AddSticker(row StickerRow) error {
+	_, err := s.db.Exec(`
+		INSERT INTO stickers(key, path, from_whatsapp, hidden, added_ts, used_ts)
+		VALUES (?, ?, ?, 0, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET
+			path = excluded.path,
+			from_whatsapp = MAX(stickers.from_whatsapp, excluded.from_whatsapp),
+			hidden = 0,
+			used_ts = MAX(stickers.used_ts, excluded.used_ts)
+	`, row.Key, row.Path, boolToInt(row.FromWhatsApp), row.AddedTS, row.UsedTS)
+	return err
+}
+
 // Sticker looks up one library entry by key, hidden or not.
 func (s *Store) Sticker(key string) (StickerRow, bool, error) {
 	row := s.db.QueryRow(`SELECT key, path, from_whatsapp, hidden, added_ts, used_ts FROM stickers WHERE key = ?`, key)
