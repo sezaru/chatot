@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.7.0-beta" date="2026-09-09">
+      <description>
+        <p>The picture viewer pinch-zooms and drags to pan. Release builds: Flatpak bundles and AppImages for x86_64 and aarch64 are attached to every GitHub release.</p>
+      </description>
+    </release>
     <release version="0.6.0-beta" date="2026-09-08">
       <description>
         <p>A chat wallpaper: pick any picture under Preferences, and override it per chat from the chat menu with a picture of its own or the plain background. On a wide window the messages and the input stop growing and stay centred, as on WhatsApp Web. The sticker picker fills with the phone's recent stickers, a sticker in a chat can be added to it, and notifications show the contact's or group's picture.</p>
