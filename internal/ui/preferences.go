@@ -261,7 +261,8 @@ func prefAppearance(parent *gtk.Window, s *settings.Settings, c client.Client, o
 	}
 	setWallpaper := func(path string) {
 		s.ChatWallpaper = path
-		ApplyChatWallpaper(path)
+		ChatWallpaper = path
+		refreshChatWallpaper()
 		onChange(*s)
 		refreshWallpaper()
 	}

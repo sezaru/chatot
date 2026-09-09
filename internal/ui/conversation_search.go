@@ -100,6 +100,7 @@ func (cv *ConversationView) MenuItemsForChat(jid string, ensureOpen func()) []me
 			cv.chatAction("archive", func() error { return cv.c.ArchiveChat(context.Background(), jid, !chat.Archived) })
 		},
 		Disappearing: disappearing,
+		Wallpaper:    func() { showChatWallpaperDialog(cv.window, jid, cv.toastOverlay) },
 		Export:       opening(func() { callWithJID(cv.onExportChat, jid) }),
 		Clear:        opening(func() { callWithJID(cv.onClearChat, jid) }),
 		Block:        block,

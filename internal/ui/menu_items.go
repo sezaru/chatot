@@ -65,10 +65,12 @@ type chatMenuActions struct {
 	Mute         func()
 	Pin          func()
 	Disappearing func()
-	Archive      func()
-	Export       func()
-	Clear        func()
-	Block        func()
+	// Wallpaper opens the chat's own wallpaper choice.
+	Wallpaper func()
+	Archive   func()
+	Export    func()
+	Clear     func()
+	Block     func()
 }
 
 // chatMenuItems is the conversation header's ⋮ menu for chat. The mute, pin,
@@ -103,6 +105,9 @@ func chatMenuItems(chat client.Chat, blocked bool, a chatMenuActions) []menuItem
 		{Icon: muteIcon, Label: muteLabel, OnActivate: a.Mute},
 		{Icon: "📌", Label: pinLabel, OnActivate: a.Pin},
 		{Icon: "⏱", Label: "Disappearing messages…", OnActivate: a.Disappearing},
+		// Not in the mockup: the chat's own wallpaper sits with the other
+		// per-chat settings.
+		{Icon: "🖼", Label: "Chat wallpaper…", OnActivate: a.Wallpaper},
 		{Icon: "📂", Label: archiveLabel, OnActivate: a.Archive},
 		menuSeparator(),
 		{Icon: "⤓", Label: "Export chat…", OnActivate: a.Export},
