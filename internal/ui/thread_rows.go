@@ -31,18 +31,19 @@ func (cv *ConversationView) newThreadList() *gtk.ListView {
 		item.SetSelectable(false)
 		item.SetFocusable(false)
 		// No side margins here: the thread's 18px inset lives on
-		// .chatot-conv-list, and margins would compound with it.
-		item.SetChild(gtk.NewBox(gtk.OrientationVertical, 0))
+		// .chatot-conv-list, and margins would compound with it. The
+		// clamp holds the row at chatMaxWidth on a wide window.
+		item.SetChild(chatClamp(gtk.NewBox(gtk.OrientationVertical, 0)))
 	})
 	factory.ConnectBind(func(obj *glib.Object) {
 		item := obj.Cast().(*gtk.ListItem)
-		if box, ok := item.Child().(*gtk.Box); ok {
+		if box, ok := threadRowBox(item); ok {
 			cv.fillRow(box, int(item.Position()))
 		}
 	})
 	factory.ConnectUnbind(func(obj *glib.Object) {
 		item := obj.Cast().(*gtk.ListItem)
-		if box, ok := item.Child().(*gtk.Box); ok {
+		if box, ok := threadRowBox(item); ok {
 			removeAllChildren(box)
 			cv.forgetRow(box)
 		}

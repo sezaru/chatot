@@ -425,6 +425,11 @@ type Composer struct {
 func NewComposer(c client.Client) *Composer {
 	root := gtk.NewBox(gtk.OrientationVertical, 0)
 	root.AddCSSClass("chatot-composer")
+	// The reply/edit bars stop at chatMaxWidth and sit centred on a wide
+	// window; root keeps painting the surface across the column, and the
+	// strip below keeps its hairline across it too.
+	inner := gtk.NewBox(gtk.OrientationVertical, 0)
+	root.Append(chatClamp(inner))
 
 	// The mockup's reply bar sits ABOVE the composer strip, on the chat
 	// surface, inset 12px with a rounded top, a 3px accent left edge, and
@@ -457,7 +462,7 @@ func NewComposer(c client.Client) *Composer {
 	cancelQuote.SetVAlign(gtk.AlignCenter)
 	quoteBar.Append(cancelQuote)
 
-	root.Append(quoteBar)
+	inner.Append(quoteBar)
 
 	editBar := gtk.NewBox(gtk.OrientationHorizontal, 10)
 	editBar.AddCSSClass("chatot-composer-quote")
@@ -475,14 +480,18 @@ func NewComposer(c client.Client) *Composer {
 	cancelEdit.SetVAlign(gtk.AlignCenter)
 	editBar.Append(cancelEdit)
 
-	root.Append(editBar)
+	inner.Append(editBar)
 
 	// Mockup: a 51px strip whose padding lives on .chatot-composer-strip (8px
 	// 12px), with 7px between the buttons and the entry. Row margins here
 	// would compound with that padding and make the strip too tall.
+	// The strip spans the column (its top hairline separates the whole
+	// thread from the input); the rows inside it are clamped like the thread.
+	stripBand := gtk.NewBox(gtk.OrientationVertical, 0)
+	stripBand.AddCSSClass("chatot-composer-strip")
+	root.Append(stripBand)
 	strip := gtk.NewBox(gtk.OrientationVertical, 0)
-	strip.AddCSSClass("chatot-composer-strip")
-	root.Append(strip)
+	stripBand.Append(chatClamp(strip))
 	entryRow := gtk.NewBox(gtk.OrientationHorizontal, 7)
 
 	// Layout per the interactive mockup: 📎 attach · 🙂 emoji · [pill entry] ·
