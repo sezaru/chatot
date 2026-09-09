@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.7.2-beta" date="2026-09-09">
+      <description>
+        <p>Accents typed with dead keys now compose in the message input on GNOME and other desktops with an input method, as they already did in the search box.</p>
+      </description>
+    </release>
     <release version="0.7.1-beta" date="2026-09-09">
       <description>
         <p>Diagnostics for typing accents: with CHATOT_TRACE=1 the app logs how dead keys are composed in the message input and the search box, and it always logs which input method it uses.</p>
