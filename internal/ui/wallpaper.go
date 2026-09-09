@@ -117,7 +117,7 @@ func chatWallpaperCSS(path string) string {
 		".chatot-conv-list {\n" +
 		"\tbackground-color: transparent;\n" +
 		"}\n" +
-		".chatot-bubble-in, .chatot-typing-bubble, .chatot-day-separator {\n" +
+		".chatot-bubble-in, .chatot-typing-bubble, .chatot-day-separator, .chatot-join-banner {\n" +
 		"\tbackground-color: mix(@chatot_thread, currentColor, 0.06);\n" +
 		"}\n" +
 		".chatot-day-separator {\n" +
