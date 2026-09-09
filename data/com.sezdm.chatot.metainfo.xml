@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.7.1-beta" date="2026-09-09">
+      <description>
+        <p>Diagnostics for typing accents: with CHATOT_TRACE=1 the app logs how dead keys are composed in the message input and the search box, and it always logs which input method it uses.</p>
+      </description>
+    </release>
     <release version="0.7.0-beta" date="2026-09-09">
       <description>
         <p>The picture viewer pinch-zooms and drags to pan. Release builds: Flatpak bundles and AppImages for x86_64 and aarch64 are attached to every GitHub release.</p>
