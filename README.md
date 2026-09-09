@@ -50,8 +50,13 @@ flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo build-aux/fl
 `build-aux/flatpak/flathub/` holds the Flathub copy of the manifest: the same
 file with the `chatot` module built from the tagged release commit and
 checker data on every source, plus links to `go.mod.yml` and `modules.txt`.
-To release, tag the commit, put its hash in that manifest, then copy the
-directory's contents (`cp -rL`) into the `flathub/com.sezdm.chatot` checkout.
+To release, tag the commit and put its hash in that manifest. For the first
+submission, `build-aux/flatpak/flathub/push.sh "<message>"` pushes the
+directory to the `com.sezdm.chatot` branch of the flathub/flathub fork and
+prints the pull-request link; the PR text, the AI disclosure (facts in
+`docs/flathub-ai-disclosure-facts.md`) and review replies are written by
+hand, as Flathub's policy requires. After acceptance, updates are pull
+requests to `flathub/com.sezdm.chatot` bumping `tag` and `commit`.
 Screenshots referenced by the AppStream metadata live in `data/screenshots/`,
 captured from the fake account (`CHATOT_FAKE=1`).
 
