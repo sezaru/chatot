@@ -107,3 +107,11 @@ func (s *Store) SetMediaPlayPos(chatJID, msgID string, ms int) error {
 	_, err := s.db.Exec(`UPDATE media SET play_pos_ms = ? WHERE chat_jid = ? AND msg_id = ?`, ms, chatJID, msgID)
 	return err
 }
+
+// SetMediaTranscript stores the text transcribed from an audio attachment.
+// UpsertMedia never writes the column, so a redelivery of the message keeps
+// it.
+func (s *Store) SetMediaTranscript(chatJID, msgID, text string) error {
+	_, err := s.db.Exec(`UPDATE media SET transcript = ? WHERE chat_jid = ? AND msg_id = ?`, text, chatJID, msgID)
+	return err
+}

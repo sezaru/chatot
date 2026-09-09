@@ -17,6 +17,7 @@ import (
 
 	"chatot/internal/client"
 	"chatot/internal/settings"
+	"chatot/internal/transcribe"
 )
 
 var themeOptions = []string{"System", "Light", "Dark"}
@@ -102,7 +103,7 @@ func ShowPreferences(parent *gtk.Window, s *settings.Settings, c client.Client, 
 		"appearance":    func() gtk.Widgetter { return prefAppearance(parent, s, c, onChange) },
 		"notifications": func() gtk.Widgetter { return prefNotifications(dialog, s, onChange) },
 		"privacy":       func() gtk.Widgetter { return prefPrivacy(dialog, s, c, onChange) },
-		"network":       func() gtk.Widgetter { return prefNetwork(s, onChange) },
+		"network":       func() gtk.Widgetter { return prefNetwork(dialog, s, onChange) },
 		"shortcuts":     func() gtk.Widgetter { return prefShortcuts() },
 		"advanced":      func() gtk.Widgetter { return prefAdvanced(dialog, s, c, onChange) },
 	}
@@ -537,7 +538,7 @@ func entryRow(label, sub string, entry *gtk.Entry, width int) gtk.Widgetter {
 	return row
 }
 
-func prefNetwork(s *settings.Settings, onChange func(settings.Settings)) gtk.Widgetter {
+func prefNetwork(dialog *cardDialog, s *settings.Settings, onChange func(settings.Settings)) gtk.Widgetter {
 	// The proxy is edited as type, host and port (the mockup's rows) but
 	// stored as the one URL whatsmeow reads at startup.
 	scheme, host, port := proxyParts(s.Proxy)
@@ -610,6 +611,29 @@ func prefNetwork(s *settings.Settings, onChange func(settings.Settings)) gtk.Wid
 			onChange(*s)
 			return autoDownloadLabel(s.AutoDownload)
 		}))
+	// Switching it on fetches the speech model at once when it is missing
+	// (asked first: it is a large download), so the first voice note does
+	// not sit untranscribed.
+	autoTranscribe, _ := newSwitchRow("Transcribe voice notes automatically",
+		"Incoming voice notes are turned into text on this computer with whisper.cpp",
+		s.AutoTranscribe, func(on bool) {
+			s.AutoTranscribe = on
+			AutoTranscribe = on
+			onChange(*s)
+			if on && transcribe.EngineAvailable() && !transcribe.ModelReady(cacheDir()) {
+				showModelDownloadDialog(dialog.Window(), nil)
+			}
+		})
+	transcripts := newSettingsCard()
+	transcripts.Add(autoTranscribe)
+	expanded, _ := newSwitchRow("Keep transcripts expanded",
+		"Show the text under a voice note right away instead of behind a fold",
+		s.TranscriptsExpanded, func(on bool) {
+			s.TranscriptsExpanded = on
+			TranscriptsExpanded = on
+			onChange(*s)
+		})
+	transcripts.Add(expanded)
 
 	gifs := newSettingsCard()
 	services := make([]string, len(settings.GIFServices))
@@ -645,6 +669,7 @@ func prefNetwork(s *settings.Settings, onChange func(settings.Settings)) gtk.Wid
 	return prefPage(
 		newSettingsGroup("PROXY", proxy),
 		newSettingsGroup("MEDIA", media),
+		newSettingsGroup("VOICE TRANSCRIPTS", transcripts),
 		newSettingsGroup("GIFS", gifs),
 		newSettingsGroup("ACCOUNTS", accounts),
 	)

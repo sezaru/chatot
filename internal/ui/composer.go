@@ -859,15 +859,27 @@ func (c *Composer) dispatch(msg client.Message) {
 	}()
 }
 
-// send performs the network send for a dispatched message: text, or a file
-// attachment. Anything else is a programming error (those kinds go through
-// their own dialogs, not dispatch).
+// send performs the network send for a dispatched message: text, a
+// sticker, or a file attachment. Anything else is a programming error
+// (those kinds go through their own dialogs, not dispatch).
 func (c *Composer) send(msg client.Message) (string, error) {
 	ctx := context.Background()
 	if msg.Attachment == nil {
 		return c.c.SendText(ctx, msg.ChatJID, msg.Text, msg.ReplyTo)
 	}
 	a := *msg.Attachment
+	if a.Kind == "sticker" {
+		// Filing the sticker in the library (a send moves it to the front)
+		// is bookkeeping the send doesn't depend on: a failure is logged
+		// and the picked file goes out as is.
+		path := a.LocalPath
+		if st, err := c.c.AddSticker(path); err != nil {
+			log.Printf("chatot: add sticker to library: %v", err)
+		} else {
+			path = st.Path
+		}
+		return c.c.SendSticker(ctx, msg.ChatJID, path)
+	}
 	return c.c.SendMedia(ctx, msg.ChatJID, client.Attachment{
 		LocalPath: a.LocalPath, Filename: a.Filename, Caption: a.Caption,
 		Thumbnail: a.Thumbnail, DurationSecs: a.DurationSecs,
@@ -1367,36 +1379,19 @@ func (c *Composer) pickSticker(popover *gtk.Popover) {
 	})
 }
 
-// sendSticker sends path as a sticker to the active chat and files it in
-// the library (a send moves it to the front), mirroring sendMedia's
-// goroutine + IdleAdd flow. No reply support (stickers aren't quoted in
-// practice, like voice notes).
+// sendSticker sends path as a sticker to the active chat through dispatch:
+// the bubble shows at once with a pending clock like any other send, and
+// the library filing and the upload run in the background. No reply
+// support (stickers aren't quoted in practice, like voice notes).
 func (c *Composer) sendSticker(path string) {
 	jid := c.state.jid
 	if jid == "" || path == "" {
 		return
 	}
-
-	go func() {
-		if st, err := c.c.AddSticker(path); err != nil {
-			log.Printf("chatot: add sticker to library: %v", err)
-		} else {
-			path = st.Path
-		}
-		id, err := c.c.SendSticker(context.Background(), jid, path)
-		if err != nil {
-			log.Printf("chatot: send sticker failed: %v", err)
-			return
-		}
-		if c.onSent == nil {
-			return
-		}
-		msg := client.Message{
-			ID: id, ChatJID: jid, FromMe: true, TS: time.Now().Unix(),
-			Attachment: &client.Attachment{Kind: "sticker", MimeType: "image/webp", LocalPath: path},
-		}
-		glib.IdleAdd(func() { c.onSent(msg) })
-	}()
+	c.dispatch(client.Message{
+		ChatJID: jid, FromMe: true,
+		Attachment: &client.Attachment{Kind: "sticker", MimeType: "image/webp", LocalPath: path},
+	})
 }
 
 // pickLocation opens the Send location sheet (see location_picker.go) and

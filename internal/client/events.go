@@ -1,6 +1,7 @@
 package client
 
 import (
+	"chatot/internal/store"
 	"fmt"
 	"log"
 	"strings"
@@ -366,9 +367,26 @@ func extractText(m *waProto.Message, msg *Message) {
 		return
 	}
 	if id := ctx.GetStanzaID(); id != "" {
-		msg.ReplyTo = &MsgRef{ChatJID: msg.ChatJID, MsgID: id}
+		msg.ReplyTo = &MsgRef{ChatJID: msg.ChatJID, MsgID: id, Text: quotedPreview(msg.ChatJID, ctx.GetQuotedMessage())}
 	}
 	msg.Forwarded = ctx.GetIsForwarded()
+}
+
+// quotedPreview renders the copy of the quoted message a reply carries as
+// the one-line stand-in a quote shows ("📷 Photo", the text), so a reply
+// to a message that never reached the store still quotes it.
+func quotedPreview(chatJID string, quoted *waProto.Message) string {
+	if quoted == nil {
+		return ""
+	}
+	m := Message{ChatJID: chatJID}
+	extractText(quoted, &m)
+	var media *store.MediaRow
+	if m.Attachment != nil {
+		row := storeMediaRow(chatJID, "", m.Attachment)
+		media = &row
+	}
+	return store.Preview(storeMessageRow(&m), media)
 }
 
 // marshalMedia serializes a media sub-message (ImageMessage, VideoMessage,

@@ -108,6 +108,7 @@ func storeMessageRow(m *Message) store.MessageRow {
 	}
 	if m.ReplyTo != nil {
 		row.ReplyToMsgID = m.ReplyTo.MsgID
+		row.ReplyToText = m.ReplyTo.Text
 	}
 	if lp := m.LinkPreview; lp != nil {
 		if b, err := json.Marshal(linkPayload{
@@ -224,7 +225,7 @@ func messageFromStore(m store.Message, selfJID string) Message {
 		Status: m.Status, Starred: m.Starred, Forwarded: m.Forwarded, Played: m.Played,
 	}
 	if m.ReplyToMsgID != "" {
-		out.ReplyTo = &MsgRef{ChatJID: m.ChatJID, MsgID: m.ReplyToMsgID}
+		out.ReplyTo = &MsgRef{ChatJID: m.ChatJID, MsgID: m.ReplyToMsgID, Text: m.ReplyToText}
 	}
 	if m.Attachment != nil {
 		out.Attachment = &Attachment{
@@ -233,7 +234,7 @@ func messageFromStore(m store.Message, selfJID string) Message {
 			Caption: m.Attachment.Caption, Thumbnail: m.Attachment.Thumbnail,
 			IsGIF: m.Attachment.IsGif, ViewOnce: m.Attachment.ViewOnce, Viewed: m.Attachment.Viewed,
 			Size: m.Attachment.FileSize, DurationSecs: m.Attachment.DurationSecs,
-			PlayPosMS: m.Attachment.PlayPosMS,
+			PlayPosMS: m.Attachment.PlayPosMS, Transcript: m.Attachment.Transcript,
 		}
 	}
 	if m.LinkPreview != "" {

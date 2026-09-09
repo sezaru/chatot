@@ -186,3 +186,15 @@ func firstNonEmpty(vals ...string) string {
 	}
 	return ""
 }
+
+// Preview is the one-line stand-in for a message given as rows, without
+// the "You: " prefix: what a reply quotes. media is nil for a message
+// without an attachment.
+func Preview(row MessageRow, media *MediaRow) string {
+	in := previewInput{Kind: row.Kind, Text: row.Text, Payload: row.Payload, Deleted: row.Deleted}
+	if media != nil {
+		in.MediaKind, in.MediaCaption, in.MediaFilename = media.Kind, media.Caption, media.Filename
+		in.MediaSeconds, in.MediaIsGIF = media.DurationSecs, media.IsGif
+	}
+	return buildPreview(in)
+}

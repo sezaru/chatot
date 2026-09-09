@@ -10,6 +10,15 @@ type voiceHooks struct {
 	onPlay  func(msgID string)
 	onStop  func(msgID string, ms int)
 	onEnded func(msgID string)
+	// onTranscribe asks for the note's transcript: requested by a click
+	// (the text unfolds once it lands) or automatically (it stays folded).
+	// onToggleTranscript remembers whether the text is unfolded, so a
+	// rebuilt row keeps it that way.
+	onTranscribe       func(msgID, path string, requested bool)
+	onToggleTranscript func(msgID string, open bool)
+	// onTranscriptMore remembers whether a long transcript's "Read more"
+	// is open.
+	onTranscriptMore func(msgID string, open bool)
 }
 
 // playVoice starts mv's shared player, resuming where it last stopped when

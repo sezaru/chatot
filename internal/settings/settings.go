@@ -60,6 +60,17 @@ type Settings struct {
 	// shown: "always", "photos" (photos, stickers and voice notes) or
 	// "never" (everything waits for a click).
 	AutoDownload string `json:"autoDownload"`
+	// RecentEmojis is the frequently-used row both emoji pickers open on,
+	// most recent first. Empty falls back to a seeded set.
+	RecentEmojis []string `json:"recentEmojis,omitempty"`
+	// AutoTranscribe turns every incoming voice note into text as soon as it
+	// is downloaded (on this computer, with whisper.cpp); off leaves it to a
+	// click on the bubble's Transcribe row.
+	AutoTranscribe bool `json:"autoTranscribe"`
+	// TranscriptsExpanded shows a voice note's transcript unfolded as soon
+	// as it exists; off folds it behind a "Transcript" head, as WhatsApp
+	// does, until clicked.
+	TranscriptsExpanded bool `json:"transcriptsExpanded"`
 	// VerboseLogging turns on whatsmeow's info and debug lines in the log.
 	VerboseLogging bool `json:"verboseLogging"`
 	// GIFService is the GIF search the picker uses: "giphy" (the default;

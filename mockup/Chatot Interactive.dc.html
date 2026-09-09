@@ -733,7 +733,10 @@ a{color:#1b8c72}a:hover{color:#147a63}
                   </sc-if>
 
                   <sc-if value="{{ m.isText }}" hint-placeholder-val="{{ true }}">
-                    <div style="font-size:13.5px;line-height:1.45;text-wrap:pretty;white-space:pre-wrap">{{ m.text }}</div>
+                    <div style="font-size:13.5px;line-height:1.45;text-wrap:pretty;white-space:pre-wrap">{{ m.textShown }}</div>
+                    <sc-if value="{{ m.canExpand }}" hint-placeholder-val="{{ false }}">
+                      <button onClick="{{ m.onToggleText }}" style="margin-top:3px;padding:0;border:none;background:transparent;font-size:12.5px;font-weight:700;cursor:pointer;color:{{ m.expandFg }}" style-hover="text-decoration:underline">{{ m.expandLabel }}</button>
+                    </sc-if>
                   </sc-if>
 
                   <sc-if value="{{ m.isImage }}" hint-placeholder-val="{{ false }}">
@@ -836,7 +839,45 @@ a{color:#1b8c72}a:hover{color:#147a63}
                           <span style="position:absolute;top:-3px;width:10px;height:10px;border-radius:999px;background:{{ m.fillFg }};left:{{ m.voicePct }}"></span>
                         </span>
                         <span style="font:11px/1 'JetBrains Mono',ui-monospace,monospace;flex:none;color:{{ m.subFg }}">{{ m.voiceLen }}</span>
+                        <button onClick="{{ m.onTranscribe }}" title="{{ m.trTitle }}" style="width:23px;height:23px;flex:none;border:1px solid {{ m.hair }};border-radius:7px;display:grid;place-items:center;cursor:pointer;font-size:11px;font-weight:700;background:{{ m.trBtnBg }};color:{{ m.trBtnFg }}" style-hover="background:{{ m.chipBg }}">
+                          <sc-if value="{{ m.trBusy }}" hint-placeholder-val="{{ false }}">
+                            <span style="width:11px;height:11px;border-radius:999px;border:2px solid {{ m.trSpinTrack }};border-top-color:{{ m.trBtnFg }};box-sizing:border-box;animation:spin .9s linear infinite"></span>
+                          </sc-if>
+                          <sc-if value="{{ m.trIdle }}" hint-placeholder-val="{{ true }}">T</sc-if>
+                        </button>
                       </div>
+
+                      <sc-if value="{{ m.trShow }}" hint-placeholder-val="{{ false }}">
+                        <div style="width:260px;margin:3px 0 3px;padding-top:6px;border-top:1px solid {{ m.hair }};display:flex;flex-direction:column;gap:4px">
+
+                          <sc-if value="{{ m.trRunning }}" hint-placeholder-val="{{ false }}">
+                            <span style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:{{ m.subFg }}">
+                              <span style="width:12px;height:12px;flex:none;border-radius:999px;border:2px solid {{ m.trSpinTrack }};border-top-color:{{ m.bubFg }};box-sizing:border-box;animation:spin .9s linear infinite"></span>
+                              Transcribing on this computer…
+                            </span>
+                          </sc-if>
+
+                          <sc-if value="{{ m.trFailed }}" hint-placeholder-val="{{ false }}">
+                            <span style="display:flex;align-items:baseline;gap:7px;font-size:11.5px;color:{{ m.subFg }};text-wrap:pretty">
+                              <span style="flex:1">{{ m.trFailText }}</span>
+                              <sc-if value="{{ m.trRetry }}" hint-placeholder-val="{{ false }}">
+                                <button onClick="{{ m.onTranscribe }}" style="flex:none;border:none;background:transparent;padding:0;font-size:11.5px;font-weight:700;cursor:pointer;color:{{ m.trLinkFg }}" style-hover="text-decoration:underline">Try again</button>
+                              </sc-if>
+                            </span>
+                          </sc-if>
+
+                          <sc-if value="{{ m.trDone }}" hint-placeholder-val="{{ true }}">
+                            <button onClick="{{ m.onTrToggle }}" title="{{ m.trToggleTitle }}" style="display:flex;align-items:center;gap:6px;border:none;background:transparent;padding:0;cursor:pointer;text-align:left;color:{{ m.bubFg }}">
+                              <span style="flex:1;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:{{ m.subFg }}">Transcript</span>
+                              <span style="flex:none;font-size:9px;color:{{ m.subFg }}">{{ m.trChevron }}</span>
+                            </button>
+                            <sc-if value="{{ m.trOpen }}" hint-placeholder-val="{{ true }}">
+                              <span style="font-size:12.5px;line-height:1.45;text-wrap:pretty;color:{{ m.bubFg }}">{{ m.trText }}</span>
+                              <span style="font-size:10px;color:{{ m.trFootFg }}">Transcribed on this device</span>
+                            </sc-if>
+                          </sc-if>
+                        </div>
+                      </sc-if>
                     </sc-if>
                   </sc-if>
 
@@ -1152,11 +1193,35 @@ a{color:#1b8c72}a:hover{color:#147a63}
 </sc-if>
 
 <sc-if value="{{ reactPickOpen }}" hint-placeholder-val="{{ false }}">
-  <div style="position:absolute;z-index:32;width:322px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.26);padding:8px;display:flex;flex-direction:column;gap:6px;animation:pop .1s ease;{{ reactPickPos }}">
-    <span style="font-size:11.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--dim,rgba(0,0,0,.55));padding:0 2px">Pick a reaction</span>
-    <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;max-height:160px;overflow-y:auto">
-      <sc-for list="{{ reactEmojis }}" as="e" hint-placeholder-count="32">
-        <button onClick="{{ e.onClick }}" style="border:none;background:transparent;border-radius:6px;height:32px;font-size:18px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ e.c }}</button>
+  <div style="position:absolute;z-index:32;width:322px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.26);padding:8px;display:flex;flex-direction:column;gap:7px;animation:pop .1s ease;{{ reactPickPos }}">
+    <div style="display:flex;align-items:center;gap:7px;height:30px;flex:none;padding:0 5px 0 10px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:var(--chat,#fff);border-radius:999px">
+      <span style="font-size:11px;opacity:.5">🔍</span>
+      <input value="{{ reactQuery }}" onChange="{{ onReactQuery }}" placeholder="Search emoji" style="flex:1;min-width:0;border:none;outline:none;background:transparent;font-size:12.5px"/>
+      <sc-if value="{{ reactHasQuery }}" hint-placeholder-val="{{ false }}">
+        <button onClick="{{ onReactClear }}" title="Clear search" style="width:20px;height:20px;flex:none;border:none;background:transparent;border-radius:999px;cursor:pointer;font-size:10px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">✕</button>
+      </sc-if>
+    </div>
+    <div ref="{{ reactScrollRef }}" style="height:168px;overflow-y:auto">
+      <sc-for list="{{ reactGroups }}" as="g" hint-placeholder-count="2">
+        <div>
+          <span style="position:sticky;top:0;z-index:1;display:block;padding:4px 3px 3px;font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--dim,rgba(0,0,0,.55));background:var(--pop,#fff)">{{ g.label }}</span>
+          <div style="display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:1px">
+            <sc-for list="{{ g.items }}" as="e" hint-placeholder-count="24">
+              <button onClick="{{ e.onClick }}" title="{{ e.name }}" style="border:none;background:transparent;border-radius:7px;height:33px;font-size:19px;line-height:1;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ e.c }}</button>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <sc-if value="{{ reactNoResults }}" hint-placeholder-val="{{ false }}">
+        <div style="height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;padding:0 14px">
+          <span style="font-size:20px;opacity:.45">🔍</span>
+          <span style="font-size:12px;color:var(--dim,rgba(0,0,0,.55))">Nothing matches “{{ reactQuery }}”</span>
+        </div>
+      </sc-if>
+    </div>
+    <div style="display:flex;gap:1px;flex:none;border-top:1px solid var(--bd,rgba(0,0,0,.09));padding-top:6px">
+      <sc-for list="{{ reactRail }}" as="r" hint-placeholder-count="10">
+        <button onClick="{{ r.onClick }}" title="{{ r.label }}" style="flex:1;height:27px;border:none;border-radius:7px;cursor:pointer;font-size:14px;line-height:1;opacity:{{ r.opacity }};background:{{ r.bg }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ r.icon }}</button>
       </sc-for>
     </div>
   </div>
@@ -1202,9 +1267,34 @@ a{color:#1b8c72}a:hover{color:#147a63}
       </sc-for>
     </div>
     <sc-if value="{{ pickerIsEmoji }}" hint-placeholder-val="{{ true }}">
-      <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:2px;max-height:210px;overflow-y:auto">
-        <sc-for list="{{ emojis }}" as="e" hint-placeholder-count="36">
-          <button onClick="{{ e.onClick }}" style="border:none;background:transparent;border-radius:6px;height:32px;font-size:18px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ e.c }}</button>
+      <div style="display:flex;align-items:center;gap:8px;height:32px;flex:none;padding:0 6px 0 11px;border:1px solid var(--bd2,rgba(0,0,0,.13));background:var(--chat,#fff);border-radius:999px">
+        <span style="font-size:12px;opacity:.5">🔍</span>
+        <input value="{{ emojiQuery }}" onChange="{{ onEmojiQuery }}" placeholder="Search emoji" style="flex:1;min-width:0;border:none;outline:none;background:transparent;font-size:13px"/>
+        <sc-if value="{{ emojiHasQuery }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ onEmojiClear }}" title="Clear search" style="width:22px;height:22px;flex:none;border:none;background:transparent;border-radius:999px;cursor:pointer;font-size:10.5px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">✕</button>
+        </sc-if>
+      </div>
+      <div ref="{{ emojiScrollRef }}" style="height:212px;overflow-y:auto">
+        <sc-for list="{{ emojiGroups }}" as="g" hint-placeholder-count="3">
+          <div>
+            <span style="position:sticky;top:0;z-index:1;display:block;padding:5px 4px 4px;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--dim,rgba(0,0,0,.55));background:var(--pop,#fff)">{{ g.label }}</span>
+            <div style="display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:1px">
+              <sc-for list="{{ g.items }}" as="e" hint-placeholder-count="27">
+                <button onClick="{{ e.onClick }}" title="{{ e.name }}" style="border:none;background:transparent;border-radius:7px;height:34px;font-size:20px;line-height:1;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ e.c }}</button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+        <sc-if value="{{ emojiNoResults }}" hint-placeholder-val="{{ false }}">
+          <div style="height:196px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;text-align:center;padding:0 16px">
+            <span style="font-size:24px;opacity:.45">🔍</span>
+            <span style="font-size:12.5px;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">Nothing matches “{{ emojiQuery }}”. Try a word like “laugh”, “thanks” or “coffee”.</span>
+          </div>
+        </sc-if>
+      </div>
+      <div style="display:flex;gap:1px;flex:none;border-top:1px solid var(--bd,rgba(0,0,0,.09));padding-top:6px">
+        <sc-for list="{{ emojiRail }}" as="r" hint-placeholder-count="10">
+          <button onClick="{{ r.onClick }}" title="{{ r.label }}" style="flex:1;height:28px;border:none;border-radius:7px;cursor:pointer;font-size:15px;line-height:1;opacity:{{ r.opacity }};background:{{ r.bg }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ r.icon }}</button>
         </sc-for>
       </div>
     </sc-if>
@@ -1252,6 +1342,39 @@ a{color:#1b8c72}a:hover{color:#147a63}
           <button onClick="{{ closeDialog }}" style="flex:1;border:none;background:transparent;padding:12px 0;font-size:13.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">Cancel</button>
           <span style="width:1px;background:var(--bd,rgba(0,0,0,.09))"></span>
           <button onClick="{{ onAlertConfirm }}" style="flex:1;border:none;background:transparent;padding:12px 0;font-size:13.5px;font-weight:700;cursor:pointer;color:{{ alertColor }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ alertConfirm }}</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ dlgIsSpeechModel }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:20px 22px 14px;display:flex;flex-direction:column;gap:9px">
+          <span style="font-size:15.5px;font-weight:700">{{ modelTitle }}</span>
+          <span style="font-size:13px;color:var(--dim,rgba(0,0,0,.55));line-height:1.5;text-wrap:pretty">{{ modelBody }}</span>
+          <span style="display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:10px;background:var(--inb,rgba(0,0,0,.06))">
+            <span style="width:26px;height:26px;flex:none;border-radius:7px;display:grid;place-items:center;font-size:13px;background:var(--chip,rgba(0,0,0,.08))">🎙</span>
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+              <span style="font:11.5px/1.3 'JetBrains Mono',ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ggml-small-q5_1.bin</span>
+              <span style="font-size:11px;color:var(--dim,rgba(0,0,0,.55))">whisper.cpp · multilingual · runs offline</span>
+            </span>
+            <span style="flex:none;font:11.5px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--dim,rgba(0,0,0,.55))">181 MB</span>
+          </span>
+          <sc-if value="{{ modelBusy }}" hint-placeholder-val="{{ false }}">
+            <span style="display:flex;flex-direction:column;gap:6px;padding-top:2px">
+              <span style="height:6px;border-radius:999px;overflow:hidden;background:var(--chip,rgba(0,0,0,.08))">
+                <span style="display:block;height:100%;border-radius:999px;background:var(--ac,#1b8c72);width:{{ modelPct }}"></span>
+              </span>
+              <span style="display:flex;align-items:baseline;gap:8px">
+                <span style="flex:1;font-size:11.5px;color:var(--dim,rgba(0,0,0,.55))">{{ modelStatus }}</span>
+                <span style="flex:none;font:11px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--dim2,rgba(0,0,0,.45))">{{ modelBytes }}</span>
+              </span>
+            </span>
+          </sc-if>
+        </div>
+        <div style="display:flex;border-top:1px solid var(--bd,rgba(0,0,0,.09))">
+          <button onClick="{{ onModelCancel }}" style="flex:1;border:none;background:transparent;padding:12px 0;font-size:13.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ modelCancelLabel }}</button>
+          <sc-if value="{{ modelIdle }}" hint-placeholder-val="{{ true }}">
+            <span style="width:1px;background:var(--bd,rgba(0,0,0,.09))"></span>
+            <button onClick="{{ onModelDownload }}" style="flex:1;border:none;background:transparent;padding:12px 0;font-size:13.5px;font-weight:700;cursor:pointer;color:var(--ac2,#147a63)" style-hover="background:var(--hov,rgba(0,0,0,.06))">Download</button>
+          </sc-if>
         </div>
       </sc-if>
 
@@ -1943,6 +2066,1090 @@ const mapWindow = (lat, lon, z, W, H) => {
           pinX: (p.x + left) + 'px', pinY: (p.y + top) + 'px'};
 };
 
+
+// ---------------------------------------------------------------------------
+// The emoji catalogue behind the composer picker and the reaction picker.
+// Grouped the way Unicode groups them, because that is the order every other
+// picker on the desktop uses, and every entry carries a name plus the words
+// people actually type when they search for it ("lol", "thanks", "deal").
+// Format per line: "<emoji> <name>:<extra search words>".
+const EMOJI_GROUPS = [
+  {key: 'smileys', icon: '🙂', label: 'Smileys & emotion', src: `
+😀 grinning face:happy smile
+😃 grinning face with big eyes:happy joy
+😄 grinning face with smiling eyes:happy
+😁 beaming face:grin
+😆 grinning squinting face:laugh haha
+😅 grinning face with sweat:phew relief
+🤣 rolling on the floor laughing:rofl lol
+😂 face with tears of joy:lol laugh cry
+🙂 slightly smiling face:smile
+🙃 upside-down face:silly irony
+🫠 melting face:hot embarrassed
+😉 winking face:wink flirt
+😊 smiling face with smiling eyes:blush warm
+😇 smiling face with halo:angel innocent
+🥰 smiling face with hearts:love adore
+😍 smiling face with heart-eyes:love crush
+🤩 star-struck:amazed wow
+😘 face blowing a kiss:love
+😗 kissing face:kiss
+😚 kissing face with closed eyes:kiss
+😙 kissing face with smiling eyes:kiss
+🥲 smiling face with tear:touched proud
+😋 face savoring food:yum tasty
+😛 face with tongue:cheeky
+😜 winking face with tongue:joke
+🤪 zany face:crazy goofy
+😝 squinting face with tongue:yuck joke
+🤑 money-mouth face:rich
+🤗 smiling face with open hands:hug
+🤭 face with hand over mouth:oops giggle
+🫢 face with open eyes and hand over mouth:shock gasp
+🤫 shushing face:quiet secret
+🤔 thinking face:hmm doubt
+🫡 saluting face:yes sir respect
+🤐 zipper-mouth face:silence
+🤨 face with raised eyebrow:suspicious really
+😐 neutral face:meh
+😑 expressionless face:blank
+😶 face without mouth:speechless
+🫥 dotted line face:invisible
+😏 smirking face:smug
+😒 unamused face:annoyed
+🙄 face with rolling eyes:whatever
+😬 grimacing face:awkward yikes
+🤥 lying face:pinocchio
+😌 relieved face:calm
+😔 pensive face:sad down
+😪 sleepy face:tired
+🤤 drooling face:want
+😴 sleeping face:zzz asleep
+😷 face with medical mask:sick
+🤒 face with thermometer:fever ill
+🤕 face with head bandage:hurt
+🤢 nauseated face:sick gross
+🤮 face vomiting:sick
+🤧 sneezing face:cold
+🥵 hot face:heat
+🥶 cold face:freezing
+🥴 woozy face:drunk
+😵 face with crossed-out eyes:dizzy knocked out
+🤯 exploding head:mind blown
+🤠 cowboy hat face:yeehaw
+🥳 partying face:celebrate birthday
+🥸 disguised face:incognito
+😎 smiling face with sunglasses:cool
+🤓 nerd face:geek
+🧐 face with monocle:inspect
+😕 confused face
+🫤 face with diagonal mouth:unsure
+😟 worried face
+🙁 slightly frowning face:sad
+😮 face with open mouth:wow surprised
+😯 hushed face:surprised
+😲 astonished face:shocked
+😳 flushed face:embarrassed
+🥺 pleading face:puppy eyes please
+🥹 face holding back tears:emotional
+😦 frowning face with open mouth
+😧 anguished face
+😨 fearful face:scared
+😰 anxious face with sweat:nervous
+😥 sad but relieved face
+😢 crying face:sad tear
+😭 loudly crying face:sob
+😱 face screaming in fear:scream
+😖 confounded face
+😣 persevering face:struggle
+😞 disappointed face
+😓 downcast face with sweat
+😩 weary face:ugh
+😫 tired face:exhausted
+🥱 yawning face:bored
+😤 face with steam from nose:frustrated
+😡 enraged face:angry mad
+😠 angry face:mad
+🤬 face with symbols on mouth:swearing
+😈 smiling face with horns:devil mischief
+👿 angry face with horns:devil
+💀 skull:dead
+☠️ skull and crossbones:danger
+💩 pile of poo:crap
+🤡 clown face
+👻 ghost:boo halloween
+👽 alien:ufo
+🤖 robot:bot
+😺 grinning cat
+😹 cat with tears of joy:lol
+😻 smiling cat with heart-eyes:love
+😼 cat with wry smile
+🙀 weary cat:shock
+😿 crying cat
+😾 pouting cat
+❤️ red heart:love
+🩷 pink heart:love
+🧡 orange heart
+💛 yellow heart
+💚 green heart
+💙 blue heart
+💜 purple heart
+🖤 black heart
+🤍 white heart
+🤎 brown heart
+💔 broken heart:heartbreak
+❤️‍🔥 heart on fire:passion
+❤️‍🩹 mending heart:healing
+💕 two hearts:love
+💞 revolving hearts
+💓 beating heart
+💗 growing heart
+💖 sparkling heart
+💘 heart with arrow:cupid
+💝 heart with ribbon:gift
+💌 love letter
+💤 zzz:sleep
+💢 anger symbol:mad
+💥 collision:boom
+💫 dizzy:stars
+💦 sweat droplets:splash
+💨 dashing away:fast
+💬 speech balloon:comment
+💭 thought balloon:thinking
+🗯️ right anger bubble:rage
+`},
+  {key: 'people', icon: '👋', label: 'People & body', src: `
+👋 waving hand:hi bye hello
+🤚 raised back of hand
+🖐️ hand with fingers splayed
+✋ raised hand:stop high five
+🖖 vulcan salute:spock
+🫱 rightwards hand
+🫲 leftwards hand
+🫳 palm down hand
+🫴 palm up hand
+👌 ok hand:perfect
+🤌 pinched fingers:italian
+🤏 pinching hand:small
+✌️ victory hand:peace
+🤞 crossed fingers:luck hope
+🫰 fingers crossed thumb:heart money
+🤟 love-you gesture
+🤘 sign of the horns:rock
+🤙 call me hand:shaka
+👈 backhand index pointing left
+👉 backhand index pointing right
+👆 backhand index pointing up
+👇 backhand index pointing down
+☝️ index pointing up:one
+🫵 index pointing at the viewer:you
+👍 thumbs up:like yes ok agree
+👎 thumbs down:dislike no
+✊ raised fist:solidarity
+👊 oncoming fist:punch bump
+🤛 left-facing fist
+🤜 right-facing fist
+👏 clapping hands:applause bravo
+🙌 raising hands:hooray praise
+🫶 heart hands:love
+👐 open hands
+🤲 palms up together:pray
+🤝 handshake:deal agree
+🙏 folded hands:thanks please pray
+✍️ writing hand:sign
+💅 nail polish:manicure
+🤳 selfie
+💪 flexed biceps:strong gym
+🦾 mechanical arm
+🦵 leg
+🦶 foot
+👂 ear:listen
+👃 nose:smell
+🧠 brain:think
+🫀 anatomical heart
+🫁 lungs:breathe
+🦷 tooth:dentist
+🦴 bone
+👀 eyes:look watching
+👁️ eye:see
+👅 tongue
+👄 mouth:lips
+👶 baby
+🧒 child
+👦 boy
+👧 girl
+🧑 person
+👨 man
+👩 woman
+🧓 older person
+👴 old man:grandpa
+👵 old woman:grandma
+🙋 person raising hand:question me
+🤷 person shrugging:idk whatever
+🤦 person facepalming:facepalm
+🙆 person gesturing ok:yes
+🙅 person gesturing no:stop nope
+💁 person tipping hand:sassy info
+🙇 person bowing:sorry thanks
+🕺 man dancing:party
+💃 woman dancing:party
+🧑‍🤝‍🧑 people holding hands:friends
+👫 woman and man holding hands:couple
+👨‍👩‍👧 family
+🫂 people hugging:hug support
+👮 police officer:cop
+👷 construction worker
+💂 guard
+🕵️ detective:spy
+🧑‍⚕️ health worker:doctor nurse
+🧑‍🍳 cook:chef
+🧑‍🌾 farmer
+🧑‍🔧 mechanic
+🧑‍💻 technologist:developer coder
+🧑‍🎤 singer:musician
+🧑‍🚀 astronaut:space
+🧑‍🚒 firefighter
+🎅 santa claus:christmas
+🧙 mage:wizard
+🧚 fairy
+🧛 vampire
+🦸 superhero
+🦹 supervillain
+🧜 merperson:mermaid
+`},
+  {key: 'nature', icon: '🐻', label: 'Animals & nature', src: `
+🐶 dog face:puppy
+🐱 cat face:kitten
+🐭 mouse face
+🐹 hamster
+🐰 rabbit face:bunny
+🦊 fox
+🐻 bear
+🐼 panda
+🐻‍❄️ polar bear
+🐨 koala
+🐯 tiger face
+🦁 lion
+🐮 cow face
+🐷 pig face
+🐸 frog
+🐵 monkey face
+🙈 see-no-evil monkey:shy oops
+🙉 hear-no-evil monkey
+🙊 speak-no-evil monkey:secret
+🐒 monkey
+🐔 chicken
+🐧 penguin
+🐦 bird
+🐤 baby chick
+🦆 duck
+🦅 eagle
+🦉 owl
+🦇 bat
+🐺 wolf
+🐗 boar
+🐴 horse face
+🦄 unicorn
+🐝 honeybee:bee
+🐛 caterpillar:bug
+🦋 butterfly
+🐌 snail:slow
+🐞 lady beetle:ladybug
+🐜 ant
+🕷️ spider
+🦂 scorpion
+🐢 turtle
+🐍 snake
+🦎 lizard
+🦖 t-rex:dinosaur
+🐙 octopus
+🦑 squid
+🦐 shrimp
+🦀 crab
+🐡 blowfish
+🐠 tropical fish
+🐟 fish
+🐬 dolphin
+🐳 spouting whale
+🦈 shark
+🐊 crocodile
+🦓 zebra
+🦍 gorilla
+🐘 elephant
+🦛 hippopotamus
+🐪 camel
+🦒 giraffe
+🦌 deer
+🐄 cow
+🐖 pig
+🐑 ewe:sheep
+🐐 goat
+🦔 hedgehog
+🐇 rabbit
+🐿️ chipmunk:squirrel
+🦦 otter
+🦥 sloth
+🐕 dog
+🐈 cat
+🦮 guide dog
+🕊️ dove:peace
+🐾 paw prints
+🌵 cactus
+🎄 christmas tree
+🌲 evergreen tree
+🌳 deciduous tree
+🌴 palm tree
+🪴 potted plant
+🌱 seedling:growth
+🍀 four leaf clover:luck
+🍃 leaf fluttering in wind
+🍂 fallen leaf:autumn
+🍁 maple leaf
+🍄 mushroom
+🌾 sheaf of rice:wheat
+💐 bouquet:flowers
+🌷 tulip
+🌹 rose
+🥀 wilted flower
+🌺 hibiscus
+🌸 cherry blossom:sakura
+🌼 blossom
+🌻 sunflower
+🌞 sun with face
+🌝 full moon face
+🌚 new moon face
+🌙 crescent moon:night
+⭐ star
+🌟 glowing star
+✨ sparkles:shine magic
+⚡ high voltage:lightning fast
+☄️ comet
+🔥 fire:lit hot
+🌪️ tornado
+🌈 rainbow
+☀️ sun:sunny clear
+🌤️ sun behind small cloud
+⛅ sun behind cloud
+☁️ cloud
+🌧️ cloud with rain:rainy
+⛈️ cloud with lightning and rain:storm
+🌩️ cloud with lightning
+🌨️ cloud with snow
+❄️ snowflake:snow cold
+☃️ snowman
+💧 droplet:water
+🌊 water wave:sea surf
+🫧 bubbles
+`},
+  {key: 'food', icon: '🍔', label: 'Food & drink', src: `
+🍏 green apple
+🍎 red apple
+🍐 pear
+🍊 tangerine:orange
+🍋 lemon
+🍌 banana
+🍉 watermelon
+🍇 grapes
+🍓 strawberry
+🫐 blueberries
+🍈 melon
+🍒 cherries
+🍑 peach
+🥭 mango
+🍍 pineapple
+🥥 coconut
+🥝 kiwi fruit
+🍅 tomato
+🍆 eggplant:aubergine
+🥑 avocado
+🥦 broccoli
+🥬 leafy green
+🥒 cucumber
+🌶️ hot pepper:spicy chilli
+🫑 bell pepper
+🌽 corn
+🥕 carrot
+🫒 olive
+🧄 garlic
+🧅 onion
+🥔 potato
+🥐 croissant:bakery
+🥯 bagel
+🍞 bread
+🥖 baguette
+🥨 pretzel
+🧀 cheese
+🥚 egg
+🍳 cooking:fried egg breakfast
+🧈 butter
+🥞 pancakes
+🧇 waffle
+🥓 bacon
+🥩 cut of meat:steak
+🍗 poultry leg:chicken
+🍖 meat on bone
+🌭 hot dog
+🍔 hamburger:burger
+🍟 french fries:chips
+🍕 pizza
+🫓 flatbread
+🥪 sandwich
+🌮 taco
+🌯 burrito
+🥙 stuffed flatbread:kebab
+🧆 falafel
+🥘 shallow pan of food:paella
+🍲 pot of food:stew
+🫕 fondue
+🥣 bowl with spoon:cereal
+🥗 green salad
+🍿 popcorn:cinema
+🧂 salt
+🥫 canned food
+🍱 bento box
+🍙 rice ball
+🍚 cooked rice
+🍛 curry rice
+🍜 steaming bowl:ramen noodles soup
+🍝 spaghetti:pasta
+🍠 roasted sweet potato
+🍣 sushi
+🍤 fried shrimp:tempura
+🥟 dumpling
+🦪 oyster
+🍦 soft ice cream
+🍧 shaved ice
+🍨 ice cream
+🍩 doughnut:donut
+🍪 cookie:biscuit
+🎂 birthday cake
+🍰 shortcake:cake slice
+🧁 cupcake
+🥧 pie
+🍫 chocolate bar
+🍬 candy:sweets
+🍭 lollipop
+🍮 custard:flan
+🍯 honey pot
+🍼 baby bottle
+🥛 glass of milk
+☕ hot beverage:coffee tea
+🫖 teapot
+🍵 teacup:green tea
+🍶 sake
+🍾 bottle with popping cork:champagne celebrate
+🍷 wine glass:wine
+🍸 cocktail glass:martini
+🍹 tropical drink:cocktail
+🍺 beer mug:beer
+🍻 clinking beer mugs:cheers
+🥂 clinking glasses:cheers toast
+🥃 tumbler glass:whisky
+🧉 mate
+🥤 cup with straw:soda
+🧋 bubble tea
+🧊 ice
+🥢 chopsticks
+🍽️ fork and knife with plate:dinner restaurant
+🍴 fork and knife:eat
+`},
+  {key: 'activity', icon: '⚽', label: 'Activity', src: `
+⚽ soccer ball:football
+🏀 basketball
+🏈 american football
+⚾ baseball
+🥎 softball
+🎾 tennis
+🏐 volleyball
+🏉 rugby football
+🥏 flying disc:frisbee
+🎱 pool 8 ball:billiards
+🏓 ping pong:table tennis
+🏸 badminton
+🏒 ice hockey
+🏑 field hockey
+🥍 lacrosse
+🏏 cricket
+🥅 goal net
+⛳ flag in hole:golf
+🪁 kite
+🏹 bow and arrow:archery
+🎣 fishing pole
+🤿 diving mask
+🥊 boxing glove
+🥋 martial arts uniform:judo karate
+🎽 running shirt
+🛹 skateboard
+🛼 roller skate
+⛸️ ice skate
+🥌 curling stone
+🎿 skis
+⛷️ skier
+🏂 snowboarder
+🏋️ person lifting weights:gym
+🤸 person cartwheeling
+⛹️ person bouncing ball
+🤺 person fencing
+🏌️ person golfing
+🏇 horse racing
+🧘 person in lotus position:yoga meditation
+🏄 person surfing
+🏊 person swimming
+🚣 person rowing boat
+🧗 person climbing
+🚵 person mountain biking
+🚴 person biking:cycling
+🏆 trophy:win champion
+🥇 1st place medal:gold win
+🥈 2nd place medal:silver
+🥉 3rd place medal:bronze
+🏅 sports medal
+🎖️ military medal
+🎗️ reminder ribbon
+🎫 ticket
+🎟️ admission tickets
+🎪 circus tent
+🤹 person juggling
+🎭 performing arts:theatre
+🩰 ballet shoes
+🎨 artist palette:art paint
+🎬 clapper board:film
+🎲 game die:dice
+♟️ chess pawn
+🎯 bullseye:dart target
+🎳 bowling
+🎮 video game:controller gaming
+🕹️ joystick
+🎰 slot machine
+🧩 puzzle piece
+🎁 wrapped gift:present
+🎈 balloon
+🎉 party popper:celebrate hooray
+🎊 confetti ball:celebrate
+🎀 ribbon
+🎏 carp streamer
+🏮 red paper lantern
+🪅 piñata
+🪩 mirror ball:disco
+`},
+  {key: 'travel', icon: '🚗', label: 'Travel & places', src: `
+🚗 car:automobile drive
+🚕 taxi:cab
+🚙 sport utility vehicle:suv
+🚌 bus
+🏎️ racing car:formula
+🚓 police car
+🚑 ambulance
+🚒 fire engine
+🚐 minibus:van
+🛻 pickup truck
+🚚 delivery truck
+🚛 articulated lorry
+🚜 tractor
+🛵 motor scooter
+🏍️ motorcycle
+🛺 auto rickshaw:tuk tuk
+🚲 bicycle:bike
+🛴 kick scooter
+🦽 manual wheelchair
+🦼 motorized wheelchair
+🚨 police car light:siren alert
+🚂 locomotive:train
+🚆 train
+🚇 metro:subway
+🚊 tram
+🚉 station
+🚄 high-speed train
+🚅 bullet train
+🚡 aerial tramway:cable car
+✈️ airplane:flight fly
+🛫 airplane departure:takeoff
+🛬 airplane arrival:landing
+💺 seat
+🚁 helicopter
+🛰️ satellite
+🚀 rocket:launch space
+🛸 flying saucer:ufo
+🛶 canoe
+⛵ sailboat:sailing
+🚤 speedboat
+🛳️ passenger ship:cruise
+⛴️ ferry
+🚢 ship
+⚓ anchor
+⛽ fuel pump:petrol gas
+🚧 construction:roadworks
+🚦 vertical traffic light
+🚥 horizontal traffic light
+🗺️ world map:map
+🗿 moai
+🗽 statue of liberty
+🗼 tokyo tower
+🏰 castle
+🏯 japanese castle
+🏟️ stadium
+🎡 ferris wheel
+🎢 roller coaster
+🎠 carousel horse
+⛲ fountain
+⛱️ umbrella on ground:beach
+🏖️ beach with umbrella:holiday
+🏝️ desert island
+🏜️ desert
+🌋 volcano
+⛰️ mountain
+🏔️ snow-capped mountain
+🗻 mount fuji
+🏕️ camping
+⛺ tent
+🏞️ national park
+🛣️ motorway:highway
+🛤️ railway track
+🏠 house:home
+🏡 house with garden
+🏘️ houses
+🏗️ building construction
+🏭 factory
+🏢 office building:work
+🏬 department store
+🏤 post office
+🏥 hospital
+🏦 bank
+🏨 hotel
+🏪 convenience store
+🏫 school
+💒 wedding
+🏛️ classical building:museum
+⛪ church
+🕌 mosque
+🕍 synagogue
+🛕 hindu temple
+⛩️ shinto shrine
+🌁 foggy
+🌃 night with stars
+🏙️ cityscape:city
+🌄 sunrise over mountains
+🌅 sunrise
+🌆 cityscape at dusk
+🌇 sunset
+🌉 bridge at night
+♨️ hot springs:spa
+🌌 milky way
+🎆 fireworks
+🎇 sparkler
+🌠 shooting star
+`},
+  {key: 'objects', icon: '💡', label: 'Objects', src: `
+⌚ watch
+📱 mobile phone:smartphone
+💻 laptop:computer
+⌨️ keyboard
+🖥️ desktop computer
+🖨️ printer
+🖱️ computer mouse
+💾 floppy disk:save
+💿 optical disk:cd
+📀 dvd
+🎥 movie camera
+📽️ film projector
+🎞️ film frames
+📞 telephone receiver:call
+☎️ telephone
+📠 fax machine
+📺 television:tv
+📻 radio
+🎙️ studio microphone:podcast
+🎤 microphone:sing karaoke
+🎧 headphone:music listen
+🎼 musical score
+🎵 musical note:music
+🎶 musical notes:music song
+🎹 musical keyboard:piano
+🥁 drum
+🎷 saxophone
+🎺 trumpet
+🪗 accordion
+🎸 guitar
+🪕 banjo
+🎻 violin
+🧭 compass
+⏱️ stopwatch
+⏲️ timer clock
+⏰ alarm clock
+🕰️ mantelpiece clock
+⌛ hourglass done
+⏳ hourglass:time waiting
+📡 satellite antenna
+🔋 battery
+🪫 low battery
+🔌 electric plug:power
+💡 light bulb:idea
+🔦 flashlight:torch
+🕯️ candle
+🧯 fire extinguisher
+💸 money with wings:spend
+💵 dollar banknote:money
+💶 euro banknote:money
+💷 pound banknote
+💰 money bag:cash
+🪙 coin
+💳 credit card:pay
+🧾 receipt:invoice
+💎 gem stone:diamond
+⚖️ balance scale:justice
+🪜 ladder
+🧰 toolbox
+🪛 screwdriver
+🔧 wrench:fix
+🔨 hammer
+🛠️ hammer and wrench:tools settings
+🪚 saw
+🔩 nut and bolt
+⚙️ gear:settings
+🧱 brick
+⛓️ chains
+🧲 magnet
+💣 bomb
+🧨 firecracker
+🪓 axe
+🔪 kitchen knife:cook
+🛡️ shield:protect
+⚰️ coffin
+🏺 amphora
+🔮 crystal ball:magic future
+📿 prayer beads
+🧿 nazar amulet
+⚗️ alembic:chemistry
+🔭 telescope
+🔬 microscope
+🩹 adhesive bandage:plaster
+🩺 stethoscope
+💊 pill:medicine
+💉 syringe:vaccine
+🩸 drop of blood
+🧬 dna
+🦠 microbe:virus
+🧪 test tube
+🌡️ thermometer:temperature
+🧹 broom:clean
+🧺 basket:laundry
+🧻 roll of paper:toilet paper
+🚽 toilet
+🚿 shower
+🛁 bathtub
+🧼 soap
+🪥 toothbrush
+🧽 sponge
+🪣 bucket
+🧴 lotion bottle
+🛎️ bellhop bell:service
+🔑 key
+🗝️ old key
+🚪 door
+🪑 chair
+🛋️ couch and lamp:sofa
+🛏️ bed:sleep
+🧸 teddy bear:toy
+🖼️ framed picture:art photo
+🪞 mirror
+🪟 window
+🛍️ shopping bags:shopping
+🛒 shopping cart:trolley
+✉️ envelope:mail letter
+📧 e-mail:email
+📨 incoming envelope
+📮 postbox
+📦 package:parcel delivery
+🏷️ label:tag price
+📔 notebook with decorative cover
+📕 closed book
+📖 open book:read
+📚 books:library study
+📓 notebook
+📜 scroll
+📄 page facing up:document
+📰 newspaper:news
+🔖 bookmark
+📈 chart increasing:growth up
+📉 chart decreasing:down loss
+📊 bar chart:stats poll
+📅 calendar:date
+📆 tear-off calendar
+🗓️ spiral calendar
+🗳️ ballot box:vote
+📋 clipboard:list
+📁 file folder
+📂 open file folder
+🗂️ card index dividers
+🗒️ spiral notepad
+📝 memo:note write
+✏️ pencil:write edit
+🖊️ pen
+🖌️ paintbrush
+🖍️ crayon
+📌 pushpin:pin
+📍 round pushpin:location
+📎 paperclip:attach
+📏 straight ruler
+📐 triangular ruler
+✂️ scissors:cut
+🔒 locked:private secure
+🔓 unlocked
+🔐 locked with key:secure
+🔍 magnifying glass:search find
+👓 glasses
+🕶️ sunglasses
+🥼 lab coat
+🦺 safety vest
+👔 necktie
+👕 t-shirt:clothes
+👖 jeans
+🧣 scarf
+🧤 gloves
+🧥 coat
+🧦 socks
+👗 dress
+👘 kimono
+👙 bikini
+👛 purse
+👜 handbag
+🎒 backpack:school bag
+👟 running shoe:sneaker
+🥾 hiking boot
+👠 high-heeled shoe
+👢 woman's boot
+👑 crown:king queen
+🎩 top hat
+🎓 graduation cap:study degree
+🧢 billed cap
+⛑️ rescue worker's helmet
+💄 lipstick:makeup
+💍 ring:engagement
+`},
+  {key: 'symbols', icon: '🔣', label: 'Symbols', src: `
+✅ check mark button:done yes tick
+☑️ check box with check:done
+✔️ check mark:tick done
+❌ cross mark:no wrong
+❎ cross mark button
+➕ plus:add
+➖ minus
+➗ divide
+✖️ multiply
+♾️ infinity
+‼️ double exclamation
+⁉️ exclamation question
+❓ question mark:help
+❗ exclamation mark:warning
+〰️ wavy dash
+💱 currency exchange
+💲 heavy dollar sign
+⚕️ medical symbol
+♻️ recycling symbol:recycle eco
+⚜️ fleur-de-lis
+🔱 trident emblem
+📛 name badge
+⭕ hollow red circle
+🚫 prohibited:no forbidden
+⛔ no entry
+📵 no mobile phones
+🔞 no one under eighteen
+☢️ radioactive
+☣️ biohazard
+⚠️ warning:caution
+🚸 children crossing
+♿ wheelchair symbol:accessible
+🚭 no smoking
+🛗 elevator:lift
+🚹 mens room
+🚺 womens room
+🚻 restroom:toilet
+🛂 passport control
+🛃 customs
+🛄 baggage claim
+🛅 left luggage
+⬆️ up arrow
+↗️ up-right arrow
+➡️ right arrow:next
+↘️ down-right arrow
+⬇️ down arrow:download
+↙️ down-left arrow
+⬅️ left arrow:back
+↖️ up-left arrow
+↕️ up-down arrow
+↔️ left-right arrow
+↩️ right arrow curving left:reply
+↪️ left arrow curving right:forward
+⤴️ right arrow curving up
+⤵️ right arrow curving down
+🔃 clockwise vertical arrows:refresh
+🔄 counterclockwise arrows button:sync refresh
+🔙 back arrow
+🔚 end arrow
+🔛 on arrow
+🔜 soon arrow
+🔝 top arrow
+🛐 place of worship
+⚛️ atom symbol:science
+🕉️ om
+✡️ star of david
+☸️ wheel of dharma
+☯️ yin yang
+✝️ latin cross
+☪️ star and crescent
+☮️ peace symbol
+🕎 menorah
+🔯 dotted six-pointed star
+♈ aries
+♉ taurus
+♊ gemini
+♋ cancer
+♌ leo
+♍ virgo
+♎ libra
+♏ scorpio
+♐ sagittarius
+♑ capricorn
+♒ aquarius
+♓ pisces
+🔀 shuffle tracks button:shuffle
+🔁 repeat button:loop
+🔂 repeat single button
+▶️ play button:play
+⏩ fast-forward
+⏭️ next track
+⏯️ play or pause
+◀️ reverse button
+⏪ fast reverse:rewind
+⏮️ last track:previous
+⏸️ pause button:pause
+⏹️ stop button:stop
+⏺️ record button:record
+⏏️ eject button
+🔅 dim button
+🔆 bright button
+📶 antenna bars:signal
+📳 vibration mode
+📴 mobile phone off
+♀️ female sign
+♂️ male sign
+⚧️ transgender symbol
+✳️ eight-spoked asterisk
+✴️ eight-pointed star
+❇️ sparkle
+©️ copyright
+®️ registered
+™️ trade mark
+#️⃣ keycap hash
+*️⃣ keycap star
+0️⃣ keycap 0 zero
+1️⃣ keycap 1 one
+2️⃣ keycap 2 two
+3️⃣ keycap 3 three
+4️⃣ keycap 4 four
+5️⃣ keycap 5 five
+6️⃣ keycap 6 six
+7️⃣ keycap 7 seven
+8️⃣ keycap 8 eight
+9️⃣ keycap 9 nine
+🔟 keycap 10 ten
+🔠 input latin uppercase:abcd
+🔡 input latin lowercase:abcd
+🔤 input latin letters:abc
+🆒 cool button
+🆓 free button
+ℹ️ information:info
+🆔 id button
+🆕 new button
+🆗 ok button
+🅿️ p button:parking
+🆘 sos button:help
+🆙 up button
+🆚 vs button
+🔴 red circle
+🟠 orange circle
+🟡 yellow circle
+🟢 green circle:online
+🔵 blue circle
+🟣 purple circle
+🟤 brown circle
+⚫ black circle
+⚪ white circle
+🟥 red square
+🟧 orange square
+🟨 yellow square
+🟩 green square
+🟦 blue square
+🟪 purple square
+⬛ black large square
+⬜ white large square
+🔶 large orange diamond
+🔷 large blue diamond
+🔸 small orange diamond
+🔹 small blue diamond
+🔺 red triangle pointed up
+🔻 red triangle pointed down
+💠 diamond with a dot
+🔘 radio button
+🔳 white square button
+🔲 black square button
+`},
+  {key: 'flags', icon: '🏳️', label: 'Flags', src: `
+🏳️ white flag
+🏴 black flag
+🏁 chequered flag:race finish
+🚩 triangular flag
+🏳️‍🌈 rainbow flag:pride lgbt
+🏳️‍⚧️ transgender flag
+🏴‍☠️ pirate flag
+🇵🇹 portugal:portuguese
+🇧🇷 brazil:brasil
+🇦🇴 angola
+🇲🇿 mozambique
+🇨🇻 cape verde
+🇪🇸 spain
+🇫🇷 france
+🇩🇪 germany
+🇮🇹 italy
+🇬🇧 united kingdom:uk britain
+🇮🇪 ireland
+🇳🇱 netherlands
+🇧🇪 belgium
+🇨🇭 switzerland
+🇦🇹 austria
+🇸🇪 sweden
+🇳🇴 norway
+🇩🇰 denmark
+🇫🇮 finland
+🇵🇱 poland
+🇺🇦 ukraine
+🇬🇷 greece
+🇹🇷 turkey
+🇺🇸 united states:usa america
+🇨🇦 canada
+🇲🇽 mexico
+🇦🇷 argentina
+🇯🇵 japan
+🇨🇳 china
+🇰🇷 south korea
+🇮🇳 india
+🇦🇺 australia
+🇳🇿 new zealand
+🇿🇦 south africa
+`}
+].map(g => Object.assign({}, g, {
+  items: g.src.trim().split('\n').map(line => {
+    const sp = line.indexOf(' ');
+    const c = line.slice(0, sp), rest = line.slice(sp + 1);
+    const cut = rest.indexOf(':');
+    const name = cut < 0 ? rest : rest.slice(0, cut);
+    return {c, name, kw: rest.replace(':', ' ').toLowerCase()};
+  })
+}));
+
+// Every emoji in one flat list, for search, plus a lookup for the recents row.
+const EMOJI_ALL = EMOJI_GROUPS.reduce((a, g) => a.concat(g.items), []);
+const EMOJI_BY_CHAR = EMOJI_ALL.reduce((m, e) => { m[e.c] = e; return m; }, {});
 const PEOPLE = [
   {name:'Alex Rivera',color:'#5a7ab5',status:'Busy shipping'},
   {name:'Priya Raman',color:'#9c5b8a',status:'At the studio'},
@@ -2080,6 +3287,30 @@ const FILES = [
 let uid = 100;
 const id = () => 'm' + (++uid);
 
+// A long message body is collapsed in the bubble with a "Read more" affordance,
+// the way WhatsApp does it: the cut lands on a word boundary so the preview
+// never breaks mid-word, and a wall of pasted lines is capped by line count
+// even when it is short on characters.
+const TEXT_MAX_CHARS = 420, TEXT_MAX_LINES = 8, TEXT_CUT = 370;
+// The speech model chatot downloads once: whisper.cpp's multilingual small,
+// 5-bit quantised, 190,085,487 bytes on disk.
+const MODEL_MB = 181;
+const isLongText = t => !!t && (t.length > TEXT_MAX_CHARS || t.split('\n').length > TEXT_MAX_LINES);
+// The accent sits at 3.7:1 on a dark incoming bubble, so the "Read more" label
+// is drawn from a lifted accent instead — derived from whichever accent is set,
+// never a second hand-picked colour.
+const liftAccent = (hex, t) => {
+  const v = hex.replace('#', '');
+  const p = [0, 2, 4].map(i => parseInt(v.slice(i, i + 2), 16));
+  return 'rgb(' + p.map(c => Math.round(c + (255 - c) * t)).join(',') + ')';
+};
+const clipText = (t) => {
+  const lines = t.split('\n');
+  if (lines.length > TEXT_MAX_LINES) return lines.slice(0, TEXT_MAX_LINES).join('\n').replace(/[\s]+$/, '') + '…';
+  const cut = t.slice(0, TEXT_CUT), sp = cut.lastIndexOf(' ');
+  return (sp > TEXT_CUT * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,.;:!?—-]+$/, '') + '…';
+};
+
 function seed() {
   return [
     {key:'mom',name:'Mom',color:'#c26b5c',pinned:true,fav:true,time:'15:38',unread:0,presence:'last seen today at 15:20',msgs:[
@@ -2096,6 +3327,8 @@ function seed() {
       {id:id(),side:'out',type:'text',text:'Two streets from the bakery',time:'09:20',ticks:'✓✓',read:true,edited:true,reply:'📍 Rua das Flores 210'},
       {id:id(),side:'in',type:'viewonce',time:'09:30'},
       {id:id(),side:'in',type:'contact',cardName:'Nina Costa',cardPhone:'+351 912 004 118',cardColor:'#b58a4a',time:'09:41'},
+      {id:id(),side:'in',type:'text',text:"The landlord sent the full list of what stays: the fridge, the washing machine and the small dishwasher. The wardrobe in the second bedroom is theirs and goes out before the 30th. Water and the building fee are inside the rent, electricity and gas are on us. They also asked whether we want the garage spot, it is the second one on the left as you come down the ramp, and they need an answer by Friday because the neighbours upstairs have asked for it twice already.",time:'09:45'},
+      {id:id(),side:'out',type:'text',text:"Yes to the garage spot, tell them we take it from the first. I will pay the deposit tomorrow morning so it is out of the way, and ask if they would leave the wardrobe in case it is not sold yet, it fits that corner and we would only have to buy one anyway. One more thing worth asking them: whether the water heater was serviced this year, the sticker on it still says 2023, and whether the building keeps a spare key for the garage door in case the remote stops working.",time:'09:52',ticks:'✓✓',read:true},
       {id:id(),side:'in',type:'image',imgIcon:'🏠',dim:'2268 × 4032',bytes:'2.1 MB',mediaLabel:'📷 Photo · 2.1 MB',text:'Balcony faces the river',time:'15:38',reacts:[{e:'❤️',n:1}]},
       {id:id(),side:'in',type:'image',dl:'pending',dim:'3024 × 4032',bytes:'840 KB',mediaLabel:'📷 Photo · 840 KB',text:'New place, first look',time:'15:40'},
       {id:id(),side:'in',type:'image',media:'video',dl:'pending',dim:'1920 × 1080',bytes:'4.1 MB',mediaLabel:'🎥 Video · 0:34 · 4.1 MB',mediaLen:'0:34',time:'15:41'},
@@ -2121,8 +3354,8 @@ function seed() {
       {id:id(),side:'in',author:'Tomás',type:'revoked',time:'11:04'}
     ]},
     {key:'priya',name:'Priya Raman',color:'#9c5b8a',time:'Sun',unread:0,presence:'online',msgs:[
-      {id:id(),side:'in',type:'voice',voiceLen:'0:12',dl:'pending',time:'19:40'},
-      {id:id(),side:'in',type:'voice',voiceLen:'0:24',time:'19:42'},
+      {id:id(),side:'in',type:'voice',voiceLen:'0:12',dl:'pending',transcript:"Quick one before I forget: bring the charger tomorrow, mine died again.",time:'19:40'},
+      {id:id(),side:'in',type:'voice',voiceLen:'0:24',transcript:"Hey, I just got out of the studio, the shoot ran long. I can still do dinner if we push it to eight, otherwise let's move it to tomorrow. Tell me which one works and I'll book the table.",time:'19:42'},
       {id:id(),side:'in',type:'sticker',text:'🐦',time:'19:44'},
       {id:id(),side:'out',type:'emoji',text:'🎉😂',time:'19:45',ticks:'✓✓',read:true}
     ]},
@@ -2181,7 +3414,10 @@ class Component extends DCLogic {
     labelsOpen: null, labelFilter: null,
     notifSound: true, readReceipts: true, proxy: 'None', autoDownload: 'Wi-Fi only',
     pollQ: '', pollDraft: ['', ''], pollMulti: false, forwardPick: [], forwardMsg: null,
-    alert: null, playing: null,
+    alert: null, playing: null, expandedText: {},
+    emojiQuery: '', emojiCat: 'recent', reactQuery: '', reactCat: 'recent',
+    speechModel: false, modelBusy: false, modelGot: 0, trPending: null, transcripts: {},
+    emojiRecents: ['👍', '❤️', '😂', '🙏', '🔥', '🎉', '😍', '😢', '👏', '🤝', '☕', '📌', '✅', '🥐', '🐦', '🏔️'],
     viewer: null, viewZoom: 0, viewInfo: false, viewPage: 1, viewPlay: false,
     viewMute: false, viewSpeed: 1, viewMapZoom: 17, viewW: 560, viewH: 620
   };
@@ -2666,6 +3902,127 @@ class Component extends DCLogic {
     else if (k === ' ') { hit(); this.setState(st => ({viewPlay: !st.viewPlay})); }
   };
 
+  // ---- voice transcription -----------------------------------------------
+  // Transcription runs on this computer through whisper.cpp, which needs its
+  // speech model fetched once. A click on T therefore either starts the run or
+  // asks for that download first, and remembers which message asked.
+  transcribe = (mid) => {
+    if (!this.state.speechModel) {
+      return this.setState({dialog: 'speechmodel', trPending: mid, modelBusy: false, modelGot: 0});
+    }
+    this.runTranscribe(mid);
+  };
+
+  setTr = (mid, patch) => this.setState(st => ({
+    transcripts: Object.assign({}, st.transcripts, {[mid]: Object.assign({}, st.transcripts[mid], patch)})
+  }));
+
+  runTranscribe = (mid) => {
+    const msg = this.chat().msgs.find(m => m.id === mid);
+    this.setTr(mid, {state: 'running', open: true});
+    clearTimeout(this._trTimer);
+    this._trTimer = setTimeout(() => {
+      // A clip the prototype has no words for lands on the empty result, which
+      // is a real outcome of a transcription, not a failure.
+      this.setTr(mid, msg && msg.transcript
+        ? {state: 'done', text: msg.transcript, open: true}
+        : {state: 'empty'});
+    }, 1800);
+  };
+
+  // The download is one file with a progress bar; cancelling leaves the model
+  // absent, so the next T asks again rather than silently doing nothing.
+  startModelDownload = () => {
+    this.setState({modelBusy: true, modelGot: 0});
+    clearInterval(this._model);
+    this._model = setInterval(() => this.setState(st => {
+      const got = Math.min(MODEL_MB, st.modelGot + 7);
+      if (got < MODEL_MB) return {modelGot: got};
+      clearInterval(this._model);
+      const mid = st.trPending;
+      setTimeout(() => { if (mid) this.runTranscribe(mid); }, 120);
+      return {modelGot: got, modelBusy: false, speechModel: true, dialog: null, trPending: null};
+    }), 140);
+  };
+
+  cancelModelDownload = () => {
+    clearInterval(this._model);
+    this.setState({dialog: null, modelBusy: false, modelGot: 0, trPending: null});
+  };
+
+  // ---- emoji pickers -----------------------------------------------------
+  // The composer picker and the reaction picker are the same catalogue seen
+  // through two windows, so one builder serves both: same groups, same search,
+  // same recents. `kind` only decides which state keys it reads and what a
+  // pick does — insert into the draft, or react to a message.
+  emojiScrollRef = React.createRef();
+  reactScrollRef = React.createRef();
+
+  emojiScroller(kind) { return (kind === 'react' ? this.reactScrollRef : this.emojiScrollRef).current; }
+
+  // Jumping to a group scrolls the list instead of filtering it, so the
+  // catalogue stays one continuous run the way desktop pickers behave.
+  jumpEmojiCat = (kind, idx) => {
+    const el = this.emojiScroller(kind);
+    const child = el && el.children[idx];
+    if (!el || !child) return;
+    el.scrollTop += child.getBoundingClientRect().top - el.getBoundingClientRect().top;
+  };
+
+  remember = (c) => this.setState(st => ({
+    emojiRecents: [c].concat(st.emojiRecents.filter(x => x !== c)).slice(0, 24)
+  }));
+
+  buildEmoji(kind) {
+    const s = this.state;
+    const react = kind === 'react';
+    const q = (react ? s.reactQuery : s.emojiQuery).trim().toLowerCase();
+    const cat = react ? s.reactCat : s.emojiCat;
+    const pick = (c) => {
+      this.remember(c);
+      if (!react) return this.setState(st => ({draft: st.draft + c}));
+      const rp = s.reactPick;
+      this.setState({reactPick: null, reactQuery: ''});
+      if (rp) rp.chan != null ? this.reactChannel(rp.chan, c) : this.react(rp.mid, c);
+    };
+    const wrap = list => list.map(e => ({c: e.c, name: e.name, onClick: () => pick(e.c)}));
+
+    let groups;
+    if (q) {
+      // Name first, then any keyword, so typing "thanks" puts 🙏 at the top.
+      const starts = EMOJI_ALL.filter(e => e.name.startsWith(q));
+      const rest = EMOJI_ALL.filter(e => !e.name.startsWith(q) && e.kw.includes(q));
+      const hits = starts.concat(rest);
+      groups = hits.length ? [{key: 'results', label: hits.length + (hits.length === 1 ? ' result' : ' results'), items: wrap(hits)}] : [];
+    } else {
+      const recents = s.emojiRecents.map(c => EMOJI_BY_CHAR[c]).filter(Boolean);
+      groups = (recents.length ? [{key: 'recent', label: 'Frequently used', items: wrap(recents)}] : [])
+        .concat(EMOJI_GROUPS.map(g => ({key: g.key, label: g.label, items: wrap(g.items)})));
+    }
+
+    const rail = [{key: 'recent', icon: '🕘', label: 'Frequently used'}]
+      .concat(EMOJI_GROUPS.map(g => ({key: g.key, icon: g.icon, label: g.label})))
+      .map(r => ({
+        icon: r.icon, label: r.label,
+        bg: cat === r.key && !q ? (this.state.dark ? 'rgba(255,255,255,.13)' : 'rgba(0,0,0,.08)') : 'transparent',
+        opacity: cat === r.key && !q ? '1' : '.62',
+        onClick: () => {
+          const patch = react ? {reactCat: r.key, reactQuery: ''} : {emojiCat: r.key, emojiQuery: ''};
+          this.setState(patch, () => this.jumpEmojiCat(kind, this.emojiGroupIndex(r.key)));
+        }
+      }));
+
+    return {groups, rail, query: react ? s.reactQuery : s.emojiQuery, hasQuery: !!q, noResults: !!q && !groups.length};
+  }
+
+  // The rail jumps after the search has been cleared, so the index is read off
+  // the rebuilt full list rather than off whatever was on screen when clicked.
+  emojiGroupIndex(key) {
+    const recents = this.state.emojiRecents.length ? 1 : 0;
+    if (key === 'recent') return 0;
+    return recents + EMOJI_GROUPS.findIndex(g => g.key === key);
+  }
+
   renderVals() {
     const s = this.state;
     const T = s.dark ? DARK : LIGHT;
@@ -2735,6 +4092,10 @@ class Component extends DCLogic {
     const messages = chat.msgs.map(m => {
       const out = m.side === 'out';
       const sys = m.type === 'system';
+      const longText = m.type === 'text' && isLongText(m.text);
+      const openText = !!s.expandedText[m.id];
+      const tr = s.transcripts[m.id];
+      const trState = tr && tr.state;
       const bubBg = out ? ac : T.inb;
       const bubFg = out ? '#fff' : T.tx;
       const sub = out ? 'rgba(255,255,255,.78)' : T.dim;
@@ -2742,6 +4103,13 @@ class Component extends DCLogic {
       const o = {
         isSystem: sys, isBubble: !sys, justify: sys ? 'center' : (out ? 'flex-end' : 'flex-start'),
         gap: sys ? '8px' : '0px', text: m.text || '', time: m.time || '', edited: !!m.edited,
+        textShown: longText && !openText ? clipText(m.text) : (m.text || ''),
+        canExpand: longText, expandLabel: openText ? 'Show less' : 'Read more',
+        expandFg: out ? '#fff' : dark ? liftAccent(ac, .45) : ac2,
+        onToggleText: e => {
+          if (e && e.stopPropagation) e.stopPropagation();
+          this.setState(st => ({expandedText: Object.assign({}, st.expandedText, {[m.id]: !st.expandedText[m.id]})}));
+        },
         author: m.author || null, authorColor: out ? 'rgba(255,255,255,.8)' : ac2,
         reply: m.reply || null, quoteBar: out ? 'rgba(255,255,255,.55)' : ac, quoteFg: out ? 'rgba(255,255,255,.8)' : T.dim,
         bubBg, bubFg, subFg: sub, metaFg: out ? 'rgba(255,255,255,.75)' : T.dim2,
@@ -2778,6 +4146,22 @@ class Component extends DCLogic {
         voTitle: m.opened ? 'Photo · opened' : 'Photo · view once', voSub: m.opened ? 'No longer available' : 'Click to open · closes after',
         dlTitle: m.got ? '📷 Photo · 840 KB' : '📷 Photo · 840 KB', dlSub: m.got ? 'Saved to Downloads' : 'Click to download',
         voiceLen: m.voiceLen || '0:24', playIcon: s.playing === m.id ? '❚❚' : '▶',
+        onTranscribe: e => { if (e && e.stopPropagation) e.stopPropagation(); this.transcribe(m.id); },
+        onTrToggle: () => this.setTr(m.id, {open: !(tr && tr.open)}),
+        trShow: !!tr, trRunning: trState === 'running', trDone: trState === 'done',
+        trFailed: trState === 'empty' || trState === 'failed',
+        trFailText: trState === 'empty' ? 'No speech found in this voice message.' : 'Could not transcribe this one.',
+        trRetry: trState === 'failed',
+        trOpen: !!(tr && tr.open), trText: (tr && tr.text) || '',
+        trChevron: tr && tr.open ? '▲' : '▼',
+        trToggleTitle: tr && tr.open ? 'Hide transcript' : 'Show transcript',
+        trBusy: trState === 'running', trIdle: trState !== 'running',
+        trTitle: trState === 'running' ? 'Transcribing…' : trState === 'done' ? 'Transcript ready' : 'Transcribe voice message',
+        trBtnBg: trState === 'done' ? (out ? 'rgba(255,255,255,.2)' : T.chip) : 'transparent',
+        trBtnFg: out ? '#fff' : T.tx,
+        trSpinTrack: out ? 'rgba(255,255,255,.34)' : 'rgba(128,128,128,.3)',
+        trLinkFg: out ? '#fff' : ac2,
+        trFootFg: out ? 'rgba(255,255,255,.62)' : T.dim2,
         playBg: out ? 'rgba(255,255,255,.22)' : ac, playFg: '#fff',
         bars: Array.from({length: 22}, (_, i) => ({h: (5 + ((i * 7) % 15)) + 'px', bg: out ? 'rgba(255,255,255,.6)' : 'rgba(120,120,120,.55)'})),
         reacts: (m.reacts || []).map(r => ({e: r.e, n: r.n > 1 ? r.n : null, onClick: () => this.react(m.id, r.e)})),
@@ -2791,7 +4175,7 @@ class Component extends DCLogic {
         onReply: () => this.setState({reply: {name: out ? 'You' : chat.name, text: this.preview(m)}, hover: null}),
         onForward: () => this.setState({dialog: 'forward', forwardMsg: m.id, forwardPick: []}),
         onMenu: e => this.openMenu('msg', Object.assign({mid: m.id}, this.anchor(e, 250, 330))),
-        onMoreReacts: e => { const a = this.anchor(e, 322, 218); this.setState({reactPick: {mid: m.id, top: a.top, left: a.left}, menu: null, hover: m.id}); },
+        onMoreReacts: e => { const a = this.anchor(e, 322, 268); this.setState({reactPick: {mid: m.id, top: a.top, left: a.left}, menu: null, hover: m.id, reactQuery: '', reactCat: 'recent'}); },
         onViewOnce: () => this.patch(c => { const i = c.msgs.findIndex(x => x.id === m.id); c.msgs[i] = Object.assign({}, c.msgs[i], {opened: true}); }),
         onDownload: () => {
           if (m.type === 'image') this.patch(c => { const i = c.msgs.findIndex(x => x.id === m.id); c.msgs[i] = Object.assign({}, c.msgs[i], {dl: 'loading'}); });
@@ -3140,9 +4524,10 @@ class Component extends DCLogic {
       label: t, bg: s.pickerTab === t ? (dark ? '#4a4a4a' : '#fff') : 'transparent', fg: T.tx,
       weight: s.pickerTab === t ? 700 : 400, onClick: () => this.setState({pickerTab: t})
     }));
-    const emojis = '😀😃😄😁😆😅😂🙂🙃😉😊😇🥰😍🤩😘😗😚🤗🤔🤨😐😴🥳😎🤓🧐😕🙁😢😭😤😡👍👎👏🙏💪🔥✨🎉❤️🧡💛💚💙💜🐦🎵'.match(/./gu).map(c => ({
-      c, onClick: () => this.setState(st => ({draft: st.draft + c}))
-    }));
+    // Built only while a picker is open: 600-odd entries with a closure each is
+    // not something to rebuild on every keystroke in the composer.
+    const emojiPane = s.picker && s.pickerTab === 'Emoji' ? this.buildEmoji('composer') : {groups: [], rail: []};
+    const reactPane = s.reactPick ? this.buildEmoji('react') : {groups: [], rail: []};
     const gifs = [['Yes!', '#5a7ab5'], ['Nope', '#c26b5c'], ['LOL', '#7a8b5a'], ['Thanks', '#9c5b8a'], ['On my way', '#4f8a8b'], ['Party', '#b58a4a']].map(([label, bg]) => ({
       label, bg, onClick: () => { this.setState({picker: false}); this.push({type: 'image', media: 'gif', imgIcon: '🎞'}); }
     }));
@@ -3331,7 +4716,7 @@ class Component extends DCLogic {
         fg: r.mine ? acHi : T.dim,
         onClick: () => this.reactChannel(pi, r.e)
       })),
-      onReact: e => { const a = this.anchor(e, 322, 218); this.setState({reactPick: {chan: pi, top: a.top, left: a.left}, menu: null}); },
+      onReact: e => { const a = this.anchor(e, 322, 268); this.setState({reactPick: {chan: pi, top: a.top, left: a.left}, menu: null, reactQuery: '', reactCat: 'recent'}); },
       onForward: () => this.setState({dialog: 'forward', forwardPick: [], forwardMsg: {id: 'chan' + pi, type: 'text', text: p.text}})
     }));
 
@@ -3890,22 +5275,41 @@ class Component extends DCLogic {
       },
       onRecordCancel: () => { clearInterval(this._rec); this.setState({recording: false, recSecs: 0}); this.toast('Recording discarded'); },
       toggleAttach: () => this.setState(st => ({attach: !st.attach, picker: false, menu: null})),
-      togglePicker: () => this.setState(st => ({picker: !st.picker, attach: false, menu: null})),
+      togglePicker: () => this.setState(st => ({picker: !st.picker, attach: false, menu: null, emojiQuery: '', emojiCat: 'recent'})),
       attachBg: s.attach ? T.sel : 'transparent', pickerBg: s.picker ? T.sel : 'transparent',
       attachOpen: s.attach, attachItems, pickerOpen: s.picker, pickerTabs,
       pickerIsEmoji: s.pickerTab === 'Emoji', pickerIsGif: s.pickerTab === 'GIF', pickerIsSticker: s.pickerTab === 'Stickers',
-      emojis, gifs, stickers, onAddPack: () => this.toast('Browse sticker packs'),
+      gifs, stickers, onAddPack: () => this.toast('Browse sticker packs'),
+
+      emojiGroups: emojiPane.groups, emojiRail: emojiPane.rail,
+      emojiQuery: s.emojiQuery, emojiHasQuery: !!s.emojiQuery.trim(),
+      emojiNoResults: !!emojiPane.noResults, emojiScrollRef: this.emojiScrollRef,
+      onEmojiQuery: e => this.setState({emojiQuery: e.target.value}),
+      onEmojiClear: () => this.setState({emojiQuery: ''}),
+
+      reactGroups: reactPane.groups, reactRail: reactPane.rail,
+      reactQuery: s.reactQuery, reactHasQuery: !!s.reactQuery.trim(),
+      reactNoResults: !!reactPane.noResults, reactScrollRef: this.reactScrollRef,
+      onReactQuery: e => this.setState({reactQuery: e.target.value}),
+      onReactClear: () => this.setState({reactQuery: ''}),
 
       menu: !!s.menu, menuItems: this.menuDef(), menuPos, rootRef: this.rootRef,
       reactPickOpen: !!s.reactPick,
       reactPickPos: s.reactPick ? 'top:' + s.reactPick.top + 'px;left:' + s.reactPick.left + 'px' : '',
-      reactEmojis: '👍👎❤️🔥🎉😂🙂😉😍🥰😘🤩😎🤔😐😴😢😭😤😡🙏💪👏✨🥳🤝☕🎵🐦🏔️📌✅'.match(/./gu).map(c => ({
-        c, onClick: () => { const rp = s.reactPick; this.setState({reactPick: null}); if (rp.chan != null) this.reactChannel(rp.chan, c); else this.react(rp.mid, c); }
-      })),
       anyPopover: !!(s.menu || s.attach || s.picker || s.accountOpen || s.reactPick || s.labelsOpen), closeAll: this.closeAll,
 
       dialog: !!s.dialog, closeDialog: () => this.setState({dialog: null}), stop: e => e.stopPropagation(),
-      dialogWidth: ({loc: '600px', prefs: '720px', forward: '440px', poll: '420px', about: '380px', info: '400px', alert: '340px', addaccount: '380px', accounts: '420px', labels: '420px', contacts: '400px', export: '380px', choice: '360px', devices: '420px', comminfo: '400px', report: '400px', chanlink: '420px', chaninfo: '400px', comminvite: '420px', commaddgroup: '400px', joinlink: '400px'})[s.dialog] || '420px',
+      dialogWidth: ({loc: '600px', prefs: '720px', forward: '440px', poll: '420px', about: '380px', info: '400px', alert: '340px', speechmodel: '400px', addaccount: '380px', accounts: '420px', labels: '420px', contacts: '400px', export: '380px', choice: '360px', devices: '420px', comminfo: '400px', report: '400px', chanlink: '420px', chaninfo: '400px', comminvite: '420px', commaddgroup: '400px', joinlink: '400px'})[s.dialog] || '420px',
+      dlgIsSpeechModel: s.dialog === 'speechmodel',
+      modelTitle: 'Download the speech model?',
+      modelBody: "Voice notes are transcribed on this computer by whisper.cpp. Its speech model is downloaded once, from Hugging Face, into chatot's cache.",
+      modelBusy: s.modelBusy, modelIdle: !s.modelBusy,
+      modelPct: Math.round(s.modelGot / MODEL_MB * 100) + '%',
+      modelBytes: s.modelGot + ' / ' + MODEL_MB + ' MB',
+      modelStatus: 'Downloading once',
+      modelCancelLabel: s.modelBusy ? 'Cancel' : 'Not now',
+      onModelDownload: this.startModelDownload, onModelCancel: this.cancelModelDownload,
+
       dlgIsAlert: s.dialog === 'alert', dlgIsForward: s.dialog === 'forward', dlgIsPoll: s.dialog === 'poll',
       dlgIsPrefs: s.dialog === 'prefs', dlgIsAbout: s.dialog === 'about', dlgIsInfo: s.dialog === 'info',
       alertTitle: al.title, alertBody: al.body, alertConfirm: al.confirm, alertColor: al.color,

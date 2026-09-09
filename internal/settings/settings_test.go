@@ -3,12 +3,13 @@ package settings
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
 func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	got := Load(t.TempDir())
-	if want := Default(); got != want {
+	if want := Default(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Load(missing) = %+v, want defaults %+v", got, want)
 	}
 }
@@ -25,13 +26,15 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		KeepInactiveConnected:   false,
 		FontSize:                "default",
 		AutoDownload:            "photos",
+		AutoTranscribe:          true,
+		TranscriptsExpanded:     true,
 		ChatWallpaper:           "/home/me/.config/chatot/wallpaper/wallpaper-0badc0de.jpg",
 	}
 	if err := Save(dir, want); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	got := Load(dir)
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Load after Save = %+v, want %+v", got, want)
 	}
 }
@@ -55,7 +58,7 @@ func TestLoadUnknownFieldsTolerated(t *testing.T) {
 	got := Load(dir)
 	want := Default()
 	want.SendReadReceipts = true
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Load(unknown fields) = %+v, want %+v", got, want)
 	}
 }
@@ -66,7 +69,7 @@ func TestLoadMalformedFileReturnsDefaults(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	got := Load(dir)
-	if want := Default(); got != want {
+	if want := Default(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Load(malformed) = %+v, want defaults %+v", got, want)
 	}
 }

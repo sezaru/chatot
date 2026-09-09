@@ -23,3 +23,72 @@
 .chatot-jump-bottom {
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
+
+/* The transcript head keeps WhatsApp's brighter dark-mode green on the
+   grey incoming bubble. */
+.chatot-transcript-head,
+.chatot-transcript-head:hover {
+	color: #00a884;
+}
+
+/* Hairlines and the T outline are white-on-dark inside a bubble. */
+.chatot-transcript {
+	border-top-color: alpha(#ffffff, 0.13);
+}
+
+.chatot-transcribe-btn {
+	border-color: alpha(#ffffff, 0.18);
+}
+
+.chatot-transcribe-btn:hover,
+.chatot-transcribe-btn-on {
+	background-color: alpha(#ffffff, 0.12);
+}
+
+/* The flat accent reads at 3.7:1 on a dark incoming bubble, under the 4.5:1
+   a 12.5px bold label needs, so the fold control uses a lifted accent. */
+.chatot-read-more,
+.chatot-read-more:hover {
+	color: #7fd4bb;
+}
+
+.chatot-bubble-out .chatot-read-more,
+.chatot-bubble-out .chatot-read-more:hover {
+	color: #ffffff;
+}
+
+.chatot-model-facts {
+	background-color: alpha(#ffffff, 0.09);
+}
+
+.chatot-emoji-rail {
+	border-top-color: alpha(#ffffff, 0.09);
+}
+
+.chatot-emoji-rail-on {
+	background-color: alpha(#ffffff, 0.13);
+}
+
+/* On a dark incoming bubble the same labels sit on #333, where 0.55 white
+   measures 4.1:1 for a 10px label; a touch brighter clears 4.5:1. The dark
+   sheet loads at a higher provider priority than the light one, so the
+   outgoing-bubble exceptions have to be repeated here or these flatten them. */
+.chatot-transcript-caption,
+.chatot-transcript-chevron,
+.chatot-transcript-dim {
+	opacity: 0.68;
+}
+
+.chatot-transcript-foot {
+	opacity: 0.6;
+}
+
+.chatot-bubble-out .chatot-transcript-caption,
+.chatot-bubble-out .chatot-transcript-chevron {
+	opacity: 1;
+}
+
+.chatot-bubble-out .chatot-transcript-foot,
+.chatot-bubble-out .chatot-transcript-dim {
+	opacity: 0.85;
+}

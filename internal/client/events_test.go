@@ -81,7 +81,8 @@ func TestTranslateMessageExtendedTextWithReply(t *testing.T) {
 			ExtendedTextMessage: &waE2E.ExtendedTextMessage{
 				Text: proto.String("replying to you"),
 				ContextInfo: &waE2E.ContextInfo{
-					StanzaID: proto.String("orig-id"),
+					StanzaID:      proto.String("orig-id"),
+					QuotedMessage: &waProto.Message{Conversation: proto.String("the original")},
 				},
 			},
 		},
@@ -90,6 +91,9 @@ func TestTranslateMessageExtendedTextWithReply(t *testing.T) {
 	e := translate(evt)
 	if e == nil || e.Message == nil {
 		t.Fatal("expected a Message event")
+	}
+	if e.Message.ReplyTo == nil || e.Message.ReplyTo.Text != "the original" {
+		t.Errorf("ReplyTo = %+v, want the quoted copy's text", e.Message.ReplyTo)
 	}
 	if e.Message.Text != "replying to you" {
 		t.Errorf("Text = %q, want %q", e.Message.Text, "replying to you")
@@ -1107,5 +1111,24 @@ func TestReactionText(t *testing.T) {
 	}
 	if got := ReactionText("", "❤️", ""); got != "Reacted ❤️ to " {
 		t.Errorf("unknown target: got %q", got)
+	}
+}
+
+func TestQuotedPreviewLabelsMediaAndRichKinds(t *testing.T) {
+	cases := []struct {
+		name string
+		msg  *waProto.Message
+		want string
+	}{
+		{"nil", nil, ""},
+		{"text", &waProto.Message{Conversation: proto.String("hi")}, "hi"},
+		{"image", &waProto.Message{ImageMessage: &waE2E.ImageMessage{Caption: proto.String("sunset")}}, "📷 sunset"},
+		{"voice", &waProto.Message{AudioMessage: &waE2E.AudioMessage{Seconds: proto.Uint32(6)}}, "🎤 0:06"},
+		{"sticker", &waProto.Message{StickerMessage: &waE2E.StickerMessage{}}, "🙂 Sticker"},
+	}
+	for _, tc := range cases {
+		if got := quotedPreview("1@s.whatsapp.net", tc.msg); got != tc.want {
+			t.Errorf("%s: quotedPreview = %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }

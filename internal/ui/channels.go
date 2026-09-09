@@ -1105,33 +1105,15 @@ func newReactionPickerPopover(anchor gtk.Widgetter, onPick func(emoji string)) *
 	pop.AddCSSClass("chatot-react-picker")
 	pop.ConnectClosed(func() { pop.Unparent() })
 
-	col := gtk.NewBox(gtk.OrientationVertical, 6)
-	caption := gtk.NewLabel("PICK A REACTION")
-	caption.SetXAlign(0)
-	caption.AddCSSClass("chatot-card-caption")
-	col.Append(caption)
-	grid := gtk.NewFlowBox()
-	grid.SetSelectionMode(gtk.SelectionNone)
-	grid.SetMinChildrenPerLine(reactPickerCols)
-	grid.SetMaxChildrenPerLine(reactPickerCols)
-	grid.SetRowSpacing(2)
-	grid.SetColumnSpacing(2)
-	grid.SetHomogeneous(true)
-	for _, glyph := range reactPickerEmojis {
-		emoji := glyph
-		b := gtk.NewButtonWithLabel(emoji)
-		b.AddCSSClass("flat")
-		b.AddCSSClass("chatot-picker-emoji")
-		b.SetSizeRequest(-1, pickerEmojiCell)
-		b.ConnectClicked(func() {
+	pop.SetChild(newEmojiPanel(emojiPanelConfig{
+		Columns: reactPickerCols,
+		Height:  reactPickerHeight,
+		Width:   reactPickerWidth,
+		OnPick: func(glyph string) {
 			pop.Popdown()
-			onPick(emoji)
-		})
-		grid.Insert(b, -1)
-	}
-	grid.SetSizeRequest(reactPickerWidth, -1)
-	col.Append(grid)
-	pop.SetChild(col)
+			onPick(glyph)
+		},
+	}))
 	return pop
 }
 

@@ -71,6 +71,7 @@ in {
     pkgs.gst_all_1.gst-libav
     pkgs.ffmpeg
     pkgs.poppler-utils # pdftoppm: first-page previews for PDF attachments
+    pkgs.whisper-cpp # whisper-cli: voice-note transcripts
     pkgs.qrencode
 
     # UI fonts the mockup specifies. Without these the GTK app falls back to

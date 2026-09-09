@@ -37,7 +37,7 @@ func TestMessagesReplyContext(t *testing.T) {
 	s := newTestStore(t)
 	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
 	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "orig", Text: "original", TS: 1}))
-	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "reply", Text: "replying", TS: 2, ReplyToMsgID: "orig"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "reply", Text: "replying", TS: 2, ReplyToMsgID: "orig", ReplyToText: "original"}))
 
 	msgs, err := s.Messages("a@s.whatsapp.net", 50)
 	must(t, err)
@@ -46,6 +46,25 @@ func TestMessagesReplyContext(t *testing.T) {
 	}
 	if msgs[1].ReplyToMsgID != "orig" {
 		t.Fatalf("got ReplyToMsgID = %q, want orig", msgs[1].ReplyToMsgID)
+	}
+	if msgs[1].ReplyToText != "original" {
+		t.Fatalf("got ReplyToText = %q, want original", msgs[1].ReplyToText)
+	}
+	// A later upsert without the quote (a status change) keeps it.
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "reply", Text: "replying", TS: 2}))
+	msgs, err = s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if msgs[1].ReplyToText != "original" || msgs[1].ReplyToMsgID != "orig" {
+		t.Fatalf("after re-upsert: ReplyTo = %q/%q, want orig/original", msgs[1].ReplyToMsgID, msgs[1].ReplyToText)
+	}
+}
+
+func TestPreviewOfRowsSkipsSenderPrefix(t *testing.T) {
+	if got := Preview(MessageRow{FromMe: true, Text: "hi"}, nil); got != "hi" {
+		t.Errorf("Preview(text) = %q, want hi", got)
+	}
+	if got := Preview(MessageRow{}, &MediaRow{Kind: "video", IsGif: true}); got != "🎞 GIF" {
+		t.Errorf("Preview(gif) = %q, want 🎞 GIF", got)
 	}
 }
 
@@ -583,6 +602,27 @@ func TestSetMediaPlayPosRoundTrips(t *testing.T) {
 	must(t, err)
 	if got := msgs[0].Attachment.PlayPosMS; got != 0 {
 		t.Fatalf("PlayPosMS after a negative save = %d, want 0", got)
+	}
+}
+
+func TestSetMediaTranscriptRoundTrips(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "v1", TS: 1}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "v1", Kind: "audio", DurationSecs: 12}))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if got := msgs[0].Attachment.Transcript; got != "" {
+		t.Fatalf("Transcript before any = %q, want empty", got)
+	}
+	must(t, s.SetMediaTranscript("a@s.whatsapp.net", "v1", "olá, tudo bem?"))
+	// The attachment metadata being upserted again keeps the transcript.
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "v1", Kind: "audio", LocalPath: "/tmp/v1.ogg"}))
+	msgs, err = s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if got := msgs[0].Attachment.Transcript; got != "olá, tudo bem?" {
+		t.Fatalf("Transcript = %q, want the saved text", got)
 	}
 }
 

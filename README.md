@@ -7,7 +7,7 @@ not affiliated with WhatsApp or Meta. Beta.
 ## Install (Nix)
 
 The flake builds chatot as a desktop app: the binary is wrapped with the
-GStreamer plugins, pixbuf loaders, ffmpeg/poppler and fonts it needs, and the
+GStreamer plugins, pixbuf loaders, ffmpeg/poppler/whisper.cpp and fonts it needs, and the
 package ships the `.desktop` entry and icons for app id `com.sezdm.chatot`.
 
 ```sh
@@ -28,7 +28,8 @@ On NixOS or Home Manager, add the flake as an input and put
 
 `build-aux/flatpak/com.sezdm.chatot.yml` builds chatot against the GNOME 50
 runtime with the Go SDK extension, bundling only what the runtime lacks
-(poppler for document previews, JetBrains Mono). The build is offline:
+(poppler for document previews, whisper.cpp for voice-note transcripts,
+JetBrains Mono). The build is offline:
 `build-aux/flatpak/go.mod.yml` and `modules.txt` pin every Go module. After
 changing `go.mod`, regenerate them with
 `go run github.com/dennwc/flatpak-go-mod@latest .` and move the two files

@@ -133,3 +133,63 @@ func TestTypingModelCleared(t *testing.T) {
 		t.Fatalf("Cleared again: send=%v, want false", send)
 	}
 }
+
+func TestComposingTextNamesGroupComposers(t *testing.T) {
+	cases := []struct {
+		kind  string
+		names []string
+		want  string
+	}{
+		{"typing", nil, "typing…"},
+		{"recording", nil, "recording audio…"},
+		{"", nil, "typing…"},
+		{"typing", []string{"Ana"}, "Ana is typing…"},
+		{"recording", []string{"Ana"}, "Ana is recording audio…"},
+		{"typing", []string{"Ana", "Bia"}, "Ana and Bia are typing…"},
+		{"typing", []string{"Ana", "Bia", "Cid"}, "Ana, Bia and Cid are typing…"},
+	}
+	for _, tc := range cases {
+		if got := composingText(tc.kind, tc.names); got != tc.want {
+			t.Errorf("composingText(%q, %v) = %q, want %q", tc.kind, tc.names, got, tc.want)
+		}
+	}
+	if got := presenceSubtitle(PresenceState{Typing: true, Composers: []string{"Ana"}}, time.Now()); got != "Ana is typing…" {
+		t.Errorf("presenceSubtitle(typing by Ana) = %q", got)
+	}
+}
+
+func TestComposersTrackEachSender(t *testing.T) {
+	c := make(composers)
+	if got := c.kind("g@g.us"); got != "" {
+		t.Fatalf("empty kind = %q, want \"\"", got)
+	}
+	c.set("g@g.us", "b@s.whatsapp.net", "recording")
+	if got := c.kind("g@g.us"); got != "recording" {
+		t.Errorf("one recorder: kind = %q, want recording", got)
+	}
+	c.set("g@g.us", "a@s.whatsapp.net", "typing")
+	if got := c.kind("g@g.us"); got != "typing" {
+		t.Errorf("typer and recorder: kind = %q, want typing", got)
+	}
+	if got := c.senders("g@g.us"); len(got) != 2 || got[0] != "a@s.whatsapp.net" || got[1] != "b@s.whatsapp.net" {
+		t.Errorf("senders = %v, want a then b", got)
+	}
+	// One sender's paused notice leaves the other's burst alone.
+	c.set("g@g.us", "a@s.whatsapp.net", "")
+	if got := c.senders("g@g.us"); len(got) != 1 || got[0] != "b@s.whatsapp.net" {
+		t.Errorf("after a paused: senders = %v, want b only", got)
+	}
+	c.clear("g@g.us")
+	if got := c.kind("g@g.us"); got != "" {
+		t.Errorf("after clear: kind = %q, want \"\"", got)
+	}
+	if _, ok := c["g@g.us"]; ok {
+		t.Error("cleared chat still present in the map")
+	}
+	if got := composingKind("composing", "audio"); got != "recording" {
+		t.Errorf("composingKind(composing, audio) = %q", got)
+	}
+	if got := composingKind("paused", ""); got != "" {
+		t.Errorf("composingKind(paused) = %q", got)
+	}
+}

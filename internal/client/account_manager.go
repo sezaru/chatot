@@ -693,6 +693,9 @@ func (m *AccountManager) LoggedIn() bool { return m.active().LoggedIn() }
 func (m *AccountManager) Paired() bool   { return m.active().Paired() }
 
 func (m *AccountManager) ContactName(jid string) string { return m.active().ContactName(jid) }
+func (m *AccountManager) MessagePreview(chatJID, msgID string) (string, bool) {
+	return m.active().MessagePreview(chatJID, msgID)
+}
 
 func (m *AccountManager) Logout(ctx context.Context) error { return m.active().Logout(ctx) }
 
@@ -798,6 +801,11 @@ func (m *AccountManager) MarkPlayed(ctx context.Context, jid, msgID string, noti
 
 func (m *AccountManager) SetPlayPosition(jid, msgID string, ms int) error {
 	return m.active().SetPlayPosition(jid, msgID, ms)
+}
+
+// SetTranscript stores a transcript in the active account's store.
+func (m *AccountManager) SetTranscript(jid, msgID, text string) error {
+	return m.active().SetTranscript(jid, msgID, text)
 }
 
 func (m *AccountManager) ClearUnread(jid string) error { return m.active().ClearUnread(jid) }
