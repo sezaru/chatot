@@ -69,7 +69,7 @@ func TestDecideNotifyCallDisabled(t *testing.T) {
 }
 
 func TestMessageNotificationText(t *testing.T) {
-	title, body := messageNotification("Ada Lovelace", client.Message{Text: "hello there"})
+	title, body := messageNotification("Ada Lovelace", "", client.Message{Text: "hello there"})
 	if title != "Ada Lovelace" || body != "hello there" {
 		t.Fatalf("got title=%q body=%q", title, body)
 	}
@@ -77,7 +77,7 @@ func TestMessageNotificationText(t *testing.T) {
 
 func TestMessageNotificationAttachmentCaption(t *testing.T) {
 	msg := client.Message{Attachment: &client.Attachment{Kind: "image", Caption: "sunset"}}
-	_, body := messageNotification("Ada", msg)
+	_, body := messageNotification("Ada", "", msg)
 	if body != "📷 sunset" {
 		t.Fatalf("got body=%q, want glyph + caption", body)
 	}
@@ -85,9 +85,21 @@ func TestMessageNotificationAttachmentCaption(t *testing.T) {
 
 func TestMessageNotificationAttachmentPlaceholder(t *testing.T) {
 	msg := client.Message{Attachment: &client.Attachment{Kind: "video"}}
-	_, body := messageNotification("Ada", msg)
+	_, body := messageNotification("Ada", "", msg)
 	if body != "🎥 Video" {
 		t.Fatalf("got body=%q, want the video placeholder", body)
+	}
+}
+
+func TestMessageNotificationGroupSender(t *testing.T) {
+	_, body := messageNotification("Kernel hackers", "Linus Torvalds", client.Message{Text: "rebase it"})
+	if body != "Linus Torvalds: rebase it" {
+		t.Fatalf("got body=%q, want the sender before the text", body)
+	}
+	msg := client.Message{Attachment: &client.Attachment{Kind: "image"}}
+	_, body = messageNotification("Kernel hackers", "Ken Thompson", msg)
+	if body != "Ken Thompson: 📷 Photo" {
+		t.Fatalf("got body=%q, want the sender before the placeholder", body)
 	}
 }
 

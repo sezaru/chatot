@@ -105,11 +105,16 @@ const hiddenNotificationBody = "New message"
 
 // messageNotification builds the title/body for a message notification:
 // title is the chat's display name, body is the text preview or, for a
-// caption-less attachment, a "[kind]" placeholder.
-func messageNotification(chatName string, msg client.Message) (title, body string) {
+// caption-less attachment, a "[kind]" placeholder. In a group the body
+// leads with who wrote it ("Sender: text"), as the reaction toast names
+// the reactor; sender is "" for a DM.
+func messageNotification(chatName, sender string, msg client.Message) (title, body string) {
 	body = msg.Text
 	if body == "" && msg.Attachment != nil {
 		body = attachmentPreview(*msg.Attachment)
+	}
+	if sender != "" {
+		body = sender + ": " + body
 	}
 	return chatName, body
 }
@@ -324,7 +329,13 @@ func (n *Notifier) personName(jid string) string {
 // cv.jid, both of which must only be read on the main loop.
 func (n *Notifier) handleMessage(msg client.Message) {
 	name, muted := n.chatInfo(msg.ChatJID)
-	title, body := messageNotification(name, msg)
+	// A group toast names the sender: the title is the group, and "hello"
+	// alone said nothing about who wrote it.
+	sender := ""
+	if strings.HasSuffix(msg.ChatJID, "@g.us") && msg.FromJID != "" {
+		sender = n.personName(msg.FromJID)
+	}
+	title, body := messageNotification(name, sender, msg)
 	if !NotificationText {
 		body = hiddenNotificationBody
 	}

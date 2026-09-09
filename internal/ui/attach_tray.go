@@ -96,6 +96,14 @@ type AttachTray struct {
 	// onDiscard runs on Cancel with the first item's caption, so a draft
 	// the composer moved into the tray can go back to the entry.
 	onDiscard func(caption string)
+	// onPasteFiles and onPasteImage take a paste into the caption that is
+	// files or a picture rather than text: more for the queue, as the
+	// composer's entry does with the same paste (see OnPaste).
+	onPasteFiles func(paths []string)
+	onPasteImage func(*gdk.Texture)
+	// pasteAsText is set while a paste is re-emitted as text after the
+	// clipboard's files or picture could not be read.
+	pasteAsText bool
 	// previews caches the helper results per path for the tray's lifetime,
 	// so redraws (every caption keystroke rebuilds the strip) never rerun
 	// ffmpeg or pdftoppm. An entry with Done=false is still being built.
@@ -170,6 +178,25 @@ func NewAttachTray(onSend func([]trayItem), onAddReq func()) *AttachTray {
 		}
 	})
 	t.caption.ConnectActivate(t.send)
+	// Ctrl+V of a copied picture or file in the caption queues it, the
+	// way the composer's entry takes the same paste; text still pastes as
+	// text. The keybinding signal lives on the entry's inner GtkText, its
+	// first child.
+	if text, ok := t.caption.FirstChild().(*gtk.Text); ok {
+		text.ConnectPasteClipboard(func() {
+			if t.pasteAsText {
+				return
+			}
+			asText := func() {
+				t.pasteAsText = true
+				text.ActivateAction("clipboard.paste", nil)
+				t.pasteAsText = false
+			}
+			if pasteAttachment(text.Clipboard(), t.onPasteFiles, t.onPasteImage, asText) {
+				text.StopEmission("paste-clipboard")
+			}
+		})
+	}
 	captionRow.Append(t.caption)
 	root.Append(captionRow)
 
@@ -268,6 +295,13 @@ func discardTrayText(chatName string, n int) (title, body string) {
 
 // OnDiscard registers f to run when the tray is cancelled; see onDiscard.
 func (t *AttachTray) OnDiscard(f func(caption string)) { t.onDiscard = f }
+
+// OnPaste registers where a paste of files or of a picture into the
+// caption goes; see onPasteFiles. The composer points both at its own
+// queue, so the paste lands in the open tray.
+func (t *AttachTray) OnPaste(files func(paths []string), image func(*gdk.Texture)) {
+	t.onPasteFiles, t.onPasteImage = files, image
+}
 
 // Empty reports whether nothing is queued (the tray is closed).
 func (t *AttachTray) Empty() bool { return len(t.items) == 0 }

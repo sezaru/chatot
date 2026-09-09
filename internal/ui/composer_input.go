@@ -183,28 +183,34 @@ func (in *composerInput) ConnectPasteAttachments(files func(paths []string), ima
 	in.onPasteImage = image
 }
 
-// pasteAttachment reads the clipboard as files or as a picture when it
-// offers either, handing the result to the paste hooks, and reports
-// whether it did (the text paste is then stopped). Files win over a
-// picture: a copied image file offers both. A read that fails after all
-// falls back to the ordinary text paste, so an odd clipboard never eats
-// the keystroke.
+// pasteAttachment is the view's paste routed through the package helper
+// of the same name, with the view's own text paste as the fallback.
 func (in *composerInput) pasteAttachment() bool {
-	if in.onPasteFiles == nil || in.onPasteImage == nil {
+	return pasteAttachment(in.view.Clipboard(), in.onPasteFiles, in.onPasteImage, in.pasteText)
+}
+
+// pasteAttachment reads clip as files or as a picture when it offers
+// either, handing the result to files or image, and reports whether it
+// did (the caller then stops its widget's text paste). Files win over a
+// picture: a copied image file offers both. A read that fails after all
+// runs text, the widget's ordinary paste, so an odd clipboard never eats
+// the keystroke. With either hook missing nothing is read. Shared by the
+// composer's entry and the attach tray's caption.
+func pasteAttachment(clip *gdk.Clipboard, files func(paths []string), image func(*gdk.Texture), text func()) bool {
+	if files == nil || image == nil {
 		return false
 	}
-	clip := in.view.Clipboard()
 	formats := clip.Formats()
 	switch {
 	case formats.ContainGType(gdk.GTypeFileList):
 		clip.ReadValueAsync(context.Background(), gdk.GTypeFileList, int(glib.PriorityDefault), func(res gio.AsyncResulter) {
 			v, err := clip.ReadValueFinish(res)
 			if err != nil {
-				in.pasteText()
+				text()
 				return
 			}
-			if files, ok := v.GoValue().(*gdk.FileList); ok {
-				in.onPasteFiles(filePaths(files))
+			if list, ok := v.GoValue().(*gdk.FileList); ok {
+				files(filePaths(list))
 			}
 		})
 		return true
@@ -212,10 +218,10 @@ func (in *composerInput) pasteAttachment() bool {
 		clip.ReadTextureAsync(context.Background(), func(res gio.AsyncResulter) {
 			t, err := clip.ReadTextureFinish(res)
 			if err != nil || t == nil {
-				in.pasteText()
+				text()
 				return
 			}
-			in.onPasteImage(gdk.BaseTexture(t))
+			image(gdk.BaseTexture(t))
 		})
 		return true
 	}

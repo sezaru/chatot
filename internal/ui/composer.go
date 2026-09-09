@@ -1201,6 +1201,9 @@ func (c *Composer) SetTray(tray *AttachTray) {
 	c.tray = tray
 	if tray != nil {
 		tray.OnDiscard(c.restoreCaption)
+		// A picture or file pasted into the caption joins the queue, as
+		// it would in the entry.
+		tray.OnPaste(c.queueFiles, c.queueImage)
 	}
 }
 
@@ -1222,12 +1225,14 @@ func (c *Composer) openTray(paths []string) {
 }
 
 // restoreCaption is the tray's Cancel: the caption that came from the
-// entry goes back there, unless something new was typed meanwhile.
+// entry goes back there, unless something new was typed meanwhile, and
+// the keyboard follows it.
 func (c *Composer) restoreCaption(caption string) {
 	if caption != "" && c.entry.Text() == "" {
 		c.entry.SetText(caption)
 		c.entry.SetPosition(-1)
 	}
+	c.FocusInput()
 }
 
 // SubmitText types text into the entry and sends it, as Enter would. A
@@ -1273,6 +1278,12 @@ func (c *Composer) queueImage(t *gdk.Texture) {
 func (c *Composer) DropTarget() *gtk.DropTarget {
 	target := gtk.NewDropTarget(gdk.GTypeFileList, gdk.ActionCopy)
 	target.SetGTypes([]coreglib.Type{gdk.GTypeFileList, gdk.GTypeTexture})
+	// Capture phase: GTK hands a drop to the innermost target first, and
+	// the entry's text view carries its own string target, so a file let
+	// go over the entry landed there as its path in the text (a file
+	// manager offers text/plain alongside text/uri-list). Taking the drop
+	// on the way down keeps the pane's target ahead of the view's.
+	target.SetPropagationPhase(gtk.PhaseCapture)
 	target.ConnectDrop(func(v *coreglib.Value, _, _ float64) bool {
 		switch x := v.GoValue().(type) {
 		case *gdk.FileList:
@@ -1292,11 +1303,14 @@ func (c *Composer) ReopenFilePicker() { c.pickAttachment(nil) }
 
 // SendTrayItems sends every queued attachment in order, each with its own
 // caption. The first send consumes any pending reply, so the rest are plain
-// sends — a reply quotes one message, not a whole batch.
+// sends — a reply quotes one message, not a whole batch. The keyboard
+// comes back to the entry: the tray had it for the caption and has just
+// closed, and the next thing typed is the next message.
 func (c *Composer) SendTrayItems(items []trayItem) {
 	for _, item := range items {
 		c.sendTrayItem(item)
 	}
+	c.FocusInput()
 }
 
 // sendMedia resolves the picked path (using the current entry text as
