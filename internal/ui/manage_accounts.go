@@ -221,9 +221,16 @@ func showRelabelAccountDialog(parent *gtk.Window, am *client.AccountManager, met
 }
 
 // confirmRemoveAccount asks before removing meta, then removes it off the main
-// loop and refreshes on success (or shows the guard error, e.g. last account).
+// loop and refreshes on success. Removing the only account signs it out and
+// leaves the window on the pairing screen, so the Accounts card (parent)
+// closes with nothing left to manage; a failed sign-out is shown, not just
+// logged, since the row would otherwise look untouched.
 func confirmRemoveAccount(parent *gtk.Window, am *client.AccountManager, meta client.AccountMeta, onChanged func()) {
-	confirm := adw.NewAlertDialog("Remove "+meta.Name+"?", "This account is unlinked from chatot on this device. Its downloaded data is kept.")
+	body := "This account is signed out of WhatsApp and removed from chatot on this device. Its downloaded data is kept."
+	if am.Count() <= 1 {
+		body = "This is the only account: it is signed out of WhatsApp and chatot goes back to the pairing screen. Its downloaded data is kept."
+	}
+	confirm := adw.NewAlertDialog("Remove "+meta.Name+"?", body)
 	confirm.AddResponse("cancel", "Cancel")
 	confirm.AddResponse("remove", "Remove")
 	confirm.SetResponseAppearance("remove", adw.ResponseDestructive)
@@ -238,10 +245,17 @@ func confirmRemoveAccount(parent *gtk.Window, am *client.AccountManager, meta cl
 			glib.IdleAdd(func() {
 				if err != nil {
 					log.Printf("chatot: remove account %q failed: %v", meta.ID, err)
+					failed := adw.NewAlertDialog("Couldn't remove "+meta.Name,
+						"Signing out of WhatsApp failed: "+err.Error()+"\n\nCheck the connection and try again, or remove chatot from your phone's Linked devices.")
+					failed.AddResponse("ok", "OK")
+					failed.Present(parent)
 					return
 				}
 				if onChanged != nil {
 					onChanged()
+				}
+				if am.Count() <= 1 && !am.LoggedIn() {
+					parent.Close()
 				}
 			})
 		}()

@@ -62,8 +62,10 @@ type Whatsmeow struct {
 	// servers (tests set it).
 	stickerFetch stickerFetcher
 
-	events  *eventBus
-	qrCodes chan string
+	events *eventBus
+	// qr hands the current pairing code to every reader (the manager's
+	// proxy, the Relink/Add dialogs) and replays it to a late one.
+	qr qrFanout
 	// startCtx is the context Start was last given, reused when relink
 	// starts a fresh pairing; relinkMu serializes relink.
 	startCtx context.Context
@@ -162,7 +164,6 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 		avatarDir:  avatarDir,
 		stickerDir: filepath.Join(stateDir, "stickers"),
 		events:     newEventBus(clientLog.Warnf),
-		qrCodes:    make(chan string, 8),
 		blocked:    make(map[string]bool),
 	}
 	// Chats written before LID DMs were filed under their number.
@@ -469,6 +470,9 @@ func (w *Whatsmeow) applyChatUpdate(jid string, mutate func(jid string) error) {
 // channel *before* connecting (whatsmeow requires this ordering) and fans
 // QR codes onto QRCodes(); pairing completion arrives as an EventPairSuccess
 // on Events() once whatsmeow's own handler processes events.PairSuccess.
+// Pairing keeps itself alive: whatsmeow hands out one set of codes (about
+// two and a half minutes' worth) and then disconnects, so the pump asks for
+// a fresh set until a phone scans one or ctx ends.
 func (w *Whatsmeow) Start(ctx context.Context) error {
 	if w.offline {
 		return nil
@@ -485,11 +489,9 @@ func (w *Whatsmeow) Start(ctx context.Context) error {
 	}
 
 	if w.wa.Store.ID == nil {
-		qrChan, err := w.wa.GetQRChannel(ctx)
-		if err != nil {
-			return fmt.Errorf("chatot/client: get QR channel: %w", err)
+		if err := w.startPairing(ctx, w.wa); err != nil {
+			return err
 		}
-		go w.pumpQR(qrChan)
 	}
 
 	if err := w.wa.Connect(); err != nil {
@@ -500,16 +502,40 @@ func (w *Whatsmeow) Start(ctx context.Context) error {
 	return nil
 }
 
-func (w *Whatsmeow) pumpQR(qrChan <-chan whatsmeow.QRChannelItem) {
+// qrRestartDelay is the pause before asking for a new set of codes once the
+// previous set expired; qrRetryDelay the pause after a failed attempt (no
+// network, socket still closing), retried for as long as ctx lives.
+const (
+	qrRestartDelay = 2 * time.Second
+	qrRetryDelay   = 15 * time.Second
+)
+
+// startPairing opens whatsmeow's QR channel on wa (which must happen before
+// Connect) and pumps its codes onto the fan-out.
+func (w *Whatsmeow) startPairing(ctx context.Context, wa *whatsmeow.Client) error {
+	qrChan, err := wa.GetQRChannel(ctx)
+	if err != nil {
+		return fmt.Errorf("chatot/client: get QR channel: %w", err)
+	}
+	go w.pumpQR(ctx, wa, qrChan)
+	return nil
+}
+
+// pumpQR forwards one round of codes. A round ends when a phone scans one
+// (success), when whatsmeow runs out of codes or the socket drops (timeout:
+// whatsmeow has disconnected, so a new round is requested), or on a pairing
+// error, which is final.
+func (w *Whatsmeow) pumpQR(ctx context.Context, wa *whatsmeow.Client, qrChan <-chan whatsmeow.QRChannelItem) {
+	defer w.qr.Clear()
 	for item := range qrChan {
 		switch {
 		case item.Event == whatsmeow.QRChannelEventCode:
-			select {
-			case w.qrCodes <- item.Code:
-			default:
-				w.log.Warnf("QR code channel full, dropping code")
-			}
+			w.qr.Publish(item.Code)
 		case item == whatsmeow.QRChannelSuccess:
+			return
+		case item == whatsmeow.QRChannelTimeout:
+			w.log.Infof("chatot/client: pairing codes expired; requesting a new set")
+			go w.restartPairing(ctx, wa, qrRestartDelay)
 			return
 		default:
 			w.log.Warnf("QR pairing ended: %+v", item)
@@ -518,7 +544,33 @@ func (w *Whatsmeow) pumpQR(qrChan <-chan whatsmeow.QRChannelItem) {
 	}
 }
 
-func (w *Whatsmeow) QRCodes() <-chan string { return w.qrCodes }
+// restartPairing begins a new round of codes on wa after delay, unless ctx
+// ended, wa was replaced by a relink, or a phone paired it meanwhile. A
+// failed attempt is retried after qrRetryDelay while ctx lives.
+func (w *Whatsmeow) restartPairing(ctx context.Context, wa *whatsmeow.Client, delay time.Duration) {
+	select {
+	case <-time.After(delay):
+	case <-ctx.Done():
+		return
+	}
+	w.relinkMu.Lock()
+	defer w.relinkMu.Unlock()
+	if ctx.Err() != nil || w.wa != wa || wa.Store.ID != nil {
+		return
+	}
+	err := w.startPairing(ctx, wa)
+	if err == nil {
+		err = wa.Connect()
+	}
+	if err != nil {
+		w.log.Warnf("chatot/client: restart pairing: %v (retrying in %s)", err, qrRetryDelay)
+		go w.restartPairing(ctx, wa, qrRetryDelay)
+	}
+}
+
+// QRCodes returns a fresh subscription to the pairing codes; a subscriber
+// joining mid-round is handed the current code at once.
+func (w *Whatsmeow) QRCodes() <-chan string { return w.qr.Subscribe() }
 
 func (w *Whatsmeow) Paired() bool { return w.wa.Store.ID != nil }
 
@@ -529,11 +581,16 @@ func (w *Whatsmeow) LoggedIn() bool {
 	return w.wa.Store.ID != nil && w.wa.IsLoggedIn()
 }
 
+// Logout unlinks this device from the account. whatsmeow only raises
+// events.LoggedOut when the phone removes the device, so a logout started
+// here reports itself: the window relies on EventLoggedOut to fall back to
+// the pairing screen, which relink then fills with fresh codes.
 func (w *Whatsmeow) Logout(ctx context.Context) error {
 	if err := w.wa.Logout(ctx); err != nil {
 		return err
 	}
-	go w.relink()
+	w.pushEvent(Event{Kind: EventLoggedOut})
+	w.relink()
 	return nil
 }
 

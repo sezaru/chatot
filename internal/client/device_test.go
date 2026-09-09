@@ -31,4 +31,7 @@ func TestAnnounceDeviceReplacesWhatsmeowDefault(t *testing.T) {
 	if wastore.DeviceProps.Version.GetPrimary() != deviceVersion[0] || wastore.DeviceProps.Version.GetSecondary() != deviceVersion[1] {
 		t.Fatalf("DeviceProps.Version = %v, want %v", wastore.DeviceProps.Version, deviceVersion)
 	}
+	if got := wastore.DeviceProps.GetPlatformType(); got != devicePlatform {
+		t.Fatalf("DeviceProps.PlatformType = %v, want %v (the phone's desktop icon)", got, devicePlatform)
+	}
 }
