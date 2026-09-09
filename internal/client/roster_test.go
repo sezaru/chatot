@@ -96,11 +96,23 @@ func TestAddPairingAccountFakeModeAddsDemoAccount(t *testing.T) {
 
 func TestRemoveAccountGuards(t *testing.T) {
 	m := NewAccountManager()
-	m.AddAccount("a", "A", NewFake())
+	only := NewFake()
+	m.AddAccount("a", "A", only)
 
-	if err := m.RemoveAccount("a"); err == nil {
-		t.Fatal("removing the last account should error, got nil")
+	// The last account can't be dropped (chatot always has one), so removing
+	// it means signing it out: it stays, logged out, as the account to pair.
+	if err := m.RemoveAccount("a"); err != nil {
+		t.Fatalf("removing the last account should sign it out, got %v", err)
 	}
+	if only.LoggedIn() {
+		t.Error("last account was not signed out")
+	}
+	if got := m.Count(); got != 1 {
+		t.Fatalf("Count() after removing the last account = %d, want 1", got)
+	}
+	only.mu.Lock()
+	only.loggedIn = true
+	only.mu.Unlock()
 
 	m.AddAccount("b", "B", NewFake())
 	if err := m.RemoveAccount("missing"); err == nil {
@@ -119,6 +131,51 @@ func TestRemoveAccountGuards(t *testing.T) {
 	}
 	if metas := m.Accounts(); len(metas) != 1 || metas[0].ID != "b" {
 		t.Errorf("roster after remove = %+v, want single [b]", metas)
+	}
+	// The removed account was signed out of WhatsApp, not just forgotten.
+	if only.LoggedIn() {
+		t.Error("removed account is still logged in")
+	}
+}
+
+func TestRemoveDefaultAccountIsRemembered(t *testing.T) {
+	m := NewAccountManager()
+	m.AddAccount(defaultAccountID, "", NewFake())
+	m.AddAccount("work", "Work", NewFake())
+	if err := m.RemoveAccount(defaultAccountID); err != nil {
+		t.Fatalf("RemoveAccount(default): %v", err)
+	}
+	if !m.defaultRemoved {
+		t.Error("removing the default account must be recorded for the next launch")
+	}
+
+	// Next launch: main registers default first again; the roster drops it.
+	m2 := NewAccountManager()
+	m2.AddAccount(defaultAccountID, "", NewFake())
+	m2.AddAccount("work", "Work", NewFake())
+	m2.dropDefault("work")
+	if got := m2.ActiveID(); got != "work" {
+		t.Errorf("active after dropping default = %q, want work", got)
+	}
+	if metas := m2.Accounts(); len(metas) != 1 || metas[0].ID != "work" {
+		t.Errorf("accounts after dropping default = %+v, want [work]", metas)
+	}
+	if !m2.defaultRemoved {
+		t.Error("dropDefault must keep the removal flagged so the roster persists it")
+	}
+}
+
+func TestRosterRoundTripsDefaultRemoved(t *testing.T) {
+	path := filepath.Join(t.TempDir(), rosterFile)
+	if err := saveRoster(path, roster{DefaultRemoved: true, Accounts: []rosterEntry{{ID: "work", Label: "Work"}}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadRoster(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.DefaultRemoved {
+		t.Error("DefaultRemoved did not survive the round trip")
 	}
 }
 

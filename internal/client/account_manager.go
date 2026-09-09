@@ -120,6 +120,9 @@ type AccountManager struct {
 	// <id>/ and the roster is baseDir/accounts.json. Empty in fake/test mode,
 	// where AddPairingAccount and roster persistence are disabled.
 	baseDir string
+	// defaultRemoved mirrors roster.DefaultRemoved: the implicit default
+	// account was removed and must not be registered again.
+	defaultRemoved bool
 }
 
 // NewAccountManager returns an empty manager. Register accounts with
@@ -188,10 +191,9 @@ func (m *AccountManager) startProxy(a *Account, stop chan struct{}) {
 					return
 				default:
 				}
-				select {
-				case m.qrCodes <- code:
-				default:
-				}
+				// Codes are "latest wins": an unread older code is
+				// replaced, never the new one dropped.
+				offerLatest(m.qrCodes, code)
 			}
 		}
 	}()
@@ -435,8 +437,9 @@ func (m *AccountManager) SetBaseDir(dir string) { m.baseDir = dir }
 // LoadRoster re-creates every persisted pairing account from
 // baseDir/accounts.json, each backed by NewWhatsmeow(baseDir/accounts/<id>/),
 // and registers it (inactive — the default account, added first, stays
-// active). A missing roster is a no-op, so single-account behavior is
-// unchanged. No-op when no base dir is set (fake/test mode).
+// active unless the roster says it was removed). A missing roster is a
+// no-op, so single-account behavior is unchanged. No-op when no base dir is
+// set (fake/test mode).
 func (m *AccountManager) LoadRoster() error {
 	if m.baseDir == "" {
 		return nil
@@ -444,6 +447,9 @@ func (m *AccountManager) LoadRoster() error {
 	r, err := loadRoster(filepath.Join(m.baseDir, rosterFile))
 	if err != nil {
 		return err
+	}
+	if r.DefaultRemoved && len(r.Accounts) > 0 {
+		defer m.dropDefault(r.Accounts[0].ID)
 	}
 	for _, e := range r.Accounts {
 		c, err := NewWhatsmeow(m.accountDir(e.ID))
@@ -528,29 +534,57 @@ func (m *AccountManager) RenameAccount(id, name string) error {
 	return m.persistRoster()
 }
 
-// RemoveAccount drops id from the roster and disconnects its client. It refuses
-// to remove the last remaining account; removing the active one first switches
-// to another account. The on-disk state dir is left intact (a future "delete
-// data" is a separate, destructive action).
+// dropDefault unregisters the implicit default account that main always
+// adds first, because an earlier session removed it: nextID (the first
+// roster account) becomes active in its place. Runs before Start, so no
+// client is running yet.
+func (m *AccountManager) dropDefault(nextID string) {
+	m.defaultRemoved = true
+	if err := m.SetActive(nextID); err != nil {
+		return
+	}
+	m.mu.Lock()
+	remaining := make([]*Account, 0, len(m.accounts))
+	for _, a := range m.accounts {
+		if a.ID != defaultAccountID {
+			remaining = append(remaining, a)
+		}
+	}
+	m.accounts = remaining
+	m.mu.Unlock()
+}
+
+// signOutTimeout bounds the logout request a removal sends to WhatsApp.
+const signOutTimeout = 15 * time.Second
+
+// RemoveAccount signs id out of WhatsApp (so the phone stops listing the
+// device) and drops it from the roster, disconnecting its client; removing
+// the active one first switches to another account. chatot always keeps one
+// account, so the last remaining one is only signed out and stays as the
+// account to pair next: its EventLoggedOut brings the pairing screen back.
+// The on-disk state dir is left intact (a future "delete data" is a
+// separate, destructive action).
 func (m *AccountManager) RemoveAccount(id string) error {
 	m.mu.Lock()
-	if len(m.accounts) <= 1 {
-		m.mu.Unlock()
-		return errors.New("chatot/client: cannot remove the last account")
-	}
-	found := false
+	target := m.findLocked(id)
+	last := len(m.accounts) <= 1
 	var next string
 	for _, a := range m.accounts {
-		if a.ID == id {
-			found = true
-		} else if next == "" {
+		if a.ID != id {
 			next = a.ID
+			break
 		}
 	}
 	active := id == m.activeID
 	m.mu.Unlock()
-	if !found {
+	if target == nil {
 		return fmt.Errorf("chatot/client: unknown account %q", id)
+	}
+
+	if last {
+		// Nothing to fall back to: the sign-out is the whole removal, so
+		// its failure (offline, say) is the caller's to show.
+		return signOut(target.c)
 	}
 
 	if active {
@@ -558,24 +592,41 @@ func (m *AccountManager) RemoveAccount(id string) error {
 			return err
 		}
 	}
+	// Sign out while the client still runs (stop below takes its socket
+	// down). Best effort: the account is being dropped either way, at worst
+	// the phone keeps listing a dead device.
+	_ = signOut(target.c)
 
 	m.mu.Lock()
-	var removed *Account
 	remaining := make([]*Account, 0, len(m.accounts))
 	for _, a := range m.accounts {
-		if a.ID == id {
-			removed = a
-			continue
+		if a.ID != id {
+			remaining = append(remaining, a)
 		}
-		remaining = append(remaining, a)
 	}
 	m.accounts = remaining
+	stop := target.stop
+	target.stop = nil
+	if id == defaultAccountID {
+		m.defaultRemoved = true
+	}
 	m.mu.Unlock()
 
-	if removed != nil && removed.stop != nil {
-		removed.stop()
+	if stop != nil {
+		stop()
 	}
 	return m.persistRoster()
+}
+
+// signOut logs c out of WhatsApp; an account that was never linked (or is
+// already signed out) has nothing to sign out of.
+func signOut(c Client) error {
+	if !c.Paired() {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), signOutTimeout)
+	defer cancel()
+	return c.Logout(ctx)
 }
 
 // accountDir is the per-account state dir for a pairing account.
@@ -623,7 +674,7 @@ func (m *AccountManager) persistRoster() error {
 		return nil
 	}
 	m.mu.Lock()
-	var r roster
+	r := roster{DefaultRemoved: m.defaultRemoved}
 	for _, a := range m.accounts {
 		if a.ID == defaultAccountID {
 			continue

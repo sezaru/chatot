@@ -27,6 +27,10 @@ type rosterEntry struct {
 
 type roster struct {
 	Accounts []rosterEntry `json:"accounts"`
+	// DefaultRemoved records that the user removed the implicit default
+	// account. main registers it unconditionally (it owns the legacy state
+	// dir), so without this it would reappear on the next launch.
+	DefaultRemoved bool `json:"default_removed,omitempty"`
 }
 
 // loadRoster reads path, returning an empty roster (no error) when the file is

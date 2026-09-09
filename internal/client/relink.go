@@ -50,6 +50,11 @@ func (w *Whatsmeow) relink() {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if ctx.Err() != nil {
+		// The account was stopped (removed, or switched away with
+		// keep-connected off): nobody is left to scan a code.
+		return
+	}
 	if err := w.Start(ctx); err != nil {
 		w.log.Errorf("chatot/client: restart pairing after logout: %v", err)
 	}

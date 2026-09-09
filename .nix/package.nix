@@ -127,7 +127,7 @@ in
 
     meta = {
       description = "A native WhatsApp client for GNOME (GTK4 + libadwaita, whatsmeow)";
-      homepage = "https://github.com/sezdm/chatot";
+      homepage = "https://github.com/sezaru/chatot";
       license = lib.licenses.gpl3Plus;
       mainProgram = "chatot";
       platforms = lib.platforms.linux;

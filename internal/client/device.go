@@ -6,8 +6,17 @@ import (
 	"strings"
 	"sync"
 
+	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 	wastore "go.mau.fi/whatsmeow/store"
 )
+
+// devicePlatform picks the icon the phone draws next to the device name.
+// WhatsApp has no way to send a custom image: the phone maps this enum onto
+// its own fixed set (browser logos for CHROME/FIREFOX/…, a computer for
+// DESKTOP, a generic device for whatsmeow's default UNKNOWN). DESKTOP is
+// what the official Windows/macOS apps announce and the closest match for
+// a native desktop client.
+var devicePlatform = waCompanionReg.DeviceProps_DESKTOP
 
 // deviceVersion is the version whatsmeow reports for this companion in the
 // pairing payload; it rides along with the name in the phone's device list.
@@ -24,6 +33,7 @@ func announceDevice() {
 	announceOnce.Do(func() {
 		host, _ := os.Hostname()
 		wastore.SetOSInfo(deviceName(runtime.GOOS, host), deviceVersion)
+		wastore.DeviceProps.PlatformType = devicePlatform.Enum()
 	})
 }
 
