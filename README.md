@@ -88,7 +88,10 @@ packaged `CHATOT_NOTIFY_SOUND` file, the built-in chime.
 Preferences › Appearance › Chat wallpaper puts a picture of your own behind
 an open chat's messages, as WhatsApp Web's custom wallpaper does. The app
 keeps a copy under `$XDG_CONFIG_HOME/chatot/wallpaper/`, so the original can
-move afterwards; Reset returns to the plain surface.
+move afterwards; Reset returns to the plain surface. A chat can override
+that from its header ⋮ menu › Chat wallpaper…: the default, the plain
+background, or a picture of its own (kept under `wallpaper/chats/`, the
+choices in `chat-wallpapers.json`).
 
 ## License
 

@@ -78,7 +78,7 @@ func TestChatMenuItems(t *testing.T) {
 		got := labelsOf(chatMenuItems(client.Chat{}, false, chatMenuActions{}))
 		want := []string{
 			"Contact info", "Search in chat", "Media, links and docs", "---",
-			"Mute notifications…", "Pin chat", "Disappearing messages…", "Archive chat", "---",
+			"Mute notifications…", "Pin chat", "Disappearing messages…", "Chat wallpaper…", "Archive chat", "---",
 			"Export chat…", "Clear chat…", "Block contact…",
 		}
 		if !reflect.DeepEqual(got, want) {

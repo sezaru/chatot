@@ -919,6 +919,7 @@ func (cv *ConversationView) Load(jid string) {
 		pauseVoicePlayers()
 	}
 	cv.jid = jid
+	setWallpaperChat(jid)
 	chat := chatByJID(cv.c, jid)
 	cv.chatInfo = chat
 	cv.chatIsGroup = chat.IsGroup

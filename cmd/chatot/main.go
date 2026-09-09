@@ -817,7 +817,8 @@ func applySettings(s settings.Settings) {
 	ui.GIFAPIKey = s.GIFAPIKey
 	client.SetVerboseLogging(s.VerboseLogging)
 	ui.ApplyTheme(s.Theme)
-	ui.ApplyChatWallpaper(s.ChatWallpaper)
+	ui.ChatWallpaper = s.ChatWallpaper
+	ui.SetChatWallpaperOverrides(settings.LoadChatWallpapers(settings.Dir()))
 
 	// Whatsmeow.Start reads CHATOT_PROXY itself (see internal/client), so
 	// seeding it here reuses that exact path rather than adding a new one.

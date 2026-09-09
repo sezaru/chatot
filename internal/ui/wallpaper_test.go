@@ -65,3 +65,47 @@ func TestInstallChatWallpaperReplacesTheOldCopy(t *testing.T) {
 		t.Error("clearChatWallpaper left the copy")
 	}
 }
+
+// A chat's own choice wins over the default: a picture shows, "plain"
+// shows nothing, and a chat without a choice follows the default.
+func TestEffectiveWallpaper(t *testing.T) {
+	overrides := map[string]string{"a@s.whatsapp.net": "/w/a.jpg", "b@g.us": "none"}
+	cases := []struct{ jid, def, want string }{
+		{"a@s.whatsapp.net", "/w/default.jpg", "/w/a.jpg"},
+		{"b@g.us", "/w/default.jpg", ""},
+		{"c@s.whatsapp.net", "/w/default.jpg", "/w/default.jpg"},
+		{"c@s.whatsapp.net", "", ""},
+	}
+	for _, c := range cases {
+		if got := effectiveWallpaper(c.jid, c.def, overrides); got != c.want {
+			t.Errorf("effectiveWallpaper(%q, %q) = %q, want %q", c.jid, c.def, got, c.want)
+		}
+	}
+}
+
+// The per-chat dialog ticks the chat's current choice, one row at a time.
+func TestChatWallpaperChoicesTickTheCurrent(t *testing.T) {
+	for override, want := range map[string]string{"": "Default wallpaper", "none": "Plain background", "/w/a.jpg": "Choose a picture…"} {
+		var ticked []string
+		for _, o := range chatWallpaperChoices(override) {
+			if o.Current {
+				ticked = append(ticked, o.Label)
+			}
+		}
+		if len(ticked) != 1 || ticked[0] != want {
+			t.Errorf("choices(%q) tick %v, want [%s]", override, ticked, want)
+		}
+	}
+}
+
+// Each chat's picture lives in its own folder, named safely from the JID.
+func TestChatWallpaperChatDirIsPerChat(t *testing.T) {
+	a := chatWallpaperChatDir("1112223333@s.whatsapp.net")
+	b := chatWallpaperChatDir("123-456@g.us")
+	if a == b || filepath.Dir(a) != filepath.Dir(b) {
+		t.Errorf("dirs %q and %q should be siblings", a, b)
+	}
+	if strings.ContainsAny(filepath.Base(a), "@/") {
+		t.Errorf("dir name %q keeps unsafe characters", filepath.Base(a))
+	}
+}
