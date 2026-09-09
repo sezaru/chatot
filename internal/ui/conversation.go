@@ -667,7 +667,6 @@ func NewConversationView(c client.Client) *ConversationView {
 	joinBanner := gtk.NewRevealer()
 	joinBanner.SetChild(joinBannerBox)
 	joinBanner.SetRevealChild(false)
-	root.Append(joinBanner)
 
 	emptyBox := gtk.NewBox(gtk.OrientationVertical, 8)
 	emptyBox.SetVExpand(true)
@@ -756,16 +755,20 @@ func NewConversationView(c client.Client) *ConversationView {
 	scroller.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 	cv.listView = cv.newThreadList()
 	scroller.SetChild(cv.listView)
-	// The chat wallpaper (see wallpaper.go) paints on the scroller, behind
-	// the list; the empty state is a sibling, so it stays plain.
-	scroller.AddCSSClass("chatot-conv-thread")
 	scroller.SetVisible(false)
 
 	// The thread sits under a floating "back to the newest message"
 	// button at the pane's bottom-right, shown only while the reader has
 	// scrolled up (see updateJumpButton).
 	cv.threadOverlay = gtk.NewOverlay()
-	cv.threadOverlay.SetChild(scroller)
+	// The thread is the join-request strip over the scroller. The chat
+	// wallpaper (see wallpaper.go) paints on this box, behind both; the
+	// empty state is a sibling of the overlay, so it stays plain.
+	threadBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	threadBox.AddCSSClass("chatot-conv-thread")
+	threadBox.Append(joinBanner)
+	threadBox.Append(scroller)
+	cv.threadOverlay.SetChild(threadBox)
 	cv.threadOverlay.SetVExpand(true)
 	cv.threadOverlay.SetVisible(false)
 	cv.jumpBtn = gtk.NewButton()

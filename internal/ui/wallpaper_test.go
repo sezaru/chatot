@@ -15,7 +15,7 @@ func TestChatWallpaperCSS(t *testing.T) {
 		`url("file:///home/me/My%20Pictures/wall%231.jpg")`,
 		"background-size: cover",
 		".chatot-conv-list {\n\tbackground-color: transparent;",
-		".chatot-bubble-in, .chatot-typing-bubble, .chatot-day-separator {\n\tbackground-color: mix(@chatot_thread, currentColor, 0.06);",
+		".chatot-bubble-in, .chatot-typing-bubble, .chatot-day-separator, .chatot-join-banner {\n\tbackground-color: mix(@chatot_thread, currentColor, 0.06);",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("chatWallpaperCSS lacks %q:\n%s", want, css)
