@@ -30,6 +30,9 @@ type composerInput struct {
 	// pasteAsText is set while a paste is being re-emitted as text after
 	// the clipboard's files or picture could not be read.
 	pasteAsText bool
+	// wantSensitive is the sensitivity asked for; see SetSensitive for
+	// why it is not always the widget's.
+	wantSensitive bool
 }
 
 // composerMaxLines is how tall the pill grows before it scrolls.
@@ -65,7 +68,19 @@ func newComposerInput() *composerInput {
 	overlay.AddOverlay(placeholder)
 	overlay.SetHExpand(true)
 
-	in := &composerInput{Overlay: overlay, view: view, buf: view.Buffer(), placeholder: placeholder}
+	in := &composerInput{Overlay: overlay, view: view, buf: view.Buffer(), placeholder: placeholder, wantSensitive: true}
+
+	// See SetSensitive: the view must be sensitive while it realizes.
+	view.ConnectRealize(func() {
+		if !in.wantSensitive {
+			in.applySensitive(false)
+		}
+	})
+	view.ConnectUnrealize(func() {
+		if !in.wantSensitive {
+			in.applySensitive(true)
+		}
+	})
 
 	// Enter is taken at the point the view inserts its newline, after the
 	// input method has had the key: an Enter that commits a preedit or
@@ -170,8 +185,25 @@ func (in *composerInput) AddController(c gtk.EventControllerer) { in.view.AddCon
 // GrabFocus focuses the text view.
 func (in *composerInput) GrabFocus() bool { return in.view.GrabFocus() }
 
-// SetSensitive enables or greys the pill.
+// SetSensitive enables or greys the pill. The pill is never insensitive
+// while its text view realizes: GtkTextView hands itself to its input
+// method context only in realize, and only when sensitive at that moment
+// (GTK 4.22 gtktextview.c, gtk_text_view_realize), and it never re-attaches
+// later. A view realized insensitive therefore never enables the Wayland
+// text-input, the compositor's input method never sees its keys, and since
+// GTK 4.19.2 composes nothing itself, every dead key typed into it is
+// dropped (a tester on GNOME with IBus: accents worked in the chat-list
+// search entry, a GtkText, which attaches unconditionally, and not in the
+// composer). The state asked for before realize is applied right after it,
+// unrealize lifts it again for the next realize.
 func (in *composerInput) SetSensitive(on bool) {
+	in.wantSensitive = on
+	if in.view.Realized() {
+		in.applySensitive(on)
+	}
+}
+
+func (in *composerInput) applySensitive(on bool) {
 	in.Overlay.SetSensitive(on)
 	in.view.SetSensitive(on)
 }
