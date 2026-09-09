@@ -1,0 +1,86 @@
+# Release binaries. Push a tag (v0.7.0-beta, ...) and this builds, on GitHub's
+# runners, a Flatpak bundle and an AppImage for x86_64 and aarch64 and
+# attaches all four to a GitHub Release for that tag. Nothing is built or
+# stored locally. "Run workflow" on the Actions page builds the current
+# branch and keeps the files as workflow artifacts, without a release.
+#
+# The AppImage is the Nix package's closure (GTK, GStreamer, ffmpeg, poppler,
+# fonts) wrapped by nix-appimage. Its bundled Mesa cannot see the host's GPU
+# drivers, so GTK falls back to software rendering outside NixOS.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  bundle:
+    name: Flatpak ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: build-aux/flatpak/com.sezdm.chatot.yml
+          bundle: chatot-${{ matrix.arch }}.flatpak
+          arch: ${{ matrix.arch }}
+          cache-key: flatpak-builder-${{ hashFiles('build-aux/flatpak/com.sezdm.chatot.yml', 'build-aux/flatpak/go.mod.yml') }}
+          artifact-name: chatot-${{ matrix.arch }}
+
+  appimage:
+    name: AppImage ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - name: Build
+        run: |
+          nix bundle --accept-flake-config --bundler github:ralismark/nix-appimage .#chatot -o chatot-bundle
+          cp -L chatot-bundle chatot-${{ matrix.arch }}.AppImage
+          chmod +x chatot-${{ matrix.arch }}.AppImage
+          ls -l chatot-${{ matrix.arch }}.AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chatot-${{ matrix.arch }}-appimage
+          path: chatot-${{ matrix.arch }}.AppImage
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [bundle, appimage]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.flatpak
+            dist/*.AppImage
+          prerelease: ${{ contains(github.ref_name, 'beta') }}
+          generate_release_notes: true
