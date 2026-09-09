@@ -83,6 +83,12 @@
   </recommends>
 
   <releases>
+    <release version="0.8.0-beta" date="2026-09-09">
+      <description>
+        <p>Voice notes can be transcribed on this computer with whisper.cpp: a button on the note, or automatically for new notes with a setting, with the speech model downloaded on first use. Transcripts fold under the note like WhatsApp's, with an option to keep them open.</p>
+        <p>Fixes: stickers show at once with a pending clock like other sends; your own reaction appears without switching chats; a group's typing notice names who is typing; a reply to a message that is not loaded quotes it instead of a bare "reply"; the attach tray hands focus back after a send and accepts a pasted image in its caption; a file dropped on the chat attaches; group notifications name the sender.</p>
+      </description>
+    </release>
     <release version="0.7.2-beta" date="2026-09-09">
       <description>
         <p>Accents typed with dead keys now compose in the message input on GNOME and other desktops with an input method, as they already did in the search box.</p>
