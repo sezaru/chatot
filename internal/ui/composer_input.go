@@ -74,11 +74,16 @@ func newComposerInput() *composerInput {
 	keys := gtk.NewEventControllerKey()
 	keys.SetPropagationPhase(gtk.PhaseCapture)
 	keys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
+		trace(1, "composer key 0x%x (%s) mods=%d", keyval, gdk.KeyvalName(keyval), state)
 		in.enterPending = keyval == gdk.KEY_Return || keyval == gdk.KEY_KP_Enter
 		in.enterShift = state&gdk.ShiftMask != 0
 		return false
 	})
 	view.AddController(keys)
+	// Input-method diagnostics (CHATOT_TRACE=1): a dead key shows up as a
+	// preedit, the composed letter as an insert. Which of the two is
+	// missing says where an accent got lost.
+	view.ConnectPreeditChanged(func(preedit string) { trace(1, "composer preedit %q", preedit) })
 	// A paste of files (copied in a file manager) or of a picture (copied
 	// from a browser or an editor) becomes an attachment instead of text.
 	view.ConnectPasteClipboard(func() {
@@ -87,6 +92,7 @@ func newComposerInput() *composerInput {
 		}
 	})
 	in.buf.ConnectInsertText(func(_ *gtk.TextIter, text string, _ int) {
+		trace(1, "composer insert %q", text)
 		if text != "\n" || !in.enterPending {
 			return
 		}
