@@ -9,21 +9,22 @@ import (
 // leaves any existing reply link untouched.
 func (s *Store) UpsertMessage(row MessageRow) error {
 	_, err := s.db.Exec(`
-		INSERT INTO messages(chat_jid, msg_id, from_jid, from_me, text, ts, reply_to_msg_id, kind, payload, edited, deleted, forwarded, link_preview)
-		VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''))
+		INSERT INTO messages(chat_jid, msg_id, from_jid, from_me, text, ts, reply_to_msg_id, reply_to_text, kind, payload, edited, deleted, forwarded, link_preview)
+		VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''))
 		ON CONFLICT(chat_jid, msg_id) DO UPDATE SET
 			from_jid = excluded.from_jid,
 			from_me = excluded.from_me,
 			text = excluded.text,
 			ts = excluded.ts,
 			reply_to_msg_id = COALESCE(excluded.reply_to_msg_id, messages.reply_to_msg_id),
+			reply_to_text = COALESCE(excluded.reply_to_text, messages.reply_to_text),
 			kind = excluded.kind,
 			payload = excluded.payload,
 			edited = messages.edited OR excluded.edited,
 			deleted = messages.deleted OR excluded.deleted,
 			forwarded = messages.forwarded OR excluded.forwarded,
 			link_preview = COALESCE(excluded.link_preview, messages.link_preview)
-	`, row.ChatJID, row.MsgID, row.FromJID, boolToInt(row.FromMe), row.Text, row.TS, row.ReplyToMsgID, row.Kind, row.Payload, boolToInt(row.Edited), boolToInt(row.Deleted), boolToInt(row.Forwarded), row.LinkPreview)
+	`, row.ChatJID, row.MsgID, row.FromJID, boolToInt(row.FromMe), row.Text, row.TS, row.ReplyToMsgID, row.ReplyToText, row.Kind, row.Payload, boolToInt(row.Edited), boolToInt(row.Deleted), boolToInt(row.Forwarded), row.LinkPreview)
 	return err
 }
 
@@ -172,9 +173,9 @@ func (s *Store) Statuses(since int64, limit int) ([]Message, error) {
 // and MessagesBefore so both pages scan the same shape (see scanMessages).
 const messageSelect = `
 	SELECT
-		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''),
+		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''), COALESCE(m.reply_to_text, ''),
 		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status, m.starred, m.forwarded, m.played, COALESCE(m.link_preview, ''),
-		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, COALESCE(md.is_gif, 0), COALESCE(md.view_once, 0), COALESCE(md.viewed, 0), COALESCE(md.file_size, 0), COALESCE(md.duration_secs, 0), COALESCE(md.play_pos_ms, 0)
+		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, COALESCE(md.is_gif, 0), COALESCE(md.view_once, 0), COALESCE(md.viewed, 0), COALESCE(md.file_size, 0), COALESCE(md.duration_secs, 0), COALESCE(md.play_pos_ms, 0), COALESCE(md.transcript, '')
 	FROM messages m
 	LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id`
 
@@ -237,10 +238,11 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 		var mediaIsGif, mediaViewOnce, mediaViewed int
 		var mediaSize int64
 		var mediaSecs, mediaPos int
+		var mediaTranscript string
 		if err := rows.Scan(
-			&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID,
+			&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID, &m.ReplyToText,
 			&m.Kind, &m.Payload, &edited, &deleted, &m.Status, &starred, &forwarded, &played, &m.LinkPreview,
-			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb, &mediaIsGif, &mediaViewOnce, &mediaViewed, &mediaSize, &mediaSecs, &mediaPos,
+			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb, &mediaIsGif, &mediaViewOnce, &mediaViewed, &mediaSize, &mediaSecs, &mediaPos, &mediaTranscript,
 		); err != nil {
 			return nil, err
 		}
@@ -257,6 +259,7 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 				MimeType: mediaMime, LocalPath: mediaLocal, Thumbnail: mediaThumb, IsGif: mediaIsGif != 0,
 				ViewOnce: mediaViewOnce != 0, Viewed: mediaViewed != 0,
 				FileSize: mediaSize, DurationSecs: mediaSecs, PlayPosMS: mediaPos,
+				Transcript: mediaTranscript,
 			}
 		}
 		out = append(out, m)

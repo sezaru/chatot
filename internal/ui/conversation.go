@@ -127,10 +127,12 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 			// A picture, voice note or poll has no Text: quote its kind
 			// label ("📷 Photo") the way the chat list previews it.
 			v.QuotedText = messageSnippet(q)
-			if v.QuotedText == "" {
-				v.QuotedText = "↩ reply"
-			}
 		} else {
+			// Not among the loaded rows: the preview the reply carried,
+			// or the one fillQuote read off the store.
+			v.QuotedText = m.ReplyTo.Text
+		}
+		if v.QuotedText == "" {
 			v.QuotedText = "↩ reply"
 		}
 	}
@@ -322,9 +324,14 @@ type ConversationView struct {
 	// item; it renders as the mockup's dotted bubble at the foot of the
 	// thread (see showTypingRow).
 	typingShown bool
-	// composingGen counts composing events per chat so the stale-typing
-	// timer only clears the state it was armed for.
+	// composing is who is typing or recording in each chat; composingGen
+	// counts the events per chat and sender (see composingKey) so the
+	// stale-typing timer only ends the burst it was armed for.
+	composing    composers
 	composingGen map[string]int
+	// quotes caches the preview of a quoted message that is not among the
+	// loaded rows (paged out, or older than the store), by message id.
+	quotes map[string]string
 	// chatIsGroup caches whether the open chat is a group (sender names).
 	chatIsGroup bool
 	// chatInfo is the open chat's row as of the last Load: the chat list
@@ -347,6 +354,15 @@ type ConversationView struct {
 	// thumbTried is every message whose high-quality preview this view
 	// already asked for, so a rebound row does not ask again.
 	thumbTried map[string]bool
+	// transcripts is each voice note's transcription state this session
+	// (a run in progress, its failure, whether the text is unfolded); the
+	// text itself lives on the message's attachment. Nil until first used.
+	transcripts map[string]transcriptState
+
+	// expandedText holds the long bodies the reader unfolded this session
+	// (the bubble's "Read more"), so a rebuilt row keeps them open. Nil
+	// until first used.
+	expandedText map[string]bool
 
 	// unsent holds, per chat, the optimistic rows the store does not have:
 	// sends in flight and sends that failed. Load appends them after the
@@ -706,7 +722,9 @@ func NewConversationView(c client.Client) *ConversationView {
 		empty:                empty,
 		emptyBox:             emptyBox,
 		presence:             make(map[string]PresenceState),
+		composing:            make(composers),
 		composingGen:         make(map[string]int),
+		quotes:               make(map[string]string),
 		names:                make(map[string]string),
 		timers:               make(map[string]int64),
 		joinBanner:           joinBanner,
@@ -814,6 +832,7 @@ func (cv *ConversationView) fillRow(box *gtk.Box, pos int) {
 	if pos > 0 {
 		prev = &cv.msgs[pos-1]
 	}
+	cv.fillQuote(&msg)
 	vm := bubbleVM(msg, prev, cv.byID, time.Now())
 	if cv.chatIsGroup && !msg.FromMe {
 		vm.Author = cv.senderName(msg.FromJID)
@@ -1310,24 +1329,22 @@ func (cv *ConversationView) watchEvents() {
 			}
 			cp := *ev.ChatPresence
 			glib.IdleAdd(func() {
-				state := cv.presence[cp.ChatJID]
-				state.Typing, state.Recording = chatPresenceTypingRecording(cp.State, cp.Media)
-				cv.presence[cp.ChatJID] = state
-				cv.composingGen[cp.ChatJID]++
-				if state.Typing || state.Recording {
-					gen := cv.composingGen[cp.ChatJID]
-					jid := cp.ChatJID
+				kind := composingKind(cp.State, cp.Media)
+				cv.composing.set(cp.ChatJID, cp.JID, kind)
+				key := composingKey(cp.ChatJID, cp.JID)
+				cv.composingGen[key]++
+				if kind != "" {
+					gen := cv.composingGen[key]
+					chat, sender := cp.ChatJID, cp.JID
 					glib.TimeoutSecondsAdd(composingStaleSecs, func() bool {
-						if cv.composingGen[jid] == gen {
-							cv.clearComposing(jid)
+						if cv.composingGen[key] == gen {
+							cv.composing.set(chat, sender, "")
+							cv.syncComposing(chat)
 						}
 						return false
 					})
 				}
-				if cp.ChatJID == cv.jid {
-					cv.refreshHeader()
-					cv.refreshTypingBubble()
-				}
+				cv.syncComposing(cp.ChatJID)
 			})
 		case client.EventHistorySync:
 			if ev.HistorySync == nil {
@@ -1749,16 +1766,55 @@ const composingStaleSecs = 20
 // clearComposing drops jid's typing/recording state: the peer's message
 // arrived, or nothing followed the composing notice.
 func (cv *ConversationView) clearComposing(jid string) {
-	state, ok := cv.presence[jid]
-	if !ok || (!state.Typing && !state.Recording) {
+	if cv.composing.kind(jid) == "" {
 		return
 	}
-	state.Typing, state.Recording = false, false
+	for _, sender := range cv.composing.senders(jid) {
+		cv.composingGen[composingKey(jid, sender)]++
+	}
+	cv.composing.clear(jid)
+	cv.syncComposing(jid)
+}
+
+// syncComposing derives jid's typing/recording presence from who is
+// composing there (named in a group, where the header says who) and
+// redraws the header and the typing bubble when it is the open chat.
+func (cv *ConversationView) syncComposing(jid string) {
+	state := cv.presence[jid]
+	kind := cv.composing.kind(jid)
+	state.Typing, state.Recording = kind == "typing", kind == "recording"
+	state.Composers = nil
+	if kind != "" && strings.HasSuffix(jid, "@g.us") {
+		for _, sender := range cv.composing.senders(jid) {
+			state.Composers = append(state.Composers, cv.senderName(sender))
+		}
+	}
 	cv.presence[jid] = state
-	cv.composingGen[jid]++
 	if jid == cv.jid {
 		cv.refreshHeader()
 		cv.refreshTypingBubble()
+	}
+}
+
+// fillQuote gives a reply whose quoted message is neither loaded nor
+// carried with it the store's preview of that message, once per target:
+// the quote of a reply to something paged out reads like any other.
+func (cv *ConversationView) fillQuote(m *client.Message) {
+	if m.ReplyTo == nil || m.ReplyTo.Text != "" {
+		return
+	}
+	if _, ok := cv.byID[m.ReplyTo.MsgID]; ok {
+		return
+	}
+	text, ok := cv.quotes[m.ReplyTo.MsgID]
+	if !ok {
+		text, _ = cv.c.MessagePreview(m.ReplyTo.ChatJID, m.ReplyTo.MsgID)
+		cv.quotes[m.ReplyTo.MsgID] = text
+	}
+	if text != "" {
+		ref := *m.ReplyTo
+		ref.Text = text
+		m.ReplyTo = &ref
 	}
 }
 
@@ -1919,6 +1975,9 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 			media.fetchThumb = func() { h.onFetchThumbnail(m) }
 		}
 		media.voice = h.voice
+		if h.transcriptOf != nil {
+			media.TranscriptState = h.transcriptOf(msg.ID)
+		}
 		bubble.Append(buildMediaContent(msg, media, c, h.mediaOpener(msg)))
 		if vm.CaptionText != "" {
 			// The caption reads like a text bubble's body, under the
@@ -1957,13 +2016,42 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 		text.SetMaxWidthChars(48)
 		if vm.Deleted {
 			text.SetLabel(vm.Text)
+			bubble.Append(text)
 		} else {
+			// A long body is folded behind a "Read more", as WhatsApp folds
+			// one. The clip happens on the plain text, before the markup, so
+			// no tag is ever cut in half.
+			long := !vm.IsEmojiOnly && isLongText(vm.Text)
+			open := long && h.textExpandedOf != nil && h.textExpandedOf(msg.ID)
+			body := func() string {
+				if long && !open {
+					return clipText(vm.Text)
+				}
+				return vm.Text
+			}
 			// Links open on click (GtkLabel's own activate-link opens the
 			// URI), and the text can be swept and copied.
-			text.SetMarkup(messageMarkup(vm.Text, h.names, vm.FromMe, mentionAccentFor(), searchQuery))
+			text.SetMarkup(messageMarkup(body(), h.names, vm.FromMe, mentionAccentFor(), searchQuery))
 			text.SetSelectable(true)
+			bubble.Append(text)
+			if long {
+				id := msg.ID
+				more := gtk.NewButtonWithLabel(readMoreLabel(open))
+				more.AddCSSClass("flat")
+				more.AddCSSClass("chatot-read-more")
+				more.SetHAlign(gtk.AlignStart)
+				more.SetFocusOnClick(false)
+				more.ConnectClicked(func() {
+					open = !open
+					text.SetMarkup(messageMarkup(body(), h.names, vm.FromMe, mentionAccentFor(), searchQuery))
+					more.SetLabel(readMoreLabel(open))
+					if h.onExpandText != nil {
+						h.onExpandText(id, open)
+					}
+				})
+				bubble.Append(more)
+			}
 		}
-		bubble.Append(text)
 	}
 
 	footer := gtk.NewBox(gtk.OrientationHorizontal, 4)
@@ -2235,6 +2323,14 @@ type bubbleHooks struct {
 	// onFetchThumbnail asks for msg's high-quality preview (the tile only
 	// has the message's ~100px stamp); nil leaves the stamp.
 	onFetchThumbnail func(msg client.Message)
+	// transcriptOf reports msgID's transcription state (see
+	// transcriptState); nil leaves the voice rows without a transcript slot.
+	transcriptOf func(msgID string) transcriptState
+	// textExpandedOf reports whether msgID's long body is unfolded, and
+	// onExpandText records a fold change. Both nil (the viewer, tests)
+	// leaves long bodies folded with a working control.
+	textExpandedOf func(msgID string) bool
+	onExpandText   func(msgID string, open bool)
 	// voice hears a voice note start, stop and end (played flag, resume
 	// position, auto-advance); zero leaves the rows self-contained.
 	voice voiceHooks
@@ -2292,7 +2388,14 @@ func (cv *ConversationView) hooks() bubbleHooks {
 		onOpenViewer: cv.onOpenViewer, onLocalPath: func(id, path string) { cv.setLocalPath(id, path) }, names: cv.mentionName, avatars: cv.avatarCache,
 		onRetry: cv.retrySend, reactorName: cv.senderName, onJumpTo: cv.jumpToQuoted,
 		onFetchThumbnail: cv.fetchThumbnail,
-		voice:            voiceHooks{onPlay: cv.voicePlayed, onStop: cv.voiceStopped, onEnded: cv.voiceEnded},
+		voice: voiceHooks{
+			onPlay: cv.voicePlayed, onStop: cv.voiceStopped, onEnded: cv.voiceEnded,
+			onTranscribe: cv.transcribe, onToggleTranscript: cv.setTranscriptOpen,
+			onTranscriptMore: cv.setTranscriptMore,
+		},
+		transcriptOf:   cv.transcriptOf,
+		textExpandedOf: cv.textExpanded,
+		onExpandText:   cv.setTextExpanded,
 	}
 }
 
@@ -2715,56 +2818,29 @@ func openReactionPicker(bubble *gtk.Box, msg client.Message, h bubbleHooks, at *
 	pop.SetPosition(gtk.PosBottom)
 	pop.AddCSSClass("chatot-react-picker")
 
-	col := gtk.NewBox(gtk.OrientationVertical, 6)
-	caption := gtk.NewLabel("PICK A REACTION")
-	caption.SetXAlign(0)
-	caption.AddCSSClass("chatot-card-caption")
-	col.Append(caption)
-
-	grid := gtk.NewFlowBox()
-	grid.SetSelectionMode(gtk.SelectionNone)
-	grid.SetMinChildrenPerLine(reactPickerCols)
-	grid.SetMaxChildrenPerLine(reactPickerCols)
-	grid.SetRowSpacing(2)
-	grid.SetColumnSpacing(2)
-	grid.SetHomogeneous(true)
-	for _, glyph := range reactPickerEmojis {
-		emoji := glyph
-		b := gtk.NewButtonWithLabel(emoji)
-		b.AddCSSClass("flat")
-		b.AddCSSClass("chatot-picker-emoji")
-		b.SetSizeRequest(-1, pickerEmojiCell)
-		b.ConnectClicked(func() {
+	// The same catalogue the composer offers, in the reaction card's
+	// narrower grid: a reaction is an emoji like any other, and hunting for
+	// one in a 32-glyph menu was the complaint.
+	pop.SetChild(newEmojiPanel(emojiPanelConfig{
+		Columns: reactPickerCols,
+		Height:  reactPickerHeight,
+		Width:   reactPickerWidth,
+		OnPick: func(glyph string) {
 			pop.Popdown()
-			h.onReact(msg, emoji)
-		})
-		grid.Insert(b, -1)
-	}
-	grid.SetSizeRequest(reactPickerWidth, -1)
-	col.Append(grid)
-
-	pop.SetChild(col)
+			h.onReact(msg, glyph)
+		},
+	}))
 	pop.Popup()
 }
 
-// reactPickerCols/Width are the mockup's picker grid: eight columns in a
-// 322px card (306px inside its 8px padding). Its 32 emojis fill exactly four
-// rows, so nothing scrolls.
+// reactPickerCols/Width/Height are the mockup's reaction card: eight columns
+// in a 322px card (306px inside its 8px padding), over a 168px window on the
+// catalogue so the card stays a card and the emoji scroll inside it.
 const (
-	reactPickerCols  = 8
-	reactPickerWidth = 306
+	reactPickerCols   = 8
+	reactPickerWidth  = 306
+	reactPickerHeight = 168
 )
-
-// reactPickerEmojis is the mockup's "Pick a reaction" palette, in its order:
-// the six quick reactions' neighbours first, then faces, gestures and a few
-// objects. It is deliberately not the composer's full emoji list — a
-// reaction picker is a short menu, not a keyboard.
-var reactPickerEmojis = []string{
-	"👍", "👎", "❤️", "🔥", "🎉", "😂", "🙂", "😉",
-	"😍", "🥰", "😘", "🤩", "😎", "🤔", "😐", "😴",
-	"😢", "😭", "😤", "😡", "🙏", "💪", "👏", "✨",
-	"🥳", "🤝", "☕", "🎵", "🐦", "🏔️", "📌", "✅",
-}
 
 // newChevronGlyph draws the hover button's ⌄ with cairo, in the widget's
 // CSS colour. Not the ⌄ character, which fonts draw thin and low in its

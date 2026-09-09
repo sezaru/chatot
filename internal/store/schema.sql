@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS messages (
     text TEXT,
     ts INTEGER NOT NULL DEFAULT 0,
     reply_to_msg_id TEXT,
+    reply_to_text TEXT,
     -- kind='' is a plain text/media message; a non-empty kind (e.g.
     -- 'location') marks a rich message whose body lives in payload as opaque
     -- JSON that only package client understands. The store never parses it.
@@ -164,6 +165,9 @@ CREATE TABLE IF NOT EXISTS media (
     -- resumes there (0 = from the start). Local only; UpsertMedia never
     -- touches it.
     play_pos_ms INTEGER NOT NULL DEFAULT 0,
+    -- text transcribed from an audio attachment on this computer (NULL until
+    -- one was made). Local only; UpsertMedia never touches it.
+    transcript TEXT,
     PRIMARY KEY (chat_jid, msg_id)
 );
 

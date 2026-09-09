@@ -238,6 +238,58 @@ func (cv *ConversationView) PopupReactPill(idx int) {
 // PopEmoji opens the 🙂 emoji chooser.
 func (c *Composer) PopEmoji() { c.showPicker("emoji") }
 
+// ScrollEmojiPicker opens the emoji page and scrolls its list down by
+// pixels, so the pinned heading can be seen doing its job
+// (CHATOT_SHOT=emojiscroll CHATOT_SHOT_ARG=<pixels>). The scroller is found
+// by walking the popover rather than held as a field: the panel is shared
+// with the reaction card and owes the composer nothing.
+func (c *Composer) ScrollEmojiPicker(pixels float64) {
+	c.showPicker("emoji")
+	if c.pickerPopover == nil {
+		return
+	}
+	// The popover allocates its content after it pops up, and until it has,
+	// the adjustment's upper is the page size and any value clamps to zero.
+	// Wait for a configured adjustment before scrolling.
+	glib.TimeoutAdd(120, func() bool {
+		// From the stack's visible page, not the popover: the GIF and
+		// sticker pages carry scrollers of their own and a blind walk finds
+		// whichever the stack happens to hold first.
+		page := c.pickerStack.VisibleChild()
+		if page == nil {
+			return true
+		}
+		sw := firstScrolledWindow(page)
+		if sw == nil {
+			log.Printf("chatot: emojiscroll: no scroller under the picker")
+			return false
+		}
+		adj := sw.VAdjustment()
+		if adj.Upper() <= adj.PageSize() {
+			return true
+		}
+		adj.SetValue(pixels)
+		return false
+	})
+}
+
+// firstScrolledWindow is the first GtkScrolledWindow under root, breadth
+// first; nil when there is none.
+func firstScrolledWindow(root gtk.Widgetter) *gtk.ScrolledWindow {
+	queue := []gtk.Widgetter{root}
+	for len(queue) > 0 {
+		head := queue[0]
+		queue = queue[1:]
+		if sw, ok := head.(*gtk.ScrolledWindow); ok {
+			return sw
+		}
+		for child := gtk.BaseWidget(head).FirstChild(); child != nil; child = gtk.BaseWidget(child).NextSibling() {
+			queue = append(queue, child)
+		}
+	}
+	return nil
+}
+
 // PopPicker opens the GIF/Stickers picker on the named page ("gif"/"stickers").
 func (c *Composer) PopPicker(page string) {
 	c.pickerStack.SetVisibleChildName(page)
@@ -652,6 +704,50 @@ func (c *Composer) SeedStickers(paths []string) {
 	}
 }
 
+// DownloadSpeechModel runs the model download behind its progress dialog
+// (CHATOT_SHOT=modeldownload).
+func (cv *ConversationView) DownloadSpeechModel() { runModelDownload(cv.window, nil) }
+
+// TranscribeAt transcribes the downloaded voice note at idx the way its
+// Transcribe row does (CHATOT_SHOT=transcribe CHATOT_SHOT_MSG=idx).
+func (cv *ConversationView) TranscribeAt(idx int) {
+	m, ok := cv.MessageAt(idx)
+	if !ok {
+		return
+	}
+	mv := mediaVM(m)
+	if !mv.HasLocal || mv.Kind != "audio" {
+		trace(1, "TranscribeAt %d: not a downloaded audio message", idx)
+		return
+	}
+	cv.transcribe(m.ID, mv.LocalPath, true)
+}
+
+// UnfoldTranscriptAt opens the transcript already sitting on the voice note
+// at idx, the way clicking its head does (CHATOT_SHOT=transcriptopen).
+func (cv *ConversationView) UnfoldTranscriptAt(idx int) {
+	m, ok := cv.MessageAt(idx)
+	if !ok {
+		return
+	}
+	// -1 means "the newest one that has a transcript", since the newest
+	// message in a fixture thread is rarely the voice note.
+	if idx < 0 && (m.Attachment == nil || m.Attachment.Transcript == "") {
+		for i := len(cv.msgs) - 1; i >= 0; i-- {
+			if a := cv.msgs[i].Attachment; a != nil && a.Transcript != "" {
+				m, ok = cv.msgs[i], true
+				break
+			}
+		}
+	}
+	if !ok || m.Attachment == nil || m.Attachment.Transcript == "" {
+		trace(1, "UnfoldTranscriptAt %d: no transcript on this message", idx)
+		return
+	}
+	cv.setTranscriptOpen(m.ID, true)
+	cv.refillByID(m.ID)
+}
+
 // PlayVoiceAt starts the downloaded voice note at idx the way its play disc
 // does (played flag, resume position, auto-advance). arg is "" to just
 // play, "pause:MS" to pause that many milliseconds later (the position
@@ -676,4 +772,18 @@ func (cv *ConversationView) PlayVoiceAt(idx int, arg string) {
 	if kind == "pause" && n > 0 {
 		glib.TimeoutAdd(uint(n), func() bool { p.Pause(); return false })
 	}
+}
+
+// ReactAt puts emoji on the message at idx the way the quick-reaction row
+// does, through the app's own React wiring (CHATOT_SHOT=react
+// CHATOT_SHOT_MSG=idx CHATOT_SHOT_ARG=emoji, default 👍).
+func (cv *ConversationView) ReactAt(idx int, emoji string) {
+	m, ok := cv.MessageAt(idx)
+	if !ok || cv.onReact == nil {
+		return
+	}
+	if emoji == "" {
+		emoji = "👍"
+	}
+	cv.onReact(m, emoji)
 }

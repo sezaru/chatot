@@ -167,9 +167,9 @@ type ChatList struct {
 	// selectedJID is the chat open in the content pane. Rows are rebuilt from
 	// scratch on every refresh, which drops GtkListBox's own highlight, so
 	// the rebuild re-selects this JID's row (see reselectRow).
-	selectedJID   string
-	composingJIDs map[string]string // chat JID -> "typing" or "recording" for a peer currently composing
-	composingGen  map[string]int    // per-chat composing event counter; the stale timer checks it
+	selectedJID  string
+	composing    composers      // who is typing or recording, per chat
+	composingGen map[string]int // composing event counter per chat and sender (composingKey); the stale timer checks it
 	// names memoizes ContactName lookups for @mentions in previews; dropped
 	// on EventChatUpdate (the contact sync fires one when names land).
 	names map[string]string
@@ -521,7 +521,7 @@ func NewChatList(c client.Client) *ChatList {
 		chatModel: chatModel, chatSel: chatSel,
 		rowWidgets: map[uintptr]*chatRowWidget{}, boundRows: map[string]*chatRowWidget{}, avatarGens: map[string]int{},
 		syncBanner: syncBanner, syncLabel: syncLabel, syncBar: syncBar,
-		composingJIDs: make(map[string]string), composingGen: make(map[string]int), names: make(map[string]string), avatarCache: newAvatarCache(),
+		composing: make(composers), composingGen: make(map[string]int), names: make(map[string]string), avatarCache: newAvatarCache(),
 		chipRow: chipRow, chipScroller: chipScroller, rail: rail,
 		modes:         modes,
 		identityStack: identity, archivedTitle: archivedTitle,
@@ -851,8 +851,8 @@ func (cl *ChatList) refreshChats(d *sidebarData) {
 		}
 		vm := chatRowVM(chat, now)
 		vm.Preview = resolveMentionsPlain(vm.Preview, cl.mentionName)
-		if kind, ok := cl.composingJIDs[chat.JID]; ok {
-			vm.Preview = composingPreviewText(kind)
+		if kind := cl.composing.kind(chat.JID); kind != "" {
+			vm.Preview = composingText(kind, cl.composerNames(chat.JID))
 			vm.Typing = true
 		}
 		vm.Blocked = d.blocked[chat.JID]
@@ -1116,14 +1116,36 @@ func statusSnippet(m client.Message) string {
 	return ""
 }
 
-// composingPreviewText renders the chat-list preview override for a peer
-// currently composing: kind is "recording" for a voice-note recording, else
-// plain typing.
-func composingPreviewText(kind string) string {
-	if kind == "recording" {
-		return "recording audio…"
+// composerNames names who is composing in a group, for its row's
+// "Ana is typing…" preview; a direct chat's peer goes unnamed.
+func (cl *ChatList) composerNames(chat string) []string {
+	if !strings.HasSuffix(chat, "@g.us") {
+		return nil
 	}
-	return "typing…"
+	var names []string
+	for _, jid := range cl.composing.senders(chat) {
+		names = append(names, cl.personName(jid))
+	}
+	return names
+}
+
+// personName resolves a group member's JID for a preview line: "You" for
+// the account itself, the contact's name, else the bare number so the
+// line is never empty. Shares the @mention cache.
+func (cl *ChatList) personName(jid string) string {
+	if isOwnJID(jid, cl.c.OwnJID()) {
+		return "You"
+	}
+	jid = nonADJID(jid)
+	if n, ok := cl.names[jid]; ok && n != "" {
+		return n
+	}
+	n := cl.c.ContactName(jid)
+	cl.names[jid] = n
+	if n == "" {
+		return bareJIDUser(jid)
+	}
+	return n
 }
 
 // messageSnippet renders a message's one-line stand-in wherever it is
@@ -1159,8 +1181,8 @@ func messageSnippet(m client.Message) string {
 // GTK main loop via glib.IdleAdd. Runs on its own goroutine for the
 // lifetime of the process; the fake/whatsmeow Events() channel is never
 // explicitly closed today, so this goroutine simply exits if it is.
-// EventChatPresence updates composingJIDs (composing sets "typing" or
-// "recording", anything else clears it) instead of falling through to the
+// EventChatPresence updates composing (composing sets "typing" or
+// "recording" for the sender, anything else clears it) instead of falling through to the
 // generic full refresh, since it needs the event's JID+state before
 // rebuilding rows. EventChatUpdate (pin/mute/archive/unread changes) needs no
 // special handling: it falls through to the generic refresh below like most
@@ -1180,24 +1202,19 @@ func (cl *ChatList) watchEvents() {
 			glib.IdleAdd(func() { cl.avatarCache.retryFailed(cl.c) })
 		}
 		if ev.Kind == client.EventChatPresence && ev.ChatPresence != nil {
-			jid := ev.ChatPresence.ChatJID
-			typing, recording := chatPresenceTypingRecording(ev.ChatPresence.State, ev.ChatPresence.Media)
+			chat, sender := ev.ChatPresence.ChatJID, ev.ChatPresence.JID
+			kind := composingKind(ev.ChatPresence.State, ev.ChatPresence.Media)
 			glib.IdleAdd(func() {
-				cl.composingGen[jid]++
-				switch {
-				case recording:
-					cl.composingJIDs[jid] = "recording"
-				case typing:
-					cl.composingJIDs[jid] = "typing"
-				default:
-					delete(cl.composingJIDs, jid)
-				}
-				if typing || recording {
+				cl.composing.set(chat, sender, kind)
+				key := composingKey(chat, sender)
+				cl.composingGen[key]++
+				if kind != "" {
 					// No "paused" may ever follow (see composingStaleSecs).
-					gen := cl.composingGen[jid]
+					gen := cl.composingGen[key]
 					glib.TimeoutSecondsAdd(composingStaleSecs, func() bool {
-						if cl.composingGen[jid] == gen {
-							cl.clearComposing(jid)
+						if cl.composingGen[key] == gen {
+							cl.composing.set(chat, sender, "")
+							cl.refresh()
 						}
 						return false
 					})
@@ -1207,13 +1224,10 @@ func (cl *ChatList) watchEvents() {
 			continue
 		}
 		if ev.Kind == client.EventMessage && ev.Message != nil && !ev.Message.FromMe {
-			// The peer's message ends their typing burst; the generic
-			// refresh below rebuilds the rows.
+			// The peer's message ends the typing bursts there; the
+			// generic refresh below rebuilds the rows.
 			jid := ev.Message.ChatJID
-			glib.IdleAdd(func() {
-				cl.composingGen[jid]++
-				delete(cl.composingJIDs, jid)
-			})
+			glib.IdleAdd(func() { cl.forgetComposing(jid) })
 		}
 		if ev.Kind == client.EventChatUpdate {
 			glib.IdleAdd(func() { cl.names = make(map[string]string) })
@@ -1303,13 +1317,13 @@ func (cl *ChatList) rowMenuItems(chat client.Chat) []menuItem {
 // SetRowMenu supplies the rows of every chat row's right-click menu.
 func (cl *ChatList) SetRowMenu(f func(chat client.Chat) []menuItem) { cl.rowMenu = f }
 
-// clearComposing drops jid's typing/recording preview override.
-func (cl *ChatList) clearComposing(jid string) {
-	if _, ok := cl.composingJIDs[jid]; !ok {
-		return
+// forgetComposing drops jid's typing/recording preview override, every
+// sender's, and disarms their stale timers.
+func (cl *ChatList) forgetComposing(jid string) {
+	for _, sender := range cl.composing.senders(jid) {
+		cl.composingGen[composingKey(jid, sender)]++
 	}
-	delete(cl.composingJIDs, jid)
-	cl.refresh()
+	cl.composing.clear(jid)
 }
 
 // mentionName resolves the numeric user part of an @mention for a preview

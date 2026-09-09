@@ -31,13 +31,16 @@ func (f *Fake) seedDevMedia(dir string, now int64) {
 		file, kind, mime, caption string
 		secs                      int
 		fromMe                    bool
+		// transcript seeds an already-transcribed note (the folded
+		// "Transcript" row); the inbound voice.ogg is left for the engine.
+		transcript string
 	}{
-		{"photo.jpg", "image", "image/jpeg", "Balcony faces the river", 0, false},
-		{"clip.mp4", "video", "video/mp4", "", 6, false},
-		{"voice.ogg", "audio", "audio/ogg; codecs=opus", "", 3, false},
-		{"demo.mp3", "audio", "audio/mpeg", "", 24, true},
-		{"sample.pdf", "document", "application/pdf", "", 0, false},
-		{"notes.ods", "document", "application/vnd.oasis.opendocument.spreadsheet", "", 0, true},
+		{"photo.jpg", "image", "image/jpeg", "Balcony faces the river", 0, false, ""},
+		{"clip.mp4", "video", "video/mp4", "", 6, false, ""},
+		{"voice.ogg", "audio", "audio/ogg; codecs=opus", "", 3, false, ""},
+		{"demo.mp3", "audio", "audio/mpeg", "", 24, true, "Quick reminder that the relay fix goes out tonight, so keep an eye on the error rate after the deploy."},
+		{"sample.pdf", "document", "application/pdf", "", 0, false, ""},
+		{"notes.ods", "document", "application/vnd.oasis.opendocument.spreadsheet", "", 0, true, ""},
 	}
 	ts := now - 1800
 	for i, k := range kinds {
@@ -55,7 +58,7 @@ func (f *Fake) seedDevMedia(dir string, now int64) {
 			ID: "dm" + itoa(i), ChatJID: jid, FromJID: from, FromMe: k.fromMe, TS: ts, Status: MessageStatusRead,
 			Attachment: &Attachment{
 				Kind: k.kind, MimeType: k.mime, Filename: k.file, Caption: k.caption,
-				LocalPath: path, Size: info.Size(), DurationSecs: k.secs,
+				LocalPath: path, Size: info.Size(), DurationSecs: k.secs, Transcript: k.transcript,
 			},
 		})
 	}

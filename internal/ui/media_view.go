@@ -50,6 +50,13 @@ type mediaView struct {
 	// draws blue once set); PlayPosMS where its playback last stopped.
 	Played    bool
 	PlayPosMS int
+	// TS is the message's send time, for the automatic-transcript cutoff.
+	TS int64
+	// Transcript is the note's text once transcribed; TranscriptState is
+	// the rest of what its row shows (a run in progress, a failure,
+	// whether the text is unfolded), set by the bubble from the view.
+	Transcript      string
+	TranscriptState transcriptState
 	// voice, when set by the bubble, is told when the note plays, stops
 	// and ends (see voiceHooks).
 	voice voiceHooks
@@ -177,6 +184,7 @@ func mediaVM(m client.Message) mediaView {
 		IsGIF: a.IsGIF, ViewOnce: a.ViewOnce, Viewed: a.Viewed,
 		Size: a.Size, DurationSecs: a.DurationSecs, FromMe: m.FromMe,
 		MsgID: m.ID, ChatJID: m.ChatJID, Played: m.Played, PlayPosMS: a.PlayPosMS,
+		TS: m.TS, Transcript: a.Transcript,
 	}
 	// A document's own name belongs in the title, not repeated in the meta
 	// line, so remember the MIME type separately for docTypeLabel.
@@ -860,7 +868,18 @@ func newVoiceBubble(mv mediaView, open func(path string)) gtk.Widgetter {
 		playVoice(mv, mv.voice)
 	}
 	row := newVoiceRow(player, mv.FromMe, mv.Played, toggle, onOpen)
+	tr := buildTranscriptSlot(mv)
+	// The T sits at the end of the row itself, where the mockup puts it, so
+	// the invitation to transcribe is on the note rather than under it.
+	if btn := newTranscribeButton(mv, tr.fold); btn != nil {
+		row.Append(btn)
+	}
 	slot.Append(row)
+	transcript := tr.widget
+	if transcript != nil {
+		slot.Append(transcript)
+	}
+	maybeAutoTranscribe(mv)
 	swapped := false
 	player.watchUntilDestroyed(row, func() {
 		if player.failed == nil || swapped {
@@ -868,6 +887,9 @@ func newVoiceBubble(mv mediaView, open func(path string)) gtk.Widgetter {
 		}
 		swapped = true
 		slot.Remove(row)
+		if transcript != nil {
+			slot.Remove(transcript)
+		}
 		slot.Append(fallback())
 	})
 	return slot

@@ -74,6 +74,21 @@ func TestBubbleVM_ReplyNotFoundFallback(t *testing.T) {
 	}
 }
 
+func TestBubbleVM_ReplyNotLoadedQuotesCarriedText(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+	m := client.Message{ID: "2", Text: "reply text", TS: now.Unix(), ReplyTo: &client.MsgRef{MsgID: "paged-out", Text: "📷 Photo"}}
+
+	out := bubbleVM(m, nil, map[string]client.Message{}, now)
+	if out.QuotedText != "📷 Photo" {
+		t.Errorf("QuotedText = %q, want the carried preview", out.QuotedText)
+	}
+	// A loaded target still wins over the carried copy (it may have been edited).
+	loaded := map[string]client.Message{"paged-out": {ID: "paged-out", Text: "now stored"}}
+	if out := bubbleVM(m, nil, loaded, now); out.QuotedText != "now stored" {
+		t.Errorf("QuotedText with target loaded = %q, want now stored", out.QuotedText)
+	}
+}
+
 func TestBubbleVM_DaySeparator(t *testing.T) {
 	now := mustParse(t, "2026-08-30 18:00:00")
 	day1 := mustParse(t, "2026-08-30 09:00:00")

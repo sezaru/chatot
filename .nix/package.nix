@@ -21,6 +21,7 @@
   gst_all_1,
   ffmpeg,
   poppler-utils,
+  whisper-cpp,
   xdg-utils,
   cantarell-fonts,
   jetbrains-mono,
@@ -107,7 +108,7 @@ in
     preFixup = ''
       gappsWrapperArgs+=(
         --set GDK_PIXBUF_MODULE_FILE ${pixbufLoaders}
-        --prefix PATH : ${lib.makeBinPath [ffmpeg poppler-utils xdg-utils]}
+        --prefix PATH : ${lib.makeBinPath [ffmpeg poppler-utils whisper-cpp xdg-utils]}
         --prefix XDG_DATA_DIRS : ${cantarell-fonts}/share:${jetbrains-mono}/share:${adwaita-icon-theme}/share
         --set CHATOT_NO_DESKTOP_ENTRY 1
         ${lib.optionalString (notificationSound != null) "--set CHATOT_NOTIFY_SOUND ${notificationSound}"}

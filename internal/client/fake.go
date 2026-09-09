@@ -205,6 +205,15 @@ func NewFake() *Fake {
 			CallLog: &CallLog{Outcome: CallMissed}},
 		{ID: "m18", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 1800,
 			CallLog: &CallLog{Video: true, Outcome: CallAnswered, DurationSecs: 151}},
+		// m20 is long enough to be folded in the bubble, so the "Read more"
+		// control has fake coverage; anything under ~420 characters renders
+		// whole and would never show it.
+		{ID: "m20", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 1650,
+			Text: "The landlord sent the full list of what stays: the fridge, the washing machine and the small dishwasher. " +
+				"The wardrobe in the second bedroom is theirs and goes out before the 30th. Water and the building fee are " +
+				"inside the rent, electricity and gas are on us. They also asked whether we want the garage spot, it is the " +
+				"second one on the left as you come down the ramp, and they need an answer by Friday because the neighbours " +
+				"upstairs have asked for it twice already."},
 		// m19 replies to a captionless picture, so the quote has no text to
 		// show and falls back to the kind label ("📷 Photo").
 		{ID: "m19", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 1700,
@@ -851,6 +860,21 @@ func (f *Fake) SetPlayPosition(jid, msgID string, ms int) error {
 	return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, jid)
 }
 
+// SetTranscript stores the transcript on the message's attachment.
+func (f *Fake) SetTranscript(jid, msgID, text string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, m := range f.messages[jid] {
+		if m.ID == msgID && m.Attachment != nil {
+			a := *m.Attachment
+			a.Transcript = text
+			f.messages[jid][i].Attachment = &a
+			return nil
+		}
+	}
+	return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, jid)
+}
+
 func (f *Fake) StopLiveLocation(ctx context.Context, chatJID, msgID string) error {
 	f.mu.Lock()
 	msgs := f.messages[chatJID]
@@ -1320,6 +1344,28 @@ func (f *Fake) OwnJID() string { return fakeOwnJID }
 
 // ContactName resolves a fixture person: the chat list's names plus the
 // group participants the fixture threads mention.
+// MessagePreview is the demo message's text or attachment label; see
+// Client.MessagePreview.
+func (f *Fake) MessagePreview(chatJID, msgID string) (string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, m := range f.messages[chatJID] {
+		if m.ID != msgID {
+			continue
+		}
+		switch {
+		case m.Text != "":
+			return m.Text, true
+		case m.Attachment != nil:
+			row := storeMediaRow(chatJID, msgID, m.Attachment)
+			return store.Preview(store.MessageRow{}, &row), true
+		default:
+			return store.Preview(storeMessageRow(&m), nil), true
+		}
+	}
+	return "", false
+}
+
 func (f *Fake) ContactName(jid string) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()

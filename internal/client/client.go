@@ -464,6 +464,10 @@ type NewsletterMessage struct {
 type MsgRef struct {
 	ChatJID string
 	MsgID   string
+	// Text is the one-line preview of the quoted message as the reply
+	// carried it (WhatsApp sends a copy of what was quoted): what the
+	// quote shows when the message itself is not stored.
+	Text string
 }
 
 // Attachment describes media attached to a message, inbound or outbound.
@@ -510,6 +514,9 @@ type Attachment struct {
 	// milliseconds from the start (0 = the start, also once it played
 	// through), so the next play resumes there. See SetPlayPosition.
 	PlayPosMS int
+	// Transcript is the text transcribed from an audio attachment on this
+	// computer, "" until one was made. See SetTranscript.
+	Transcript string
 }
 
 // MediaItem is one image/video attachment in a chat, for the media/links/docs
@@ -679,6 +686,9 @@ type Client interface {
 	// (ms from the start; 0 once it played through) so it resumes there.
 	// Local only, no event.
 	SetPlayPosition(jid, msgID string, ms int) error
+	// SetTranscript stores the text transcribed from msgID's audio, so it
+	// shows again without another run. Local only, no event.
+	SetTranscript(jid, msgID, text string) error
 	// ClearUnread zeroes jid's local unread badge without telling anyone.
 	ClearUnread(jid string) error
 	// CheckOnWhatsApp looks up an E.164 phone number and reports its canonical
@@ -767,6 +777,10 @@ type Client interface {
 	// "+number" for a phone-number JID, else "". Used for group senders and
 	// @mentions, which point at people who need not be chats of their own.
 	ContactName(jid string) string
+	// MessagePreview is the one-line stand-in for a stored message (its
+	// text, or "📷 Photo" for a picture), the way a reply quotes it; ok is
+	// false when the message is not stored.
+	MessagePreview(chatJID, msgID string) (preview string, ok bool)
 	// OwnName returns this account's own profile (push) name, "" if unknown,
 	// for the account header and switcher.
 	OwnName() string

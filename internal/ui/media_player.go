@@ -351,7 +351,7 @@ const voiceTrackH = 12
 // is the disc's click (nil plays/pauses the player directly). onOpen, when
 // set, is the mono length's click-to-open (the viewer); the track itself
 // seeks.
-func newVoiceRow(p *mediaPlayer, onGreen, played bool, onToggle, onOpen func()) gtk.Widgetter {
+func newVoiceRow(p *mediaPlayer, onGreen, played bool, onToggle, onOpen func()) *gtk.Box {
 	row := gtk.NewBox(gtk.OrientationHorizontal, 10)
 	row.AddCSSClass("chatot-voice")
 	played = played && !onGreen

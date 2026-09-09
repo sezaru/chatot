@@ -203,6 +203,13 @@ func activate(app *adw.Application, c client.Client) {
 			log.Printf("chatot: save settings failed: %v", err)
 		}
 	}
+	// A pick in either emoji picker reorders the frequently-used row; keep
+	// it across launches, since that row is the one most picks come from.
+	ui.SetRecentEmojis(prefs.RecentEmojis)
+	ui.SaveRecentEmojis = func(list []string) {
+		prefs.RecentEmojis = list
+		saveSettings()
+	}
 
 	chatList := ui.NewChatList(c)
 	sidebar := adw.NewNavigationPage(chatList, "Chats")
@@ -813,6 +820,8 @@ func applySettings(s settings.Settings) {
 	ui.ShowWindowControls = s.ShowWindowControls
 	ui.ShowMessagePreviews = s.ShowMessagePreviews
 	ui.AutoDownload = s.AutoDownload
+	ui.AutoTranscribe = s.AutoTranscribe
+	ui.TranscriptsExpanded = s.TranscriptsExpanded
 	ui.GIFService = s.GIFService
 	ui.GIFAPIKey = s.GIFAPIKey
 	client.SetVerboseLogging(s.VerboseLogging)
@@ -1090,6 +1099,21 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		// ARG: "" plays, "pause:MS" pauses MS later, "resume:MS" starts
 		// as if it had stopped at MS before.
 		d.conversation.PlayVoiceAt(msgIdx, arg)
+	case "react":
+		// The message at MSG gets ARG (👍 by default) through the app's own
+		// React wiring: the row must show the pill without a chat switch.
+		d.conversation.ReactAt(msgIdx, arg)
+	case "transcribe":
+		// The downloaded voice note at MSG is transcribed the way its
+		// Transcribe row does it, model download prompt included.
+		d.conversation.TranscribeAt(msgIdx)
+	case "transcriptopen":
+		// The transcript already on the note at MSG, unfolded.
+		d.conversation.UnfoldTranscriptAt(msgIdx)
+	case "modeldownload":
+		// The speech model download with its progress dialog, skipping
+		// the prompt (point XDG_CACHE_HOME at a scratch dir).
+		d.conversation.DownloadSpeechModel()
 	case "tray":
 		// Two files so the thumbnail strip, its ✕ and the ＋ tile all render;
 		// CHATOT_SHOT_ARG=a.mp4:b.pdf queues those instead.
@@ -1164,6 +1188,14 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		})
 	case "emoji":
 		d.composer.PopEmoji()
+	case "emojiscroll":
+		// ARG is how far down the catalogue to scroll, for the pinned
+		// heading.
+		px := 260.0
+		if arg != "" {
+			fmt.Sscanf(arg, "%f", &px)
+		}
+		d.composer.ScrollEmojiPicker(px)
 	case "gif":
 		d.composer.PopPicker("gif")
 	case "stickers":
@@ -1215,8 +1247,15 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		if d.am != nil {
 			active = d.am.ActiveClient()
 		}
+		// ARG=group has two members of the open group composing, one of
+		// them recording: the notices name them.
 		if f, ok := active.(*client.Fake); ok && jid != "" {
-			f.PushEvent(client.Event{Kind: client.EventChatPresence, ChatPresence: &client.ChatPresence{ChatJID: jid, State: "composing"}})
+			if arg == "group" {
+				f.PushEvent(client.Event{Kind: client.EventChatPresence, ChatPresence: &client.ChatPresence{ChatJID: jid, JID: "1112223333@s.whatsapp.net", State: "composing"}})
+				f.PushEvent(client.Event{Kind: client.EventChatPresence, ChatPresence: &client.ChatPresence{ChatJID: jid, JID: "4445556666@s.whatsapp.net", State: "composing", Media: "audio"}})
+			} else {
+				f.PushEvent(client.Event{Kind: client.EventChatPresence, ChatPresence: &client.ChatPresence{ChatJID: jid, JID: jid, State: "composing"}})
+			}
 		}
 	case "arrive":
 		// ARG messages, 1.5 s apart, land in a chat other than the open one

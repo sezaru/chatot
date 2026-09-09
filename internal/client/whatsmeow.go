@@ -651,6 +651,20 @@ func jidUser(jid string) string {
 	return jid
 }
 
+// MessagePreview is a stored message's one-line stand-in; see
+// Client.MessagePreview.
+func (w *Whatsmeow) MessagePreview(chatJID, msgID string) (string, bool) {
+	if w.store == nil {
+		return "", false
+	}
+	preview, _, ok, err := w.store.MessagePreview(chatJID, msgID)
+	if err != nil {
+		w.log.Warnf("chatot/client: message preview: %v", err)
+		return "", false
+	}
+	return preview, ok
+}
+
 // ContactName resolves a person's display name from the local contacts
 // table; see Client.ContactName.
 func (w *Whatsmeow) ContactName(jid string) string {
@@ -1786,6 +1800,9 @@ func (w *Whatsmeow) React(ctx context.Context, jid, msgID, emoji string) error {
 	}); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of sent reaction failed: %v", err)
 	}
+	// Our own device gets no echo of its reaction: the event is what
+	// re-renders the row, as with everyone else's.
+	w.pushEvent(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: jid, MsgID: msgID}})
 	return nil
 }
 
@@ -1831,6 +1848,11 @@ func (w *Whatsmeow) MarkPlayed(ctx context.Context, jid, msgID string, notifySen
 // SetPlayPosition stores where msgID's audio stopped; see Client.
 func (w *Whatsmeow) SetPlayPosition(jid, msgID string, ms int) error {
 	return w.store.SetMediaPlayPos(jid, msgID, ms)
+}
+
+// SetTranscript stores msgID's transcript; see Client.
+func (w *Whatsmeow) SetTranscript(jid, msgID, text string) error {
+	return w.store.SetMediaTranscript(jid, msgID, text)
 }
 
 // sendReceipts sends one receipt of the given kind per sender for msgIDs

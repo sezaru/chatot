@@ -47,6 +47,7 @@ type Message struct {
 	Text         string
 	TS           int64
 	ReplyToMsgID string
+	ReplyToText  string              // the quoted message as the reply carried it, for one not stored
 	Reactions    map[string][]string // emoji -> reactor JIDs, oldest first
 	Attachment   *Attachment
 	// Kind is "" for a plain text/media message or a rich-kind tag (e.g.
@@ -118,6 +119,9 @@ type Attachment struct {
 	// PlayPosMS is where playback of an audio attachment last stopped, in
 	// milliseconds (0 = the start). See SetMediaPlayPos.
 	PlayPosMS int
+	// Transcript is the text transcribed from an audio attachment, "" until
+	// one was made. See SetMediaTranscript.
+	Transcript string
 }
 
 // SearchHit is a single Search result: either a message match (MsgID set,
@@ -150,6 +154,7 @@ type MessageRow struct {
 	Text         string
 	TS           int64
 	ReplyToMsgID string // "" leaves any existing reply link untouched
+	ReplyToText  string // preview of the quoted message; "" leaves any existing one
 	Kind         string // "" plain message; "location" etc. for a rich kind
 	Payload      string // opaque JSON body for a rich kind, "" otherwise
 	Edited       bool   // true for a MESSAGE_EDIT upsert; sticky in the store
