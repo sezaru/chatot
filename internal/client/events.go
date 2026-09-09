@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	waBinary "go.mau.fi/whatsmeow/binary"
@@ -358,6 +359,7 @@ func extractText(m *waProto.Message, msg *Message) {
 		ctx, rich = extractRichText(m, msg)
 		if !rich && hasPayload(m) {
 			msg.Text = unsupportedText
+			log.Printf("chatot: unsupported message payload, fields: %s", strings.Join(payloadFieldNames(m), ", "))
 		}
 	}
 	if ctx == nil {

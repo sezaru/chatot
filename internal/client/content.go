@@ -88,23 +88,19 @@ func extractRichText(m *waProto.Message, msg *Message) (ctx *waProto.ContextInfo
 		return gi.GetContextInfo(), true
 	case m.GetTemplateMessage() != nil:
 		t := m.GetTemplateMessage()
-		body := t.GetHydratedTemplate().GetHydratedContentText()
-		if body == "" {
-			body = t.GetHydratedFourRowTemplate().GetHydratedContentText()
-		}
-		msg.Text = orUnsupported(body)
+		msg.Text = orUnsupported(templateText(t))
 		return t.GetContextInfo(), true
 	case m.GetButtonsMessage() != nil:
 		b := m.GetButtonsMessage()
-		msg.Text = orUnsupported(joinNonEmpty("\n", b.GetText(), b.GetContentText()))
+		msg.Text = orUnsupported(buttonsText(b))
 		return b.GetContextInfo(), true
 	case m.GetListMessage() != nil:
 		l := m.GetListMessage()
-		msg.Text = orUnsupported(joinNonEmpty("\n", l.GetTitle(), l.GetDescription()))
+		msg.Text = orUnsupported(listText(l))
 		return l.GetContextInfo(), true
 	case m.GetInteractiveMessage() != nil:
 		im := m.GetInteractiveMessage()
-		msg.Text = orUnsupported(joinNonEmpty("\n", im.GetHeader().GetTitle(), im.GetBody().GetText()))
+		msg.Text = orUnsupported(interactiveText(im))
 		return im.GetContextInfo(), true
 	case m.GetButtonsResponseMessage() != nil:
 		msg.Text = orUnsupported(m.GetButtonsResponseMessage().GetSelectedDisplayText())
@@ -227,4 +223,20 @@ func joinNonEmpty(sep string, parts ...string) string {
 		}
 	}
 	return strings.Join(kept, sep)
+}
+
+// payloadFieldNames lists the top-level fields set on m, for the log line
+// written when a message falls through to the Unsupported placeholder: the
+// store keeps no raw payload, so this is the only trace of what WhatsApp
+// actually sent.
+func payloadFieldNames(m *waProto.Message) []string {
+	var names []string
+	if m == nil {
+		return names
+	}
+	m.ProtoReflect().Range(func(fd protoreflect.FieldDescriptor, _ protoreflect.Value) bool {
+		names = append(names, string(fd.Name()))
+		return true
+	})
+	return names
 }
