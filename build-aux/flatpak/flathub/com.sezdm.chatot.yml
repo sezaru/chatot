@@ -119,8 +119,8 @@ modules:
     sources:
       - type: git
         url: https://github.com/sezaru/chatot.git
-        tag: v0.5.0-beta
-        commit: 50e4addabc9e3b6205e1f92cc4e93e36afc45ddd
+        tag: v0.6.0-beta
+        commit: 64470ac1d12e30000ac7e46b8027945d6a1ac69e
         x-checker-data:
           type: git
           tag-pattern: ^v([\d.]+(?:-beta)?)$
