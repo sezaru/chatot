@@ -1457,14 +1457,20 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 // nothing suggests a real input method (fcitx/ibus export XMODIFIERS or set
 // GTK_IM_MODULE themselves), so an IME user keeps theirs.
 func ensureComposeInput() {
-	if os.Getenv("WAYLAND_DISPLAY") == "" || os.Getenv("GTK_IM_MODULE") != "" {
+	if os.Getenv("WAYLAND_DISPLAY") == "" {
+		return
+	}
+	if v := os.Getenv("GTK_IM_MODULE"); v != "" {
+		log.Printf("chatot: input method: GTK_IM_MODULE=%q from the environment", v)
 		return
 	}
 	for _, v := range []string{"XMODIFIERS", "INPUT_METHOD", "QT_IM_MODULE"} {
-		if os.Getenv(v) != "" {
+		if val := os.Getenv(v); val != "" {
+			log.Printf("chatot: input method: left to the compositor (%s=%q)", v, val)
 			return
 		}
 	}
+	log.Printf("chatot: input method: no input method configured; composing dead keys in-process (GTK_IM_MODULE=gtk-im-context-simple)")
 	os.Setenv("GTK_IM_MODULE", "gtk-im-context-simple")
 }
 

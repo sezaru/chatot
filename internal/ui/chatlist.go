@@ -412,6 +412,16 @@ func NewChatList(c client.Client) *ChatList {
 	search.AddCSSClass("chatot-search-entry")
 	search.SetHExpand(true)
 	listCol.Append(search)
+	// Input-method diagnostics (CHATOT_TRACE=1), the single-line control
+	// for the composer's traces: same keys, same process, different widget.
+	searchKeys := gtk.NewEventControllerKey()
+	searchKeys.SetPropagationPhase(gtk.PhaseCapture)
+	searchKeys.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
+		trace(1, "search key 0x%x (%s) mods=%d", keyval, gdk.KeyvalName(keyval), state)
+		return false
+	})
+	search.AddController(searchKeys)
+	search.ConnectChanged(func() { trace(1, "search text %q", search.Text()) })
 
 	// The old header's filter icons are gone from the bar; they live in the
 	// ⋮ app menu (built below) but stay real ToggleButtons so all the
