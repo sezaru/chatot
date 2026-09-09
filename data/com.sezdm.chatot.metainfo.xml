@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.6.0-beta" date="2026-09-08">
+      <description>
+        <p>A chat wallpaper: pick any picture under Preferences, and override it per chat from the chat menu with a picture of its own or the plain background. On a wide window the messages and the input stop growing and stay centred, as on WhatsApp Web. The sticker picker fills with the phone's recent stickers, a sticker in a chat can be added to it, and notifications show the contact's or group's picture.</p>
+      </description>
+    </release>
     <release version="0.5.0-beta" date="2026-09-08">
       <description>
         <p>First release on Flathub. Link previews under pasted links, sharp previews for pictures and clips that are not downloaded yet, and Copy image in the viewer. Voice notes remember their played state and position and advance to the next one. A reply quote jumps to the original message, and the chat list names who sent a group's last message. Sidebar refreshes and thread paging moved off the main loop, so long chats scroll smoothly.</p>
