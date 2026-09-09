@@ -819,6 +819,46 @@ func (v *AttachmentViewer) pictureScroller() gtk.Widgetter {
 	})
 	scroller.AddController(wheel)
 	v.wheel = func(f, x, y float64) { v.zoomAt(scroller, f, x, y) }
+	// A pinch (two fingers spreading on the touchpad, or on a touchscreen)
+	// zooms continuously about the fingers' midpoint. The gesture reports
+	// the scale since the pinch began, so each event applies the change
+	// since the previous one.
+	pinch := gtk.NewGestureZoom()
+	pinch.SetPropagationPhase(gtk.PhaseCapture)
+	last := 1.0
+	pinch.ConnectBegin(func(*gdk.EventSequence) { last = 1 })
+	pinch.ConnectScaleChanged(func(scale float64) {
+		if scale <= 0 || last <= 0 {
+			return
+		}
+		x, y, ok := pinch.BoundingBoxCenter()
+		if !ok {
+			x, y = px, py
+		}
+		v.zoomAt(scroller, scale/last, x, y)
+		last = scale
+	})
+	scroller.AddController(pinch)
+	// Dragging with the mouse pans a zoomed picture: the scroller follows
+	// the pointer. Touch drags are left to the scrolled window's own
+	// kinetic scrolling, which claims them ahead of this gesture.
+	drag := gtk.NewGestureDrag()
+	var dragH, dragV float64
+	drag.ConnectDragBegin(func(_, _ float64) {
+		dragH, dragV = scroller.HAdjustment().Value(), scroller.VAdjustment().Value()
+		if v.pic != nil && !v.atFit() {
+			v.pic.SetCursorFromName("grabbing")
+		}
+	})
+	drag.ConnectDragUpdate(func(dx, dy float64) {
+		if drag.CurrentSequence() != nil {
+			return // a touch: kinetic scrolling pans
+		}
+		scroller.HAdjustment().SetValue(dragH - dx)
+		scroller.VAdjustment().SetValue(dragV - dy)
+	})
+	drag.ConnectDragEnd(func(_, _ float64) { v.picCursor() })
+	scroller.AddController(drag)
 	hadj, vadj := scroller.HAdjustment(), scroller.VAdjustment()
 	hadj.ConnectChanged(func() { v.applyAnchor(hadj, vadj) })
 	vadj.ConnectChanged(func() { v.applyAnchor(hadj, vadj) })
@@ -951,6 +991,7 @@ func (v *AttachmentViewer) applyZoom() {
 		v.pic.SetCanShrink(false)
 	}
 	v.pic.SetSizeRequest(-1, -1)
+	v.picCursor()
 	if v.zoomLbl != nil {
 		shown := fit * mul
 		if shown > 1 && atFit {
@@ -964,6 +1005,19 @@ func (v *AttachmentViewer) applyZoom() {
 		} else {
 			v.fitBtn.RemoveCSSClass("chatot-viewer-fit-on")
 		}
+	}
+}
+
+// picCursor shows an open hand over a zoomed picture, which the mouse can
+// drag to pan; fitted, there is nothing to pan and the cursor is plain.
+func (v *AttachmentViewer) picCursor() {
+	if v.pic == nil {
+		return
+	}
+	if v.atFit() {
+		v.pic.SetCursor(nil)
+	} else {
+		v.pic.SetCursorFromName("grab")
 	}
 }
 
