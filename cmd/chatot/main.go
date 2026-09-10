@@ -334,13 +334,13 @@ func activate(app *adw.Application, c client.Client) {
 	conversation.OnRetryRequested(composer.Resend)
 	conversation.OnReplyRequested(composer.StartReply)
 	conversation.OnEditRequested(composer.StartEdit)
+	// The client shows the reaction before it sends it and takes it back if
+	// the send fails, so there is nothing to apply here on the way out.
 	conversation.OnReactRequested(func(msg client.Message, emoji string) {
 		go func() {
 			if err := c.React(context.Background(), msg.ChatJID, msg.ID, emoji); err != nil {
 				log.Printf("chatot: react failed: %v", err)
-				return
 			}
-			glib.IdleAdd(func() { conversation.ApplyOwnReaction(msg.ChatJID) })
 		}()
 	})
 	conversation.OnVoteRequested(func(msg client.Message, options []string) {

@@ -1816,20 +1816,40 @@ func (w *Whatsmeow) React(ctx context.Context, jid, msgID, emoji string) error {
 		return fmt.Errorf("chatot/client: react: target message %s not found for group reaction key", msgID)
 	}
 
+	// Show it before sending it. A reaction is one tap, and holding the
+	// emoji back until the server answered made every one of them feel like
+	// a request being processed rather than a button being pressed. The
+	// round-trip still happens; it just no longer happens in front of the
+	// user. WhatsApp's own clients paint it immediately and reconcile after.
+	own := w.ownJID()
+	prev, err := w.store.ReactionBy(jid, msgID, own)
+	if err != nil {
+		// Not fatal: it only costs an accurate undo if the send fails.
+		w.log.Warnf("chatot/client: read own reaction on %s: %v", msgID, err)
+	}
+	w.showOwnReaction(jid, msgID, own, emoji)
+
 	reaction := w.wa.BuildReaction(chat, sender, msgID, emoji)
 	if _, err := w.wa.SendMessage(ctx, chat, reaction); err != nil {
+		// Put the row back: a reaction that never left must not sit there
+		// looking sent.
+		w.showOwnReaction(jid, msgID, own, prev)
 		return fmt.Errorf("chatot/client: send reaction: %w", err)
 	}
-
-	if err := w.store.UpsertReaction(store.ReactionRow{
-		ChatJID: jid, MsgID: msgID, ReactorJID: w.ownJID(), Emoji: emoji, TS: time.Now().Unix(),
-	}); err != nil {
-		w.log.Warnf("chatot/client: optimistic upsert of sent reaction failed: %v", err)
-	}
-	// Our own device gets no echo of its reaction: the event is what
-	// re-renders the row, as with everyone else's.
-	w.pushEvent(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: jid, MsgID: msgID}})
 	return nil
+}
+
+// showOwnReaction records this account's reaction on a message locally and
+// tells the UI to re-render the row. Our own device gets no echo of its
+// reaction from the server, so this is the only thing that ever shows it.
+// An empty emoji clears the reaction, which is also how an undo is written.
+func (w *Whatsmeow) showOwnReaction(jid, msgID, own, emoji string) {
+	if err := w.store.UpsertReaction(store.ReactionRow{
+		ChatJID: jid, MsgID: msgID, ReactorJID: own, Emoji: emoji, TS: time.Now().Unix(),
+	}); err != nil {
+		w.log.Warnf("chatot/client: store own reaction on %s: %v", msgID, err)
+	}
+	w.pushEvent(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: jid, MsgID: msgID}})
 }
 
 // MarkRead tells WhatsApp the account read msgIDs in jid, then clears the

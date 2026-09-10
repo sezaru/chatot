@@ -139,3 +139,31 @@ func TestManagerRelinkForwardsToActive(t *testing.T) {
 		t.Error("AccountManager.Relink did not reach the active account")
 	}
 }
+
+// A reaction is one tap, so the client records it and reports it before the
+// send, and the thread re-renders on that event. Waiting for the server
+// round-trip first is what made reacting feel like a request.
+func TestFakeReactReportsItself(t *testing.T) {
+	f := NewFake()
+	chats, err := f.Chats(0)
+	if err != nil || len(chats) == 0 {
+		t.Fatalf("Chats: %v (%d)", err, len(chats))
+	}
+	jid := chats[0].JID
+	msgs, err := f.Messages(jid, 0)
+	if err != nil || len(msgs) == 0 {
+		t.Fatalf("Messages: %v (%d)", err, len(msgs))
+	}
+	events := f.Events()
+	if err := f.React(context.Background(), jid, msgs[0].ID, "👍"); err != nil {
+		t.Fatalf("React: %v", err)
+	}
+	select {
+	case ev := <-events:
+		if ev.Kind != EventReaction || ev.Reaction == nil || ev.Reaction.ChatJID != jid {
+			t.Errorf("React published %+v, want an EventReaction for %s", ev, jid)
+		}
+	default:
+		t.Error("React published no event, so nothing would re-render the row")
+	}
+}

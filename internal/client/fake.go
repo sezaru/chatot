@@ -806,17 +806,26 @@ func (f *Fake) DeleteMessage(ctx context.Context, chatJID, msgID string) error {
 
 func (f *Fake) React(ctx context.Context, jid, msgID, emoji string) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	found := false
 	msgs := f.messages[jid]
 	for i := range msgs {
 		if msgs[i].ID == msgID {
 			// One reaction per person: picking a new emoji replaces the old
 			// one, and "" just removes it.
 			msgs[i].Reactions = withReaction(msgs[i].Reactions, fakeOwnJID, emoji)
-			return nil
+			found = true
+			break
 		}
 	}
-	return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, jid)
+	f.mu.Unlock()
+	if !found {
+		return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, jid)
+	}
+	// The real client reports its own reaction as an event, since the server
+	// never echoes one back; the thread re-renders on that. Published outside
+	// the lock so a subscriber reading back is not blocked by it.
+	f.events.Publish(Event{Kind: EventReaction, Reaction: &Reaction{ChatJID: jid, MsgID: msgID}})
+	return nil
 }
 
 func (f *Fake) DeleteMessageForMe(ctx context.Context, chatJID, msgID string) error {
