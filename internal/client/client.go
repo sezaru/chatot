@@ -601,6 +601,12 @@ type Client interface {
 	// paired account is still bringing its socket up.
 	Paired() bool
 	Logout(ctx context.Context) error
+	// Relink starts a fresh pairing round for this account, replacing
+	// whatever signed-out session it holds, so QRCodes() begins producing
+	// again. It is what the UI's "Relink" asks for; a round already in
+	// progress is left alone, and a still-linked account is refused with
+	// ErrStillLinked rather than silently doing nothing.
+	Relink() error
 	Events() <-chan Event
 	// PairPhone requests a phone-number pairing code as an alternative to
 	// scanning the QR; call while connected-but-unpaired, same as QR pairing.

@@ -674,10 +674,72 @@ func activate(app *adw.Application, c client.Client) {
 			chatList.HideSyncProgress()
 		}
 	}
+
+	// applyLoginState parks the window on the pairing screen as soon as the
+	// account in view has no session left, and makes sure something is
+	// handing out codes for it.
+	//
+	// It is re-checked on every connection event and once a second rather
+	// than trusted to a single EventLoggedOut. Both reporters of a logout
+	// (our own Logout and whatsmeow's device-removed handler) can fire while
+	// whatsmeow is still deleting the device, and an unlink that leaves the
+	// window showing the signed-out account's chats is the worst outcome
+	// there is — so the page is derived from the state, not from catching
+	// one event at the right moment.
+	var lastRelink time.Time
+	// sawLogout marks that the account in view lost its session while the
+	// window was showing it, which is the only case that needs a relink
+	// chased. It is set by the flip to the pairing screen below, not by the
+	// logout event: every account shares this bus, so an event-driven flag
+	// would also fire for a background account, and the retry it licensed
+	// would land on the active account — throwing away the very code
+	// someone might be scanning. A fresh install is unpaired too, and there
+	// Start has already opened a round and no flip happens.
+	sawLogout := false
+	applyLoginState := func() {
+		// Every account's events share this bus, so a background account
+		// signing out must not hide the one in view. Paired covers the gap
+		// between sockets, where the session is intact and only the
+		// connection is down.
+		if c.LoggedIn() || c.Paired() {
+			sawLogout = false
+			// The account in view has a session again — a scan landed, or
+			// the switcher moved to one that was never signed out. Nothing
+			// else takes the window off the pairing screen for the second
+			// case, so it would sit there showing a code for an account that
+			// doesn't need one. The sync screen owns the post-pair wait.
+			if stack.VisibleChildName() == "linking" && !sync.Blocking() {
+				stack.SetVisibleChildName("main")
+				chatList.RefreshAccounts()
+			}
+			return
+		}
+		if stack.VisibleChildName() != "linking" {
+			stack.SetVisibleChildName("linking")
+			linking.SetStatus("Logged out — scan to relink")
+			chatList.RefreshAccounts()
+			sawLogout = true
+		}
+		// Ask for a pairing round in case the one that should have followed
+		// the logout never started. Cheap and idempotent while a round is
+		// running, but rate-limited so a persistently failing account isn't
+		// retried every second.
+		if !sawLogout || time.Since(lastRelink) < relinkRetryInterval {
+			return
+		}
+		lastRelink = time.Now()
+		go func() {
+			if err := c.Relink(); err != nil {
+				log.Printf("chatot: start pairing after logout: %v", err)
+			}
+		}()
+	}
+
 	glib.TimeoutAdd(1000, func() bool {
 		if sync.Tick(time.Now()) || sync.Blocking() || sync.Background() {
 			applySync()
 		}
+		applyLoginState()
 		return true
 	})
 
@@ -692,10 +754,15 @@ func activate(app *adw.Application, c client.Client) {
 				})
 			case ev.Kind == client.EventConnection && ev.Connection != nil && ev.Connection.Connected:
 				glib.IdleAdd(func() {
-					if !sync.Blocking() {
+					// A pairing socket connects too, long before there is a
+					// session: only a linked account earns the main view.
+					if !sync.Blocking() && c.Paired() {
 						stack.SetVisibleChildName("main")
 					}
+					applyLoginState()
 				})
+			case ev.Kind == client.EventConnection:
+				glib.IdleAdd(applyLoginState)
 			case ev.Kind == client.EventHistorySync && ev.HistorySync != nil:
 				h := ev.HistorySync
 				glib.IdleAdd(func() {
@@ -703,15 +770,7 @@ func activate(app *adw.Application, c client.Client) {
 					applySync()
 				})
 			case ev.Kind == client.EventLoggedOut:
-				glib.IdleAdd(func() {
-					// Every account's events share this bus; a background
-					// account signing out must not hide the one in view.
-					if c.LoggedIn() {
-						return
-					}
-					stack.SetVisibleChildName("linking")
-					linking.SetStatus("Disconnected — scan to relink")
-				})
+				glib.IdleAdd(applyLoginState)
 			case ev.Kind == client.EventMessage && ev.Message != nil && !ev.Message.FromMe && !ev.Synced:
 				// A message landing in the chat on screen while the window
 				// has focus is read as it arrives: no badge, and a receipt
@@ -927,6 +986,12 @@ type shotDeps struct {
 // loadingFallbackMS bounds the startup mark: past this the main view shows
 // with whatever the local store holds, connected or not.
 const loadingFallbackMS = 12000
+
+// relinkRetryInterval rate-limits the pairing round applyLoginState asks for
+// while the window sits on the linking screen. Long enough that an account
+// that cannot pair at all (stopped, offline) isn't retried every tick, short
+// enough that a transient failure clears itself without a restart.
+const relinkRetryInterval = 15 * time.Second
 
 func shotHook(state string, msgIdx int, d shotDeps) {
 	refresh := func() { d.chatList.RefreshAccounts() }
@@ -1465,6 +1530,41 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		if d.am != nil {
 			d.chatList.ShowRelink(d.am)
 		}
+	// The unlink states run a real "Unlink this device" and then look at
+	// what the window is left showing — the pairing screen, the ⋮ menu's
+	// last row, the Accounts card, the Relink card's code. The delay is for
+	// the logout event to land before the follow-up opens.
+	case "unlink", "unlinkmenu", "unlinkmanage", "unlinkrelink", "unlinkremove", "unlinkremoved":
+		d.chatList.UnlinkNow()
+		after := state
+		glib.TimeoutAdd(600, func() bool {
+			switch after {
+			case "unlinkmenu":
+				d.chatList.PopupAppMenu()
+			case "unlinkmanage":
+				if d.am != nil {
+					ui.ShowManageAccountsDialog(d.win, d.am, d.prefs, refresh, d.saveSettings)
+				}
+			case "unlinkrelink":
+				if d.am != nil {
+					d.chatList.ShowRelink(d.am)
+				}
+			case "unlinkremove", "unlinkremoved":
+				if d.am == nil {
+					return false
+				}
+				ui.RemoveFirstAccount(d.win, d.am, after == "unlinkremoved", refresh)
+				if after == "unlinkremoved" {
+					// Re-open the card on the result, which is the half the
+					// report said never happened.
+					glib.TimeoutAdd(600, func() bool {
+						ui.ShowManageAccountsDialog(d.win, d.am, d.prefs, refresh, d.saveSettings)
+						return false
+					})
+				}
+			}
+			return false
+		})
 	case "join":
 		d.chatList.ShowJoinInvite()
 	case "msginfo":

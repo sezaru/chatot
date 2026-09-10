@@ -44,7 +44,7 @@ func TestPlusMenuItems(t *testing.T) {
 }
 
 func TestAppMenuItems(t *testing.T) {
-	items := appMenuItems(appMenuActions{})
+	items := appMenuItems(true, appMenuActions{})
 	got := labelsOf(items)
 	want := []string{
 		"Archived", "Starred messages", "Blocked contacts", "---",
@@ -70,6 +70,25 @@ func TestAppMenuItems(t *testing.T) {
 	}
 	if byLabel["Quit"].Destructive {
 		t.Error("Quit should not be destructive")
+	}
+}
+
+// Offering "Unlink this device" to an account that is already signed out is
+// a row that cannot do anything: the menu gives it the action it needs.
+func TestAppMenuItemsSwapUnlinkForRelinkWhenSignedOut(t *testing.T) {
+	got := labelsOf(appMenuItems(false, appMenuActions{}))
+	want := []string{
+		"Archived", "Starred messages", "Blocked contacts", "---",
+		"Linked devices", "Preferences", "About chatot", "---",
+		"Relink this device", "Quit",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("appMenuItems(signed out) = %v, want %v", got, want)
+	}
+	for _, it := range appMenuItems(false, appMenuActions{}) {
+		if it.Label == "Relink this device" && it.Destructive {
+			t.Error("Relink is not a destructive action")
+		}
 	}
 }
 

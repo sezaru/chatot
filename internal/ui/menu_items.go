@@ -36,13 +36,18 @@ type appMenuActions struct {
 	Preferences   func()
 	About         func()
 	Unlink        func()
-	Quit          func()
+	// Relink takes Unlink's place once the account is signed out.
+	Relink func()
+	Quit   func()
 }
 
 // appMenuItems is the sidebar's ⋮ application menu: the mockup's rows, plus
 // "Blocked contacts" under Starred — the one deliberate addition, since the
 // design gives the blocked list no other home than a Preferences row.
-func appMenuItems(a appMenuActions) []menuItem {
+//
+// linked is whether the account still holds a WhatsApp session; it decides
+// the last row (see unlinkOrRelinkItem).
+func appMenuItems(linked bool, a appMenuActions) []menuItem {
 	return []menuItem{
 		{Icon: "📂", Label: "Archived", OnActivate: a.Archived},
 		{Icon: "⭐", Label: "Starred messages", OnActivate: a.Starred},
@@ -52,9 +57,20 @@ func appMenuItems(a appMenuActions) []menuItem {
 		{Icon: "⚙", Label: "Preferences", Accel: "Ctrl+,", OnActivate: a.Preferences},
 		{Mark: true, Label: "About chatot", OnActivate: a.About},
 		menuSeparator(),
-		{Icon: "⏻", Label: "Unlink this device", Destructive: true, OnActivate: a.Unlink},
+		unlinkOrRelinkItem(linked, a),
 		{Icon: "✕", Label: "Quit", Accel: "Ctrl+Q", OnActivate: a.Quit},
 	}
+}
+
+// unlinkOrRelinkItem is the menu's last destructive row. Offering "Unlink
+// this device" to an account that is already signed out is a dead end — the
+// row that does nothing — so a signed-out account gets the action it
+// actually needs in that slot instead.
+func unlinkOrRelinkItem(linked bool, a appMenuActions) menuItem {
+	if linked {
+		return menuItem{Icon: "⏻", Label: "Unlink this device", Destructive: true, OnActivate: a.Unlink}
+	}
+	return menuItem{Icon: "🔗", Label: "Relink this device", OnActivate: a.Relink}
 }
 
 // chatMenuActions are the conversation header ⋮ menu's callbacks.

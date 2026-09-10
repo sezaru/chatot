@@ -39,6 +39,15 @@
 @define-color chatot_accent_text #147a63;
 @define-color chatot_accent_text_soft #1b8c72;
 
+/* The mockup's error tone, split the same way as the accent above. Red text
+   is the half that has to move in dark mode: #c01c28 is dark enough that on
+   the dark surfaces it reads as a smudge rather than as a colour, and the
+   places it appears (the "Logged out · scan to relink" account line, failed
+   downloads, danger menu rows) are exactly the ones that must be legible.
+   Fills carry white text of their own, so they only lift a little. */
+@define-color chatot_danger #c01c28;
+@define-color chatot_danger_text #c01c28;
+
 /* Cantarell is the mockup UI font; packaged separately, fallback covers dev.
    No root font-size here so the user's text scale is respected. */
 window {
@@ -282,7 +291,7 @@ window {
 }
 
 .chatot-media-dl-fail {
-	background-color: alpha(#c01c28, 0.18);
+	background-color: alpha(@chatot_danger, 0.18);
 	color: #ff7b85;
 }
 
@@ -302,7 +311,7 @@ window {
 
 .chatot-media-row-fail {
 	font-size: 10.5px;
-	color: #c01c28;
+	color: @chatot_danger_text;
 }
 
 .chatot-doc-glyph {
@@ -403,8 +412,8 @@ window {
 
 .chatot-location-pin {
 	border-radius: 999px;
-	background-color: #c01c28;
-	box-shadow: 0 0 0 4px alpha(#c01c28, 0.22);
+	background-color: @chatot_danger;
+	box-shadow: 0 0 0 4px alpha(@chatot_danger, 0.22);
 }
 
 .chatot-location-title {
@@ -507,7 +516,7 @@ window {
 }
 
 .chatot-call-missed {
-	color: #c01c28;
+	color: @chatot_danger_text;
 }
 
 .chatot-call-detail {
@@ -932,7 +941,7 @@ button.chatot-composer-iconbtn.text-button,
 }
 
 .chatot-record-discard:hover {
-	color: #c01c28;
+	color: @chatot_danger_text;
 }
 
 .chatot-record-track {
@@ -946,18 +955,18 @@ button.chatot-composer-iconbtn.text-button,
 	padding: 0;
 	border-radius: 999px;
 	font-size: 12px;
-	color: #c01c28;
+	color: @chatot_danger_text;
 	background: none;
 	box-shadow: none;
 	border: none;
 }
 
 .chatot-record-pause:hover {
-	background-color: alpha(#c01c28, 0.1);
+	background-color: alpha(@chatot_danger, 0.1);
 }
 
 .chatot-record-dot-paused {
-	background-color: alpha(#c01c28, 0.4);
+	background-color: alpha(@chatot_danger, 0.4);
 }
 
 .chatot-record-pill {
@@ -970,7 +979,7 @@ button.chatot-composer-iconbtn.text-button,
 
 .chatot-record-dot {
 	border-radius: 999px;
-	background-color: #c01c28;
+	background-color: @chatot_danger;
 }
 
 .chatot-record-label {
@@ -997,7 +1006,7 @@ button.chatot-composer-iconbtn.text-button,
 	min-width: 34px;
 	min-height: 34px;
 	border-radius: 999px;
-	background-color: #c01c28;
+	background-color: @chatot_danger;
 	color: #ffffff;
 	font-size: 12px;
 	padding: 0;
@@ -1219,11 +1228,20 @@ button.chatot-composer-iconbtn.text-button,
 }
 
 .chatot-status-bad.chatot-status-dot {
-	background-color: #c01c28;
+	background-color: @chatot_danger;
 }
 
 .chatot-status-bad {
-	color: #c01c28;
+	color: @chatot_danger_text;
+}
+
+/* A bad status is the one line on these surfaces that has to be read, so it
+   keeps its full weight where the neutral state is deliberately dimmed —
+   0.55 on top of a red was most of why "Logged out · scan to relink" was
+   unreadable in dark mode. */
+.chatot-account-status.chatot-status-bad,
+.chatot-linking-status.chatot-status-bad {
+	opacity: 1;
 }
 
 .chatot-account-row-check {
@@ -1452,7 +1470,7 @@ button.chatot-conv-search-btn:hover {
 }
 
 .chatot-menu-item-danger {
-	color: #c01c28;
+	color: @chatot_danger_text;
 }
 
 /* A section caption, not an action: dimmed and never sensitive. */
@@ -2103,7 +2121,7 @@ button.chatot-card-btnrow:active {
 }
 
 .chatot-card-action-danger {
-	color: #c01c28;
+	color: @chatot_danger_text;
 }
 
 .chatot-dialog-body {
@@ -2122,7 +2140,7 @@ button.chatot-card-btnrow:active {
 }
 
 .chatot-outline-btn-danger {
-	color: #c01c28;
+	color: @chatot_danger_text;
 }
 
 .chatot-device-icon {
@@ -2601,16 +2619,16 @@ button.chatot-tab-btn.chatot-tab-on {
 }
 
 .chatot-dialog-hint-bad {
-	color: #c01c28;
+	color: @chatot_danger_text;
 	opacity: 1;
 }
 
 .chatot-chip-btn-danger {
-	color: #c01c28;
+	color: @chatot_danger_text;
 }
 
 button.chatot-danger-btn {
-	background-color: #c01c28;
+	background-color: @chatot_danger;
 }
 
 button.chatot-danger-btn:disabled {
@@ -3579,7 +3597,7 @@ button.chatot-member-more {
 
 .chatot-loc-denied-disc {
 	border-radius: 999px;
-	background-color: alpha(#c01c28, 0.15);
+	background-color: alpha(@chatot_danger, 0.15);
 	font-size: 16px;
 }
 
@@ -4132,7 +4150,7 @@ button.chatot-member-more {
 }
 
 .chatot-viewer-fetch-failed {
-	background-color: #c01c28;
+	background-color: @chatot_danger;
 }
 
 .chatot-viewer-fetch-title {
@@ -4568,12 +4586,12 @@ button.chatot-mention-row-sel {
 
 /* Send states (WhatsApp): a pending message carries a small clock where
    its tick goes; a failed one a red "!" badge and a Retry beside the time.
-   The red is the mockup's error tone (#c01c28, its failed download). */
+   The red is the mockup's error tone (the chatot_danger token, its failed download). */
 .chatot-bubble-failed {
 	font-size: 9px;
 	font-weight: bold;
 	color: #ffffff;
-	background-color: #c01c28;
+	background-color: @chatot_danger;
 	border-radius: 999px;
 	min-width: 13px;
 	min-height: 13px;
@@ -4583,7 +4601,7 @@ button.chatot-mention-row-sel {
 button.chatot-retry {
 	font-size: 11px;
 	font-weight: bold;
-	color: #c01c28;
+	color: @chatot_danger_text;
 	min-height: 0;
 	min-width: 0;
 	padding: 0 6px;
@@ -4592,7 +4610,7 @@ button.chatot-retry {
 
 .chatot-bubble-out button.chatot-retry {
 	color: #ffffff;
-	background-color: alpha(#c01c28, 0.85);
+	background-color: alpha(@chatot_danger, 0.85);
 }
 
 /* A picture's caption sits under it, set like a text bubble's body. */
