@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
@@ -21,11 +23,10 @@ var AutoTranscribe = false
 // transcript starts unfolded under its note.
 var TranscriptsExpanded = false
 
-// The transcribe control on the voice row and the spinners that stand in
-// for its glyph while a run is under way, at the mockup's sizes.
+// The transcribe control on the voice row, and the spinner on the line that
+// reports the run under way, at the mockup's sizes.
 const (
 	transcribeBtnSize     = 23
-	transcribeSpinnerSize = 11
 	transcriptSpinnerSize = 12
 )
 
@@ -157,8 +158,9 @@ func tickTranscriptElapsed(l *gtk.Label, since time.Time) {
 	})
 }
 
-// transcriptChevron is the fold marker at the end of the transcript head:
-// pointing up when the text is showing, down when it is folded away.
+// transcriptChevron is the fold marker the row's T carries once there is a
+// transcript behind it: pointing up when the text is showing, down when it
+// is folded away.
 func transcriptChevron(open bool) string {
 	if open {
 		return "▲"
@@ -166,12 +168,21 @@ func transcriptChevron(open bool) string {
 	return "▼"
 }
 
-// transcriptHeadTooltip says what clicking the head will do.
-func transcriptHeadTooltip(open bool) string {
+// transcriptFoldTooltip says what clicking the fold control will do.
+func transcriptFoldTooltip(open bool) string {
 	if open {
 		return "Hide transcript"
 	}
 	return "Show transcript"
+}
+
+// transcriptPreview is the folded block's single line: the start of the
+// transcript with its line breaks flattened, so a note dictated in
+// paragraphs still folds to one line. Nothing is cut here — the label's
+// ellipsis does that, at whatever width the bubble gives it, so the line is
+// as long as the bubble is wide.
+func transcriptPreview(text string) string {
+	return strings.Join(strings.Fields(text), " ")
 }
 
 // transcriptErrorText is the row's reason for having no transcript, and
@@ -188,76 +199,109 @@ func transcriptErrorText(err error) (text string, retry bool) {
 	return "Could not transcribe this one.", true
 }
 
-// transcribeButtonTooltip is the T button's tooltip, which carries the state
+// transcribeButtonGlyph is what the button at the end of the voice row
+// carries, which is also what clicking it does: stop the run under way, fold
+// the transcript that is there, or start one.
+func transcribeButtonGlyph(st transcriptState, hasText, open bool) string {
+	switch {
+	case st.Busy || st.Queued:
+		return "✕"
+	case hasText:
+		return transcriptChevron(open)
+	}
+	return "T"
+}
+
+// transcribeButtonTooltip is that button's tooltip, which carries the state
 // the glyph alone cannot.
-func transcribeButtonTooltip(st transcriptState, hasText bool) string {
+func transcribeButtonTooltip(st transcriptState, hasText, open bool) string {
 	switch {
 	case st.Busy:
-		return "Transcribing…"
+		return "Stop transcribing"
 	case st.Queued:
-		return "Waiting to transcribe…"
+		return "Stop waiting to transcribe"
 	case hasText:
-		return "Transcript ready"
+		return transcriptFoldTooltip(open)
 	}
 	return "Transcribe voice message"
 }
 
-// newTranscribeButton is the T at the end of a voice row: the one control
-// that starts a transcription, spinning while a run is under way and
-// filled once there is a transcript to show. Nil where the row has no
-// conversation behind it (the viewer, tests).
-func newTranscribeButton(mv mediaView, fold func()) *gtk.Button {
+// newTranscribeButton is the control at the end of a voice row, which is
+// one button wearing the three faces of the note's transcript: a T that
+// starts the run, an ✕ that stops the one going, and the chevron that folds
+// the text once it is there. The run reports itself on the line under the
+// row, so nothing here spins — a button that only spun would be a control
+// the reader cannot take back. Nil where the row has no conversation behind
+// it (the viewer, tests).
+func newTranscribeButton(mv mediaView, slot transcriptSlot) *gtk.Button {
 	if mv.voice.onTranscribe == nil {
 		return nil
 	}
 	st := mv.TranscriptState
+	hasText := mv.Transcript != ""
+	open := hasText && transcriptOpen(st)
+	running := st.Busy || st.Queued
 	btn := gtk.NewButton()
 	btn.AddCSSClass("flat")
 	btn.AddCSSClass("chatot-transcribe-btn")
 	btn.SetVAlign(gtk.AlignCenter)
 	btn.SetFocusOnClick(false)
 	btn.SetSizeRequest(transcribeBtnSize, transcribeBtnSize)
-	btn.SetTooltipText(transcribeButtonTooltip(st, mv.Transcript != ""))
-	if st.Busy || st.Queued {
-		spinner := adw.NewSpinner()
-		spinner.SetSizeRequest(transcribeSpinnerSize, transcribeSpinnerSize)
-		spinner.SetHAlign(gtk.AlignCenter)
-		spinner.SetVAlign(gtk.AlignCenter)
-		btn.SetChild(spinner)
-	} else {
-		btn.SetChild(gtk.NewLabel("T"))
-	}
-	if mv.Transcript != "" {
+	btn.SetTooltipText(transcribeButtonTooltip(st, hasText, open))
+	glyph := gtk.NewLabel(transcribeButtonGlyph(st, hasText, open))
+	btn.SetChild(glyph)
+	// Filled whenever it acts on something that exists: a run to stop, a
+	// transcript to fold. Outlined while it is only an invitation.
+	if hasText || running {
 		btn.AddCSSClass("chatot-transcribe-btn-on")
 	}
+	if hasText && !running {
+		btn.AddCSSClass("chatot-transcribe-btn-fold")
+	}
 	id, path, start := mv.MsgID, mv.LocalPath, mv.voice.onTranscribe
-	if st.Busy || st.Queued {
-		btn.SetSensitive(false)
-		return btn
+	switch {
+	case running:
+		stop := mv.voice.onCancelTranscribe
+		if stop == nil {
+			btn.SetSensitive(false)
+			break
+		}
+		btn.ConnectClicked(func() { stop(id) })
+	case hasText && slot.fold != nil:
+		btn.ConnectClicked(slot.fold)
+		// The block folds from its own preview line too, so the chevron
+		// follows the block rather than counting clicks of its own.
+		if slot.follow != nil {
+			slot.follow(func(open bool) {
+				glyph.SetLabel(transcriptChevron(open))
+				btn.SetTooltipText(transcriptFoldTooltip(open))
+			})
+		}
+	default:
+		btn.ConnectClicked(func() { start(id, path, true) })
 	}
-	// With a transcript already in hand the T folds it instead of running
-	// the engine over the same audio again.
-	if mv.Transcript != "" && fold != nil {
-		btn.ConnectClicked(fold)
-		return btn
-	}
-	btn.ConnectClicked(func() { start(id, path, true) })
 	return btn
 }
 
 // transcriptSlot is what a voice bubble gets back for its transcript: the
-// block that goes under the row, and the fold the row's T shares with the
-// block's own head. Both are nil where there is nothing to show.
+// block that goes under the row, the fold the row's button shares with the
+// block's own preview line, and a way to hear about that fold. All nil
+// where there is nothing to show.
 type transcriptSlot struct {
 	widget gtk.Widgetter
 	fold   func()
+	// follow registers a watcher called with the new state each time the
+	// text folds or unfolds, so the row's chevron can point the same way.
+	follow func(func(open bool))
 }
 
-// buildTranscriptSlot is the block under a voice row, as WhatsApp folds one
-// under a note: a TRANSCRIPT head with a chevron over the text, the run in
-// progress, or the reason there is no text. Nothing at all before anyone
-// asks — the row's T is the invitation — and nothing where the row has no
-// conversation behind it (the viewer, tests).
+// buildTranscriptSlot is the block under a voice row: the transcript, the
+// run in progress, or the reason there is no text. Folded, it shows the
+// start of the transcript itself rather than a caption naming it — the
+// reader is after what the note says, and a line of it costs the same room
+// a heading would. Nothing at all before anyone asks — the row's T is the
+// invitation — and nothing where the row has no conversation behind it (the
+// viewer, tests).
 func buildTranscriptSlot(mv mediaView) transcriptSlot {
 	if mv.voice.onTranscribe == nil {
 		return transcriptSlot{}
@@ -315,21 +359,22 @@ func buildTranscriptSlot(mv mediaView) transcriptSlot {
 	box := gtk.NewBox(gtk.OrientationVertical, 0)
 	box.AddCSSClass("chatot-transcript")
 	open := transcriptOpen(st)
-	head := gtk.NewButton()
-	head.AddCSSClass("flat")
-	head.AddCSSClass("chatot-transcript-head-row")
-	head.SetFocusOnClick(false)
-	head.SetTooltipText(transcriptHeadTooltip(open))
-	headRow := gtk.NewBox(gtk.OrientationHorizontal, 6)
-	caption := gtk.NewLabel("TRANSCRIPT")
-	caption.AddCSSClass("chatot-transcript-caption")
-	caption.SetXAlign(0)
-	caption.SetHExpand(true)
-	headRow.Append(caption)
-	chevron := gtk.NewLabel(transcriptChevron(open))
-	chevron.AddCSSClass("chatot-transcript-chevron")
-	headRow.Append(chevron)
-	head.SetChild(headRow)
+	// The folded line is the transcript's own first words, cut by the
+	// label's ellipsis where the bubble ends, and clicking it opens the
+	// rest — the same fold the row's chevron works.
+	preview := gtk.NewButton()
+	preview.AddCSSClass("flat")
+	preview.AddCSSClass("chatot-transcript-preview-row")
+	preview.SetFocusOnClick(false)
+	preview.SetTooltipText(transcriptFoldTooltip(false))
+	previewLabel := gtk.NewLabel(transcriptPreview(mv.Transcript))
+	previewLabel.AddCSSClass("chatot-transcript-preview")
+	previewLabel.SetXAlign(0)
+	previewLabel.SetEllipsize(pango.EllipsizeEnd)
+	previewLabel.SetMaxWidthChars(34)
+	previewLabel.SetHExpand(true)
+	preview.SetChild(previewLabel)
+	preview.SetVisible(!open)
 
 	// A long transcript folds behind a "Read more" like a long text
 	// body, at the same cut.
@@ -375,6 +420,7 @@ func buildTranscriptSlot(mv mediaView) transcriptSlot {
 	foot.SetVisible(open)
 
 	remember := mv.voice.onToggleTranscript
+	var watchers []func(bool)
 	fold := func() {
 		open = !open
 		text.SetVisible(open)
@@ -382,20 +428,25 @@ func buildTranscriptSlot(mv mediaView) transcriptSlot {
 			moreBtn.SetVisible(open)
 		}
 		foot.SetVisible(open)
-		chevron.SetLabel(transcriptChevron(open))
-		head.SetTooltipText(transcriptHeadTooltip(open))
+		preview.SetVisible(!open)
+		for _, w := range watchers {
+			w(open)
+		}
 		if remember != nil {
 			remember(id, open)
 		}
 	}
-	head.ConnectClicked(fold)
-	box.Append(head)
+	preview.ConnectClicked(fold)
+	box.Append(preview)
 	box.Append(text)
 	if moreBtn != nil {
 		box.Append(moreBtn)
 	}
 	box.Append(foot)
-	return transcriptSlot{widget: box, fold: fold}
+	return transcriptSlot{
+		widget: box, fold: fold,
+		follow: func(w func(bool)) { watchers = append(watchers, w) },
+	}
 }
 
 // transcriptOf is msgID's transcription state this session.
@@ -487,6 +538,18 @@ func (cv *ConversationView) transcribe(msgID, path string, requested bool) {
 			}
 			glib.IdleAdd(func() {
 				prev := cv.transcriptOf(msgID)
+				if errors.Is(err, context.Canceled) {
+					// A run someone stopped leaves no trace: not an error
+					// to report, since it did what it was told. A row that
+					// is waiting or busy by now belongs to a later run,
+					// which this answer must not clear.
+					if prev.Busy || prev.Queued {
+						return
+					}
+					cv.setTranscriptState(msgID, transcriptState{})
+					cv.refillByID(msgID)
+					return
+				}
 				st := transcriptState{Open: prev.Open}
 				if err != nil {
 					log.Printf("chatot: transcribe %s: %v", msgID, err)
@@ -509,6 +572,21 @@ func (cv *ConversationView) transcribe(msgID, path string, requested bool) {
 	cv.setTranscriptState(msgID, transcriptState{Queued: true, Requested: requested})
 	cv.refillByID(msgID)
 	trace(1, "transcribe queued: %s (requested %v, %d waiting)", msgID, requested, transcribe.Default.Pending())
+}
+
+// cancelTranscribe takes back the run on msgID and puts the row back the
+// way it was before the click: no run, no reason line, the plain T. A run
+// someone stopped is not a failure to report — it did what it was asked.
+// Must run on the GTK main loop.
+func (cv *ConversationView) cancelTranscribe(msgID string) {
+	if !transcribe.Default.Cancel(msgID) {
+		// It finished between the click and here; its own answer is
+		// already on the row.
+		return
+	}
+	cv.setTranscriptState(msgID, transcriptState{})
+	cv.refillByID(msgID)
+	trace(1, "transcribe cancelled: %s", msgID)
 }
 
 // setTranscript puts text on every loaded copy of msgID's attachment,

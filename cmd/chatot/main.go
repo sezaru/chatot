@@ -1187,6 +1187,10 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		// The downloaded voice note at MSG is transcribed the way its
 		// Transcribe row does it, model download prompt included.
 		d.conversation.TranscribeAt(msgIdx)
+	case "transcribecancel":
+		// The same run, taken back a moment later the way the ✕ on the row
+		// does: the note must come back to its plain T.
+		d.conversation.CancelTranscribeAt(msgIdx)
 	case "transcriptopen":
 		// The transcript already on the note at MSG, unfolded.
 		d.conversation.UnfoldTranscriptAt(msgIdx)

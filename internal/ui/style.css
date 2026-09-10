@@ -3843,9 +3843,9 @@ button.chatot-member-more {
 	opacity: 1;
 }
 
-/* Voice-note transcript under the player, as WhatsApp folds one under a
-   note: a "Transcript ▸" head that unfolds the text, or the Transcribe
-   action / "Transcribing…" note in the same slot. */
+/* Voice-note transcript under the player: folded, the transcript's own
+   first line, which unfolds the rest; or the Transcribe action / the
+   "Transcribing…" note in the same slot. */
 /* The transcript block hangs under the voice row behind a hairline, the way
    the mockup separates it from the audio without boxing it in. */
 .chatot-transcript {
@@ -3858,8 +3858,9 @@ button.chatot-member-more {
 	border-top-color: alpha(#ffffff, 0.28);
 }
 
-/* The T at the end of the voice row: a 23px square, outlined while it is an
-   invitation, filled once there is a transcript behind it. */
+/* The button at the end of the voice row: a 23px square, outlined while it
+   is an invitation to transcribe, filled once it acts on something that is
+   there — a run to stop, a transcript to fold. */
 .chatot-transcribe-btn {
 	min-height: 23px;
 	min-width: 23px;
@@ -3881,6 +3882,11 @@ button.chatot-member-more {
 	background-color: alpha(#000000, 0.08);
 }
 
+/* The fold chevron is a smaller mark than the T it replaces. */
+.chatot-transcribe-btn-fold {
+	font-size: 9px;
+}
+
 .chatot-bubble-out .chatot-transcribe-btn {
 	border-color: alpha(#ffffff, 0.28);
 	color: #ffffff;
@@ -3891,9 +3897,9 @@ button.chatot-member-more {
 	background-color: alpha(#ffffff, 0.2);
 }
 
-/* The head is a full-width row: the caption on the left, the fold chevron
-   held to the right edge of the block. */
-.chatot-transcript-head-row {
+/* Folded, the block is one line of the transcript itself, cut with an
+   ellipsis at the bubble's edge; clicking it opens the rest. */
+.chatot-transcript-preview-row {
 	min-height: 0;
 	padding: 1px 0;
 	margin: 0;
@@ -3902,20 +3908,22 @@ button.chatot-member-more {
 	box-shadow: none;
 }
 
-.chatot-transcript-head-row:hover {
+.chatot-transcript-preview-row:hover {
 	background: none;
 }
 
-.chatot-transcript-caption {
-	font-size: 10px;
-	font-weight: 700;
-	letter-spacing: 0.5px;
-	opacity: 0.55;
+.chatot-transcript-preview {
+	font-size: 13px;
+	opacity: 0.85;
+	/* It is a line of the transcript that happens to be clickable, not a
+	   button with a label: the weight the button would give it makes the
+	   folded block shout louder than the text it stands for. */
+	font-weight: normal;
 }
 
-.chatot-transcript-chevron {
-	font-size: 9px;
-	opacity: 0.55;
+/* Hover marks the line without dimming it: the same ink, underlined. */
+.chatot-transcript-preview-row:hover .chatot-transcript-preview {
+	text-decoration: underline;
 }
 
 .chatot-transcript-foot {
@@ -3926,13 +3934,8 @@ button.chatot-member-more {
 
 /* White text on the outgoing bubble's green tops out at 4.17:1, so the
    transcript's secondary labels cannot afford the dimming they get on a grey
-   incoming bubble: measured at 0.55 opacity the caption read 2.3:1 and the
-   footnote 2.0:1. Keep them at or near white there. */
-.chatot-bubble-out .chatot-transcript-caption,
-.chatot-bubble-out .chatot-transcript-chevron {
-	opacity: 1;
-}
-
+   incoming bubble: measured at 0.55 opacity the footnote read 2.0:1. Keep
+   them near white there. */
 .chatot-bubble-out .chatot-transcript-foot,
 .chatot-bubble-out .chatot-transcript-dim {
 	opacity: 0.85;
