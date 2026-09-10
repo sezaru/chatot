@@ -126,3 +126,17 @@ func BenchmarkBodyLabelAlone(b *testing.B) {
 		l.Measure(gtk.OrientationVertical, w)
 	}
 }
+
+// BenchmarkRowRenderAndMeasureAtWidth is the same bind measured the other way
+// a list can ask for it: height at a width already decided, with no
+// natural-width pass. GtkListView does both, so the truth is between this and
+// BenchmarkRowRenderAndMeasure; a change that only helps one of them is not
+// worth much.
+func BenchmarkRowRenderAndMeasureAtWidth(b *testing.B) {
+	msgs, r, h, now := benchSetup(b)
+	for i := 0; i < b.N; i++ {
+		m := msgs[i%len(msgs)]
+		r.render(m, testVM(m, nil, "", now), h)
+		r.wrapper.Measure(gtk.OrientationVertical, 600)
+	}
+}
