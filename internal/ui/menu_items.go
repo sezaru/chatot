@@ -36,19 +36,21 @@ type appMenuActions struct {
 	Preferences   func()
 	About         func()
 	Unlink        func()
-	// Relink takes Unlink's place once the account is signed out.
-	Relink func()
-	Quit   func()
+	Quit          func()
 }
 
 // appMenuItems is the sidebar's ⋮ application menu: the mockup's rows, plus
 // "Blocked contacts" under Starred — the one deliberate addition, since the
 // design gives the blocked list no other home than a Preferences row.
 //
-// linked is whether the account still holds a WhatsApp session; it decides
-// the last row (see unlinkOrRelinkItem).
+// linked is whether the account still holds a WhatsApp session. Offering
+// "Unlink this device" to one that is already signed out is a row that can do
+// nothing, so it is left out. Nothing takes its place: the pairing screen the
+// account is parked on is the way back, and a Relink row here could never be
+// clicked, since the sidebar this menu lives in is hidden in exactly that
+// state.
 func appMenuItems(linked bool, a appMenuActions) []menuItem {
-	return []menuItem{
+	items := []menuItem{
 		{Icon: "📂", Label: "Archived", OnActivate: a.Archived},
 		{Icon: "⭐", Label: "Starred messages", OnActivate: a.Starred},
 		{Icon: "🚫", Label: "Blocked contacts", OnActivate: a.Blocked},
@@ -57,20 +59,12 @@ func appMenuItems(linked bool, a appMenuActions) []menuItem {
 		{Icon: "⚙", Label: "Preferences", Accel: "Ctrl+,", OnActivate: a.Preferences},
 		{Mark: true, Label: "About chatot", OnActivate: a.About},
 		menuSeparator(),
-		unlinkOrRelinkItem(linked, a),
-		{Icon: "✕", Label: "Quit", Accel: "Ctrl+Q", OnActivate: a.Quit},
 	}
-}
-
-// unlinkOrRelinkItem is the menu's last destructive row. Offering "Unlink
-// this device" to an account that is already signed out is a dead end — the
-// row that does nothing — so a signed-out account gets the action it
-// actually needs in that slot instead.
-func unlinkOrRelinkItem(linked bool, a appMenuActions) menuItem {
 	if linked {
-		return menuItem{Icon: "⏻", Label: "Unlink this device", Destructive: true, OnActivate: a.Unlink}
+		items = append(items,
+			menuItem{Icon: "⏻", Label: "Unlink this device", Destructive: true, OnActivate: a.Unlink})
 	}
-	return menuItem{Icon: "🔗", Label: "Relink this device", OnActivate: a.Relink}
+	return append(items, menuItem{Icon: "✕", Label: "Quit", Accel: "Ctrl+Q", OnActivate: a.Quit})
 }
 
 // chatMenuActions are the conversation header ⋮ menu's callbacks.

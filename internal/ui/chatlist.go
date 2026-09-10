@@ -661,12 +661,11 @@ func NewChatList(c client.Client) *ChatList {
 		Preferences:   func() { appMenuBtn.ActivateAction("app.preferences", nil) },
 		About:         func() { showAboutDialog(cl.window) },
 		Unlink:        func() { cl.unlinkDevice() },
-		Relink:        func() { cl.relinkDevice() },
 		Quit:          func() { appMenuBtn.ActivateAction("app.quit", nil) },
 	}
-	// The menu's last row follows the link state, so the popover is rebuilt
-	// whenever that moves rather than being frozen at construction time —
-	// which is how a signed-out account kept on offering "Unlink this
+	// Whether the Unlink row shows follows the link state, so the popover is
+	// rebuilt whenever that moves rather than being frozen at construction
+	// time — which is how a signed-out account kept on offering "Unlink this
 	// device", an action with nothing left to unlink.
 	cl.rebuildAppMenu = func() {
 		linked := cl.c.LoggedIn() || cl.c.Paired()
@@ -2251,27 +2250,6 @@ func (cl *ChatList) unlinkDevice() {
 			alert := adw.NewAlertDialog("Couldn't unlink this device",
 				"WhatsApp didn't confirm the unlink: "+err.Error()+
 					"\n\nThe device is still linked. Check the connection and try again, or remove chatot from Linked devices on your phone.")
-			alert.AddResponse("ok", "OK")
-			alert.Present(win)
-		})
-	}()
-}
-
-// relinkDevice starts a fresh pairing round for the account in view, for
-// when it is signed out and the window is sitting on the linking screen with
-// no code. Normally the logout starts one on its own; this is the manual
-// way back when that failed.
-func (cl *ChatList) relinkDevice() {
-	c := cl.c
-	win := cl.window
-	go func() {
-		err := c.Relink()
-		if err == nil {
-			return
-		}
-		log.Printf("chatot: relink device failed: %v", err)
-		glib.IdleAdd(func() {
-			alert := adw.NewAlertDialog("Couldn't start pairing", err.Error())
 			alert.AddResponse("ok", "OK")
 			alert.Present(win)
 		})
