@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"flag"
 	"fmt"
+	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +23,17 @@ import (
 // diff rather than as a bug report. It caught two on the way in: a parked hover
 // pair kept the side and the button order the previous message left it on.
 
+// sortedClasses puts a widget's CSS classes in a fixed order. GTK returns
+// them in whatever order they were added, which differs between a widget
+// built for one message and the same widget re-toggled onto another; the
+// order changes nothing a reader sees, so comparing it would only produce
+// false alarms.
+func sortedClasses(base *gtk.Widget) []string {
+	cs := append([]string(nil), base.CSSClasses()...)
+	sort.Strings(cs)
+	return cs
+}
+
 func bubbleDump(w gtk.Widgetter) string {
 	var b strings.Builder
 	dumpWidget(&b, w, 0)
@@ -30,7 +44,7 @@ func dumpWidget(b *strings.Builder, w gtk.Widgetter, depth int) {
 	base := gtk.BaseWidget(w)
 	obj := base.Object.Cast()
 	fmt.Fprintf(b, "%s%T", strings.Repeat("  ", depth), obj)
-	if cs := base.CSSClasses(); len(cs) > 0 {
+	if cs := sortedClasses(base); len(cs) > 0 {
 		fmt.Fprintf(b, " .%s", strings.Join(cs, "."))
 	}
 	if !base.Visible() {
@@ -91,6 +105,25 @@ func bubbleCases(now time.Time) []struct {
 		{"group-alice", client.Message{ID: "ga", Text: "from alice", FromJID: "alice@s.whatsapp.net", TS: ts}, nil, "Alice"},
 		{"group-bob", client.Message{ID: "gb", Text: "from bob", FromJID: "bob@s.whatsapp.net", TS: ts}, nil, "Bob"},
 		{"group-alice-again", client.Message{ID: "ga2", Text: "alice once more", FromJID: "alice@s.whatsapp.net", TS: ts}, nil, "Alice"},
+		{"failed", client.Message{ID: "l", Text: "never left", FromMe: true, TS: ts, Status: client.MessageStatusFailed}, nil, ""},
+		{"sending", client.Message{ID: "l2", Text: "on its way", FromMe: true, TS: ts, Status: client.MessageStatusPending}, nil, ""},
+		{"delivered", client.Message{ID: "m", Text: "two ticks", FromMe: true, TS: ts, Status: client.MessageStatusDelivered}, nil, ""},
+		{"link-preview", client.Message{ID: "n", Text: "look at https://example.com", FromJID: "1@s.whatsapp.net", TS: ts,
+			LinkPreview: &client.LinkPreview{URL: "https://example.com", Title: "Example", Description: "a page"}}, nil, ""},
+		{"media-captioned", client.Message{ID: "o", FromJID: "1@s.whatsapp.net", TS: ts,
+			Attachment: &client.Attachment{Kind: "image", Filename: "photo.jpg", MimeType: "image/jpeg", Caption: "on holiday"}}, nil, ""},
+		{"media-bare", client.Message{ID: "p", FromJID: "1@s.whatsapp.net", TS: ts,
+			Attachment: &client.Attachment{Kind: "document", Filename: "notes.pdf", MimeType: "application/pdf"}}, nil, ""},
+		{"location", client.Message{ID: "q", FromJID: "1@s.whatsapp.net", TS: ts,
+			Location: &client.Location{Name: "The Pier", Address: "1 Seafront", Latitude: 1.5, Longitude: -2.5}}, nil, ""},
+		{"contact", client.Message{ID: "r", FromJID: "1@s.whatsapp.net", TS: ts,
+			Contact: &client.Contact{DisplayName: "Carol", Phones: []string{"+44 1234"}}}, nil, ""},
+		{"poll", client.Message{ID: "s", FromJID: "1@s.whatsapp.net", TS: ts,
+			Poll: &client.Poll{Name: "Lunch?", SelectableCount: 1, Options: []client.PollOption{{Name: "Yes", Count: 2}, {Name: "No"}}}}, nil, ""},
+		{"call", client.Message{ID: "t", FromJID: "1@s.whatsapp.net", TS: ts,
+			CallLog: &client.CallLog{Video: true, Outcome: "missed"}}, nil, ""},
+		{"event", client.Message{ID: "u", FromJID: "1@s.whatsapp.net", TS: ts,
+			EventInvite: &client.EventInvite{Name: "Standup", Location: "Room 2", StartTS: ts}}, nil, ""},
 	}
 }
 
@@ -310,4 +343,94 @@ func TestNewPictureReplacesAVisibleAvatar(t *testing.T) {
 	if got := avatarKey(r); got == before {
 		t.Error("a new picture left the visible avatar alone")
 	}
+}
+
+// visibleDump is bubbleDump with the hidden parts left out: what a reader
+// actually sees, rather than what the row is carrying. A row that reuses a
+// widget instead of rebuilding it leaves hidden leftovers where a fresh
+// build had nothing at all, so a golden including them could not survive
+// the very change it exists to guard.
+func visibleDump(w gtk.Widgetter) string {
+	var b strings.Builder
+	dumpVisible(&b, w, 0)
+	return b.String()
+}
+
+func dumpVisible(b *strings.Builder, w gtk.Widgetter, depth int) {
+	base := gtk.BaseWidget(w)
+	if !base.Visible() {
+		return
+	}
+	obj := base.Object.Cast()
+	fmt.Fprintf(b, "%s%T", strings.Repeat("  ", depth), obj)
+	if cs := sortedClasses(base); len(cs) > 0 {
+		fmt.Fprintf(b, " .%s", strings.Join(cs, "."))
+	}
+	if lbl, ok := obj.(*gtk.Label); ok {
+		fmt.Fprintf(b, " text=%q", lbl.Label())
+	}
+	b.WriteString("\n")
+	for c := base.FirstChild(); c != nil; c = gtk.BaseWidget(c).NextSibling() {
+		dumpVisible(b, c, depth+1)
+	}
+}
+
+var updateBubbles = flag.Bool("update-bubbles", false, "rewrite testdata/bubbles.txt from the current rendering")
+
+// TestBubblesRenderAsBefore is the net for changing how a bubble is built.
+// The recycling test above only says a recycled row matches a fresh one, so
+// it passes just as happily when both are wrong. This one pins what every
+// case in the table actually renders, against a file captured before the
+// change. Rewrite it with -update-bubbles, and read the diff: every line of
+// it is something the reader would have seen differently.
+func TestBubblesRenderAsBefore(t *testing.T) {
+	if !gtk.InitCheck() {
+		t.Skip("no display")
+	}
+	now := mustParse(t, "2026-08-30 12:00:00")
+	var b strings.Builder
+	for _, c := range bubbleCases(now) {
+		fmt.Fprintf(&b, "== %s ==\n%s\n", c.name, testVisibleBubble(t, c.msg, c.prev, c.author, now))
+	}
+	got := b.String()
+
+	const golden = "testdata/bubbles.txt"
+	if *updateBubbles {
+		if err := os.MkdirAll("testdata", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Log("wrote " + golden)
+		return
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatalf("%v (capture it with: go test ./internal/ui -run TestBubblesRenderAsBefore -update-bubbles)", err)
+	}
+	if string(want) == got {
+		return
+	}
+	gotLines, wantLines := strings.Split(got, "\n"), strings.Split(string(want), "\n")
+	for i := 0; i < len(gotLines) || i < len(wantLines); i++ {
+		g, w := lineAt(gotLines, i), lineAt(wantLines, i)
+		if g != w {
+			t.Fatalf("%s line %d:\n  was  %s\n  now  %s", golden, i+1, w, g)
+		}
+	}
+}
+
+func lineAt(lines []string, i int) string {
+	if i < len(lines) {
+		return lines[i]
+	}
+	return "(end of file)"
+}
+
+func testVisibleBubble(t *testing.T, msg client.Message, prev *client.Message, author string, now time.Time) string {
+	t.Helper()
+	r := newThreadRow()
+	r.render(msg, testVM(msg, prev, author, now), testHooks())
+	return visibleDump(r.wrapper)
 }

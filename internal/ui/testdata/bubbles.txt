@@ -1,0 +1,460 @@
+== incoming-text ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Label .chatot-bubble-text text="hello there"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== outgoing-text ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-out.vertical
+          *gtk.Label .chatot-bubble-text text="hi back"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+            *gtk.Label .chatot-bubble-tick.chatot-tick-read text="✓✓"
+
+== outgoing-pending ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-out.vertical
+          *gtk.Label .chatot-bubble-text text="sending"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+            *gtk.Label .chatot-bubble-tick text="✓"
+
+== incoming-quote ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Label .chatot-bubble-quote text="hello there"
+          *gtk.Label .chatot-bubble-text text="answering"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== incoming-forwarded ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Label .chatot-forwarded text="↩ Forwarded"
+          *gtk.Label .chatot-bubble-text text="passed on"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== incoming-edited ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Label .chatot-bubble-text text="fixed typo"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00 · edited"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== deleted ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Label .chatot-bubble-deleted.chatot-bubble-text text="🚫 This message was deleted"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+
+== reacted ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .chatot-row-reacted.horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Label .chatot-bubble-text text="nice"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+        *gtk.Box .chatot-bubble-reactions.horizontal
+          *gtk.Button .chatot-reaction-pill
+            *gtk.Box .horizontal
+              *gtk.Label .chatot-reaction-emoji text="👍"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== day-separator ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Label .chatot-bubble-text text="new day"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== long-text ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Label .chatot-bubble-text text="a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps…"
+          *gtk.Button .chatot-read-more.flat.text-button
+            *gtk.Label text="Read more"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== emoji-only ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble-bare.vertical
+          *gtk.Label .chatot-bubble-text.chatot-emoji-only text="🎉"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== group-alice ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Box .vertical
+        *gtk.Box .chatot-bubble-avatar.vertical
+          *gtk.DrawingArea .chatot-avatar.chatot-avatar-c7
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Label .chatot-bubble-author text="Alice"
+          *gtk.Label .chatot-bubble-text text="from alice"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== group-bob ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Box .vertical
+        *gtk.Box .chatot-bubble-avatar.vertical
+          *gtk.DrawingArea .chatot-avatar.chatot-avatar-c2
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Label .chatot-bubble-author text="Bob"
+          *gtk.Label .chatot-bubble-text text="from bob"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== group-alice-again ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Box .vertical
+        *gtk.Box .chatot-bubble-avatar.vertical
+          *gtk.DrawingArea .chatot-avatar.chatot-avatar-c7
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Label .chatot-bubble-author text="Alice"
+          *gtk.Label .chatot-bubble-text text="alice once more"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== failed ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-out.vertical
+          *gtk.Label .chatot-bubble-text text="never left"
+          *gtk.Box .horizontal
+            *gtk.Button .chatot-retry.flat.text-button
+              *gtk.Label text="↻ Retry"
+            *gtk.Label .chatot-bubble-time text="12:00"
+            *gtk.Label .chatot-bubble-failed text="!"
+
+== sending ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-out.vertical
+          *gtk.Label .chatot-bubble-text text="on its way"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+            *gtk.DrawingArea .chatot-bubble-tick
+
+== delivered ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-out.vertical
+          *gtk.Label .chatot-bubble-text text="two ticks"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+            *gtk.Label .chatot-bubble-tick text="✓✓"
+
+== link-preview ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Box .chatot-link-card.vertical
+            *gtk.Box .chatot-link-card-body.vertical
+              *gtk.Label .chatot-link-title text="Example"
+              *gtk.Label .chatot-link-desc text="a page"
+              *gtk.Label .chatot-link-host text="🔗 example.com"
+          *gtk.Label .chatot-bubble-text.link text="look at <a href=\"https://example.com\">https://example.com</a>"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== media-captioned ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Box .vertical
+            *gtk.Overlay
+              *gtk.Box .chatot-media-hatch.vertical
+              *gtk.Box .vertical
+                *gtk.Label .chatot-media-dl.chatot-media-dl-lg text="⬇"
+                *gtk.Label .chatot-media-caption text="📷  Photo"
+          *gtk.Label .chatot-bubble-caption.chatot-bubble-text text="on holiday"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== media-bare ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Box .vertical
+            *gtk.Box .chatot-media-row.horizontal
+              *gtk.Label .chatot-media-dl.chatot-media-dl-sm text="⬇"
+              *gtk.Box .vertical
+                *gtk.Label .chatot-media-row-title text="📄  notes.pdf"
+                *gtk.Label .chatot-media-row-sub text="Click to download · PDF"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== location ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Button .chatot-card-btn.flat
+            *gtk.Box .chatot-bubble-location.vertical
+              *gtk.Overlay .chatot-location-tile
+                *gtk.Box .chatot-location-hatch.vertical
+                *gtk.Box .chatot-location-pin.vertical
+              *gtk.Label .chatot-location-title text="📍 The Pier"
+              *gtk.Label .chatot-location-sub text="1 Seafront"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== contact ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Box .chatot-bubble-contact.vertical
+            *gtk.Box .chatot-contact-row.horizontal
+              *gtk.DrawingArea .chatot-avatar.chatot-avatar-c2
+              *gtk.Box .vertical
+                *gtk.Label .chatot-contact-name text="Carol"
+                *gtk.Label .chatot-contact-phones text="+44 1234"
+            *gtk.Label .chatot-contact-action.chatot-contact-action-off text="Message"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== poll ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Box .chatot-bubble-poll.vertical
+            *gtk.Label .chatot-poll-question text="Lunch?"
+            *gtk.Box .vertical
+              *gtk.Box .horizontal
+                *gtk.DrawingArea .chatot-poll-box
+                *gtk.Label .chatot-poll-option text="Yes"
+                *gtk.Label .chatot-poll-count text="2"
+              *gtk.DrawingArea .chatot-poll-bar
+            *gtk.Box .vertical
+              *gtk.Box .horizontal
+                *gtk.DrawingArea .chatot-poll-box
+                *gtk.Label .chatot-poll-option text="No"
+                *gtk.Label .chatot-poll-count text="0"
+              *gtk.DrawingArea .chatot-poll-bar
+            *gtk.Label .chatot-poll-foot text="Select one · 2 votes"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== call ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Box .chatot-call-row.horizontal
+            *gtk.Label .chatot-call-glyph text="🎥"
+            *gtk.Box .vertical
+              *gtk.Label .chatot-call-missed.chatot-call-title text="Missed video call"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== event ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Box .chatot-bubble-event.vertical
+            *gtk.Label .chatot-event-title text="📅 Standup"
+            *gtk.Label .chatot-event-when text="Sun, 30 Aug 2026 12:00"
+            *gtk.Label .chatot-event-location text="📍 Room 2"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
