@@ -839,12 +839,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
                           <span style="position:absolute;top:-3px;width:10px;height:10px;border-radius:999px;background:{{ m.fillFg }};left:{{ m.voicePct }}"></span>
                         </span>
                         <span style="font:11px/1 'JetBrains Mono',ui-monospace,monospace;flex:none;color:{{ m.subFg }}">{{ m.voiceLen }}</span>
-                        <button onClick="{{ m.onTranscribe }}" title="{{ m.trTitle }}" style="width:23px;height:23px;flex:none;border:1px solid {{ m.hair }};border-radius:7px;display:grid;place-items:center;cursor:pointer;font-size:11px;font-weight:700;background:{{ m.trBtnBg }};color:{{ m.trBtnFg }}" style-hover="background:{{ m.chipBg }}">
-                          <sc-if value="{{ m.trBusy }}" hint-placeholder-val="{{ false }}">
-                            <span style="width:11px;height:11px;border-radius:999px;border:2px solid {{ m.trSpinTrack }};border-top-color:{{ m.trBtnFg }};box-sizing:border-box;animation:spin .9s linear infinite"></span>
-                          </sc-if>
-                          <sc-if value="{{ m.trIdle }}" hint-placeholder-val="{{ true }}">T</sc-if>
-                        </button>
+                        <button onClick="{{ m.onTrBtn }}" title="{{ m.trTitle }}" style="width:23px;height:23px;flex:none;border:1px solid {{ m.hair }};border-radius:7px;display:grid;place-items:center;cursor:pointer;font-size:{{ m.trBtnSize }};font-weight:700;background:{{ m.trBtnBg }};color:{{ m.trBtnFg }}" style-hover="background:{{ m.chipBg }}">{{ m.trBtnLabel }}</button>
                       </div>
 
                       <sc-if value="{{ m.trShow }}" hint-placeholder-val="{{ false }}">
@@ -867,13 +862,12 @@ a{color:#1b8c72}a:hover{color:#147a63}
                           </sc-if>
 
                           <sc-if value="{{ m.trDone }}" hint-placeholder-val="{{ true }}">
-                            <button onClick="{{ m.onTrToggle }}" title="{{ m.trToggleTitle }}" style="display:flex;align-items:center;gap:6px;border:none;background:transparent;padding:0;cursor:pointer;text-align:left;color:{{ m.bubFg }}">
-                              <span style="flex:1;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:{{ m.subFg }}">Transcript</span>
-                              <span style="flex:none;font-size:9px;color:{{ m.subFg }}">{{ m.trChevron }}</span>
-                            </button>
                             <sc-if value="{{ m.trOpen }}" hint-placeholder-val="{{ true }}">
                               <span style="font-size:12.5px;line-height:1.45;text-wrap:pretty;color:{{ m.bubFg }}">{{ m.trText }}</span>
                               <span style="font-size:10px;color:{{ m.trFootFg }}">Transcribed on this device</span>
+                            </sc-if>
+                            <sc-if value="{{ m.trShut }}" hint-placeholder-val="{{ false }}">
+                              <button onClick="{{ m.onTrToggle }}" title="Show the whole transcript" style="display:block;width:100%;border:none;background:transparent;padding:0;cursor:pointer;text-align:left;font-family:inherit;font-size:12.5px;line-height:1.45;color:{{ m.bubFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis" style-hover="text-decoration:underline">{{ m.trText }}</button>
                             </sc-if>
                           </sc-if>
                         </div>
@@ -3930,6 +3924,17 @@ class Component extends DCLogic {
     }, 1800);
   };
 
+  // Cancelling drops the whole panel rather than parking it in a stopped
+  // state: the button reads T again and the message looks untouched.
+  cancelTranscribe = (mid) => {
+    clearTimeout(this._trTimer);
+    this.setState(st => {
+      const next = Object.assign({}, st.transcripts);
+      delete next[mid];
+      return {transcripts: next};
+    });
+  };
+
   // The download is one file with a progress bar; cancelling leaves the model
   // absent, so the next T asks again rather than silently doing nothing.
   startModelDownload = () => {
@@ -4147,17 +4152,27 @@ class Component extends DCLogic {
         dlTitle: m.got ? '📷 Photo · 840 KB' : '📷 Photo · 840 KB', dlSub: m.got ? 'Saved to Downloads' : 'Click to download',
         voiceLen: m.voiceLen || '0:24', playIcon: s.playing === m.id ? '❚❚' : '▶',
         onTranscribe: e => { if (e && e.stopPropagation) e.stopPropagation(); this.transcribe(m.id); },
+        // One button, three jobs, in the order a message walks through them:
+        // start the run, stop the run that is going, then fold the result away.
+        onTrBtn: e => {
+          if (e && e.stopPropagation) e.stopPropagation();
+          if (trState === 'running') return this.cancelTranscribe(m.id);
+          if (trState === 'done') return this.setTr(m.id, {open: !(tr && tr.open)});
+          this.transcribe(m.id);
+        },
         onTrToggle: () => this.setTr(m.id, {open: !(tr && tr.open)}),
         trShow: !!tr, trRunning: trState === 'running', trDone: trState === 'done',
         trFailed: trState === 'empty' || trState === 'failed',
         trFailText: trState === 'empty' ? 'No speech found in this voice message.' : 'Could not transcribe this one.',
         trRetry: trState === 'failed',
         trOpen: !!(tr && tr.open), trText: (tr && tr.text) || '',
-        trChevron: tr && tr.open ? '▲' : '▼',
-        trToggleTitle: tr && tr.open ? 'Hide transcript' : 'Show transcript',
-        trBusy: trState === 'running', trIdle: trState !== 'running',
-        trTitle: trState === 'running' ? 'Transcribing…' : trState === 'done' ? 'Transcript ready' : 'Transcribe voice message',
-        trBtnBg: trState === 'done' ? (out ? 'rgba(255,255,255,.2)' : T.chip) : 'transparent',
+        trShut: trState === 'done' && !(tr && tr.open),
+        trBtnLabel: trState === 'running' ? '✕' : trState === 'done' ? (tr && tr.open ? '▲' : '▼') : 'T',
+        trBtnSize: trState === 'done' ? '9px' : '11px',
+        trTitle: trState === 'running' ? 'Stop transcribing'
+          : trState === 'done' ? (tr && tr.open ? 'Hide the transcript' : 'Show the transcript')
+          : 'Transcribe voice message',
+        trBtnBg: (trState === 'done' || trState === 'running') ? (out ? 'rgba(255,255,255,.2)' : T.chip) : 'transparent',
         trBtnFg: out ? '#fff' : T.tx,
         trSpinTrack: out ? 'rgba(255,255,255,.34)' : 'rgba(128,128,128,.3)',
         trLinkFg: out ? '#fff' : ac2,
