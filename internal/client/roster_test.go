@@ -110,9 +110,9 @@ func TestRemoveAccountGuards(t *testing.T) {
 	if got := m.Count(); got != 1 {
 		t.Fatalf("Count() after removing the last account = %d, want 1", got)
 	}
-	only.mu.Lock()
-	only.loggedIn = true
-	only.mu.Unlock()
+	// Pretend it got linked again, so the next removal has a live session to
+	// sign out rather than reusing the one just retired.
+	only.SetLinked()
 
 	m.AddAccount("b", "B", NewFake())
 	if err := m.RemoveAccount("missing"); err == nil {

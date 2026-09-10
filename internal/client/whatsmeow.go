@@ -70,6 +70,10 @@ type Whatsmeow struct {
 	// starts a fresh pairing; relinkMu serializes relink.
 	startCtx context.Context
 	relinkMu sync.Mutex
+	// pairing is true while a round of QR codes is being handed out, so
+	// Relink can tell "no code yet, one is coming" from "nothing is running,
+	// start a round" without racing the pump goroutine.
+	pairing atomic.Bool
 
 	presenceMu         sync.Mutex
 	presenceSubscribed map[string]bool // jid -> SubscribePresence already requested
@@ -185,7 +189,10 @@ func defaultStateDir() (string, error) {
 	return filepath.Join(home, ".local", "state", "chatot"), nil
 }
 
-func (w *Whatsmeow) handleRaw(evt interface{}) {
+// handleRaw translates and files one whatsmeow event. src is the session that
+// raised it, which matters only for the logout branch: everything else acts on
+// the store, which every session shares.
+func (w *Whatsmeow) handleRaw(src *whatsmeow.Client, evt interface{}) {
 	// Poll votes arrive as an events.Message wrapping a PollUpdateMessage;
 	// decrypt + tally them here (like applyHistorySync's early branch) and
 	// return, so they're never ingested as a blank text message.
@@ -341,8 +348,10 @@ func (w *Whatsmeow) handleRaw(evt interface{}) {
 	}
 	if _, ok := evt.(*events.LoggedOut); ok {
 		// The phone removed this device: publish first so the linking
-		// screen comes up, then start a fresh pairing for it.
-		defer func() { go w.relink() }()
+		// screen comes up, then start a fresh pairing for it. The session
+		// named is src, the one that logged out — not whatever w.wa holds
+		// by now, which a relink already under way may have replaced.
+		defer func() { go w.relink(src) }()
 	}
 	if e.Kind == EventMessage && e.Message != nil {
 		e.Synced = w.syncing.Load() || time.Since(time.Unix(e.Message.TS, 0)) > syncedMessageAge
@@ -517,6 +526,7 @@ func (w *Whatsmeow) startPairing(ctx context.Context, wa *whatsmeow.Client) erro
 	if err != nil {
 		return fmt.Errorf("chatot/client: get QR channel: %w", err)
 	}
+	w.pairing.Store(true)
 	go w.pumpQR(ctx, wa, qrChan)
 	return nil
 }
@@ -527,6 +537,7 @@ func (w *Whatsmeow) startPairing(ctx context.Context, wa *whatsmeow.Client) erro
 // error, which is final.
 func (w *Whatsmeow) pumpQR(ctx context.Context, wa *whatsmeow.Client, qrChan <-chan whatsmeow.QRChannelItem) {
 	defer w.qr.Clear()
+	defer w.pairing.Store(false)
 	for item := range qrChan {
 		switch {
 		case item.Event == whatsmeow.QRChannelEventCode:
@@ -585,12 +596,27 @@ func (w *Whatsmeow) LoggedIn() bool {
 // events.LoggedOut when the phone removes the device, so a logout started
 // here reports itself: the window relies on EventLoggedOut to fall back to
 // the pairing screen, which relink then fills with fresh codes.
+//
+// Two failures from whatsmeow mean the session is already gone rather than
+// that the unlink failed, and both used to abort the call before anything
+// local happened — leaving the window showing the chats of an account the
+// phone had already dropped. ErrNotLoggedIn is a second Unlink on a session
+// that is out; a deleted store is whatsmeow's own device-removed handler
+// having got there first. Either way the local half still has to run.
 func (w *Whatsmeow) Logout(ctx context.Context) error {
-	if err := w.wa.Logout(ctx); err != nil {
-		return err
+	old := w.wa
+	err := old.Logout(ctx)
+	switch {
+	case err == nil:
+	case errors.Is(err, whatsmeow.ErrNotLoggedIn) || old.Store.Deleted:
+		w.log.Infof("chatot/client: unlink: session was already signed out (%v)", err)
+	default:
+		// A real failure (no network, say) leaves the device linked on the
+		// phone, so the session is left alone and the caller explains.
+		return fmt.Errorf("chatot/client: unlink device: %w", err)
 	}
 	w.pushEvent(Event{Kind: EventLoggedOut})
-	w.relink()
+	w.relink(old)
 	return nil
 }
 

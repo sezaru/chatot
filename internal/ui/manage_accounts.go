@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"log"
 	"strings"
 
@@ -55,7 +56,7 @@ func ShowManageAccountsDialog(parent *gtk.Window, am *client.AccountManager, pre
 		removeAllChildren(list.Box)
 		list.rows = 0
 		for _, meta := range am.Accounts() {
-			list.Add(buildManageAccountRow(dialog.Window(), am, meta, changed))
+			list.Add(buildManageAccountRow(dialog, am, meta, changed))
 		}
 	}
 	rebuild()
@@ -105,7 +106,10 @@ func accountStatusSubline(meta client.AccountMeta) string {
 // buildManageAccountRow renders one account row: avatar, name over the mono
 // status line (red when the account needs relinking), and a vertical ⋮
 // opening the design's Relabel/Relink/Remove menu.
-func buildManageAccountRow(dialog *gtk.Window, am *client.AccountManager, meta client.AccountMeta, onChanged func()) *gtk.Box {
+func buildManageAccountRow(card *cardDialog, am *client.AccountManager, meta client.AccountMeta, onChanged func()) *gtk.Box {
+	// The window the card is presented in, which is what nested dialogs need
+	// as their parent. The card itself is not a window.
+	dialog := card.Window()
 	row := gtk.NewBox(gtk.OrientationHorizontal, 11)
 	row.AddCSSClass("chatot-card-row")
 
@@ -142,7 +146,7 @@ func buildManageAccountRow(dialog *gtk.Window, am *client.AccountManager, meta c
 	pop := newMenuPopover(accountRowMenuItems(accountRowMenuActions{
 		Relabel: func() { showRelabelAccountDialog(dialog, am, meta, onChanged) },
 		Relink:  func() { showRelinkDialog(dialog, am, meta.ID, onChanged) },
-		Remove:  func() { confirmRemoveAccount(dialog, am, meta, onChanged) },
+		Remove:  func() { confirmRemoveAccount(card, am, meta, onChanged) },
 	}))
 	menuBtn.SetPopover(pop)
 	row.Append(menuBtn)
@@ -222,10 +226,15 @@ func showRelabelAccountDialog(parent *gtk.Window, am *client.AccountManager, met
 
 // confirmRemoveAccount asks before removing meta, then removes it off the main
 // loop and refreshes on success. Removing the only account signs it out and
-// leaves the window on the pairing screen, so the Accounts card (parent)
-// closes with nothing left to manage; a failed sign-out is shown, not just
-// logged, since the row would otherwise look untouched.
-func confirmRemoveAccount(parent *gtk.Window, am *client.AccountManager, meta client.AccountMeta, onChanged func()) {
+// resets it to a fresh pairing session, so the Accounts card closes with
+// nothing left to manage; a failed sign-out is shown, not just logged, since
+// the row would otherwise look untouched.
+//
+// card is the Accounts card itself, not the window it sits in: closing the
+// window here shut the whole app down, which is emphatically not what
+// "remove this account" asks for.
+func confirmRemoveAccount(card *cardDialog, am *client.AccountManager, meta client.AccountMeta, onChanged func()) {
+	parent := card.Window()
 	body := "This account is signed out of WhatsApp and removed from chatot on this device. Its downloaded data is kept."
 	if am.Count() <= 1 {
 		body = "This is the only account: it is signed out of WhatsApp and chatot goes back to the pairing screen. Its downloaded data is kept."
@@ -237,30 +246,51 @@ func confirmRemoveAccount(parent *gtk.Window, am *client.AccountManager, meta cl
 	confirm.SetDefaultResponse("cancel")
 	confirm.SetCloseResponse("cancel")
 	confirm.ConnectResponse(func(response string) {
-		if response != "remove" {
-			return
+		if response == "remove" {
+			removeAccount(card, am, meta, onChanged)
 		}
-		go func() {
-			err := am.RemoveAccount(meta.ID)
-			glib.IdleAdd(func() {
-				if err != nil {
-					log.Printf("chatot: remove account %q failed: %v", meta.ID, err)
-					failed := adw.NewAlertDialog("Couldn't remove "+meta.Name,
-						"Signing out of WhatsApp failed: "+err.Error()+"\n\nCheck the connection and try again, or remove chatot from your phone's Linked devices.")
-					failed.AddResponse("ok", "OK")
-					failed.Present(parent)
-					return
-				}
-				if onChanged != nil {
-					onChanged()
-				}
-				if am.Count() <= 1 && !am.LoggedIn() {
-					parent.Close()
-				}
-			})
-		}()
 	})
 	confirm.Present(parent)
+}
+
+// removeAccount carries out the removal the confirmation asked about: off the
+// main loop, then either an explanation or a refresh. Split out from the
+// dialog so the screenshot hook can drive the action itself rather than
+// synthesising a button press.
+func removeAccount(card *cardDialog, am *client.AccountManager, meta client.AccountMeta, onChanged func()) {
+	parent := card.Window()
+	go func() {
+		err := am.RemoveAccount(meta.ID)
+		glib.IdleAdd(func() {
+			if err != nil {
+				log.Printf("chatot: remove account %q failed: %v", meta.ID, err)
+				failed := adw.NewAlertDialog("Couldn't remove "+meta.Name,
+					"Signing out of WhatsApp failed: "+err.Error()+"\n\nCheck the connection and try again, or remove chatot from your phone's Linked devices.")
+				failed.AddResponse("ok", "OK")
+				failed.Present(parent)
+				return
+			}
+			if onChanged != nil {
+				onChanged()
+			}
+			if am.Count() <= 1 && !am.LoggedIn() {
+				card.Close()
+			}
+		})
+	}()
+}
+
+// relinkStatusMessage is what the Relink card says when no pairing round
+// could be started. A still-linked account is the one case with an action
+// attached, so it gets its own wording instead of the raw error.
+func relinkStatusMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, client.ErrStillLinked) {
+		return "This account is already linked. Unlink it first to pair a new session."
+	}
+	return "Couldn't start pairing: " + err.Error()
 }
 
 // showRelinkDialog re-presents the pairing QR for an existing account so the
@@ -296,10 +326,6 @@ func showRelinkDialog(parent *gtk.Window, am *client.AccountManager, id string, 
 	status.SetJustify(gtk.JustifyCenter)
 	status.AddCSSClass("chatot-linking-status")
 	box.Append(status)
-	// A linked account never emits a QR: whatsmeow only pairs a fresh session.
-	if acct.LoggedIn() {
-		status.SetText("This account is already linked. Remove it and add it again to pair a new session.")
-	}
 
 	done := make(chan struct{})
 	closed := false
@@ -352,6 +378,28 @@ func showRelinkDialog(parent *gtk.Window, am *client.AccountManager, id string, 
 				}
 			}
 		}
+	}()
+
+	// Ask for a pairing round rather than only listening for one. Waiting
+	// was the whole bug: after a logout that failed to restart pairing there
+	// was nothing on the other end of QRCodes(), so the card sat on "Waiting
+	// for a code…" for as long as it was left open. Relink is idempotent, so
+	// asking when a round is already running costs nothing.
+	go func() {
+		err := acct.Relink()
+		if err == nil {
+			return
+		}
+		msg := relinkStatusMessage(err)
+		glib.IdleAdd(func() {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			status.SetText(msg)
+			status.AddCSSClass("chatot-status-bad")
+		})
 	}()
 
 	dialog.SetChild(box)

@@ -410,6 +410,27 @@ func (cl *ChatList) CreateGroupNow(name string) {
 	}
 }
 
+// RemoveFirstAccount opens the Accounts card's Remove confirmation for the
+// first account, optionally answering it, so a shot can show what the action
+// leaves behind. The report was that clicking Remove did nothing at all.
+func RemoveFirstAccount(parent *gtk.Window, am *client.AccountManager, confirm bool, onChanged func()) {
+	metas := am.Accounts()
+	if len(metas) == 0 {
+		return
+	}
+	card := newCardDialog()
+	card.SetTransientFor(parent)
+	if confirm {
+		removeAccount(card, am, metas[0], onChanged)
+		return
+	}
+	confirmRemoveAccount(card, am, metas[0], onChanged)
+}
+
+// UnlinkNow runs the ⋮ menu's "Unlink this device" for real, so a shot can
+// capture what the window does after an unlink rather than a mock-up of it.
+func (cl *ChatList) UnlinkNow() { cl.unlinkDevice() }
+
 // ShowRelink opens the relink card for the first account.
 func (cl *ChatList) ShowRelink(am *client.AccountManager) {
 	if metas := am.Accounts(); len(metas) > 0 {

@@ -41,6 +41,14 @@ func (a *Account) Events() <-chan Event { return a.c.Events() }
 // LoggedIn reports whether this account's client is paired and connected.
 func (a *Account) LoggedIn() bool { return a.c.LoggedIn() }
 
+// Paired reports whether this account still holds a linked session.
+func (a *Account) Paired() bool { return a.c.Paired() }
+
+// Relink starts a fresh pairing round on this account (see Client.Relink).
+// The Relink dialog calls it directly rather than through the manager, since
+// it re-links the account whose row was clicked, not the active one.
+func (a *Account) Relink() error { return a.c.Relink() }
+
 // PairPhone requests a phone-number pairing code for this account.
 func (a *Account) PairPhone(ctx context.Context, phone string) (string, error) {
 	return a.c.PairPhone(ctx, phone)
@@ -59,6 +67,10 @@ type AccountMeta struct {
 	Status string
 	Phone  string
 	Unread int
+	// NeedsRelink marks an account with no session left, which has to be
+	// scanned again before it can do anything. Distinct from a paired
+	// account whose socket is merely down and needs nothing.
+	NeedsRelink bool
 }
 
 // phoneFromJID extracts the dialable number from a user JID
@@ -226,12 +238,14 @@ func (m *AccountManager) Accounts() []AccountMeta {
 				}
 			}
 		}
+		paired := a.c.Paired()
 		out[i] = AccountMeta{
-			ID:     a.ID,
-			Name:   a.displayName(i),
-			Status: accountStatusLine(a.c.Paired(), a.c.LoggedIn()),
-			Phone:  phoneFromJID(a.c.OwnJID()),
-			Unread: unread,
+			ID:          a.ID,
+			Name:        a.displayName(i),
+			Status:      accountStatusLine(paired, a.c.LoggedIn()),
+			Phone:       phoneFromJID(a.c.OwnJID()),
+			Unread:      unread,
+			NeedsRelink: !paired,
 		}
 	}
 	return out
@@ -582,9 +596,20 @@ func (m *AccountManager) RemoveAccount(id string) error {
 	}
 
 	if last {
-		// Nothing to fall back to: the sign-out is the whole removal, so
-		// its failure (offline, say) is the caller's to show.
-		return signOut(target.c)
+		// Nothing to fall back to: chatot always keeps one account, so
+		// removing the only one resets it in place rather than dropping the
+		// row. Signing out is not enough on its own — an account that was
+		// already signed out has nothing to sign out of, so the click did
+		// literally nothing — and the reset is what returns it to a fresh,
+		// unpaired session handing out codes again. A failure (offline,
+		// say) is the caller's to show.
+		if err := signOut(target.c); err != nil {
+			return err
+		}
+		if err := target.c.Relink(); err != nil && !errors.Is(err, ErrStillLinked) {
+			return err
+		}
+		return nil
 	}
 
 	if active {
@@ -698,6 +723,7 @@ func (m *AccountManager) MessagePreview(chatJID, msgID string) (string, bool) {
 }
 
 func (m *AccountManager) Logout(ctx context.Context) error { return m.active().Logout(ctx) }
+func (m *AccountManager) Relink() error                    { return m.active().Relink() }
 
 func (m *AccountManager) PairPhone(ctx context.Context, phone string) (string, error) {
 	return m.active().PairPhone(ctx, phone)

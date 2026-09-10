@@ -15,6 +15,12 @@
 @define-color chatot_ring_viewed rgba(255, 255, 255, 0.28);
 @define-color chatot_accent_text #46c39a;
 @define-color chatot_accent_text_soft #46c39a;
+/* The light theme's #c01c28 is nearly black against these surfaces: the
+   account line that reads "Logged out · scan to relink" was the report that
+   sent this here. Text lifts to a salmon that clears contrast on #2d2d2d;
+   fills lift only enough to stay red under their own white text. */
+@define-color chatot_danger #e0555c;
+@define-color chatot_danger_text #ff9a94;
 
 .chatot-bubble-text link {
 	color: @chatot_accent_text;

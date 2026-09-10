@@ -251,6 +251,15 @@ type ChatList struct {
 	overflowPop        *gtk.Popover      // the … popover while it is open, else nil
 	accountAvatar      *gtk.Label
 	accountAvatarClass string // current avatar palette class, swapped on active change
+	// rebuildAppMenu repaints the ⋮ application menu, whose bottom row
+	// depends on whether the account is still linked. Set during
+	// construction, called from refreshAccountHeader.
+	rebuildAppMenu func()
+	// appMenuLinked is the link state the ⋮ menu was last built for, so the
+	// popover is only rebuilt when it actually changes; rebuiltAppMenu marks
+	// that it has been built at all, since false is a meaningful state.
+	appMenuLinked  bool
+	rebuiltAppMenu bool
 
 	// shotSel/shotName/shotCreate expose the open group-name step to the
 	// dev hooks; nil outside one.
@@ -639,7 +648,7 @@ func NewChatList(c client.Client) *ChatList {
 	// The mockup's rows plus Blocked contacts (see appMenuItems). Status,
 	// channels and "set status" live on the bottom mode bar; privacy and
 	// shortcuts are Preferences pages.
-	appItems := appMenuItems(appMenuActions{
+	appActions := appMenuActions{
 		Archived: func() {
 			if cl.tab != "chats" {
 				cl.selectTab("chats")
@@ -652,10 +661,23 @@ func NewChatList(c client.Client) *ChatList {
 		Preferences:   func() { appMenuBtn.ActivateAction("app.preferences", nil) },
 		About:         func() { showAboutDialog(cl.window) },
 		Unlink:        func() { cl.unlinkDevice() },
+		Relink:        func() { cl.relinkDevice() },
 		Quit:          func() { appMenuBtn.ActivateAction("app.quit", nil) },
-	})
-	appPopover := newMenuPopover(appItems)
-	appMenuBtn.SetPopover(appPopover)
+	}
+	// The menu's last row follows the link state, so the popover is rebuilt
+	// whenever that moves rather than being frozen at construction time —
+	// which is how a signed-out account kept on offering "Unlink this
+	// device", an action with nothing left to unlink.
+	cl.rebuildAppMenu = func() {
+		linked := cl.c.LoggedIn() || cl.c.Paired()
+		if !appMenuNeedsRebuild(cl.rebuiltAppMenu, cl.appMenuLinked, linked) {
+			return
+		}
+		cl.rebuiltAppMenu = true
+		cl.appMenuLinked = linked
+		appMenuBtn.SetPopover(newMenuPopover(appMenuItems(linked, appActions)))
+	}
+	cl.rebuildAppMenu()
 
 	cl.refresh()
 	go cl.watchEvents()
@@ -756,7 +778,10 @@ func (cl *ChatList) OnAddAccountRequested(f func()) { cl.onAddAccount = f }
 // RefreshAccounts repaints the header identity from the switcher; call after
 // an account is added or removed so the header reflects the new roster (the
 // switcher popover rebuilds itself on each open).
-func (cl *ChatList) RefreshAccounts() { cl.refreshAccountHeader() }
+func (cl *ChatList) RefreshAccounts() {
+	cl.refreshAccountHeader()
+	cl.refreshAppMenu()
+}
 
 // OnManageAccountsRequested registers f for the switcher's "Manage accounts…"
 // item; STUBBED until F59 builds the manage-accounts flow.
@@ -796,18 +821,43 @@ func (cl *ChatList) refreshAccountHeader() {
 	}
 
 	cl.accountName.SetText(active.Name)
-	// The mockup's header subline is the account's phone number (monospace);
-	// keep the "scan to relink" prompt when there is no number to show.
-	if active.Phone != "" {
-		cl.accountStatus.SetText(active.Phone)
-		cl.accountStatus.AddCSSClass("chatot-mono")
-	} else {
-		cl.accountStatus.SetText(active.Status)
-		cl.accountStatus.RemoveCSSClass("chatot-mono")
-	}
+	text, mono, bad := accountHeaderSubline(active)
+	cl.accountStatus.SetText(text)
+	setCSSClass(cl.accountStatus, "chatot-mono", mono)
+	setCSSClass(cl.accountStatus, "chatot-status-bad", bad)
 	cl.accountAvatar.SetText(initialFor(active.Name))
 	cl.swapAvatarClass(avatarColorClass(active.ID))
 	cl.refreshAccountRail()
+}
+
+// accountHeaderSubline is the line under the account name in the sidebar
+// header: the mockup's monospace phone number, falling back to the status
+// when there is no number to show — which is exactly the signed-out case.
+//
+// bad paints it red. It follows NeedsRelink and not "not connected", so an
+// account merely between sockets stays neutral; only one that has to be
+// scanned again is flagged. The header was otherwise the one place the
+// signed-out state never registered.
+func accountHeaderSubline(meta client.AccountMeta) (text string, mono, bad bool) {
+	if meta.Phone != "" {
+		return meta.Phone, true, meta.NeedsRelink
+	}
+	return meta.Status, false, meta.NeedsRelink
+}
+
+// appMenuNeedsRebuild reports whether the ⋮ popover has to be rebuilt: the
+// first time, and after that only when the link state its last row depends
+// on actually moves. Rebuilding on every event would drop the popover out
+// from under someone who has it open.
+func appMenuNeedsRebuild(built, was, now bool) bool {
+	return !built || was != now
+}
+
+// refreshAppMenu repaints the ⋮ menu if the account's link state moved.
+func (cl *ChatList) refreshAppMenu() {
+	if cl.rebuildAppMenu != nil {
+		cl.rebuildAppMenu()
+	}
 }
 
 // swapAvatarClass moves the header avatar onto a new palette class.
@@ -1194,7 +1244,10 @@ func (cl *ChatList) watchEvents() {
 		// a fresh link takes it from "scan to relink" to the number.
 		switch ev.Kind {
 		case client.EventConnection, client.EventPairSuccess, client.EventLoggedOut:
-			glib.IdleAdd(cl.refreshAccountHeader)
+			glib.IdleAdd(func() {
+				cl.refreshAccountHeader()
+				cl.refreshAppMenu()
+			})
 		}
 		// Avatar fetches that failed while disconnected are completed in
 		// place once the socket is up, rather than by rebuilding rows.
@@ -2164,15 +2217,64 @@ func privacySettingsRows(settings map[string]string) []privacySettingRow {
 	return rows
 }
 
+// unlinkErrorGrace is how long unlinkDevice waits before explaining a failed
+// unlink, so a removal whose confirmation was lost with the socket settles
+// into a plain logged-out session instead of an alarming dialog.
+const unlinkErrorGrace = 4 * time.Second
+
 // unlinkDevice logs this device out of WhatsApp. The client emits
 // EventLoggedOut on success, which is what swaps the window back to the
 // pairing screen — nothing here touches the stack directly.
+//
+// A failure is shown rather than only logged: an unlink that silently does
+// nothing looks exactly like one that worked, and the user is left thinking
+// a device is gone that the phone still lists.
 func (cl *ChatList) unlinkDevice() {
 	c := cl.c
+	win := cl.window
 	go func() {
-		if err := c.Logout(context.Background()); err != nil {
-			log.Printf("chatot: unlink device failed: %v", err)
+		err := c.Logout(context.Background())
+		if err == nil {
+			return
 		}
+		log.Printf("chatot: unlink device failed: %v", err)
+		// WhatsApp often tears the socket down the moment it processes the
+		// removal, so the reply is lost even though the device is gone from
+		// the phone. Give whatsmeow's own device-removed handling a moment:
+		// if the session ends anyway the unlink worked, and claiming it
+		// failed would be worse than saying nothing.
+		time.Sleep(unlinkErrorGrace)
+		if !c.Paired() {
+			return
+		}
+		glib.IdleAdd(func() {
+			alert := adw.NewAlertDialog("Couldn't unlink this device",
+				"WhatsApp didn't confirm the unlink: "+err.Error()+
+					"\n\nThe device is still linked. Check the connection and try again, or remove chatot from Linked devices on your phone.")
+			alert.AddResponse("ok", "OK")
+			alert.Present(win)
+		})
+	}()
+}
+
+// relinkDevice starts a fresh pairing round for the account in view, for
+// when it is signed out and the window is sitting on the linking screen with
+// no code. Normally the logout starts one on its own; this is the manual
+// way back when that failed.
+func (cl *ChatList) relinkDevice() {
+	c := cl.c
+	win := cl.window
+	go func() {
+		err := c.Relink()
+		if err == nil {
+			return
+		}
+		log.Printf("chatot: relink device failed: %v", err)
+		glib.IdleAdd(func() {
+			alert := adw.NewAlertDialog("Couldn't start pairing", err.Error())
+			alert.AddResponse("ok", "OK")
+			alert.Present(win)
+		})
 	}()
 }
 

@@ -28,7 +28,12 @@ type Fake struct {
 	chats    []Chat
 	messages map[string][]Message // chatJID -> messages, oldest first
 	events   *eventBus
-	qrCodes  chan string
+	// qr fans the demo pairing code out to every reader, as the real
+	// client's does. A single shared channel let whichever reader got there
+	// first take the code: with the manager proxying the active account's
+	// stream onto the linking screen, the Relink dialog subscribed to the
+	// same channel and sat on "Waiting for a code…" forever.
+	qr       qrFanout
 	loggedIn bool
 	// markReads records MarkRead calls for tests (see MarkReadCalls);
 	// markPlayed the MarkPlayed ones.
@@ -40,6 +45,11 @@ type Fake struct {
 	// instead of flipping loggedIn, so the add-account and relink dialogs
 	// have a code to render in CHATOT_FAKE=1 builds.
 	pairing bool
+	// paired is whether a session exists at all, connected or not — the
+	// Fake's answer to Client.Paired. Sign-out clears it, so the demo build
+	// reaches the same "Logged out · scan to relink" state the real client
+	// does instead of forever claiming a live link.
+	paired  bool
 	nextID  int
 	blocked map[string]bool
 	labels  []Label
@@ -91,8 +101,8 @@ func NewFake() *Fake {
 	f := &Fake{
 		messages: make(map[string][]Message),
 		events:   newEventBus(nil),
-		qrCodes:  make(chan string, 1),
 		loggedIn: true,
+		paired:   true,
 		blocked:  make(map[string]bool),
 		labels: []Label{
 			{ID: "1", Name: "Work", Color: 0},
@@ -243,13 +253,11 @@ func (f *Fake) Start(ctx context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.pairing {
-		select {
-		case f.qrCodes <- "chatot-demo-pairing-code":
-		default:
-		}
+		f.qr.Publish(demoPairingCode)
 		return nil
 	}
 	f.loggedIn = true
+	f.paired = true
 	return nil
 }
 
@@ -260,13 +268,34 @@ func NewPairingFake() *Fake {
 	f.chats = nil
 	f.messages = make(map[string][]Message)
 	f.loggedIn = false
+	f.paired = false
 	f.pairing = true
 	return f
 }
 
-func (f *Fake) QRCodes() <-chan string { return f.qrCodes }
+// demoPairingCode is the stand-in the demo build renders as a QR.
+const demoPairingCode = "chatot-demo-pairing-code"
 
-func (f *Fake) Paired() bool { return true }
+func (f *Fake) QRCodes() <-chan string { return f.qr.Subscribe() }
+
+// Paired reports whether the demo account still holds a session (see the
+// paired field).
+func (f *Fake) Paired() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.paired
+}
+
+// SetLinked puts the Fake back into a fully linked state. Tests that sign an
+// account out and then want it linked again go through this rather than
+// poking loggedIn, which on its own leaves the account unpaired.
+func (f *Fake) SetLinked() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.loggedIn = true
+	f.paired = true
+	f.pairing = false
+}
 
 func (f *Fake) LoggedIn() bool {
 	f.mu.Lock()
@@ -277,10 +306,30 @@ func (f *Fake) LoggedIn() bool {
 func (f *Fake) Logout(ctx context.Context) error {
 	f.mu.Lock()
 	f.loggedIn = false
+	// A signed-out account is no longer paired either, and from here on it
+	// only produces demo pairing codes — the same shape the real client
+	// takes after an unlink.
+	f.paired = false
+	f.pairing = true
 	f.mu.Unlock()
 	// The real client reports the logout as an event; the window relies on
 	// it to fall back to the pairing screen.
 	f.events.Publish(Event{Kind: EventLoggedOut})
+	return nil
+}
+
+// Relink re-opens a demo pairing round: the signed-out Fake starts offering
+// a code again, so the relink dialog has something to render.
+func (f *Fake) Relink() error {
+	f.mu.Lock()
+	if f.paired {
+		f.mu.Unlock()
+		return ErrStillLinked
+	}
+	f.paired = false
+	f.pairing = true
+	f.mu.Unlock()
+	f.qr.Publish(demoPairingCode)
 	return nil
 }
 
