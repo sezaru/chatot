@@ -1841,6 +1841,14 @@ func (f *Fake) DownloadMedia(ctx context.Context, msgID string) (string, error) 
 			if msgs[i].ID != msgID || msgs[i].Attachment == nil {
 				continue
 			}
+			// An attachment that names one of the dev fixtures hands back
+			// the real file, so a download in the fake produces bytes that
+			// decode and play; anything else is an empty placeholder, which
+			// is all the not-downloaded states need.
+			if p := fakeFixturePath(msgs[i].Attachment.Filename); p != "" {
+				msgs[i].Attachment.LocalPath = p
+				return p, nil
+			}
 			tmp, err := os.CreateTemp("", "chatot-fake-media-*")
 			if err != nil {
 				return "", err
@@ -1851,6 +1859,20 @@ func (f *Fake) DownloadMedia(ctx context.Context, msgID string) (string, error) 
 		}
 	}
 	return "", fmt.Errorf("chatot/client: message %q not found for download", msgID)
+}
+
+// fakeFixturePath is name under CHATOT_FAKE_MEDIA, "" when the dev fixtures
+// are not in use or do not have that file.
+func fakeFixturePath(name string) string {
+	dir := os.Getenv("CHATOT_FAKE_MEDIA")
+	if dir == "" || name == "" {
+		return ""
+	}
+	p := filepath.Join(dir, name)
+	if info, err := os.Stat(p); err != nil || info.IsDir() {
+		return ""
+	}
+	return p
 }
 
 // DownloadThumbnail hands out a preview for msgID's attachment the way the

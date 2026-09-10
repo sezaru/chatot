@@ -1,6 +1,10 @@
 package ui
 
-import "chatot/internal/client"
+import (
+	"time"
+
+	"chatot/internal/client"
+)
 
 // voiceHooks is what a voice-note row tells its conversation about
 // playback, keyed by message id: it started (the note counts as played),
@@ -74,6 +78,40 @@ func resumeFraction(posMS int, durationSecs float64) float64 {
 	}
 	return pos / durationSecs
 }
+
+// voiceChainStep is what a run does with the note that follows the one
+// that just ran out.
+type voiceChainStep int
+
+const (
+	// voiceChainStop ends the run.
+	voiceChainStop voiceChainStep = iota
+	// voiceChainPlay starts the note straight away.
+	voiceChainPlay
+	// voiceChainFetch downloads the note and plays it when it lands. A
+	// note that is not in the cache still belongs to the run: automatic
+	// downloads only cover recent messages, and the reader who started
+	// the run asked for the notes after it too, so stopping at the first
+	// one nobody had opened yet read as the run being broken.
+	voiceChainFetch
+)
+
+// voiceChainStepFor decides what happens to the next note. A view-once
+// note is the one thing a run must not open: it is spent by playing it.
+func voiceChainStepFor(mv mediaView) voiceChainStep {
+	switch {
+	case mv.ViewOnce:
+		return voiceChainStop
+	case mv.HasLocal:
+		return voiceChainPlay
+	}
+	return voiceChainFetch
+}
+
+// voiceChainFetchTimeout bounds a download the run starts by itself. A note
+// that takes longer than this to arrive is no longer the one the reader is
+// waiting for, so the run ends rather than speaking up minutes later.
+const voiceChainFetchTimeout = 60 * time.Second
 
 // nextVoiceMessage is the message to play after msgID ran out: the one
 // right after it in msgs when that is an audio message too (ours or

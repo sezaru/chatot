@@ -81,3 +81,33 @@ func TestMediaVMCarriesVoiceState(t *testing.T) {
 		t.Errorf("mediaVM dropped voice state: %+v", mv)
 	}
 }
+
+// A run must not stop at a note nobody has opened yet. Automatic downloads
+// only cover recent messages and only the kinds the preference names, so the
+// note after the one playing is often still on the server; fetching it is
+// what the reader asked for by starting the run. A view-once note is the one
+// exception, since playing it spends it.
+func TestVoiceChainStepFor(t *testing.T) {
+	cases := []struct {
+		name string
+		mv   mediaView
+		want voiceChainStep
+	}{
+		{"a cached note plays", mediaView{HasLocal: true, LocalPath: "/tmp/v1.ogg"}, voiceChainPlay},
+		{"a note that was never fetched is downloaded first", mediaView{}, voiceChainFetch},
+		{"a view-once note ends the run", mediaView{ViewOnce: true}, voiceChainStop},
+		{"a cached view-once note ends it too", mediaView{HasLocal: true, ViewOnce: true}, voiceChainStop},
+	}
+	for _, c := range cases {
+		if got := voiceChainStepFor(c.mv); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+	// The same call the chain makes, from a message with no local file: the
+	// undownloaded note is still part of the run.
+	undownloaded := client.Message{ID: "v2",
+		Attachment: &client.Attachment{Kind: "audio", MimeType: "audio/ogg", DurationSecs: 11}}
+	if got := voiceChainStepFor(mediaVM(undownloaded)); got != voiceChainFetch {
+		t.Errorf("an undownloaded note = %v, want it fetched", got)
+	}
+}
