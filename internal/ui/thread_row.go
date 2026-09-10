@@ -4,6 +4,7 @@ import (
 	"chatot/internal/client"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 )
 
 // A thread row's chrome outlives the message inside it. GtkListView recycles
@@ -33,6 +34,30 @@ type threadRow struct {
 	bubble     *gtk.Box
 	reactions  *gtk.Box
 	hover      *hoverButtons
+	// The bubble's interior, appended once in this order and shown or hidden
+	// per bind: author, forwarded marker, quote, the rich content, the body,
+	// the read-more button, the footer. Rebuilding these was a quarter of
+	// what a bind cost (BenchmarkRowReusedInterior). The two slots are the
+	// exceptions: a picture, location, poll, contact, call, event or link
+	// card is a different subtree every time and carries its own handlers,
+	// and none of them is common enough on a fling to be worth keeping.
+	author    *gtk.Label
+	fwd       *gtk.Label
+	quote     *gtk.Label
+	content   gtk.Widgetter
+	body      *gtk.Label
+	more      *gtk.Button
+	footer    *gtk.Box
+	retry     *gtk.Button
+	timeLabel *gtk.Label
+	clock     *gtk.DrawingArea
+	tick      *gtk.Label
+	// What the quote and the Retry button act on. Their handlers are made
+	// once and read these, so a bind never rewires a signal.
+	quoteTo  string
+	onJumpTo func(string)
+	retryMsg client.Message
+	onRetry  func(client.Message)
 	// What the avatar slot is currently showing. A group thread runs long
 	// stretches from one sender, and a recycled row often lands on the same
 	// one, so the picture is kept unless the sender, the initial or the
@@ -55,7 +80,17 @@ func newThreadRow() *threadRow {
 		bubble:     gtk.NewBox(gtk.OrientationVertical, 2),
 		reactions:  gtk.NewBox(gtk.OrientationHorizontal, 4),
 		hover:      newHoverButtons(),
+		author:     gtk.NewLabel(""),
+		fwd:        gtk.NewLabel("↩ Forwarded"),
+		quote:      gtk.NewLabel(""),
+		body:       gtk.NewLabel(""),
+		footer:     gtk.NewBox(gtk.OrientationHorizontal, 4),
+		retry:      gtk.NewButtonWithLabel("↻ Retry"),
+		timeLabel:  gtk.NewLabel(""),
+		clock:      newClockGlyph(11),
+		tick:       gtk.NewLabel(""),
 	}
+	r.buildBubbleInterior()
 
 	r.daySep.AddCSSClass("chatot-day-separator")
 	r.daySep.SetHAlign(gtk.AlignCenter)
@@ -101,6 +136,287 @@ func newThreadRow() *threadRow {
 	return r
 }
 
+// buildBubbleInterior makes the parts of a bubble that every message has, in
+// the order they stack, and wires the two handlers that need to outlive a
+// bind. Everything here is configured once; a bind only sets text, toggles a
+// class and flips visibility.
+func (r *threadRow) buildBubbleInterior() {
+	r.author.AddCSSClass("chatot-bubble-author")
+	r.author.SetXAlign(0)
+	r.author.SetEllipsize(pango.EllipsizeEnd)
+	r.author.SetMaxWidthChars(40)
+
+	r.fwd.AddCSSClass("chatot-forwarded")
+	r.fwd.SetXAlign(0)
+
+	r.quote.AddCSSClass("chatot-bubble-quote")
+	r.quote.SetXAlign(0)
+	r.quote.SetWrap(true)
+	// The quote is the way back to what it answers.
+	click := gtk.NewGestureClick()
+	click.ConnectReleased(func(int, float64, float64) {
+		if r.onJumpTo != nil && r.quoteTo != "" {
+			r.onJumpTo(r.quoteTo)
+		}
+	})
+	r.quote.AddController(click)
+
+	r.body.AddCSSClass("chatot-bubble-text")
+	r.body.SetXAlign(0)
+	r.body.SetWrap(true)
+	// WrapWordChar so a long unbroken token (e.g. a URL) still breaks
+	// instead of forcing the bubble wider than the pane.
+	r.body.SetWrapMode(pango.WrapWordChar)
+	// Cap the natural width so a long paragraph wraps into a hugging bubble
+	// (~two-thirds of the pane) instead of stretching edge-to-edge, matching
+	// the mockup's bubble sizing.
+	r.body.SetMaxWidthChars(48)
+
+	r.footer.SetHAlign(gtk.AlignEnd)
+	// WhatsApp's failed send: a Retry beside the time and a red badge where
+	// the tick would be. Retrying re-sends the same content as a fresh
+	// message at the foot of the thread.
+	r.retry.AddCSSClass("flat")
+	r.retry.AddCSSClass("chatot-retry")
+	r.retry.SetTooltipText("Send again")
+	r.retry.SetVAlign(gtk.AlignCenter)
+	r.retry.ConnectClicked(func() {
+		if r.onRetry != nil {
+			r.onRetry(r.retryMsg)
+		}
+	})
+	r.timeLabel.AddCSSClass("chatot-bubble-time")
+	r.timeLabel.SetXAlign(1)
+	r.clock.AddCSSClass("chatot-bubble-tick")
+	r.clock.SetTooltipText("Sending…")
+	// One label for both the failed badge and the tick: they are never on
+	// screen together, and they differ only in text and class.
+	r.footer.Append(r.retry)
+	r.footer.Append(r.timeLabel)
+	r.footer.Append(r.clock)
+	r.footer.Append(r.tick)
+
+	r.bubble.Append(r.author)
+	r.bubble.Append(r.fwd)
+	r.bubble.Append(r.quote)
+	r.bubble.Append(r.body)
+	r.bubble.Append(r.footer)
+}
+
+// fillBubble shows msg in the bubble's interior, reusing every part of it.
+func (r *threadRow) fillBubble(msg client.Message, vm bubbleView, h bubbleHooks) {
+	defer perfStart("fillBubble")()
+
+	// Hiding a label is not enough: a recycled row would keep the previous
+	// message's author line, quote, body or tick sitting in the tree, one
+	// slip in the visibility logic away from being shown under someone
+	// else's message. Every one of them is cleared as it goes.
+	r.author.SetVisible(vm.Author != "")
+	if vm.Author != "" {
+		r.author.SetLabel(vm.Author)
+	} else {
+		r.author.SetLabel("")
+	}
+	r.fwd.SetVisible(vm.Forwarded)
+
+	r.quote.SetVisible(vm.HasQuote)
+	if !vm.HasQuote {
+		r.quote.SetLabel("")
+	}
+	if vm.HasQuote {
+		r.quote.SetLabel(resolveMentionsPlain(vm.QuotedText, h.names))
+		r.quoteTo, r.onJumpTo = "", h.onJumpTo
+		if h.onJumpTo != nil && msg.ReplyTo != nil {
+			r.quoteTo = msg.ReplyTo.MsgID
+			r.quote.SetCursorFromName("pointer")
+			r.quote.SetTooltipText("Go to the original message")
+		} else {
+			r.quote.SetCursorFromName("")
+			r.quote.SetTooltipText("")
+		}
+	}
+
+	r.fillContent(msg, vm, h)
+	r.fillFooter(msg, vm, h)
+}
+
+// setContent puts w between the quote and the body, taking out whatever the
+// last message left there. A nil w leaves the bubble with no rich content.
+func (r *threadRow) setContent(w gtk.Widgetter) {
+	if r.content != nil {
+		r.bubble.Remove(r.content)
+		r.content = nil
+	}
+	if w != nil {
+		r.bubble.InsertChildAfter(w, r.quote)
+		r.content = w
+	}
+}
+
+// setMore puts the read-more button under the body, or takes it away.
+func (r *threadRow) setMore(b *gtk.Button) {
+	if r.more != nil {
+		r.bubble.Remove(r.more)
+		r.more = nil
+	}
+	if b != nil {
+		r.bubble.InsertChildAfter(b, r.body)
+		r.more = b
+	}
+}
+
+// fillContent builds whatever the message carries above its body, and puts
+// the body itself in one of its three states: a caption under a picture, a
+// tombstone, or the message text.
+func (r *threadRow) fillContent(msg client.Message, vm bubbleView, h bubbleHooks) {
+	switch {
+	case vm.IsLocation:
+		var stop func()
+		if vm.Location.Live && msg.FromMe && h.onStopLive != nil {
+			m := msg
+			stop = func() { h.onStopLive(m) }
+		}
+		var open func()
+		if h.onOpenViewer != nil {
+			m := msg
+			open = func() { h.onOpenViewer(m) }
+		}
+		r.setContent(buildLocationContent(vm.Location, stop, open))
+	case vm.IsContact:
+		r.setContent(buildContactContent(vm.Contact))
+	case vm.IsPoll:
+		r.setContent(buildPollContent(msg, vm.Poll, h.onVote))
+	case vm.IsEvent:
+		r.setContent(buildEventContent(vm.Event))
+	case vm.IsCall:
+		r.setContent(buildCallContent(vm.Call))
+	case vm.IsMedia:
+		media := vm.Media
+		if h.onFetchThumbnail != nil {
+			m := msg
+			media.fetchThumb = func() { h.onFetchThumbnail(m) }
+		}
+		media.voice = h.voice
+		if h.transcriptOf != nil {
+			media.TranscriptState = h.transcriptOf(msg.ID)
+		}
+		r.setContent(buildMediaContent(msg, media, h.c, h.mediaOpener(msg)))
+	default:
+		if vm.Link != nil {
+			r.setContent(buildLinkCard(*vm.Link))
+		} else {
+			r.setContent(nil)
+		}
+	}
+	r.fillBody(msg, vm, h)
+}
+
+func (r *threadRow) fillBody(msg client.Message, vm bubbleView, h bubbleHooks) {
+	// A caption reads like a text bubble's body, under the picture: links
+	// open, mentions resolve, the text copies.
+	caption := vm.IsMedia && vm.CaptionText != ""
+	rich := vm.IsLocation || vm.IsContact || vm.IsPoll || vm.IsEvent || vm.IsCall || (vm.IsMedia && !caption)
+	r.body.SetVisible(!rich)
+	setCSSClass(r.body, "chatot-bubble-caption", caption)
+	setCSSClass(r.body, "chatot-bubble-deleted", !caption && vm.Deleted)
+	setCSSClass(r.body, "chatot-emoji-only", !caption && vm.IsEmojiOnly)
+	r.body.SetSelectable(!vm.Deleted)
+	if rich {
+		r.body.SetLabel("")
+		r.setMore(nil)
+		return
+	}
+
+	if caption {
+		r.body.SetMarkup(messageMarkup(vm.CaptionText, h.names, vm.FromMe, mentionAccentFor(), h.searchQuery))
+		r.setMore(nil)
+		return
+	}
+	if vm.Deleted {
+		r.body.SetLabel(vm.Text)
+		r.setMore(nil)
+		return
+	}
+
+	// A long body is folded behind a "Read more", as WhatsApp folds one. The
+	// clip happens on the plain text, before the markup, so no tag is ever
+	// cut in half.
+	long := !vm.IsEmojiOnly && isLongText(vm.Text)
+	open := long && h.textExpandedOf != nil && h.textExpandedOf(msg.ID)
+	body := func() string {
+		if long && !open {
+			return clipText(vm.Text)
+		}
+		return vm.Text
+	}
+	// Links open on click (GtkLabel's own activate-link opens the URI), and
+	// the text can be swept and copied.
+	r.body.SetMarkup(messageMarkup(body(), h.names, vm.FromMe, mentionAccentFor(), h.searchQuery))
+	if !long {
+		r.setMore(nil)
+		return
+	}
+	id := msg.ID
+	more := gtk.NewButtonWithLabel(readMoreLabel(open))
+	more.AddCSSClass("flat")
+	more.AddCSSClass("chatot-read-more")
+	more.SetHAlign(gtk.AlignStart)
+	more.SetFocusOnClick(false)
+	more.ConnectClicked(func() {
+		open = !open
+		r.body.SetMarkup(messageMarkup(body(), h.names, vm.FromMe, mentionAccentFor(), h.searchQuery))
+		more.SetLabel(readMoreLabel(open))
+		if h.onExpandText != nil {
+			h.onExpandText(id, open)
+		}
+	})
+	r.setMore(more)
+}
+
+func (r *threadRow) fillFooter(msg client.Message, vm bubbleView, h bubbleHooks) {
+	r.retry.SetVisible(vm.Failed)
+	if vm.Failed {
+		r.retryMsg, r.onRetry = msg, h.onRetry
+		r.retry.SetSensitive(h.onRetry != nil)
+	}
+	r.timeLabel.SetLabel(vm.TimeText + vm.EditedMarker)
+	r.clock.SetVisible(vm.Pending)
+	switch {
+	case vm.Pending:
+		r.hideTick()
+	case vm.Failed:
+		r.tick.SetLabel("!")
+		r.tick.SetTooltipText("Not sent")
+		setCSSClass(r.tick, "chatot-bubble-failed", true)
+		setCSSClass(r.tick, "chatot-bubble-tick", false)
+		setCSSClass(r.tick, "chatot-tick-read", false)
+		r.tick.SetVisible(true)
+	case vm.FromMe && vm.TickText != "":
+		r.tick.SetLabel(vm.TickText)
+		r.tick.SetTooltipText("")
+		setCSSClass(r.tick, "chatot-bubble-failed", false)
+		setCSSClass(r.tick, "chatot-bubble-tick", true)
+		setCSSClass(r.tick, "chatot-tick-read", vm.TickRead)
+		r.tick.SetVisible(true)
+	default:
+		r.hideTick()
+	}
+}
+
+// hideTick puts the badge/tick label back to how a row that never showed one
+// keeps it: no text, no tooltip, none of the three classes. Leaving any of
+// them behind would make a recycled row differ from a fresh one, and a read
+// tick is exactly the sort of thing that must not survive onto someone
+// else's message.
+func (r *threadRow) hideTick() {
+	r.tick.SetVisible(false)
+	r.tick.SetLabel("")
+	r.tick.SetTooltipText("")
+	setCSSClass(r.tick, "chatot-bubble-failed", false)
+	setCSSClass(r.tick, "chatot-bubble-tick", false)
+	setCSSClass(r.tick, "chatot-tick-read", false)
+}
+
 // render shows msg in this row, reusing every widget that can be reused.
 func (r *threadRow) render(msg client.Message, vm bubbleView, h bubbleHooks) {
 	defer perfStart("renderRow")()
@@ -137,8 +453,7 @@ func (r *threadRow) render(msg client.Message, vm bubbleView, h bubbleHooks) {
 	setCSSClass(r.bubble, "chatot-bubble-out", !noChrome && vm.FromMe)
 	setCSSClass(r.bubble, "chatot-bubble-in", !noChrome && !vm.FromMe)
 
-	removeAllChildren(r.bubble)
-	fillBubble(r.bubble, msg, vm, h)
+	r.fillBubble(msg, vm, h)
 	r.renderReactions(msg, vm, h)
 	r.renderAvatar(msg, vm, h)
 	r.renderHover(msg, vm, h)
@@ -239,6 +554,19 @@ func (r *threadRow) renderTyping() {
 // hoverButtons is the 🙂/⌄ pair. Its widgets and its two clicked handlers are
 // made once per row; a bind only repoints cur, so recycling never rewires a
 // signal and never builds a button.
+// hoverPlacement is where the pair currently sits. Reordering a GtkBox's
+// children queues a resize on it, so the side is only reshuffled when the
+// message actually changed sides — on a fling almost every bind leaves it
+// where it was.
+type hoverPlacement int
+
+const (
+	hoverUnplaced hoverPlacement = iota
+	hoverParked
+	hoverIncoming
+	hoverOutgoing
+)
+
 type hoverButtons struct {
 	box     *gtk.Box
 	smiley  *gtk.Button
@@ -247,7 +575,8 @@ type hoverButtons struct {
 	// bubbleAffordances.showing, which points here.
 	showing bool
 	// cur is what a click acts on now; nil means the pair is parked.
-	cur *bubbleAffordances
+	cur    *bubbleAffordances
+	placed hoverPlacement
 }
 
 func newHoverButtons() *hoverButtons {
@@ -298,12 +627,19 @@ func newHoverButtons() *hoverButtons {
 // and before an outgoing one, so the bubble never moves when they appear.
 func (hb *hoverButtons) bind(r *threadRow, msg client.Message, vm bubbleView, h bubbleHooks, canEdit, canDelete bool) {
 	hb.box.SetVisible(true)
+	want := hoverIncoming
 	if vm.FromMe {
-		r.row.ReorderChildAfter(hb.box, r.avatarSlot)
-		hb.box.ReorderChildAfter(hb.smiley, hb.chevron)
-	} else {
-		r.row.ReorderChildAfter(hb.box, r.stack)
-		hb.box.ReorderChildAfter(hb.chevron, hb.smiley)
+		want = hoverOutgoing
+	}
+	if hb.placed != want {
+		if vm.FromMe {
+			r.row.ReorderChildAfter(hb.box, r.avatarSlot)
+			hb.box.ReorderChildAfter(hb.smiley, hb.chevron)
+		} else {
+			r.row.ReorderChildAfter(hb.box, r.stack)
+			hb.box.ReorderChildAfter(hb.chevron, hb.smiley)
+		}
+		hb.placed = want
 	}
 	hb.smiley.SetSensitive(h.onReact != nil)
 
@@ -342,8 +678,11 @@ func (hb *hoverButtons) park(r *threadRow) {
 	hb.box.SetOpacity(0)
 	hb.box.SetCanTarget(false)
 	hb.box.SetVisible(false)
-	r.row.ReorderChildAfter(hb.box, r.avatarSlot)
-	hb.box.ReorderChildAfter(hb.chevron, hb.smiley)
+	if hb.placed != hoverParked {
+		r.row.ReorderChildAfter(hb.box, r.avatarSlot)
+		hb.box.ReorderChildAfter(hb.chevron, hb.smiley)
+		hb.placed = hoverParked
+	}
 }
 
 func (hb *hoverButtons) setVisible(on bool) {

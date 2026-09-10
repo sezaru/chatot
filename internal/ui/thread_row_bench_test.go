@@ -81,21 +81,18 @@ func BenchmarkRowRenderOnly(b *testing.B) {
 	}
 }
 
-// BenchmarkRowReusedInterior is the ceiling for reusing the bubble's contents
-// instead of rebuilding them: the row is filled once, and a "bind" only
-// re-marks-up the body label it already has. The gap between this and
-// BenchmarkRowRenderAndMeasure is what interior reuse is worth.
-func BenchmarkRowReusedInterior(b *testing.B) {
+// BenchmarkRowBodyOnly is the floor for a bind: nothing about the row
+// changes but the words in it. The gap between this and
+// BenchmarkRowRenderAndMeasure is everything else a bind does — the
+// separators, the chrome classes, the footer, the reactions, the avatar and
+// the hover pair — and it is small, which is the point.
+func BenchmarkRowBodyOnly(b *testing.B) {
 	msgs, r, h, now := benchSetup(b)
 	m0 := msgs[0]
 	r.render(m0, testVM(m0, nil, "", now), h)
-	text := firstLabelIn(r.bubble)
-	if text == nil {
-		b.Fatal("no body label in the bubble")
-	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		text.SetMarkup(messageMarkup(msgs[i%len(msgs)].Text, nil, false, "", ""))
+		r.body.SetMarkup(messageMarkup(msgs[i%len(msgs)].Text, nil, false, "", ""))
 		measureRow(r)
 	}
 }
@@ -128,13 +125,4 @@ func BenchmarkBodyLabelAlone(b *testing.B) {
 		_, w, _, _ := l.Measure(gtk.OrientationHorizontal, -1)
 		l.Measure(gtk.OrientationVertical, w)
 	}
-}
-
-func firstLabelIn(box *gtk.Box) *gtk.Label {
-	for c := box.FirstChild(); c != nil; c = gtk.BaseWidget(c).NextSibling() {
-		if l, ok := gtk.BaseWidget(c).Object.Cast().(*gtk.Label); ok {
-			return l
-		}
-	}
-	return nil
 }
