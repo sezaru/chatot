@@ -175,3 +175,18 @@ func TestBusyTranscriptLabelCounts(t *testing.T) {
 		t.Errorf("a long run = %q, want it to read as 25 minutes", got)
 	}
 }
+
+// The bar's counter is whole megabytes of the whole, the way the mockup
+// counts the download; without a length it is only what has arrived.
+func TestModelProgressText(t *testing.T) {
+	const mb = 1024 * 1024
+	if got := modelProgressText(12*mb, 181*mb); got != "12 / 181 MB" {
+		t.Errorf("progress = %q, want %q", got, "12 / 181 MB")
+	}
+	if got := modelProgressText(0, 181*mb); got != "0 / 181 MB" {
+		t.Errorf("start = %q", got)
+	}
+	if got := modelProgressText(7*mb, 0); got != "7 MB" {
+		t.Errorf("unknown length = %q, want just what has arrived", got)
+	}
+}
