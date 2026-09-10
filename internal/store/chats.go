@@ -126,15 +126,11 @@ func (s *Store) SetChatUnread(jid string, unread bool) error {
 // community's sub-groups, its announcement group included, are chats like
 // any other, as in WhatsApp). See the design doc
 // ("Store: name resolution / ordering / preview") for the reference rules.
-func (s *Store) Chats(limit int) ([]Chat, error) {
-	// limit <= 0 is every chat (as the fake reads it): the list and every
-	// name lookup go through here, and a chat quiet since last year is
-	// still a chat.
-	lastReactions, err := s.latestOwnMessageReactions()
-	if err != nil {
-		return nil, err
-	}
-	rows, err := s.db.Query(`
+// chatsQuery reads every chat with the fields the list needs, including its
+// newest message and that message's media row. It is a const so
+// TestChatsFindsEachLastMessageByRowid can EXPLAIN the query the app really
+// runs rather than a copy of it that could drift.
+const chatsQuery = `
 		SELECT
 			c.jid, c.is_group, COALESCE(c.name, ''), c.pinned, c.muted, c.archived, c.unread_count, c.last_message_ts,
 			COALESCE(g.name, ''), COALESCE(g.is_parent, 0), COALESCE(g.linked_parent_jid, ''),
@@ -144,20 +140,35 @@ func (s *Store) Chats(limit int) ([]Chat, error) {
 		FROM chats c
 		LEFT JOIN groups g ON g.jid = c.jid
 		LEFT JOIN contacts ct ON ct.jid = c.jid
-		LEFT JOIN (
-			SELECT m.* FROM messages m
-			WHERE m.rowid = (
-				SELECT m2.rowid FROM messages m2
-				WHERE m2.chat_jid = m.chat_jid
-				ORDER BY m2.ts DESC, m2.rowid DESC
-				LIMIT 1
-			)
-		) lm ON lm.chat_jid = c.jid
+		-- The newest message per chat, found once per chat. Selecting it as a
+		-- derived table of "every message that is newest in its chat" instead
+		-- makes SQLite walk every message row in the account and run this
+		-- subquery for each of them, so the list's load time grew with the
+		-- total number of messages rather than the number of chats: 111 ms
+		-- against 1 ms on 1000 chats holding 500 messages each. Joining on the
+		-- rowid keeps the plan a single primary-key lookup per chat, which is
+		-- what TestChatsFindsEachLastMessageByRowid pins.
+		LEFT JOIN messages lm ON lm.rowid = (
+			SELECT m2.rowid FROM messages m2
+			WHERE m2.chat_jid = c.jid
+			ORDER BY m2.ts DESC, m2.rowid DESC
+			LIMIT 1
+		)
 		LEFT JOIN media md ON md.chat_jid = lm.chat_jid AND md.msg_id = lm.msg_id
 		WHERE COALESCE(g.is_parent, 0) = 0
 			AND c.jid != 'status@broadcast'
 			AND c.jid NOT LIKE '%@newsletter'
-	`)
+	`
+
+func (s *Store) Chats(limit int) ([]Chat, error) {
+	// limit <= 0 is every chat (as the fake reads it): the list and every
+	// name lookup go through here, and a chat quiet since last year is
+	// still a chat.
+	lastReactions, err := s.latestOwnMessageReactions()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(chatsQuery)
 	if err != nil {
 		return nil, err
 	}

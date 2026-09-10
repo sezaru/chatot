@@ -1,6 +1,10 @@
 package store
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func TestResolveChatNamePushNameOnly(t *testing.T) {
 	s := newTestStore(t)
@@ -735,5 +739,64 @@ func TestMessagePreview(t *testing.T) {
 	}
 	if _, _, ok, err = s.MessagePreview("a@s.whatsapp.net", "nope"); err != nil || ok {
 		t.Fatalf("unknown: ok=%v err=%v, want ok=false", ok, err)
+	}
+}
+
+// TestChatsPreviewsTheNewestMessage: a chat with a history previews its last
+// message, not whichever row the join happened to reach first.
+func TestChatsPreviewsTheNewestMessage(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", Name: "Ada"}); err != nil {
+		t.Fatal(err)
+	}
+	for i, text := range []string{"oldest", "middle", "newest"} {
+		if err := s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: fmt.Sprintf("m%d", i),
+			FromJID: "a@s.whatsapp.net", Text: text, TS: int64(100 + i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	chats, err := s.Chats(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chats) != 1 || chats[0].Preview != "newest" {
+		t.Fatalf("got %+v, want the newest message as the preview", chats)
+	}
+}
+
+// TestChatsFindsEachLastMessageByRowid pins the shape of the last-message
+// join, which is worth far more than it looks. Written as a derived table of
+// "every message that is newest in its chat", SQLite walks every message row
+// in the account and runs the subquery for each one, so the list's load time
+// grows with the total number of messages rather than the number of chats:
+// 111 ms against 1 ms on 1000 chats holding 500 messages each, and it only
+// gets worse as an account ages. Joining on the rowid keeps it one lookup per
+// chat. If this fails, read the plan it prints: the last-message join must
+// reach its row by INTEGER PRIMARY KEY, and nothing may scan the messages
+// table.
+func TestChatsFindsEachLastMessageByRowid(t *testing.T) {
+	s := newTestStore(t)
+	rows, err := s.db.Query("EXPLAIN QUERY PLAN " + chatsQuery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var id, parent, notUsed int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notUsed, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	joined := strings.Join(plan, "\n")
+	if !strings.Contains(joined, "SEARCH lm USING INTEGER PRIMARY KEY") {
+		t.Errorf("the last-message join no longer reaches its row by rowid:\n%s", joined)
+	}
+	for _, step := range plan {
+		if strings.HasPrefix(step, "SCAN") && strings.Contains(step, "messages") {
+			t.Errorf("the chat list query scans the messages table:\n%s", joined)
+		}
 	}
 }
