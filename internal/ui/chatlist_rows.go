@@ -441,4 +441,8 @@ func setCSSClass(w gtk.Widgetter, class string, on bool) {
 }
 
 // widgetKey identifies a widget by its object pointer, for the row maps.
+// It has to be the object and not the Go value: gotk4 hands back a fresh
+// wrapper for every call that returns the same widget, so a map keyed on the
+// Go pointer stores under one address and looks up under another and never
+// finds anything it stored.
 func widgetKey(w gtk.Widgetter) uintptr { return glib.BaseObject(w).Native() }

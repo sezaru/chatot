@@ -84,6 +84,7 @@ func linkHref(url string) string {
 // in-chat search does. Everything else is escaped verbatim, so the result
 // is safe for gtk.Label.SetMarkup.
 func messageMarkup(text string, resolve func(user string) string, onGreen bool, accent, query string) string {
+	defer perfStart("markup")()
 	color := accent
 	if onGreen {
 		color = "#ffffff"

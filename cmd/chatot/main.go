@@ -1019,13 +1019,28 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		d.conversation.FlingCheck(arg == "abs")
 	case "scrollbench":
 		// CHATOT_SHOT_ARG=chats scrolls the chat list, anything else the
-		// open thread; frame stats land in the log after 6 s.
+		// open thread; frame stats land in the log after 6 s. 900 px/s is
+		// a slow drag; CHATOT_SHOT_SPEED sets a fling's px/s instead, which
+		// is where paging through unbound rows actually hurts.
+		speed := 900.0
+		if s := os.Getenv("CHATOT_SHOT_SPEED"); s != "" {
+			if v, err := strconv.ParseFloat(s, 64); err == nil && v > 0 {
+				speed = v
+			}
+		}
 		if arg == "chats" {
 			s := d.chatList.ListScroller()
-			ui.ScrollBench(s, s.VAdjustment(), "chats", 6*time.Second, 900)
+			ui.ScrollBench(s, s.VAdjustment(), "chats", 6*time.Second, speed)
+		} else if os.Getenv("CHATOT_PRELOAD_ALL") != "" {
+			// The paging-free arm of the A/B: pull the whole thread in
+			// first, then scroll the same distance with nothing to load.
+			d.conversation.PreloadAll(func() {
+				s := d.conversation.Scroller()
+				ui.ScrollBench(s, s.VAdjustment(), "thread-preloaded", 6*time.Second, speed)
+			})
 		} else {
 			s := d.conversation.Scroller()
-			ui.ScrollBench(s, s.VAdjustment(), "thread", 6*time.Second, 900)
+			ui.ScrollBench(s, s.VAdjustment(), "thread-paged", 6*time.Second, speed)
 		}
 	case "plusmenu":
 		d.chatList.PopupPlusMenu()

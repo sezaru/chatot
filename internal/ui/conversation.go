@@ -341,12 +341,17 @@ type ConversationView struct {
 	// in the open chat ("" for none): the "N unread messages" pill sits
 	// above it until the chat is left.
 	unreadAnchor string
-	// anchorRow is the recycled row currently showing the unread pill and
-	// rowMsg which message each row holds, so the pill can be seen to be
-	// on screen; seenTimer counts down its stay once it is.
-	anchorRow *gtk.Box
-	rowMsg    map[*gtk.Box]string
-	seenTimer glib.SourceHandle
+	// anchorRow is the recycled row currently showing the unread pill, so the
+	// pill can be seen to be on screen; seenTimer counts down its stay once
+	// it is. Each row knows which message it holds (threadRow.msgID).
+	anchorRow *threadRow
+	// rows is the persistent chrome for each row GtkListView recycles, keyed
+	// by the wrapper's GObject (see widgetKey).
+	rows map[uintptr]*threadRow
+	// avatarGens counts each sender's picture changes, so a row that keeps a
+	// cached avatar across binds still notices a new one.
+	avatarGens map[string]int
+	seenTimer  glib.SourceHandle
 	// names memoizes ContactName lookups for senders and mentions; it is
 	// dropped on EventChatUpdate, which the contact sync fires once new
 	// names land.
@@ -702,7 +707,8 @@ func NewConversationView(c client.Client) *ConversationView {
 		Box:           root,
 		c:             c,
 		events:        c.Events(),
-		rowMsg:        map[*gtk.Box]string{},
+		rows:          map[uintptr]*threadRow{},
+		avatarGens:    map[string]int{},
 		unsent:        map[string][]client.Message{},
 		header:        header,
 		headerContent: headerContent,
@@ -814,18 +820,21 @@ func NewConversationView(c client.Client) *ConversationView {
 	return cv
 }
 
-// fillRow renders the message at pos into its row box, rebuilding the
-// bubble from scratch. Called when a row is created or its message (or
-// its predecessor, for day separators and reply quotes) changed.
+// fillRow shows the message at pos in its row. The row's chrome is reused
+// (thread_row.go); only the bubble's interior is rebuilt. Called when a row is
+// bound or its message (or its predecessor, for day separators and reply
+// quotes) changed.
 func (cv *ConversationView) fillRow(box *gtk.Box, pos int) {
-	removeAllChildren(box)
+	defer perfStart("fillRow")()
 	trace(2, "fill row %d of %d", pos, len(cv.msgs))
-	if pos < 0 || pos >= len(cv.msgs) {
+	r := cv.rows[widgetKey(box)]
+	if r == nil || pos < 0 || pos >= len(cv.msgs) {
 		return
 	}
 	msg := cv.msgs[pos]
 	if msg.ID == typingSentinelID {
-		box.Append(newTypingBubble())
+		r.msgID = msg.ID
+		r.renderTyping()
 		return
 	}
 	var prev *client.Message
@@ -837,7 +846,7 @@ func (cv *ConversationView) fillRow(box *gtk.Box, pos int) {
 	if cv.chatIsGroup && !msg.FromMe {
 		vm.Author = cv.senderName(msg.FromJID)
 	}
-	cv.rowMsg[box] = msg.ID
+	r.msgID = msg.ID
 	box.RemoveCSSClass("chatot-row-flash")
 	if cv.flashID != "" && msg.ID == cv.flashID {
 		box.AddCSSClass("chatot-row-flash")
@@ -845,10 +854,10 @@ func (cv *ConversationView) fillRow(box *gtk.Box, pos int) {
 	if cv.unreadAnchor != "" && msg.ID == cv.unreadAnchor {
 		vm.ShowUnreadSeparator = true
 		vm.UnreadText = unreadSeparatorText(cv.threadLen() - pos)
-		cv.anchorRow = box
+		cv.anchorRow = r
 		glib.IdleAdd(cv.scheduleUnreadClear)
 	}
-	box.Append(buildBubble(msg, vm, cv.hooks()))
+	r.render(msg, vm, cv.hooks())
 }
 
 // unreadSeenDelay is how long the unread pill stays once its message is on
@@ -862,10 +871,10 @@ func (cv *ConversationView) anchorSeen() bool {
 		return false
 	}
 	row := cv.anchorRow
-	if row == nil || cv.rowMsg[row] != cv.unreadAnchor {
+	if row == nil || row.msgID != cv.unreadAnchor {
 		return false
 	}
-	b, ok := row.ComputeBounds(cv.scroller)
+	b, ok := row.wrapper.ComputeBounds(cv.scroller)
 	if !ok {
 		return false
 	}
@@ -1217,12 +1226,17 @@ func (cv *ConversationView) olderPageLanded(older []client.Message, err error) {
 // page at a time rather than stopping after one. Must run on the GTK main
 // loop.
 func (cv *ConversationView) prependOlder(older []client.Message) {
+	defer perfStart("prependOlder")()
 	cv.historyRequested = false
 	cv.msgs = append(older, cv.msgs...)
 	cv.oldestID = cv.msgs[0].ID
+	stopIdx := perfStart("indexByID")
 	cv.byID = indexByID(cv.msgs[:cv.threadLen()])
+	stopIdx()
 	cv.hasMore = len(older) == conversationPageSize
+	stopSplice := perfStart("modelSplice")
 	cv.model.Splice(0, 0, older...)
+	stopSplice()
 	// The old first row's predecessor changed (its day separator goes).
 	cv.refillRow(len(older))
 }
@@ -1383,6 +1397,10 @@ func (cv *ConversationView) watchEvents() {
 			jid := ev.Avatar.JID
 			glib.IdleAdd(func() {
 				cv.avatarCache.invalidate(jid)
+				// Bump before repainting: the rows read the generation to
+				// decide their cached picture is stale.
+				cv.avatarGens[nonADJID(jid)]++
+				cv.refreshSenderAvatars(jid)
 				if jid == cv.jid {
 					cv.avatarJID = "" // force refreshHeader to rebuild the avatar widget
 					cv.refreshHeader()
@@ -1524,8 +1542,8 @@ func (cv *ConversationView) ResolveSent(localID string, msg client.Message, err 
 	cv.msgs[pos] = msg
 	delete(cv.byID, localID)
 	cv.byID[msg.ID] = msg
-	if box := cv.rowFor(localID); box != nil {
-		cv.rowMsg[box] = msg.ID
+	if r := cv.rowFor(localID); r != nil {
+		r.msgID = msg.ID
 	}
 	cv.refillRow(pos)
 }
@@ -1808,7 +1826,9 @@ func (cv *ConversationView) fillQuote(m *client.Message) {
 	}
 	text, ok := cv.quotes[m.ReplyTo.MsgID]
 	if !ok {
+		stop := perfStart("quoteRead")
 		text, _ = cv.c.MessagePreview(m.ReplyTo.ChatJID, m.ReplyTo.MsgID)
+		stop()
 		cv.quotes[m.ReplyTo.MsgID] = text
 	}
 	if text != "" {
@@ -1868,52 +1888,13 @@ func (cv *ConversationView) mentionName(user string) string {
 // bubbleAvatarSize is the sender avatar beside a group bubble.
 const bubbleAvatarSize = 28
 
-func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
+// fillBubble builds the part of a row that does depend on which message is in
+// it: the author line, the forward marker, the quote, the body and the footer.
+// The chrome around it belongs to threadRow (thread_row.go) and survives the
+// bind, so nothing here touches the row, the band or the overlay.
+func fillBubble(bubble *gtk.Box, msg client.Message, vm bubbleView, h bubbleHooks) {
+	defer perfStart("fillBubble")()
 	c, onVote, searchQuery := h.c, h.onVote, h.searchQuery
-	wrapper := gtk.NewBox(gtk.OrientationVertical, 4)
-
-	if vm.ShowDaySeparator {
-		sep := gtk.NewLabel(vm.DayText)
-		sep.AddCSSClass("chatot-day-separator")
-		sep.SetHAlign(gtk.AlignCenter)
-		wrapper.Append(sep)
-	}
-	if vm.ShowUnreadSeparator {
-		sep := gtk.NewLabel(vm.UnreadText)
-		sep.AddCSSClass("chatot-unread-separator")
-		sep.SetHAlign(gtk.AlignCenter)
-		wrapper.Append(sep)
-	}
-
-	// band spans the pane; row inside it hugs the bubble at one margin.
-	band := gtk.NewBox(gtk.OrientationHorizontal, 0)
-	band.SetHExpand(true)
-	row := gtk.NewBox(gtk.OrientationHorizontal, 6)
-	row.SetHExpand(true)
-	band.Append(row)
-	if vm.FromMe {
-		row.SetHAlign(gtk.AlignEnd)
-	} else {
-		row.SetHAlign(gtk.AlignStart)
-	}
-
-	// A sticker or an emoji-only text renders bare — no bubble background or
-	// padding, per the mockup — while still keeping the quote/footer/reactions
-	// affordances every other bubble gets.
-	isSticker := vm.IsMedia && vm.Media.Kind == "sticker"
-	noChrome := isSticker || vm.IsEmojiOnly
-
-	bubble := gtk.NewBox(gtk.OrientationVertical, 2)
-	if noChrome {
-		bubble.AddCSSClass("chatot-bubble-bare")
-	} else {
-		bubble.AddCSSClass("chatot-bubble")
-		if vm.FromMe {
-			bubble.AddCSSClass("chatot-bubble-out")
-		} else {
-			bubble.AddCSSClass("chatot-bubble-in")
-		}
-	}
 
 	if vm.Author != "" {
 		author := gtk.NewLabel(vm.Author)
@@ -2101,74 +2082,6 @@ func buildBubble(msg client.Message, vm bubbleView, h bubbleHooks) *gtk.Box {
 	}
 
 	bubble.Append(footer)
-
-	// Reactions hang off the bubble's bottom edge as small white pills (the
-	// mockup's bottom:-11px), so they overlay the bubble rather than growing
-	// it. bubbleStack is what the row actually packs. The row itself gets
-	// bottom room for the hanging part (chatot-row-reacted), as WhatsApp does:
-	// a pill never sits on top of the next message. The row rather than the
-	// stack carries it so the hover icons stay centred on the bubble.
-	bubbleStack := gtk.NewOverlay()
-	bubbleStack.SetChild(bubble)
-
-	if len(vm.Reactions) > 0 {
-		row.AddCSSClass("chatot-row-reacted")
-		reactions := gtk.NewBox(gtk.OrientationHorizontal, 4)
-		reactions.AddCSSClass("chatot-bubble-reactions")
-		// Same side as the hover pill: reactions hug the bubble's outer edge.
-		if vm.FromMe {
-			reactions.SetHAlign(gtk.AlignEnd)
-		} else {
-			reactions.SetHAlign(gtk.AlignStart)
-		}
-		reactions.SetVAlign(gtk.AlignEnd)
-		for _, r := range vm.Reactions {
-			reactions.Append(newReactionPill(r, msg, h))
-		}
-		bubbleStack.AddOverlay(reactions)
-	}
-
-	// Editing is a text-only, own-message affordance (WhatsApp only edits text);
-	// a deleted bubble gets no affordances at all (nothing left to act on).
-	canEdit := !vm.Deleted && msg.FromMe && !vm.IsMedia && !vm.IsLocation && !vm.IsContact && !vm.IsPoll && !vm.IsEvent && !vm.IsCall
-	// Anyone's message can be deleted for this account (the prompt offers
-	// "for everyone" only on own ones); a tombstone has no menu at all.
-	canDelete := !vm.Deleted
-	// A group's incoming bubble sits beside its sender's avatar (WhatsApp's
-	// group thread; the mockup names the sender only).
-	if vm.Author != "" && !vm.FromMe && h.avatars != nil {
-		avatar := buildAvatar(c, h.avatars, nonADJID(msg.FromJID), initialFor(vm.Author), bubbleAvatarSize)
-		avatar.AddCSSClass("chatot-bubble-avatar")
-		avatar.SetVAlign(gtk.AlignStart)
-		row.Append(avatar)
-	}
-	if vm.Deleted || vm.Pending || vm.Failed {
-		row.Append(bubbleStack)
-	} else {
-		// The 🙂 and ⌄ sit together just outside the bubble on the side
-		// away from the margin; packing them after an incoming bubble and
-		// before an outgoing one means the bubble never moves when they
-		// appear. Motion as well as enter: once a popover closes the buttons
-		// hide, and the next movement over the row brings them back.
-		a := attachBubbleAffordances(bubble, msg, vm, h, canEdit, canDelete)
-		if vm.FromMe {
-			row.Append(a.actions)
-			row.Append(bubbleStack)
-		} else {
-			row.Append(bubbleStack)
-			row.Append(a.actions)
-		}
-		motion := gtk.NewEventControllerMotion()
-		motion.ConnectEnter(func(_, _ float64) { a.setVisible(true) })
-		motion.ConnectMotion(func(_, _ float64) { a.setVisible(true) })
-		motion.ConnectLeave(func() { a.setVisible(false) })
-		// On the band, not the row: the row hugs the bubble, and the user
-		// wants the buttons to appear anywhere along the message's line.
-		band.AddController(motion)
-	}
-	wrapper.Append(band)
-
-	return wrapper
 }
 
 // copyableText is what "Copy text" puts on the clipboard for msg: the body
@@ -2340,6 +2253,10 @@ type bubbleHooks struct {
 	// avatars backs the sender avatar beside an incoming group bubble; nil
 	// draws none.
 	avatars *avatarCache
+	// avatarGen counts how often jid's picture has changed, so a row can tell
+	// a sender it is already showing from the same sender with a new picture.
+	// nil (the viewer, tests) reads as generation zero throughout.
+	avatarGen func(jid string) int
 }
 
 // VoteAt casts a vote for option on the message at idx — a dev/screenshot
@@ -2386,7 +2303,8 @@ func (cv *ConversationView) hooks() bubbleHooks {
 		onReply: cv.onReply, onReact: cv.onReact, onVote: cv.onVote, onEdit: cv.onEdit,
 		onDelete: cv.onDelete, onStar: cv.onStar, onForward: cv.onForward, onStopLive: cv.onStopLive,
 		onOpenViewer: cv.onOpenViewer, onLocalPath: func(id, path string) { cv.setLocalPath(id, path) }, names: cv.mentionName, avatars: cv.avatarCache,
-		onRetry: cv.retrySend, reactorName: cv.senderName, onJumpTo: cv.jumpToQuoted,
+		avatarGen: func(jid string) int { return cv.avatarGens[jid] },
+		onRetry:   cv.retrySend, reactorName: cv.senderName, onJumpTo: cv.jumpToQuoted,
 		onFetchThumbnail: cv.fetchThumbnail,
 		voice: voiceHooks{
 			onPlay: cv.voicePlayed, onStop: cv.voiceStopped, onEnded: cv.voiceEnded,
