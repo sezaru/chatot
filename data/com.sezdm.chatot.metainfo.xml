@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.8.2-beta" date="2026-09-10">
+      <description>
+        <p>Relink is no longer offered for an account that is still linked. Pairing replaces a session, so the card could only ever answer that the account was already linked; it now appears only for an account that has actually been signed out.</p>
+      </description>
+    </release>
     <release version="0.8.1-beta" date="2026-09-10">
       <description>
         <p>Unlinking this device now takes effect. The window returns to the pairing screen with a fresh code instead of carrying on as though nothing had happened, and a code appears again without restarting chatot.</p>
