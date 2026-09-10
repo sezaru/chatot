@@ -1535,7 +1535,7 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	// card, the Relink card's code. The delay is for the logout event to
 	// land before the follow-up opens. There is no state for the ⋮ menu:
 	// it lives in the sidebar, which a signed-out account never shows.
-	case "unlink", "unlinkmanage", "unlinkrelink", "unlinkremove", "unlinkremoved":
+	case "unlink", "unlinkmanage", "unlinkrowmenu", "unlinkrelink", "unlinkremove", "unlinkremoved":
 		d.chatList.UnlinkNow()
 		after := state
 		glib.TimeoutAdd(600, func() bool {
@@ -1543,6 +1543,14 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 			case "unlinkmanage":
 				if d.am != nil {
 					ui.ShowManageAccountsDialog(d.win, d.am, d.prefs, refresh, d.saveSettings)
+				}
+			case "unlinkrowmenu":
+				if d.am != nil {
+					ui.ShowManageAccountsDialog(d.win, d.am, d.prefs, refresh, d.saveSettings)
+					glib.TimeoutAdd(400, func() bool {
+						ui.PopupAccountRowMenu(0)
+						return false
+					})
 				}
 			case "unlinkrelink":
 				if d.am != nil {
@@ -1581,6 +1589,20 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	case "manage":
 		if d.am != nil {
 			ui.ShowManageAccountsDialog(d.win, d.am, d.prefs, refresh, d.saveSettings)
+		}
+	// The Accounts card with one row's ⋮ open: CHATOT_SHOT_MSG picks the row.
+	// Relink only belongs there for an account that has lost its session.
+	case "managerowmenu":
+		if d.am != nil {
+			ui.ShowManageAccountsDialog(d.win, d.am, d.prefs, refresh, d.saveSettings)
+			row := msgIdx
+			if row < 0 {
+				row = 0
+			}
+			glib.TimeoutAdd(400, func() bool {
+				ui.PopupAccountRowMenu(row)
+				return false
+			})
 		}
 	default:
 		log.Printf("chatot: unknown CHATOT_SHOT state %q", state)

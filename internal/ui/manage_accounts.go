@@ -55,6 +55,7 @@ func ShowManageAccountsDialog(parent *gtk.Window, am *client.AccountManager, pre
 	rebuild = func() {
 		removeAllChildren(list.Box)
 		list.rows = 0
+		shotAccountRowMenus = nil
 		for _, meta := range am.Accounts() {
 			list.Add(buildManageAccountRow(dialog, am, meta, changed))
 		}
@@ -143,15 +144,27 @@ func buildManageAccountRow(card *cardDialog, am *client.AccountManager, meta cli
 	menuBtn.AddCSSClass("chatot-hdr-icon")
 	menuBtn.SetVAlign(gtk.AlignCenter)
 	menuBtn.SetTooltipText("Account options")
-	pop := newMenuPopover(accountRowMenuItems(accountRowMenuActions{
+	pop := newMenuPopover(accountRowMenuItems(meta.NeedsRelink, accountRowMenuActions{
 		Relabel: func() { showRelabelAccountDialog(dialog, am, meta, onChanged) },
 		Relink:  func() { showRelinkDialog(dialog, am, meta.ID, onChanged) },
 		Remove:  func() { confirmRemoveAccount(card, am, meta, onChanged) },
 	}))
 	menuBtn.SetPopover(pop)
+	shotAccountRowMenus = append(shotAccountRowMenus, menuBtn)
 	row.Append(menuBtn)
 
 	return row
+}
+
+// shotAccountRowMenus holds the open Accounts card's per-row ⋮ buttons in row
+// order, so a screenshot can open one. Rebuilt with the list.
+var shotAccountRowMenus []*gtk.MenuButton
+
+// PopupAccountRowMenu opens the ⋮ menu of row i in the open Accounts card.
+func PopupAccountRowMenu(i int) {
+	if i >= 0 && i < len(shotAccountRowMenus) {
+		shotAccountRowMenus[i].Popup()
+	}
 }
 
 // accountRowMenuActions are the Accounts card's per-row ⋮ callbacks.
@@ -164,12 +177,18 @@ type accountRowMenuActions struct {
 // accountRowMenuItems is the per-account ⋮ menu. The mockup names the three
 // as "Relabel · Reconnect · Log out"; chatot's reconnect is a QR relink and
 // its log-out removes the account from this device, so the rows say that.
-func accountRowMenuItems(a accountRowMenuActions) []menuItem {
-	return []menuItem{
-		{Icon: "✎", Label: "Relabel…", OnActivate: a.Relabel},
-		{Icon: "🔗", Label: "Relink", OnActivate: a.Relink},
-		{Icon: "⏻", Label: "Remove", Destructive: true, OnActivate: a.Remove},
+//
+// needsRelink is whether this account has lost its session. Relink only shows
+// then, because that is the only time it can do anything: pairing replaces a
+// session, so an account that still holds one refuses the request outright.
+// Offered unconditionally it was a dead end for anyone with a single account,
+// whose one row is by definition the account they are signed into.
+func accountRowMenuItems(needsRelink bool, a accountRowMenuActions) []menuItem {
+	items := []menuItem{{Icon: "✎", Label: "Relabel…", OnActivate: a.Relabel}}
+	if needsRelink {
+		items = append(items, menuItem{Icon: "🔗", Label: "Relink", OnActivate: a.Relink})
 	}
+	return append(items, menuItem{Icon: "⏻", Label: "Remove", Destructive: true, OnActivate: a.Remove})
 }
 
 // showRelabelAccountDialog renames an account's switcher/rail label.

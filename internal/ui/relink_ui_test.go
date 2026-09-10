@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"chatot/internal/client"
@@ -61,6 +62,21 @@ func TestAppMenuNeedsRebuild(t *testing.T) {
 	}
 	if appMenuNeedsRebuild(true, true, true) {
 		t.Error("an unchanged link state must not rebuild the menu")
+	}
+}
+
+// Relink is offered on an account row only when that account has actually
+// lost its session. On a linked one the card could only ever answer "this
+// account is already linked", which for anyone with a single account made it
+// a button that never did anything.
+func TestAccountRowMenuItems(t *testing.T) {
+	linked := labelsOf(accountRowMenuItems(false, accountRowMenuActions{}))
+	if !reflect.DeepEqual(linked, []string{"Relabel…", "Remove"}) {
+		t.Errorf("accountRowMenuItems(linked) = %v, want [Relabel… Remove]", linked)
+	}
+	out := labelsOf(accountRowMenuItems(true, accountRowMenuActions{}))
+	if !reflect.DeepEqual(out, []string{"Relabel…", "Relink", "Remove"}) {
+		t.Errorf("accountRowMenuItems(signed out) = %v, want [Relabel… Relink Remove]", out)
 	}
 }
 
