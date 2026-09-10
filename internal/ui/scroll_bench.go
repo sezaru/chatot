@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"chatot/internal/client"
 	"context"
 	"fmt"
 	"log"
@@ -27,6 +28,7 @@ func ScrollBench(w gtk.Widgetter, adj *gtk.Adjustment, name string, dur time.Dur
 		jumps       int
 		maxJump     float64
 	)
+	perfReset()
 	gtk.BaseWidget(w).AddTickCallback(func(_ gtk.Widgetter, _ gdk.FrameClocker) bool {
 		now := time.Now()
 		if start.IsZero() {
@@ -61,6 +63,7 @@ func ScrollBench(w gtk.Widgetter, adj *gtk.Adjustment, name string, dur time.Dur
 		}
 		log.Printf("scrollbench %s: %d external jumps, largest %.0f px", name, jumps, maxJump)
 		reportScrollBench(name, gaps, now.Sub(start))
+		perfReport(name)
 		return false
 	})
 }
@@ -251,7 +254,7 @@ func (cv *ConversationView) AnchorCheck() {
 			log.Printf("anchorcheck: no reference row")
 			return false
 		}
-		refMsg := cv.rowMsg[ref]
+		refMsg := ref.msgID
 		v0, u0 := adj.Value(), adj.Upper()
 		cv.loadOlder()
 		// Sample the row's drawn position every frame while the page lands:
@@ -260,7 +263,7 @@ func (cv *ConversationView) AnchorCheck() {
 		start := time.Now()
 		gtk.BaseWidget(cv.scroller).AddTickCallback(func(_ gtk.Widgetter, _ gdk.FrameClocker) bool {
 			if row := cv.rowFor(refMsg); row != nil {
-				if b, ok := row.ComputeBounds(cv.scroller); ok {
+				if b, ok := row.wrapper.ComputeBounds(cv.scroller); ok {
 					y := float64(b.Y())
 					if len(seen) == 0 || seen[len(seen)-1] != y {
 						seen = append(seen, y)
@@ -276,7 +279,7 @@ func (cv *ConversationView) AnchorCheck() {
 				log.Printf("anchorcheck: reference row not realized")
 				return false
 			}
-			b1, _ := row.ComputeBounds(cv.scroller)
+			b1, _ := row.wrapper.ComputeBounds(cv.scroller)
 			log.Printf("anchorcheck: ref row %s screen y %.0f→%.0f (moved %.0f px); value %.0f→%.0f upper %.0f→%.0f",
 				refMsg, refY, b1.Y(), float64(b1.Y())-refY, v0, adj.Value(), u0, adj.Upper())
 			return false
@@ -287,11 +290,14 @@ func (cv *ConversationView) AnchorCheck() {
 
 // rowUnderTop is the realized row under the viewport's top edge and its
 // y in viewport coordinates.
-func (cv *ConversationView) rowUnderTop() (*gtk.Box, float64) {
-	var best *gtk.Box
+func (cv *ConversationView) rowUnderTop() (*threadRow, float64) {
+	var best *threadRow
 	bestY := 0.0
-	for row := range cv.rowMsg {
-		b, ok := row.ComputeBounds(cv.scroller)
+	for _, row := range cv.rows {
+		if row.msgID == "" {
+			continue
+		}
+		b, ok := row.wrapper.ComputeBounds(cv.scroller)
 		if !ok || float64(b.Y()+b.Height()) <= 0 {
 			continue
 		}
@@ -326,16 +332,20 @@ func (cv *ConversationView) FlingCheck(absolute bool) {
 		target    = adj.Value()
 	)
 	positions := func() map[string]float64 {
-		m := make(map[string]float64, len(cv.rowMsg))
-		for row, id := range cv.rowMsg {
+		m := make(map[string]float64, len(cv.rows))
+		for _, row := range cv.rows {
+			id := row.msgID
+			if id == "" {
+				continue
+			}
 			// The list view realizes rows well beyond the viewport but only
 			// positions the ones in it; the rest keep a stale allocation.
 			// Child visibility is set on the list item widget, the row's
 			// parent.
-			if p := row.Parent(); p == nil || !gtk.BaseWidget(p).ChildVisible() {
+			if p := row.wrapper.Parent(); p == nil || !gtk.BaseWidget(p).ChildVisible() {
 				continue
 			}
-			b, ok := row.ComputeBounds(cv.scroller)
+			b, ok := row.wrapper.ComputeBounds(cv.scroller)
 			if !ok || float64(b.Y()) < -adj.PageSize() || float64(b.Y()) > 2*adj.PageSize() {
 				continue
 			}
@@ -412,4 +422,40 @@ func (cv *ConversationView) FlingCheck(absolute bool) {
 			absolute, frames, jitters, worst, lost, samples, len(cv.msgs), adj.Value(), adj.Upper())
 		return false
 	})
+}
+
+// PreloadAll walks the store back to the thread's first message and splices
+// the lot in one go, then calls done (dev hook: CHATOT_PRELOAD_ALL=1 before
+// a scrollbench). It exists to A/B the bench: a preloaded thread scrolls the
+// same distance as a paging one without a single page load in the middle, so
+// the difference between the two runs is what history loading costs.
+func (cv *ConversationView) PreloadAll(done func()) {
+	jid, oldest, gen := cv.jid, cv.oldestID, cv.loadGen
+	go func() {
+		var all []client.Message
+		for {
+			page, err := cv.c.MessagesBefore(jid, oldest, conversationPageSize)
+			if err != nil || len(page) == 0 {
+				break
+			}
+			all = append(page, all...)
+			oldest = page[0].ID
+			if len(page) < conversationPageSize {
+				break
+			}
+		}
+		glib.IdleAdd(func() {
+			if gen != cv.loadGen || jid != cv.jid {
+				return
+			}
+			if len(all) > 0 {
+				cv.prependOlder(all)
+			}
+			// Nothing left to fetch: loadOlderIfNeeded must stay quiet for
+			// the whole run, or the arm is not paging-free after all.
+			cv.hasMore = false
+			log.Printf("preloadall: %d messages preloaded, model now %d", len(all), cv.model.Len())
+			done()
+		})
+	}()
 }

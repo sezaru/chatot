@@ -33,7 +33,9 @@ func (cv *ConversationView) newThreadList() *gtk.ListView {
 		// No side margins here: the thread's 18px inset lives on
 		// .chatot-conv-list, and margins would compound with it. The
 		// clamp holds the row at chatMaxWidth on a wide window.
-		item.SetChild(chatClamp(gtk.NewBox(gtk.OrientationVertical, 0)))
+		r := newThreadRow()
+		cv.rows[widgetKey(r.wrapper)] = r
+		item.SetChild(chatClamp(r.wrapper))
 	})
 	factory.ConnectBind(func(obj *glib.Object) {
 		item := obj.Cast().(*gtk.ListItem)
@@ -41,10 +43,12 @@ func (cv *ConversationView) newThreadList() *gtk.ListView {
 			cv.fillRow(box, int(item.Position()))
 		}
 	})
+	// Unbind only forgets what the row was showing. The widgets stay: they
+	// are what the next bind reuses, and emptying them here would throw away
+	// exactly the work the row exists to save.
 	factory.ConnectUnbind(func(obj *glib.Object) {
 		item := obj.Cast().(*gtk.ListItem)
 		if box, ok := threadRowBox(item); ok {
-			removeAllChildren(box)
 			cv.forgetRow(box)
 		}
 	})
@@ -63,10 +67,13 @@ func (cv *ConversationView) newThreadList() *gtk.ListView {
 }
 
 // rowFor is the bound row showing message id, nil when it is not realized.
-func (cv *ConversationView) rowFor(id string) *gtk.Box {
-	for box, mid := range cv.rowMsg {
-		if mid == id {
-			return box
+func (cv *ConversationView) rowFor(id string) *threadRow {
+	if id == "" {
+		return nil
+	}
+	for _, r := range cv.rows {
+		if r.msgID == id {
+			return r
 		}
 	}
 	return nil
@@ -79,15 +86,20 @@ func (cv *ConversationView) refillRow(pos int) {
 	if pos < 0 || pos >= len(cv.msgs) {
 		return
 	}
-	if box := cv.rowFor(cv.msgs[pos].ID); box != nil {
-		cv.fillRow(box, pos)
+	if r := cv.rowFor(cv.msgs[pos].ID); r != nil {
+		cv.fillRow(r.wrapper, pos)
 	}
 }
 
-// forgetRow drops the bookkeeping a row carried.
-func (cv *ConversationView) forgetRow(row *gtk.Box) {
-	delete(cv.rowMsg, row)
-	if cv.anchorRow == row {
+// forgetRow drops the bookkeeping a row carried. The widgets stay: this row
+// is about to be bound to another message and will reuse them.
+func (cv *ConversationView) forgetRow(box *gtk.Box) {
+	r := cv.rows[widgetKey(box)]
+	if r == nil {
+		return
+	}
+	r.msgID = ""
+	if cv.anchorRow == r {
 		cv.anchorRow = nil
 	}
 }
@@ -104,4 +116,18 @@ func (cv *ConversationView) scrollToRow(pos int) {
 	cv.autoGen++
 	cv.stopFling()
 	cv.listView.ScrollTo(uint(pos), gtk.ListScrollNone, nil)
+}
+
+// refreshSenderAvatars repaints the avatar beside every bubble jid sent that a
+// row is currently showing. Without it a row already on screen keeps the old
+// picture until GTK happens to rebind it, which on a still thread is never.
+func (cv *ConversationView) refreshSenderAvatars(jid string) {
+	want := nonADJID(jid)
+	h := cv.hooks()
+	for _, r := range cv.rows {
+		if r.msgID == "" || r.avatarJID != want {
+			continue
+		}
+		r.rebuildAvatar(h)
+	}
 }
