@@ -510,13 +510,29 @@ func (f *Fake) appendOutbound(jid string, msg Message) {
 // just sent it: the thread grows, the row's badge counts it and the message
 // event goes out. A dev/screenshot aid for the "arrived while away" states.
 func (f *Fake) Receive(jid, sender, text string) {
+	f.receive(jid, Message{ChatJID: jid, FromJID: sender, Text: text}, text)
+}
+
+// ReceiveVoice delivers an inbound voice note of dur seconds, undownloaded,
+// the way one lands after a "recording audio…" notice. A dev/screenshot aid
+// for that sequence; the bubble it makes is the same as the seeded m16.
+func (f *Fake) ReceiveVoice(jid, sender string, dur int) {
+	msg := Message{ChatJID: jid, FromJID: sender,
+		Attachment: &Attachment{Kind: "audio", MimeType: "audio/ogg", Size: int64(dur) * 4096, DurationSecs: dur}}
+	f.receive(jid, msg, fmt.Sprintf("🎤 %d:%02d", dur/60, dur%60))
+}
+
+// receive files msg into jid as if the peer had just sent it: the thread
+// grows, the row's badge counts it and shows preview, and the message event
+// goes out.
+func (f *Fake) receive(jid string, msg Message, preview string) {
 	f.mu.Lock()
-	id := f.nextMsgID()
-	msg := Message{ID: id, ChatJID: jid, FromJID: sender, Text: text, TS: time.Now().Unix()}
+	msg.ID = f.nextMsgID()
+	msg.TS = time.Now().Unix()
 	f.messages[jid] = append(f.messages[jid], msg)
 	for i := range f.chats {
 		if f.chats[i].JID == jid {
-			f.chats[i].Preview = text
+			f.chats[i].Preview = preview
 			f.chats[i].LastMessageTS = msg.TS
 			f.chats[i].UnreadCount++
 			// The store lists chats newest message first, so the chat

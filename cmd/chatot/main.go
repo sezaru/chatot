@@ -1337,6 +1337,25 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 				f.PushEvent(client.Event{Kind: client.EventChatPresence, ChatPresence: &client.ChatPresence{ChatJID: jid, JID: jid, State: "composing"}})
 			}
 		}
+	case "voicenote":
+		// The open chat's peer types, switches to recording, and a voice
+		// note lands 2 s later (fake only): the three states an inbound
+		// voice message arrives through, in the order a reader sees them.
+		var active client.Client = d.c
+		if d.am != nil {
+			active = d.am.ActiveClient()
+		}
+		f, ok := active.(*client.Fake)
+		if !ok || jid == "" {
+			return
+		}
+		presence := func(media string) {
+			f.PushEvent(client.Event{Kind: client.EventChatPresence,
+				ChatPresence: &client.ChatPresence{ChatJID: jid, JID: jid, State: "composing", Media: media}})
+		}
+		presence("text")
+		glib.TimeoutAdd(2000, func() bool { presence("audio"); return false })
+		glib.TimeoutAdd(4000, func() bool { f.ReceiveVoice(jid, jid, 12); return false })
 	case "arrive":
 		// ARG messages, 1.5 s apart, land in a chat other than the open one
 		// (fake only): each raises a desktop notification and its chime.
