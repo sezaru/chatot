@@ -83,6 +83,12 @@
   </recommends>
 
   <releases>
+    <release version="0.8.1-beta" date="2026-09-10">
+      <description>
+        <p>Unlinking this device now takes effect. The window returns to the pairing screen with a fresh code instead of carrying on as though nothing had happened, and a code appears again without restarting chatot.</p>
+        <p>Fixes: the Relink card under Accounts shows a code rather than waiting for one that never arrived; removing the only account signs it out and returns it to pairing instead of doing nothing at all; an unlink WhatsApp does not confirm is reported rather than passing silently; red text, such as a signed-out account's "scan to relink", is legible in dark mode.</p>
+      </description>
+    </release>
     <release version="0.8.0-beta" date="2026-09-09">
       <description>
         <p>Voice notes can be transcribed on this computer with whisper.cpp: a button on the note, or automatically for new notes with a setting, with the speech model downloaded on first use. Transcripts fold under the note like WhatsApp's, with an option to keep them open.</p>
