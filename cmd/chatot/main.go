@@ -1531,16 +1531,15 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 			d.chatList.ShowRelink(d.am)
 		}
 	// The unlink states run a real "Unlink this device" and then look at
-	// what the window is left showing — the pairing screen, the ⋮ menu's
-	// last row, the Accounts card, the Relink card's code. The delay is for
-	// the logout event to land before the follow-up opens.
-	case "unlink", "unlinkmenu", "unlinkmanage", "unlinkrelink", "unlinkremove", "unlinkremoved":
+	// what the window is left showing — the pairing screen, the Accounts
+	// card, the Relink card's code. The delay is for the logout event to
+	// land before the follow-up opens. There is no state for the ⋮ menu:
+	// it lives in the sidebar, which a signed-out account never shows.
+	case "unlink", "unlinkmanage", "unlinkrelink", "unlinkremove", "unlinkremoved":
 		d.chatList.UnlinkNow()
 		after := state
 		glib.TimeoutAdd(600, func() bool {
 			switch after {
-			case "unlinkmenu":
-				d.chatList.PopupAppMenu()
 			case "unlinkmanage":
 				if d.am != nil {
 					ui.ShowManageAccountsDialog(d.win, d.am, d.prefs, refresh, d.saveSettings)

@@ -73,22 +73,19 @@ func TestAppMenuItems(t *testing.T) {
 	}
 }
 
-// Offering "Unlink this device" to an account that is already signed out is
-// a row that cannot do anything: the menu gives it the action it needs.
-func TestAppMenuItemsSwapUnlinkForRelinkWhenSignedOut(t *testing.T) {
+// Offering "Unlink this device" to an account that is already signed out is a
+// row that cannot do anything, so it is dropped. Nothing replaces it: this
+// menu lives in the sidebar, which is hidden while the account is parked on
+// the pairing screen, so any row put here would be unreachable too.
+func TestAppMenuItemsDropsUnlinkWhenSignedOut(t *testing.T) {
 	got := labelsOf(appMenuItems(false, appMenuActions{}))
 	want := []string{
 		"Archived", "Starred messages", "Blocked contacts", "---",
 		"Linked devices", "Preferences", "About chatot", "---",
-		"Relink this device", "Quit",
+		"Quit",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("appMenuItems(signed out) = %v, want %v", got, want)
-	}
-	for _, it := range appMenuItems(false, appMenuActions{}) {
-		if it.Label == "Relink this device" && it.Destructive {
-			t.Error("Relink is not a destructive action")
-		}
 	}
 }
 
