@@ -40,6 +40,8 @@ type Queue struct {
 	keys      map[string]*Job
 	running   bool
 	current   string
+	// cancel stops the job running right now; nil between jobs.
+	cancel context.CancelFunc
 }
 
 // DefaultMaxAuto is how many automatic jobs a Queue holds before dropping
@@ -90,6 +92,32 @@ func (q *Queue) Enqueue(job Job) bool {
 	return true
 }
 
+// Cancel stops key's transcription and reports whether there was one to
+// stop. A job the engine is on is torn down where it runs, and its OnDone
+// lands with context.Canceled; one that is only waiting is dropped without
+// a call, since it never started. Either way the key is free again the
+// moment this returns, so asking for the same note straight after is a new
+// run rather than a join with the one being taken down.
+func (q *Queue) Cancel(key string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.current == key {
+		if q.cancel != nil {
+			q.cancel()
+		}
+		q.current = ""
+		return true
+	}
+	j, ok := q.keys[key]
+	if !ok {
+		return false
+	}
+	delete(q.keys, key)
+	q.requested = remove(q.requested, j)
+	q.auto = remove(q.auto, j)
+	return true
+}
+
 // Pending is how many jobs are waiting, not counting the one running.
 func (q *Queue) Pending() int {
 	q.mu.Lock()
@@ -127,13 +155,28 @@ func (q *Queue) next() *Job {
 	return j
 }
 
-// drain is the worker: one job after another until none is left.
+// drain is the worker: one job after another until none is left. Each job
+// runs under its own context so Cancel can stop that one alone, and a
+// cancelled run reports context.Canceled however the engine happened to die
+// (a killed whisper.cpp exits with a signal, which is not the caller's
+// business).
 func (q *Queue) drain() {
 	for j := q.next(); j != nil; j = q.next() {
 		if j.OnStart != nil {
 			j.OnStart()
 		}
-		text, err := q.run(context.Background(), j.CacheDir, j.Path)
+		ctx, cancel := context.WithCancel(context.Background())
+		q.mu.Lock()
+		q.cancel = cancel
+		q.mu.Unlock()
+		text, err := q.run(ctx, j.CacheDir, j.Path)
+		q.mu.Lock()
+		q.cancel = nil
+		q.mu.Unlock()
+		if ctx.Err() != nil {
+			text, err = "", context.Canceled
+		}
+		cancel()
 		if j.OnDone != nil {
 			j.OnDone(text, err)
 		}

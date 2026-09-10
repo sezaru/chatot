@@ -871,7 +871,7 @@ func newVoiceBubble(mv mediaView, open func(path string)) gtk.Widgetter {
 	tr := buildTranscriptSlot(mv)
 	// The T sits at the end of the row itself, where the mockup puts it, so
 	// the invitation to transcribe is on the note rather than under it.
-	if btn := newTranscribeButton(mv, tr.fold); btn != nil {
+	if btn := newTranscribeButton(mv, tr); btn != nil {
 		row.Append(btn)
 	}
 	slot.Append(row)

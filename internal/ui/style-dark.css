@@ -76,22 +76,15 @@
 }
 
 /* On a dark incoming bubble the same labels sit on #333, where 0.55 white
-   measures 4.1:1 for a 10px label; a touch brighter clears 4.5:1. The dark
+   measures 4.1:1 for a small label; a touch brighter clears 4.5:1. The dark
    sheet loads at a higher provider priority than the light one, so the
    outgoing-bubble exceptions have to be repeated here or these flatten them. */
-.chatot-transcript-caption,
-.chatot-transcript-chevron,
 .chatot-transcript-dim {
 	opacity: 0.68;
 }
 
 .chatot-transcript-foot {
 	opacity: 0.6;
-}
-
-.chatot-bubble-out .chatot-transcript-caption,
-.chatot-bubble-out .chatot-transcript-chevron {
-	opacity: 1;
 }
 
 .chatot-bubble-out .chatot-transcript-foot,

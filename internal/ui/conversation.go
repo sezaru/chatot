@@ -2113,8 +2113,9 @@ func (cv *ConversationView) hooks() bubbleHooks {
 		onFetchThumbnail: cv.fetchThumbnail,
 		voice: voiceHooks{
 			onPlay: cv.voicePlayed, onStop: cv.voiceStopped, onEnded: cv.voiceEnded,
-			onTranscribe: cv.transcribe, onToggleTranscript: cv.setTranscriptOpen,
-			onTranscriptMore: cv.setTranscriptMore,
+			onTranscribe: cv.transcribe, onCancelTranscribe: cv.cancelTranscribe,
+			onToggleTranscript: cv.setTranscriptOpen,
+			onTranscriptMore:   cv.setTranscriptMore,
 		},
 		transcriptOf:   cv.transcriptOf,
 		textExpandedOf: cv.textExpanded,

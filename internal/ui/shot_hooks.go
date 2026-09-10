@@ -744,6 +744,22 @@ func (cv *ConversationView) TranscribeAt(idx int) {
 	cv.transcribe(m.ID, mv.LocalPath, true)
 }
 
+// CancelTranscribeAt starts the voice note at idx transcribing and takes it
+// back a moment later, the way the ✕ on the row does
+// (CHATOT_SHOT=transcribecancel CHATOT_SHOT_MSG=idx). The row must come back
+// to the plain T it started from, with no reason line left under it.
+func (cv *ConversationView) CancelTranscribeAt(idx int) {
+	m, ok := cv.MessageAt(idx)
+	if !ok {
+		return
+	}
+	cv.TranscribeAt(idx)
+	glib.TimeoutAdd(1200, func() bool {
+		cv.cancelTranscribe(m.ID)
+		return false
+	})
+}
+
 // UnfoldTranscriptAt opens the transcript already sitting on the voice note
 // at idx, the way clicking its head does (CHATOT_SHOT=transcriptopen).
 func (cv *ConversationView) UnfoldTranscriptAt(idx int) {

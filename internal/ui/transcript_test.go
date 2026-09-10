@@ -49,8 +49,46 @@ func TestTranscriptRowLabels(t *testing.T) {
 	if transcriptChevron(true) == transcriptChevron(false) {
 		t.Error("chevron does not change with the fold")
 	}
-	if transcriptHeadTooltip(true) == transcriptHeadTooltip(false) {
-		t.Error("head tooltip does not change with the fold")
+	if transcriptFoldTooltip(true) == transcriptFoldTooltip(false) {
+		t.Error("fold tooltip does not change with the fold")
+	}
+}
+
+// Folded, the block shows the transcript rather than the word TRANSCRIPT,
+// so a note dictated in paragraphs still has to fold to one line.
+func TestTranscriptPreviewIsOneLine(t *testing.T) {
+	const text = "Hey, I just got out of the studio.\n\nThe shoot ran long.\tDinner at eight?"
+	const want = "Hey, I just got out of the studio. The shoot ran long. Dinner at eight?"
+	if got := transcriptPreview(text); got != want {
+		t.Errorf("preview = %q, want %q", got, want)
+	}
+	if got := transcriptPreview(""); got != "" {
+		t.Errorf("empty preview = %q", got)
+	}
+}
+
+// The one button at the end of the row carries what clicking it does: stop
+// the run under way, fold the transcript that is there, or start one.
+func TestTranscribeButtonGlyphFollowsTheState(t *testing.T) {
+	if got := transcribeButtonGlyph(transcriptState{}, false, false); got != "T" {
+		t.Errorf("idle glyph = %q, want T", got)
+	}
+	if got := transcribeButtonGlyph(transcriptState{Busy: true}, false, false); got != "✕" {
+		t.Errorf("running glyph = %q, want the stop mark", got)
+	}
+	if got := transcribeButtonGlyph(transcriptState{Queued: true}, false, false); got != "✕" {
+		t.Errorf("waiting glyph = %q, want the stop mark", got)
+	}
+	if got := transcribeButtonGlyph(transcriptState{}, true, true); got != transcriptChevron(true) {
+		t.Errorf("unfolded glyph = %q, want the up chevron", got)
+	}
+	if got := transcribeButtonGlyph(transcriptState{}, true, false); got != transcriptChevron(false) {
+		t.Errorf("folded glyph = %q, want the down chevron", got)
+	}
+	// A run started over a transcript that is already there is still a run:
+	// the stop mark wins over the chevron.
+	if got := transcribeButtonGlyph(transcriptState{Busy: true}, true, false); got != "✕" {
+		t.Errorf("rerun glyph = %q, want the stop mark", got)
 	}
 }
 
@@ -81,14 +119,22 @@ func TestTranscriptErrorTextRetryOnlyWhereItHelps(t *testing.T) {
 }
 
 func TestTranscribeButtonTooltipCarriesTheState(t *testing.T) {
-	if got := transcribeButtonTooltip(transcriptState{}, false); got != "Transcribe voice message" {
+	if got := transcribeButtonTooltip(transcriptState{}, false, false); got != "Transcribe voice message" {
 		t.Errorf("idle tooltip = %q", got)
 	}
-	if got := transcribeButtonTooltip(transcriptState{Busy: true}, false); got != "Transcribing…" {
+	// While a run is going the button takes it back, so the tooltip says so
+	// rather than reporting progress the line under the row already gives.
+	if got := transcribeButtonTooltip(transcriptState{Busy: true}, false, false); got != "Stop transcribing" {
 		t.Errorf("busy tooltip = %q", got)
 	}
-	if got := transcribeButtonTooltip(transcriptState{}, true); got != "Transcript ready" {
-		t.Errorf("done tooltip = %q", got)
+	if got := transcribeButtonTooltip(transcriptState{Queued: true}, false, false); got != "Stop waiting to transcribe" {
+		t.Errorf("queued tooltip = %q", got)
+	}
+	if got := transcribeButtonTooltip(transcriptState{}, true, false); got != transcriptFoldTooltip(false) {
+		t.Errorf("folded tooltip = %q", got)
+	}
+	if got := transcribeButtonTooltip(transcriptState{}, true, true); got != transcriptFoldTooltip(true) {
+		t.Errorf("unfolded tooltip = %q", got)
 	}
 }
 

@@ -143,3 +143,63 @@ func TestQueueReportsStartAndFailure(t *testing.T) {
 		t.Fatal("OnDone never ran")
 	}
 }
+
+// Cancelling the job the engine is on stops that run and reports it as
+// cancelled, whatever the engine did on its way out: a whisper.cpp that was
+// killed exits with a signal, which is not the caller's business.
+func TestQueueCancelStopsTheRunningJob(t *testing.T) {
+	started := make(chan struct{})
+	q := NewQueue(func(ctx context.Context, _, _ string) (string, error) {
+		close(started)
+		<-ctx.Done()
+		return "", errors.New("signal: killed")
+	})
+	done := make(chan error, 1)
+	q.Enqueue(Job{Key: "one", Path: "one", Requested: true, OnDone: func(_ string, err error) { done <- err }})
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the job never reached the engine")
+	}
+	if !q.Cancel("one") {
+		t.Fatal("Cancel did not find the running job")
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("OnDone err = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the cancelled job never finished")
+	}
+}
+
+// A job that is only waiting is dropped where it stands: it never started,
+// so there is no result to report, and the key is free for a fresh ask.
+func TestQueueCancelDropsAWaitingJob(t *testing.T) {
+	eng := &blockingRun{release: make(chan struct{})}
+	q := NewQueue(eng.run)
+	q.Enqueue(Job{Key: "running", Path: "running", Requested: true})
+	time.Sleep(20 * time.Millisecond)
+	waiting := make(chan struct{}, 1)
+	q.Enqueue(Job{Key: "waiting", Path: "waiting", Requested: true, OnDone: func(string, error) { waiting <- struct{}{} }})
+	if !q.Cancel("waiting") {
+		t.Fatal("Cancel did not find the waiting job")
+	}
+	if got := q.Pending(); got != 0 {
+		t.Errorf("Pending = %d after cancelling the only waiting job, want 0", got)
+	}
+	if q.Cancel("waiting") {
+		t.Error("Cancel found the job twice")
+	}
+	eng.release <- struct{}{}
+	time.Sleep(50 * time.Millisecond)
+	if got := eng.got(); len(got) != 1 || got[0] != "running" {
+		t.Errorf("engine ran %v, want the cancelled job never to reach it", got)
+	}
+	select {
+	case <-waiting:
+		t.Error("a job that never started reported a result")
+	default:
+	}
+}

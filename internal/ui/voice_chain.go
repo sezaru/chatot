@@ -16,9 +16,11 @@ type voiceHooks struct {
 	onEnded func(msgID string)
 	// onTranscribe asks for the note's transcript: requested by a click
 	// (the text unfolds once it lands) or automatically (it stays folded).
+	// onCancelTranscribe takes that back while the run is under way.
 	// onToggleTranscript remembers whether the text is unfolded, so a
 	// rebuilt row keeps it that way.
 	onTranscribe       func(msgID, path string, requested bool)
+	onCancelTranscribe func(msgID string)
 	onToggleTranscript func(msgID string, open bool)
 	// onTranscriptMore remembers whether a long transcript's "Read more"
 	// is open.
