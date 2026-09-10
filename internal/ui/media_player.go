@@ -72,6 +72,11 @@ func (p *mediaPlayer) SetFile(path string) {
 		p.attach(gtk.NewMediaFileForFilename(path))
 	} else {
 		p.pending = true
+		if p.wantPlay {
+			// Somebody pressed play while the file was still being made:
+			// build the stream now, and its prepared handler starts it.
+			p.ensureStream()
+		}
 	}
 	p.notify()
 }
@@ -205,15 +210,34 @@ func pauseVoicePlayers() {
 	}
 }
 
-// Playing reports whether the stream is running.
+// anyVoicePlaying reports whether a note is playing in the chat right now,
+// which is how a run started by itself knows the reader moved on.
+func anyVoicePlaying() bool {
+	for _, p := range voicePlayers {
+		if p.Playing() {
+			return true
+		}
+	}
+	return false
+}
+
+// Playing reports whether the stream is running, which includes a press
+// that is still waiting for the file: the disc shows pause from the click,
+// not from the moment the pipeline catches up.
 func (p *mediaPlayer) Playing() bool {
-	return p.stream != nil && (p.stream.Playing() || p.wantPlay)
+	return p.wantPlay || (p.stream != nil && p.stream.Playing())
 }
 
 // Toggle plays or pauses; a stream at its end starts over.
 func (p *mediaPlayer) Toggle() {
 	p.ensureStream()
 	if p.stream == nil {
+		// There is no file yet: an MP3 is still being transcoded. Remember
+		// the press so the note starts the moment it lands, rather than
+		// swallowing it — which is what a run of notes hit when it fetched
+		// the next one and pressed play in the same breath.
+		p.wantPlay = !p.wantPlay
+		p.notify()
 		return
 	}
 	if p.stream.Playing() {

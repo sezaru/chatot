@@ -2182,19 +2182,63 @@ func (cv *ConversationView) voiceStopped(msgID string, ms int) {
 
 // voiceEnded plays on into the next voice note when one directly follows
 // msgID (WhatsApp keeps a run of notes going until something else comes
-// between), provided it is downloaded. Must run on the GTK main loop.
+// between), fetching it first when it is not in the cache. Must run on the
+// GTK main loop.
 func (cv *ConversationView) voiceEnded(msgID string) {
 	next, ok := nextVoiceMessage(cv.Messages(), msgID)
 	if !ok {
 		return
 	}
-	mv := mediaVM(next)
-	if !mv.HasLocal || mv.ViewOnce {
-		return
+	switch voiceChainStepFor(mediaVM(next)) {
+	case voiceChainPlay:
+		mv := mediaVM(next)
+		mv.voice = cv.hooks().voice
+		trace(1, "voice chain: %s -> %s", msgID, next.ID)
+		playVoice(mv, mv.voice)
+	case voiceChainFetch:
+		trace(1, "voice chain: %s -> %s (fetching)", msgID, next.ID)
+		cv.fetchAndPlayVoice(next)
 	}
-	mv.voice = cv.hooks().voice
-	trace(1, "voice chain: %s -> %s", msgID, next.ID)
-	playVoice(mv, mv.voice)
+}
+
+// fetchAndPlayVoice downloads msg's audio and plays it once it lands, which
+// is how a run carries on into a note nobody has opened yet. The note is
+// dropped if the reader moved on while the file was on its way — another
+// note playing, another thread on screen, or this thread reloaded — so the
+// run never speaks over whatever came after it. Must run on the GTK main
+// loop; the download itself does not.
+func (cv *ConversationView) fetchAndPlayVoice(msg client.Message) {
+	jid, gen, c := cv.jid, cv.loadGen, cv.c
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), voiceChainFetchTimeout)
+		defer cancel()
+		path, err := c.DownloadMedia(ctx, msg.ID)
+		glib.IdleAdd(func() {
+			if err != nil {
+				log.Printf("chatot: voice chain download %s: %v", msg.ID, err)
+				return
+			}
+			if cv.jid != jid || cv.loadGen != gen || anyVoicePlaying() {
+				return
+			}
+			cv.setLocalPath(msg.ID, path)
+			pos := cv.positionOf(msg.ID)
+			if pos < 0 {
+				return
+			}
+			cv.byID[msg.ID] = cv.msgs[pos]
+			// The row is still the "not downloaded" one until it is
+			// refilled, and the note is about to play in it.
+			cv.refillByID(msg.ID)
+			mv := mediaVM(cv.msgs[pos])
+			if !mv.HasLocal {
+				return
+			}
+			mv.voice = cv.hooks().voice
+			trace(1, "voice chain: fetched %s, playing", msg.ID)
+			playVoice(mv, mv.voice)
+		})
+	}()
 }
 
 // fetchThumbnail fetches msg's high-quality preview once per session and

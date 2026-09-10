@@ -34,13 +34,20 @@ func (f *Fake) seedDevMedia(dir string, now int64) {
 		// transcript seeds an already-transcribed note (the folded
 		// "Transcript" row); the inbound voice.ogg is left for the engine.
 		transcript string
+		// held seeds the message without a local path even though the file
+		// is right there, so the bubble starts in its not-downloaded state
+		// and a fetch finds real bytes behind it. tone.oga is held back
+		// directly after voice.ogg, which is what a run of notes carrying
+		// on into a note nobody has opened yet needs.
+		held bool
 	}{
-		{"photo.jpg", "image", "image/jpeg", "Balcony faces the river", 0, false, ""},
-		{"clip.mp4", "video", "video/mp4", "", 6, false, ""},
-		{"voice.ogg", "audio", "audio/ogg; codecs=opus", "", 3, false, ""},
-		{"demo.mp3", "audio", "audio/mpeg", "", 24, true, "Quick reminder that the relay fix goes out tonight, so keep an eye on the error rate after the deploy."},
-		{"sample.pdf", "document", "application/pdf", "", 0, false, ""},
-		{"notes.ods", "document", "application/vnd.oasis.opendocument.spreadsheet", "", 0, true, ""},
+		{"photo.jpg", "image", "image/jpeg", "Balcony faces the river", 0, false, "", false},
+		{"clip.mp4", "video", "video/mp4", "", 6, false, "", false},
+		{"voice.ogg", "audio", "audio/ogg; codecs=opus", "", 3, false, "", false},
+		{"tone.oga", "audio", "audio/ogg", "", 3, false, "", true},
+		{"demo.mp3", "audio", "audio/mpeg", "", 24, true, "Quick reminder that the relay fix goes out tonight, so keep an eye on the error rate after the deploy.", false},
+		{"sample.pdf", "document", "application/pdf", "", 0, false, "", false},
+		{"notes.ods", "document", "application/vnd.oasis.opendocument.spreadsheet", "", 0, true, "", false},
 	}
 	ts := now - 1800
 	for i, k := range kinds {
@@ -54,11 +61,15 @@ func (f *Fake) seedDevMedia(dir string, now int64) {
 		if k.fromMe {
 			from = "me"
 		}
+		local := path
+		if k.held {
+			local = ""
+		}
 		f.messages[jid] = append(f.messages[jid], Message{
 			ID: "dm" + itoa(i), ChatJID: jid, FromJID: from, FromMe: k.fromMe, TS: ts, Status: MessageStatusRead,
 			Attachment: &Attachment{
 				Kind: k.kind, MimeType: k.mime, Filename: k.file, Caption: k.caption,
-				LocalPath: path, Size: info.Size(), DurationSecs: k.secs, Transcript: k.transcript,
+				LocalPath: local, Size: info.Size(), DurationSecs: k.secs, Transcript: k.transcript,
 			},
 		})
 	}
