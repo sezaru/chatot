@@ -246,9 +246,13 @@ type chatRowWidget struct {
 	avatarSlot *gtk.Box
 	name       *gtk.Label
 	preview    *gtk.Label
-	time       *gtk.Label
-	flags      [3]*gtk.Label // pinned, muted, blocked
-	badge      *gtk.Label
+	// previewFull is the untruncated preview, shown as a tooltip when the
+	// label ellipsizes it. Kept here because the row widget is recycled and
+	// the tooltip is asked for long after the text was set.
+	previewFull string
+	time        *gtk.Label
+	flags       [3]*gtk.Label // pinned, muted, blocked
+	badge       *gtk.Label
 
 	key         string
 	chat        client.Chat
@@ -310,6 +314,19 @@ func (cl *ChatList) newChatRowWidget() *chatRowWidget {
 	w.preview.SetMaxWidthChars(1)
 	w.preview.SetHExpand(true)
 	w.preview.AddCSSClass("chatot-chat-preview")
+	// The row is a single line, so a long message is cut with an ellipsis.
+	// Hovering the cut text shows all of it. A preview that fits gets no
+	// tooltip, which is why this asks the layout whether it actually
+	// ellipsized rather than guessing from the length.
+	w.preview.SetHasTooltip(true)
+	w.preview.ConnectQueryTooltip(func(x, y int, keyboard bool, tip *gtk.Tooltip) bool {
+		text, show := previewTooltip(w.previewFull, w.preview.Layout().IsEllipsized())
+		if !show {
+			return false
+		}
+		tip.SetText(text)
+		return true
+	})
 	textCol.Append(w.preview)
 
 	row.Append(textCol)
@@ -382,6 +399,7 @@ func (w *chatRowWidget) bind(item chatRowItem, cache *avatarCache) {
 		previewText = ""
 	}
 	w.preview.SetText(previewText)
+	w.previewFull = previewText
 	setCSSClass(w.preview, "chatot-chat-typing", vm.Typing)
 
 	for i, on := range [...]bool{vm.Pinned, vm.Muted, vm.Blocked} {
@@ -399,6 +417,18 @@ func (w *chatRowWidget) bind(item chatRowItem, cache *avatarCache) {
 	}
 	w.badge.SetText(vm.UnreadText)
 	w.badge.SetVisible(vm.ShowUnread)
+}
+
+// previewTooltip decides what a chat row's preview shows on hover: the whole
+// message when the row had to cut it, and nothing at all when it fits, since
+// a tooltip repeating text already on screen is just noise. ellipsized comes
+// from the label's own layout rather than a length guess, because how much
+// fits depends on the sidebar width and the glyphs.
+func previewTooltip(full string, ellipsized bool) (string, bool) {
+	if full == "" || !ellipsized {
+		return "", false
+	}
+	return full, true
 }
 
 // setCSSClass adds or removes class on w.

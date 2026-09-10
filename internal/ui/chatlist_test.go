@@ -332,3 +332,21 @@ func TestChipScrollDeltaScalesWheelNotches(t *testing.T) {
 		t.Errorf("touchpad pixels = %v, want 37", got)
 	}
 }
+
+// A chat row cuts a long message to one line, so hovering the cut text shows
+// the whole of it. A preview that already fits gets no tooltip: repeating
+// text that is right there is noise.
+func TestPreviewTooltip(t *testing.T) {
+	full := "Vou entrar em contato com o proprietário ainda hoje"
+	text, show := previewTooltip(full, true)
+	if !show || text != full {
+		t.Errorf("previewTooltip(cut) = (%q, %v), want (%q, true)", text, show, full)
+	}
+	if _, show := previewTooltip("Yeap", false); show {
+		t.Error("a preview that fits must not get a tooltip")
+	}
+	// An empty preview happens with previews turned off in Preferences.
+	if _, show := previewTooltip("", true); show {
+		t.Error("an empty preview must not get a tooltip")
+	}
+}
