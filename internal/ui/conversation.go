@@ -1427,7 +1427,11 @@ func (cv *ConversationView) refreshHeader() {
 	}
 	name := cv.chatName(cv.jid)
 	cv.titleLabel.SetLabel(name)
-	cv.subtitleLabel.SetLabel(presenceSubtitle(cv.presence[cv.jid], time.Now()))
+	p := cv.presence[cv.jid]
+	cv.subtitleLabel.SetLabel(presenceSubtitle(p, time.Now()))
+	// Typing and recording read the way they do in the chat list, rather
+	// than as one more grey line beside "online" and "last seen".
+	setCSSClass(cv.subtitleLabel, "chatot-conv-typing", p.Typing || p.Recording)
 
 	cv.headerContent.SetVisible(true)
 	cv.menuBtn.SetSensitive(true)
