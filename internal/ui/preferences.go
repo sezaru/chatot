@@ -615,7 +615,7 @@ func prefNetwork(dialog *cardDialog, s *settings.Settings, onChange func(setting
 	// (asked first: it is a large download), so the first voice note does
 	// not sit untranscribed.
 	autoTranscribe, _ := newSwitchRow("Transcribe voice notes automatically",
-		"Incoming voice notes are turned into text on this computer with whisper.cpp",
+		"Voice notes are turned into text on this computer with whisper.cpp",
 		s.AutoTranscribe, func(on bool) {
 			s.AutoTranscribe = on
 			AutoTranscribe = on

@@ -14,33 +14,36 @@ func TestAutoTranscribeWants(t *testing.T) {
 	old := now.Add(-8 * 24 * time.Hour).Unix()
 	cases := []struct {
 		name       string
-		on, fromMe bool
+		on         bool
 		transcript string
 		ts         int64
 		want       bool
 	}{
-		{"on, fresh inbound note", true, false, "", fresh, true},
-		{"preference off", false, false, "", fresh, false},
-		{"own note", true, true, "", fresh, false},
-		{"already transcribed", true, false, "hello", fresh, false},
-		{"older than a week", true, false, "", old, false},
-		{"unknown time", true, false, "", 0, false},
+		{"on, fresh inbound note", true, "", fresh, true},
+		// A thread where only the other side has text reads as broken, so
+		// an own note is transcribed on the same terms as any other.
+		{"own note", true, "", fresh, true},
+		{"preference off", false, "", fresh, false},
+		{"already transcribed", true, "hello", fresh, false},
+		{"older than a week", true, "", old, false},
+		{"unknown time", true, "", 0, false},
 	}
 	for _, c := range cases {
-		if got := autoTranscribeWants(c.on, c.fromMe, c.transcript, c.ts, now); got != c.want {
+		if got := autoTranscribeWants(c.on, c.transcript, c.ts, now); got != c.want {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
 	}
 }
 
 func TestTranscriptRowLabels(t *testing.T) {
-	if got := transcriptRowLabel(transcriptState{}); got != "" {
+	now := time.Now()
+	if got := transcriptRowLabel(transcriptState{}, now); got != "" {
 		t.Errorf("idle label = %q, want no slot at all", got)
 	}
-	if got := transcriptRowLabel(transcriptState{Busy: true}); got != "Transcribing on this computer…" {
+	if got := transcriptRowLabel(transcriptState{Busy: true}, now); got != "Transcribing on this computer…" {
 		t.Errorf("busy label = %q", got)
 	}
-	if got := transcriptRowLabel(transcriptState{Err: "No speech found in this voice message."}); got != "No speech found in this voice message." {
+	if got := transcriptRowLabel(transcriptState{Err: "No speech found in this voice message."}, now); got != "No speech found in this voice message." {
 		t.Errorf("failed label = %q", got)
 	}
 	if transcriptChevron(true) == transcriptChevron(false) {
@@ -104,5 +107,25 @@ func TestTranscriptOpenFollowsPreferenceUntilClicked(t *testing.T) {
 	}
 	if transcriptOpen(transcriptState{Folded: true}) {
 		t.Error("a click to fold is ignored with the preference on")
+	}
+}
+
+// A run says how long it has been going once it stops being a moment. The
+// same note takes seconds on an idle machine and many minutes on one that
+// is swapping, and a spinner alone makes the second case look like a hang.
+func TestBusyTranscriptLabelCounts(t *testing.T) {
+	now := time.Now()
+	const base = "Transcribing on this computer…"
+	if got := busyTranscriptLabel(time.Time{}, now); got != base {
+		t.Errorf("a run with no start time = %q, want the plain line", got)
+	}
+	if got := busyTranscriptLabel(now.Add(-3*time.Second), now); got != base {
+		t.Errorf("a run of 3s = %q, want no clock on an ordinary run", got)
+	}
+	if got := busyTranscriptLabel(now.Add(-90*time.Second), now); got != base+" 1:30" {
+		t.Errorf("a run of 90s = %q, want the plain line plus 1:30", got)
+	}
+	if got := busyTranscriptLabel(now.Add(-25*time.Minute), now); got != base+" 25:00" {
+		t.Errorf("a long run = %q, want it to read as 25 minutes", got)
 	}
 }
