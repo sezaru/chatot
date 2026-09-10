@@ -1043,6 +1043,15 @@ button.chatot-composer-iconbtn.text-button,
 	min-height: 1.2em;
 }
 
+/* Typing/recording in the header reads like a typing chat's preview does in
+   the list (.chatot-chat-typing): accent green italic at full strength, not
+   the subtitle's dim grey. The compound selector outranks the opacity above. */
+.chatot-conv-subtitle.chatot-conv-typing {
+	font-style: italic;
+	color: @chatot_accent_text_soft;
+	opacity: 1;
+}
+
 /* Window controls: the mockup's 24px neutral circles, not Adwaita's larger
    squares-with-icons. The account row's copy only has children under a
    left-hand decoration layout. */
