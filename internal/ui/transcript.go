@@ -13,8 +13,8 @@ import (
 	"chatot/internal/transcribe"
 )
 
-// AutoTranscribe mirrors settings.AutoTranscribe: whether an incoming voice
-// note is transcribed as soon as it is downloaded, without a click.
+// AutoTranscribe mirrors settings.AutoTranscribe: whether a voice note is
+// transcribed as soon as it is downloaded, without a click.
 var AutoTranscribe = false
 
 // TranscriptsExpanded mirrors settings.TranscriptsExpanded: whether a
@@ -39,6 +39,9 @@ type transcriptState struct {
 	Queued    bool
 	Busy      bool
 	Requested bool
+	// Since is when the engine took the note, for the clock the running
+	// line shows. Zero while the note only waits.
+	Since time.Time
 	// Err is the row's one-line reason for having no transcript, "" when
 	// there is none (the detail goes to the log).
 	Err string
@@ -68,11 +71,15 @@ func transcriptOpen(st transcriptState) bool {
 
 // autoTranscribeWants reports whether a downloaded voice note without a
 // transcript, sent at ts, should be transcribed without a click: only under
-// the preference, only someone else's, and only a recent one, since
-// scrolling back through months of notes must not start hundreds of runs
-// (the same week auto-download stops at).
-func autoTranscribeWants(on, fromMe bool, transcript string, ts int64, now time.Time) bool {
-	if !on || fromMe || transcript != "" {
+// the preference, and only a recent one, since scrolling back through
+// months of notes must not start hundreds of runs (the same week
+// auto-download stops at).
+//
+// Own notes are transcribed too. Knowing what you said is not the point:
+// the transcript is what makes a thread readable without sound, and a
+// conversation where only one side has text reads as a broken feature.
+func autoTranscribeWants(on bool, transcript string, ts int64, now time.Time) bool {
+	if !on || transcript != "" {
 		return false
 	}
 	return ts > 0 && now.Unix()-ts <= int64(autoDownloadMaxAge/time.Second)
@@ -86,7 +93,7 @@ func autoTranscribeWants(on, fromMe bool, transcript string, ts int64, now time.
 func maybeAutoTranscribe(mv mediaView) {
 	st := mv.TranscriptState
 	if mv.voice.onTranscribe == nil || st.Busy || st.Queued || st.Err != "" ||
-		!autoTranscribeWants(AutoTranscribe, mv.FromMe, mv.Transcript, mv.TS, time.Now()) ||
+		!autoTranscribeWants(AutoTranscribe, mv.Transcript, mv.TS, time.Now()) ||
 		!transcribe.EngineAvailable() || !transcribe.ModelReady(cacheDir()) {
 		return
 	}
@@ -96,16 +103,58 @@ func maybeAutoTranscribe(mv mediaView) {
 
 // transcriptRowLabel is the one-line note the transcript slot shows while
 // a note has no transcript of its own, "" when the slot stays away.
-func transcriptRowLabel(st transcriptState) string {
+func transcriptRowLabel(st transcriptState, now time.Time) string {
 	switch {
 	case st.Busy:
-		return "Transcribing on this computer…"
+		return busyTranscriptLabel(st.Since, now)
 	case st.Queued:
 		return "Waiting to transcribe…"
 	case st.Err != "":
 		return st.Err
 	}
 	return ""
+}
+
+// transcriptElapsedAfter is how long a run goes before the line starts
+// counting: long enough that an ordinary run never shows a clock, short
+// enough that a reader wondering whether the app is stuck gets an answer.
+const transcriptElapsedAfter = 20 * time.Second
+
+// transcriptTickMS is how often the running line's clock is redrawn.
+const transcriptTickMS = 1000
+
+// busyTranscriptLabel is the running line: the plain sentence at first,
+// then how long the engine has been on this note. The same voice note
+// takes seconds on an idle machine and many minutes on one that is out of
+// memory and swapping, and without the clock those two look identical —
+// a spinner that has not moved in twenty minutes reads as a hang.
+func busyTranscriptLabel(since, now time.Time) string {
+	const base = "Transcribing on this computer…"
+	if since.IsZero() {
+		return base
+	}
+	d := now.Sub(since)
+	if d < transcriptElapsedAfter {
+		return base
+	}
+	return base + " " + humanDuration(int(d/time.Second))
+}
+
+// tickTranscriptElapsed keeps the running line's clock moving while the
+// line is on screen. It stops as soon as the label leaves it: a row that
+// scrolls away is built again from the state when it comes back, and one
+// whose run has ended has had this label replaced by then.
+func tickTranscriptElapsed(l *gtk.Label, since time.Time) {
+	if since.IsZero() {
+		return
+	}
+	glib.TimeoutAdd(transcriptTickMS, func() bool {
+		if !l.Mapped() {
+			return false
+		}
+		l.SetLabel(busyTranscriptLabel(since, time.Now()))
+		return true
+	})
 }
 
 // transcriptChevron is the fold marker at the end of the transcript head:
@@ -216,7 +265,7 @@ func buildTranscriptSlot(mv mediaView) transcriptSlot {
 	st := mv.TranscriptState
 	id := mv.MsgID
 	if mv.Transcript == "" {
-		label := transcriptRowLabel(st)
+		label := transcriptRowLabel(st, time.Now())
 		if label == "" {
 			return transcriptSlot{}
 		}
@@ -234,6 +283,9 @@ func buildTranscriptSlot(mv mediaView) transcriptSlot {
 			l.AddCSSClass("chatot-transcript-dim")
 			l.SetXAlign(0)
 			line.Append(l)
+			if st.Busy {
+				tickTranscriptElapsed(l, st.Since)
+			}
 			box.Append(line)
 			return transcriptSlot{widget: box}
 		}
@@ -418,9 +470,11 @@ func (cv *ConversationView) transcribe(msgID, path string, requested bool) {
 		Key: msgID, Path: path, CacheDir: cacheDir(), Requested: requested,
 		OnStart: func() {
 			started = time.Now()
+			at := started
 			glib.IdleAdd(func() {
 				st := cv.transcriptOf(msgID)
 				st.Queued, st.Busy = false, true
+				st.Since = at
 				cv.setTranscriptState(msgID, st)
 				cv.refillByID(msgID)
 			})
