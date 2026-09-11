@@ -28,10 +28,10 @@
   type: archive
   url: https://proxy.golang.org/github.com/skip2/go-qrcode/@v/v0.0.0-20200617195104-da1b6568686e.zip
 - dest: vendor/go.mau.fi/whatsmeow
-  sha256: d1b5e523330da3eb2cbc17e36bf1e2082c1e5f9190284fb4dc2ee26b853fa41f
-  strip-components: 2
+  sha256: ee462679d6aa0a925cbd7902104367ac189caeaaac01e602a1437975f0319773
+  strip-components: 3
   type: archive
-  url: https://proxy.golang.org/go.mau.fi/whatsmeow/@v/v0.0.0-20260806224404-e277b766ab33.zip
+  url: https://proxy.golang.org/github.com/gsdev-br/whatsmeow/@v/v0.0.0-20260807020502-ebdf9dcfe3fe.zip
 - dest: vendor/google.golang.org/protobuf
   sha256: 68f8a3174aff42950fd9bd02c11b45c6986eb8060508d124d1c3dd6bf86b9be6
   strip-components: 2

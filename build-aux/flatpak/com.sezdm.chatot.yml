@@ -7,7 +7,7 @@
 #     build-aux/flatpak/build build-aux/flatpak/com.sezdm.chatot.yml
 #
 # The build is offline: Go modules come from go.mod.yml + modules.txt
-# (regenerate both with `go run github.com/dennwc/flatpak-go-mod@latest .`
+# (regenerate both with `go run github.com/dennwc/flatpak-go-mod@latest -out build-aux/flatpak .`
 # whenever go.mod changes). The Flathub copy of this manifest is identical
 # except that the chatot module's source is a tagged git commit instead of
 # the checkout (see README, "Flatpak").
