@@ -6,6 +6,7 @@ import (
 
 	"github.com/diamondburned/gotk4/pkg/cairo"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 
 	"chatot/internal/client"
 )
@@ -89,6 +90,7 @@ func buildPollContent(msg client.Message, v pollView, onVote func(msg client.Mes
 	question := gtk.NewLabel(v.Question)
 	question.SetXAlign(0)
 	question.SetWrap(true)
+	question.SetWrapMode(pango.WrapWordChar)
 	question.AddCSSClass("chatot-poll-question")
 	box.Append(question)
 
@@ -143,6 +145,7 @@ func buildPollOption(msg client.Message, v pollView, opt pollOptionView, onVote 
 	name.SetXAlign(0)
 	name.SetHExpand(true)
 	name.SetWrap(true)
+	name.SetWrapMode(pango.WrapWordChar)
 	name.AddCSSClass("chatot-poll-option")
 	row.Append(name)
 

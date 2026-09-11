@@ -91,6 +91,7 @@ func NewMediaPage(c client.Client, onBack func()) *MediaPage {
 	// The title gives way before the segmented switcher does: in the
 	// collapsed 360px window it wraps onto two lines, as in the mockup.
 	title.SetWrap(true)
+	title.SetWrapMode(pango.WrapWordChar)
 	title.SetLines(2)
 	title.SetEllipsize(pango.EllipsizeEnd)
 	title.AddCSSClass("chatot-pane-title")

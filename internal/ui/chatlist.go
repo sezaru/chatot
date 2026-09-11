@@ -1600,6 +1600,7 @@ func buildSearchHitRow(c client.Client, cache *avatarCache, vm searchHitView) *g
 	snippetLabel := gtk.NewLabel(vm.Snippet)
 	snippetLabel.SetXAlign(0)
 	snippetLabel.SetWrap(true)
+	snippetLabel.SetWrapMode(pango.WrapWordChar)
 	snippetLabel.SetLines(2)
 	snippetLabel.SetEllipsize(pango.EllipsizeEnd)
 	snippetLabel.AddCSSClass("chatot-search-snippet")

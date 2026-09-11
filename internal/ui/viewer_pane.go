@@ -1391,6 +1391,7 @@ func (v *AttachmentViewer) brokenCard(text, path string) gtk.Widgetter {
 	lbl := gtk.NewLabel(text)
 	lbl.AddCSSClass("chatot-viewer-file-note")
 	lbl.SetWrap(true)
+	lbl.SetWrapMode(pango.WrapWordChar)
 	card.Append(lbl)
 	card.Append(newChipButton("Open with…", func() { openFile(path) }))
 	return card

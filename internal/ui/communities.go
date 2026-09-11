@@ -718,6 +718,7 @@ func (cl *ChatList) showCommunityInfoDialog(c client.Community) {
 		about := gtk.NewLabel(c.Description)
 		about.AddCSSClass("chatot-info-about")
 		about.SetWrap(true)
+		about.SetWrapMode(pango.WrapWordChar)
 		about.SetJustify(gtk.JustifyCenter)
 		about.SetMaxWidthChars(44)
 		head.Append(about)
