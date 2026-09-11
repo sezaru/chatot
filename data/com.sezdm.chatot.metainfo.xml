@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.11.0-beta" date="2026-09-11">
+      <description>
+        <p>Search now finds what was said in transcribed voice notes, marked with a mic in the results; an in-chat search highlights the words in the transcript. Opening a search result older than the newest messages lands on it instead of saying the message isn't available. After the computer wakes from sleep, or the connection drops, chatot reconnects within seconds instead of minutes. The Flatpak builds again.</p>
+      </description>
+    </release>
     <release version="0.10.0-beta" date="2026-09-11">
       <description>
         <p>WhatsApp links open in chatot: the "open in app" button of a wa.me page lands in the chat with the message prefilled. Pressing Enter with the draft selected sends it instead of deleting it. A chat started from a number stays one chat when the person replies. A forwarded message moves its chat to the top of the list right away. Businesses that only appeared as numbers now show their verified name.</p>
