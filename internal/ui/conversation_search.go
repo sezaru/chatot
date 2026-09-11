@@ -309,13 +309,21 @@ func (cv *ConversationView) positionOf(msgID string) int {
 
 // jumpToMessage scrolls the thread to msgID, synchronously loading older
 // pages (via MessagesBefore) until it's found or local history runs dry.
+// A page the scroll handler has in flight is dropped first (it was asked
+// for against a cursor this moves): right after Load the first layout
+// asks for one, and a jump that waited for that page would have reported
+// every message outside the newest page as missing.
 // LIMITATION: a hit older than everything MessagesBefore can return locally
 // (i.e. it would need a RequestMoreHistory round-trip to the phone) can't be
 // reached — search coverage matches whatever the store already has synced.
 // Must run on the GTK main loop.
 func (cv *ConversationView) jumpToMessage(msgID string) bool {
 	pos := cv.positionOf(msgID)
-	for pos < 0 && cv.hasMore && !cv.loadingOlder {
+	if pos < 0 && cv.loadingOlder {
+		cv.pageGen++
+		cv.loadingOlder = false
+	}
+	for pos < 0 && cv.hasMore {
 		older, err := cv.c.MessagesBefore(cv.jid, cv.oldestID, conversationPageSize)
 		if err != nil || len(older) == 0 {
 			cv.hasMore = len(older) == conversationPageSize
