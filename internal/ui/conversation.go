@@ -436,6 +436,11 @@ type ConversationView struct {
 	// flashID is the message whose row is being flashed after a jump from
 	// a reply quote, so fillRow can tag it; cleared when the flash ends.
 	flashID string
+	// laidOut reports whether the thread has had a layout since Load
+	// (its scrollable height changed); pendingJump is the message a
+	// JumpTo asked for before that, run on the first one. See JumpTo.
+	laidOut     bool
+	pendingJump string
 
 	// joinBanner shows a "N people requested to join" strip above the thread
 	// when the open chat is a group with pending, admin-reviewable join
@@ -997,6 +1002,8 @@ func (cv *ConversationView) Load(jid string) {
 		pauseVoicePlayers()
 	}
 	cv.jid = jid
+	cv.pendingJump = ""
+	cv.laidOut = false
 	setWallpaperChat(jid)
 	chat := chatByJID(cv.c, jid)
 	cv.chatInfo = chat

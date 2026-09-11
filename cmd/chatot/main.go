@@ -401,7 +401,11 @@ func activate(app *adw.Application, c client.Client) {
 	})
 	// openChat is the single "show this chat" path: the chat-list click and
 	// the notification's click-to-open action both funnel through it.
-	openChat = func(jid string) {
+	// openChatAt does the same and then lands the thread on msgID when one
+	// is given (a sidebar search hit); "" opens at the newest messages.
+	var openChatAt func(jid, msgID string)
+	openChat = func(jid string) { openChatAt(jid, "") }
+	openChatAt = func(jid, msgID string) {
 		// Opening another chat would throw away the files queued in the
 		// attachment tray, so an open tray asks first. Declining keeps the
 		// current chat and puts the list highlight back on it; the same
@@ -409,10 +413,13 @@ func activate(app *adw.Application, c client.Client) {
 		if !attachTray.Empty() {
 			current := conversation.CurrentJID()
 			if jid == current {
+				if msgID != "" {
+					conversation.JumpTo(msgID)
+				}
 				return
 			}
 			attachTray.ConfirmDiscard(chatNameFor(c, current),
-				func() { openChat(jid) },
+				func() { openChatAt(jid, msgID) },
 				func() { chatList.SetSelected(current) })
 			return
 		}
@@ -426,6 +433,9 @@ func activate(app *adw.Application, c client.Client) {
 		}
 		chatList.SetSelected(jid)
 		conversation.Load(jid)
+		if msgID != "" {
+			conversation.JumpTo(msgID)
+		}
 		composer.SetChat(jid)
 		composer.SetChatName(chatNameFor(c, jid))
 		showContent()
@@ -433,6 +443,7 @@ func activate(app *adw.Application, c client.Client) {
 		go markReadOnOpen(c, jid, conversation.Messages())
 	}
 	chatList.OnChatSelected(openChat)
+	chatList.OnMessageSelected(openChatAt)
 	conversation.OnStopLiveRequested(composer.StopLiveLocation)
 
 	split.SetSidebar(sidebar)
@@ -1411,6 +1422,12 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	case "listsearch":
 		// The chat list's search box with CHATOT_SHOT_TEXT typed in.
 		d.chatList.SearchList(os.Getenv("CHATOT_SHOT_TEXT"))
+	case "listsearchopen":
+		// listsearch, then a click on result row CHATOT_SHOT_ARG (default
+		// the first): the chat should open at the matched message.
+		d.chatList.SearchList(os.Getenv("CHATOT_SHOT_TEXT"))
+		idx, _ := strconv.Atoi(arg)
+		glib.TimeoutAdd(1500, func() bool { d.chatList.ActivateRow(idx); return false })
 	case "starred":
 		d.chatList.ShowStarred()
 	case "archived":
