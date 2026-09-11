@@ -301,6 +301,10 @@ type ConversationView struct {
 	oldestID     string
 	hasMore      bool
 	loadingOlder bool
+	// pageGen bumps when a page loadOlder asked for is no longer wanted:
+	// a jump that pages the thread itself moves the cursor under it, and
+	// a page read against the old cursor would come back as duplicates.
+	pageGen int
 	// historyRequested is set once loadOlder has asked the phone for more
 	// history and stays set until a batch actually arrives (reset on a genuine
 	// non-empty prepend), so a second empty page after a request means
@@ -1230,11 +1234,11 @@ func (cv *ConversationView) storedPositions() []int {
 // GTK main loop.
 func (cv *ConversationView) loadOlder() {
 	cv.loadingOlder = true
-	jid, oldestID, gen := cv.jid, cv.oldestID, cv.loadGen
+	jid, oldestID, gen, pgen := cv.jid, cv.oldestID, cv.loadGen, cv.pageGen
 	go func() {
 		older, err := cv.c.MessagesBefore(jid, oldestID, conversationPageSize)
 		glib.IdleAdd(func() {
-			if gen != cv.loadGen || jid != cv.jid {
+			if gen != cv.loadGen || jid != cv.jid || pgen != cv.pageGen {
 				return
 			}
 			cv.loadingOlder = false
