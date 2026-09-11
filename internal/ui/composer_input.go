@@ -94,6 +94,10 @@ func newComposerInput() *composerInput {
 		in.enterShift = state&gdk.ShiftMask != 0
 		return false
 	})
+	// The note lasts the key press: the view's deletion and insertion for
+	// it both happen before the release, and a later edit (a cut from the
+	// menu, say) must not read as an Enter.
+	keys.ConnectKeyReleased(func(_, _ uint, _ gdk.ModifierType) { in.enterPending = false })
 	view.AddController(keys)
 	// Input-method diagnostics (CHATOT_TRACE=1): a dead key shows up as a
 	// preedit, the composed letter as an insert. Which of the two is
@@ -104,6 +108,15 @@ func newComposerInput() *composerInput {
 	view.ConnectPasteClipboard(func() {
 		if !in.pasteAsText && in.pasteAttachment() {
 			view.StopEmission("paste-clipboard")
+		}
+	})
+	// With a selection the view deletes it before inserting the newline,
+	// so by the time the "\n" arrives the selected text is gone and a
+	// draft selected whole is sent as nothing. The deletion an Enter
+	// starts with is refused; the "\n" that follows it sends the draft.
+	in.buf.ConnectDeleteRange(func(_, _ *gtk.TextIter) {
+		if in.enterPending && !in.enterShift {
+			in.buf.StopEmission("delete-range")
 		}
 	})
 	in.buf.ConnectInsertText(func(_ *gtk.TextIter, text string, _ int) {
