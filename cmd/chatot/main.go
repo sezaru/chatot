@@ -832,6 +832,11 @@ func activate(app *adw.Application, c client.Client) {
 		return true
 	})
 
+	// Voice notes are transcribed as they arrive, not when their chat is
+	// opened; its own subscription, taken before Start like the others.
+	voiceCh := c.Events()
+	go ui.WatchVoiceNotes(c, voiceCh, conversation)
+
 	loginCh := c.Events()
 	go func() {
 		for ev := range loginCh {
@@ -1564,6 +1569,19 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		presence("text")
 		glib.TimeoutAdd(2000, func() bool { presence("audio"); return false })
 		glib.TimeoutAdd(4000, func() bool { f.ReceiveVoice(jid, jid, 12); return false })
+	case "voicebg":
+		// A voice note with the demo.mp3 fixture's audio lands 2 s later in
+		// the chat CHATOT_SHOT_ARG (fake only), which is not the open one:
+		// with the automatic preference on, its transcript is made without
+		// the chat being opened.
+		var active client.Client = d.c
+		if d.am != nil {
+			active = d.am.ActiveClient()
+		}
+		if f, ok := active.(*client.Fake); ok && arg != "" {
+			to := arg
+			glib.TimeoutAdd(2000, func() bool { f.ReceiveVoiceFile(to, to, 4, "demo.mp3"); return false })
+		}
 	case "arrive":
 		// ARG messages, 1.5 s apart, land in a chat other than the open one
 		// (fake only): each raises a desktop notification and its chime.

@@ -547,8 +547,15 @@ func (f *Fake) Receive(jid, sender, text string) {
 // the way one lands after a "recording audio…" notice. A dev/screenshot aid
 // for that sequence; the bubble it makes is the same as the seeded m16.
 func (f *Fake) ReceiveVoice(jid, sender string, dur int) {
+	f.ReceiveVoiceFile(jid, sender, dur, "")
+}
+
+// ReceiveVoiceFile is ReceiveVoice with the note's bytes taken from the
+// dev fixture named filename (see DownloadMedia), so a run on it has real
+// audio.
+func (f *Fake) ReceiveVoiceFile(jid, sender string, dur int, filename string) {
 	msg := Message{ChatJID: jid, FromJID: sender,
-		Attachment: &Attachment{Kind: "audio", MimeType: "audio/ogg", Size: int64(dur) * 4096, DurationSecs: dur}}
+		Attachment: &Attachment{Kind: "audio", MimeType: "audio/ogg", Size: int64(dur) * 4096, DurationSecs: dur, Filename: filename}}
 	f.receive(jid, msg, fmt.Sprintf("🎤 %d:%02d", dur/60, dur%60))
 }
 

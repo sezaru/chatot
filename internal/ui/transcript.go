@@ -12,6 +12,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 
+	"chatot/internal/client"
 	"chatot/internal/transcribe"
 )
 
@@ -541,55 +542,8 @@ func (cv *ConversationView) transcribe(msgID, path string, requested bool) {
 		}
 		return
 	}
-	jid, c := cv.msgs[pos].ChatJID, cv.c
-	var started time.Time
-	taken := transcribe.Default.Enqueue(transcribe.Job{
-		Key: msgID, Path: path, CacheDir: cacheDir(), Requested: requested,
-		OnStart: func() {
-			started = time.Now()
-			at := started
-			glib.IdleAdd(func() {
-				st := cv.transcriptOf(msgID)
-				st.Queued, st.Busy = false, true
-				st.Since = at
-				cv.setTranscriptState(msgID, st)
-				cv.refillByID(msgID)
-			})
-		},
-		OnDone: func(text string, err error) {
-			if err == nil {
-				if perr := c.SetTranscript(jid, msgID, text); perr != nil {
-					log.Printf("chatot: save transcript failed: %v", perr)
-				}
-			}
-			glib.IdleAdd(func() {
-				prev := cv.transcriptOf(msgID)
-				if errors.Is(err, context.Canceled) {
-					// A run someone stopped leaves no trace: not an error
-					// to report, since it did what it was told. A row that
-					// is waiting or busy by now belongs to a later run,
-					// which this answer must not clear.
-					if prev.Busy || prev.Queued {
-						return
-					}
-					cv.setTranscriptState(msgID, transcriptState{})
-					cv.refillByID(msgID)
-					return
-				}
-				st := transcriptState{Open: prev.Open}
-				if err != nil {
-					log.Printf("chatot: transcribe %s: %v", msgID, err)
-					st.Err, st.Retry = transcriptErrorText(err)
-				} else {
-					trace(1, "transcribed %s in %s: %d chars", msgID, time.Since(started).Round(time.Millisecond), len(text))
-					st.Open = st.Open || prev.Requested
-					cv.setTranscript(msgID, text)
-				}
-				cv.setTranscriptState(msgID, st)
-				cv.refillByID(msgID)
-			})
-		},
-	})
+	jid := cv.msgs[pos].ChatJID
+	taken := transcribe.Default.Enqueue(transcriptJob(cv.c, cv, jid, msgID, path, requested))
 	if !taken {
 		// The automatic backlog is full; the bubble asks again the next
 		// time it is built.
@@ -598,6 +552,78 @@ func (cv *ConversationView) transcribe(msgID, path string, requested bool) {
 	cv.setTranscriptState(msgID, transcriptState{Queued: true, Requested: requested})
 	cv.refillByID(msgID)
 	trace(1, "transcribe queued: %s (requested %v, %d waiting)", msgID, requested, transcribe.Default.Pending())
+}
+
+// transcriptJob is the queue entry for msgID's note at path in jid: the
+// engine's start and its answer both land on cv through the main loop,
+// and the text is saved under the message first. The row's own runs and
+// the ones started on arrival (see WatchVoiceNotes) share it, so whichever
+// asked first, the thread hears about the run the same way.
+func transcriptJob(c client.Client, cv *ConversationView, jid, msgID, path string, requested bool) transcribe.Job {
+	return transcribe.Job{
+		Key: msgID, Path: path, CacheDir: cacheDir(), Requested: requested,
+		OnStart: func() {
+			at := time.Now()
+			glib.IdleAdd(func() { cv.transcriptStarted(msgID, at) })
+		},
+		OnDone: func(text string, err error) {
+			if err == nil {
+				if perr := c.SetTranscript(jid, msgID, text); perr != nil {
+					log.Printf("chatot: save transcript failed: %v", perr)
+				}
+			}
+			glib.IdleAdd(func() { cv.transcriptLanded(msgID, text, err) })
+		},
+	}
+}
+
+// transcriptQueued shows msgID's note as waiting its turn, unless a run
+// is already on the row. Must run on the GTK main loop.
+func (cv *ConversationView) transcriptQueued(msgID string) {
+	if st := cv.transcriptOf(msgID); st.Busy || st.Queued {
+		return
+	}
+	cv.setTranscriptState(msgID, transcriptState{Queued: true})
+	cv.refillByID(msgID)
+}
+
+// transcriptStarted shows msgID's note as the one the engine took at at.
+// Must run on the GTK main loop.
+func (cv *ConversationView) transcriptStarted(msgID string, at time.Time) {
+	st := cv.transcriptOf(msgID)
+	st.Queued, st.Busy = false, true
+	st.Since = at
+	cv.setTranscriptState(msgID, st)
+	cv.refillByID(msgID)
+}
+
+// transcriptLanded puts the answer of msgID's run on its row: the text
+// (already saved), or the reason there is none. Must run on the GTK main
+// loop.
+func (cv *ConversationView) transcriptLanded(msgID, text string, err error) {
+	prev := cv.transcriptOf(msgID)
+	if errors.Is(err, context.Canceled) {
+		// A run someone stopped leaves no trace: not an error to report,
+		// since it did what it was told. A row that is waiting or busy by
+		// now belongs to a later run, which this answer must not clear.
+		if prev.Busy || prev.Queued {
+			return
+		}
+		cv.setTranscriptState(msgID, transcriptState{})
+		cv.refillByID(msgID)
+		return
+	}
+	st := transcriptState{Open: prev.Open}
+	if err != nil {
+		log.Printf("chatot: transcribe %s: %v", msgID, err)
+		st.Err, st.Retry = transcriptErrorText(err)
+	} else {
+		trace(1, "transcribed %s in %s: %d chars", msgID, time.Since(prev.Since).Round(time.Millisecond), len(text))
+		st.Open = st.Open || prev.Requested
+		cv.setTranscript(msgID, text)
+	}
+	cv.setTranscriptState(msgID, st)
+	cv.refillByID(msgID)
 }
 
 // cancelTranscribe takes back the run on msgID and puts the row back the
