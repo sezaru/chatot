@@ -702,6 +702,10 @@ func (c *Composer) PopAttach() { c.attachBtn.Popup() }
 // is constructed).
 func (c *Composer) SetWindow(w *gtk.Window) { c.window = w }
 
+// SetDraft replaces the draft with text, the cursor at its end: a link's
+// prefilled message, the screenshot hooks' sample text.
+func (c *Composer) SetDraft(text string) { c.entry.SetText(text) }
+
 // OnSent registers f to be called (on the GTK main loop) with the optimistic
 // outbound message right after a successful send.
 func (c *Composer) OnSent(f func(client.Message)) { c.onSent = f }

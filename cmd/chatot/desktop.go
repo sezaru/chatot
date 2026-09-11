@@ -80,11 +80,12 @@ func desktopEntry(exe string) string {
 Type=Application
 Name=chatot
 Comment=WhatsApp for the GNOME desktop
-Exec=%s
+Exec=%s %%u
 Icon=%s
 Terminal=false
 Categories=Network;InstantMessaging;GTK;
 StartupNotify=true
+MimeType=x-scheme-handler/whatsapp;
 StartupWMClass=%s
 `, exe, appID, appID)
 }

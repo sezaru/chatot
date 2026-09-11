@@ -301,8 +301,6 @@ func (c *Composer) PopPicker(page string) {
 }
 
 // SetDraft types text into the entry (flips mic → send).
-func (c *Composer) SetDraft(text string) { c.entry.SetText(text) }
-
 // ShowRecordingUI paints the in-progress-recording state without touching a
 // microphone (screenshot only; never call in production paths).
 func (c *Composer) ShowRecordingUI() {

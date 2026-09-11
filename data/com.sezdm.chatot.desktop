@@ -2,10 +2,11 @@
 Type=Application
 Name=Chatot
 Comment=Unofficial WhatsApp client
-Exec=chatot
+Exec=chatot %u
 Icon=com.sezdm.chatot
 Terminal=false
 Categories=Network;InstantMessaging;GTK;
 Keywords=WhatsApp;chat;messaging;messages;
 StartupNotify=true
+MimeType=x-scheme-handler/whatsapp;
 StartupWMClass=com.sezdm.chatot

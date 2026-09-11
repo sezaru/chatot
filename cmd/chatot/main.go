@@ -53,7 +53,7 @@ func main() {
 		os.Setenv("GSK_RENDERER", "gl")
 	}
 
-	app := adw.NewApplication(appID, gio.ApplicationFlagsNone)
+	app := adw.NewApplication(appID, gio.ApplicationHandlesOpen)
 
 	if err := installDesktopEntry(); err != nil {
 		log.Printf("chatot: install desktop entry: %v", err)
@@ -62,6 +62,15 @@ func main() {
 	c := buildClient()
 
 	app.ConnectActivate(func() { activate(app, c) })
+	// A whatsapp: link (the "open in app" button of a wa.me page, the
+	// desktop entry's x-scheme-handler) arrives here, on a cold start or
+	// handed over from a second invocation; the window comes up first.
+	app.ConnectOpen(func(files []gio.Filer, _ string) {
+		activate(app, c)
+		for _, f := range files {
+			openLink(f.URI())
+		}
+	})
 
 	os.Exit(app.Run(os.Args))
 }
@@ -185,6 +194,16 @@ func stateDir() string {
 	}
 	return filepath.Join(home, ".local", "state", "chatot")
 }
+
+// openLink opens the chat a whatsapp: link points at; set by activate.
+var openLink = func(string) {}
+
+// linkLookupAttempts × linkLookupRetry bounds how long a link's number
+// lookup waits for the connection.
+const (
+	linkLookupAttempts = 15
+	linkLookupRetry    = 2 * time.Second
+)
 
 func activate(app *adw.Application, c client.Client) {
 	if mainWin != nil {
@@ -892,6 +911,60 @@ func activate(app *adw.Application, c client.Client) {
 			rightPane.SetVisibleChildName("media")
 		}
 	}
+	// openByPhone opens the chat with an E.164 number, prefilling text: a
+	// number already in the list opens straight away (offline too), any
+	// other is looked up first. The lookup is retried while the socket
+	// comes up, since a link is what may have just started the app.
+	openByPhone := func(phone, text string) {
+		open := func(jid string) {
+			openChat(jid)
+			if text != "" {
+				composer.SetDraft(text)
+			}
+		}
+		pn := strings.TrimPrefix(phone, "+") + "@s.whatsapp.net"
+		if chats, err := c.Chats(0); err == nil {
+			for _, chat := range chats {
+				if chat.JID == pn {
+					open(pn)
+					return
+				}
+			}
+		}
+		go func() {
+			var jid string
+			var on bool
+			var err error
+			for attempt := 0; attempt < linkLookupAttempts; attempt++ {
+				jid, on, err = c.CheckOnWhatsApp(context.Background(), phone)
+				if err == nil {
+					break
+				}
+				time.Sleep(linkLookupRetry)
+			}
+			glib.IdleAdd(func() {
+				switch {
+				case err != nil:
+					log.Printf("chatot: look up %s: %v", phone, err)
+					toastOverlay.AddToast(adw.NewToast("Couldn't look up " + ui.FormatPhone(phone)))
+				case !on:
+					toastOverlay.AddToast(adw.NewToast(ui.FormatPhone(phone) + " isn't on WhatsApp"))
+				default:
+					open(jid)
+				}
+			})
+		}()
+	}
+	openLink = func(uri string) {
+		phone, text, ok := ui.ParseWhatsAppLink(uri)
+		if !ok {
+			log.Printf("chatot: not a WhatsApp chat link: %q", uri)
+			return
+		}
+		win.Present()
+		openByPhone(phone, text)
+	}
+
 	// CHATOT_SHOT=<state> reaches one named mockup state (see shotHook); most
 	// need the chat opened first via CHATOT_SHOT_CHAT and a realized thread,
 	// hence the delay. CHATOT_SHOT_MSG picks the message index (default -1 =
@@ -1026,11 +1099,11 @@ func chatNameFor(c client.Client, jid string) string {
 		return jid
 	}
 	for _, chat := range chats {
-		if chat.JID == jid {
+		if chat.JID == jid && chat.Name != "" {
 			return chat.Name
 		}
 	}
-	return jid
+	return ui.JIDFallbackName(jid)
 }
 
 func loadCSS() { ui.InstallStyles() }
@@ -1422,6 +1495,10 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	case "listsearch":
 		// The chat list's search box with CHATOT_SHOT_TEXT typed in.
 		d.chatList.SearchList(os.Getenv("CHATOT_SHOT_TEXT"))
+	case "openlink":
+		// The whatsapp: link in CHATOT_SHOT_TEXT, as the desktop's
+		// scheme handler would hand it over.
+		openLink(os.Getenv("CHATOT_SHOT_TEXT"))
 	case "listsearchopen":
 		// listsearch, then a click on result row CHATOT_SHOT_ARG (default
 		// the first): the chat should open at the matched message.
