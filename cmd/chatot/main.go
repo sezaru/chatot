@@ -471,12 +471,21 @@ func activate(app *adw.Application, c client.Client) {
 	narrow := adw.NewBreakpoint(adw.BreakpointConditionParse("max-width: 720sp"))
 	narrow.AddSetter(split, "collapsed", true)
 	win.AddBreakpoint(narrow)
+	// Collapsed, an open attachment tray takes the whole pane, header
+	// included: the ← would leave the chat with the files still queued
+	// behind the list, so the only way out is the tray's own Cancel (or
+	// Send). Side by side the header stays, as in the mockup.
+	syncTrayHeader := func() {
+		contentHeader.SetVisible(!(split.Collapsed() && attachTray.Visible()))
+	}
+	attachTray.NotifyProperty("visible", syncTrayHeader)
 	split.NotifyProperty("collapsed", func() {
 		collapsed := split.Collapsed()
 		chatList.SetCollapsed(collapsed)
 		conversation.SetCollapsed(collapsed)
 		plainHeader.SetCollapsed(collapsed)
 		viewer.SetCollapsed(collapsed)
+		syncTrayHeader()
 	})
 	conversation.OnBackRequested(showList)
 	composer.SetWindow(&win.Window)
