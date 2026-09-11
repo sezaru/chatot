@@ -495,6 +495,66 @@ window {
 	padding-top: 5px;
 }
 
+/* Business choices: the buttons a bot offers under its message, each a
+   full-width tap target split from the text and from each other by a
+   hairline, in the same accent as the read-more so it reads as an action. */
+.chatot-choices {
+	margin-top: 6px;
+}
+
+button.chatot-choice-btn {
+	min-height: 0;
+	min-width: 0;
+	padding: 8px 6px;
+	margin: 0;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+	border: none;
+	border-top: 1px solid alpha(currentColor, 0.18);
+	font-size: 13px;
+	font-weight: 700;
+	color: #147a63;
+	transition: background-color 120ms ease;
+}
+
+button.chatot-choice-btn:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+button.chatot-choice-btn:active {
+	background-color: alpha(currentColor, 0.1);
+}
+
+.chatot-bubble-out button.chatot-choice-btn {
+	color: #ffffff;
+}
+
+.chatot-choice-glyph {
+	font-size: 12px;
+	opacity: 0.85;
+}
+
+/* A WhatsApp Flow button: the phone runs the form, this row only says so. */
+button.chatot-choice-phone {
+	opacity: 0.6;
+}
+
+/* The list picker's dialog: section names as the mockup's small caps
+   labels over a bordered list, a dim description under a row's title. */
+.chatot-choice-section {
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+	opacity: 0.55;
+	margin-top: 6px;
+}
+
+.chatot-choice-desc {
+	font-size: 11.5px;
+	opacity: 0.55;
+}
+
 /* Call log: the medium's glyph in a tinted disc beside WhatsApp's wording
    ("Missed voice call", in the alert colour; "Video call · 2:31"). */
 .chatot-call-row {

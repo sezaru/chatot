@@ -233,6 +233,10 @@ type Message struct {
 	// Poll is non-nil for a poll-creation message; its options carry live vote
 	// counts tallied from decrypted poll-update (vote) events.
 	Poll *Poll
+	// Choices is non-nil for a business message that offers buttons or a
+	// list to pick from (Cloud API interactive and template messages, the
+	// legacy buttons and list shapes). Text carries the words around them.
+	Choices *Choices
 	// Edited is true once the sender edited this message's text (WhatsApp
 	// allows editing a text message for ~15 min); drives the "edited" marker.
 	Edited bool
@@ -288,6 +292,65 @@ type PollOption struct {
 	Name  string
 	Count int
 	Voted bool
+}
+
+// Choices is what a business message offers the reader to tap: inline
+// buttons, a list picker, or both. Source names the wire shape it arrived
+// in, which decides the shape of the reply WhatsApp expects back.
+type Choices struct {
+	// Source is "buttons" (legacy ButtonsMessage), "list" (ListMessage),
+	// "template" (a hydrated TemplateMessage) or "interactive" (an
+	// InteractiveMessage's native flow, on its own or inside a template).
+	Source  string         `json:"source"`
+	Buttons []ChoiceButton `json:"buttons,omitempty"`
+	List    *ChoiceList    `json:"list,omitempty"`
+}
+
+// ChoiceButton is one tappable button under a business message.
+type ChoiceButton struct {
+	ID    string `json:"id,omitempty"`
+	Label string `json:"label"`
+	// Kind is "reply" (sends the choice back), "url" (opens URL), "call"
+	// (Phone is the number), "copy" (CopyText goes to the clipboard) or
+	// "flow" (a WhatsApp Flow form, which only the phone can run).
+	Kind     string `json:"kind"`
+	URL      string `json:"url,omitempty"`
+	Phone    string `json:"phone,omitempty"`
+	CopyText string `json:"copy,omitempty"`
+	// Index is the button's position on the wire; a template reply names
+	// the picked button by it.
+	Index int `json:"index"`
+}
+
+// ChoiceList is a list picker: one button (Title) that opens sections of
+// rows, of which the reader picks one.
+type ChoiceList struct {
+	Title    string          `json:"title"`
+	Sections []ChoiceSection `json:"sections"`
+}
+
+// ChoiceSection is a titled group of list rows (the title may be empty).
+type ChoiceSection struct {
+	Title string      `json:"title,omitempty"`
+	Rows  []ChoiceRow `json:"rows"`
+}
+
+// ChoiceRow is one pickable row of a list.
+type ChoiceRow struct {
+	ID          string `json:"id,omitempty"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+}
+
+// ChoiceSelection is the reader's pick from a message's Choices: a reply
+// button (ID, Label, Index) or a list row (IsRow, with ID, Label as the row
+// title and Description).
+type ChoiceSelection struct {
+	ID          string
+	Label       string
+	Index       int
+	IsRow       bool
+	Description string
 }
 
 // PollVote signals that a poll's tally changed (a vote arrived or we cast
@@ -668,6 +731,11 @@ type Client interface {
 	// VotePoll casts (or replaces) the local user's vote on pollMsgID with the
 	// named options.
 	VotePoll(ctx context.Context, chatJID, pollMsgID string, options []string) error
+	// ReplyChoice answers the business message msgID with the reader's pick
+	// from its Choices, in the reply shape that message's Source calls for;
+	// the pick shows in the thread as an own message reading sel.Label.
+	// Returns the sent message's ID.
+	ReplyChoice(ctx context.Context, chatJID, msgID string, sel ChoiceSelection) (string, error)
 	// EditMessage replaces an own text message's content (WhatsApp's ~15-min
 	// edit window); reflected optimistically in the store + open chat.
 	EditMessage(ctx context.Context, chatJID, msgID, newText string) error

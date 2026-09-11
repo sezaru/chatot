@@ -1565,6 +1565,51 @@ func (w *Whatsmeow) VotePoll(ctx context.Context, chatJID, pollMsgID string, opt
 	return nil
 }
 
+// ReplyChoice answers a business message's buttons or list with sel, in the
+// reply shape the offer's Source calls for (see choiceReply): WhatsApp
+// routes each shape to the business differently, and a mismatched one is
+// dropped without a word. The reply quotes the offer, the way the phone's
+// does, and lands in the thread as an own message reading the pick.
+func (w *Whatsmeow) ReplyChoice(ctx context.Context, chatJID, msgID string, sel ChoiceSelection) (string, error) {
+	to, err := types.ParseJID(chatJID)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: parse jid %q: %w", chatJID, err)
+	}
+	target, ok, err := w.store.MessageByID(chatJID, msgID)
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: reply choice: lookup: %w", err)
+	}
+	if !ok {
+		return "", fmt.Errorf("chatot/client: reply choice: message %s not found", msgID)
+	}
+	offer := messageFromStore(target, w.ownJID())
+	if offer.Choices == nil {
+		return "", fmt.Errorf("chatot/client: reply choice: message %s offers no choices", msgID)
+	}
+
+	ctxInfo := &waE2E.ContextInfo{
+		StanzaID:      proto.String(msgID),
+		QuotedMessage: &waE2E.Message{Conversation: proto.String(target.Text)},
+	}
+	if !target.FromMe && target.FromJID != "" {
+		ctxInfo.Participant = proto.String(target.FromJID)
+	}
+	waMsg := choiceReply(offer.Choices.Source, sel, ctxInfo)
+
+	id := w.wa.GenerateMessageID()
+	if _, err := w.wa.SendMessage(ctx, to, waMsg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		return "", fmt.Errorf("chatot/client: reply choice: send: %w", err)
+	}
+	out := Message{ID: id, ChatJID: chatJID, FromJID: w.ownJID(), FromMe: true, Text: sel.Label, TS: time.Now().Unix()}
+	if err := w.ingestMessage(&out); err != nil {
+		w.log.Warnf("chatot/client: optimistic upsert of choice reply failed: %v", err)
+	}
+	// Unlike a composer send, nothing in the UI holds a pending row for
+	// the reply, so the open chat hears of it the way it hears of an edit.
+	w.pushEvent(Event{Kind: EventMessage, Message: &out})
+	return id, nil
+}
+
 // handlePollVote decrypts an incoming poll vote, replaces the voter's stored
 // selections, and emits an EventPollVote so the open chat refreshes its tally.
 // DecryptPollVote relies on whatsmeow having stored the poll creation's

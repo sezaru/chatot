@@ -358,6 +358,13 @@ func extractText(m *waProto.Message, msg *Message) {
 	default:
 		var rich bool
 		ctx, rich = extractRichText(m, msg)
+		if msg.Choices != nil {
+			// The store keeps the choices but not the wire shape around
+			// them, and a reply in the wrong shape is silently dropped by
+			// the business, so the shape is logged for when one is.
+			log.Printf("chatot: choices message %s in %s: source=%s buttons=%d list=%t fields: %s",
+				msg.ID, msg.ChatJID, msg.Choices.Source, len(msg.Choices.Buttons), msg.Choices.List != nil, strings.Join(payloadFieldNames(m), ", "))
+		}
 		if !rich && hasPayload(m) {
 			msg.Text = unsupportedText
 			log.Printf("chatot: unsupported message payload, fields: %s", strings.Join(payloadFieldNames(m), ", "))

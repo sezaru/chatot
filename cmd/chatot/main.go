@@ -378,6 +378,13 @@ func activate(app *adw.Application, c client.Client) {
 			}
 		}()
 	})
+	conversation.OnChoiceRequested(func(msg client.Message, sel client.ChoiceSelection) {
+		go func() {
+			if _, err := c.ReplyChoice(context.Background(), msg.ChatJID, msg.ID, sel); err != nil {
+				log.Printf("chatot: reply choice failed: %v", err)
+			}
+		}()
+	})
 	conversation.OnStarRequested(func(msg client.Message) {
 		go func() {
 			if err := c.StarMessage(context.Background(), msg.ChatJID, msg.ID, !msg.Starred); err != nil {
@@ -1266,6 +1273,14 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		// The message at MSG gets ARG (👍 by default) through the app's own
 		// React wiring: the row must show the pill without a chat switch.
 		d.conversation.ReactAt(msgIdx, arg)
+	case "choice":
+		// The reply button at ARG (an index, 0 by default) under the
+		// business message at MSG is tapped: the pick must land as an own
+		// bubble under it.
+		d.conversation.ChoiceAt(msgIdx, arg)
+	case "choicelist":
+		// The list picker under the business message at MSG, opened.
+		d.conversation.OpenChoiceListAt(msgIdx)
 	case "transcribe":
 		// The downloaded voice note at MSG is transcribed the way its
 		// Transcribe row does it, model download prompt included.

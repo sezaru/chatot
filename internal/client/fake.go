@@ -175,6 +175,22 @@ func NewFake() *Fake {
 				{Name: "Sushi"},
 				{Name: "Salad"},
 			}}},
+		// A business menu with reply buttons and CTAs, and a list picker:
+		// the two shapes a bot's choices come in.
+		{ID: "m7b", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2760,
+			Text: "Welcome to Harvard Support.\nWhat would you like to do today?",
+			Choices: &Choices{Source: "interactive", Buttons: []ChoiceButton{
+				{ID: "status", Label: "Check status", Kind: "reply"},
+				{Label: "Open dashboard", Kind: "url", URL: "https://example.com/dashboard", Index: 1},
+				{Label: "Copy ticket number", Kind: "copy", CopyText: "RLY-4821", Index: 2},
+				{Label: "Fill in the form", Kind: "flow", Index: 3},
+			}}},
+		{ID: "m7c", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2730,
+			Text: "Which machine is affected?",
+			Choices: &Choices{Source: "list", List: &ChoiceList{Title: "Pick a machine", Sections: []ChoiceSection{
+				{Title: "Harvard", Rows: []ChoiceRow{{ID: "r1", Title: "Mark I", Description: "Cambridge, 1944"}, {ID: "r2", Title: "Mark II"}}},
+				{Title: "Navy", Rows: []ChoiceRow{{ID: "r3", Title: "Mark III", Description: "Dahlgren, 1949"}}},
+			}}}},
 		{ID: "m8", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2700,
 			Attachment: &Attachment{Kind: "video", MimeType: "video/mp4", IsGIF: true, Size: 860160, DurationSecs: 34}},
 		// No LocalPath: renders via the tap-to-load placeholder path, exercising
@@ -785,6 +801,22 @@ func (f *Fake) votePollLocked(chatJID, pollMsgID string, options []string) error
 		}
 	}
 	return fmt.Errorf("chatot/client: poll %q not found in chat %q", pollMsgID, chatJID)
+}
+
+// ReplyChoice shows the pick as an own message, as the real client does;
+// nothing answers it.
+func (f *Fake) ReplyChoice(ctx context.Context, chatJID, msgID string, sel ChoiceSelection) (string, error) {
+	if err := fakeSendDelay(); err != nil {
+		return "", err
+	}
+	f.mu.Lock()
+	id := f.nextMsgID()
+	out := Message{ID: id, ChatJID: chatJID, FromJID: "me", FromMe: true, Text: sel.Label, TS: time.Now().Unix()}
+	f.appendOutbound(chatJID, out)
+	f.mu.Unlock()
+	// As the real client: the open chat learns of the reply by event.
+	f.PushEvent(Event{Kind: EventMessage, Message: &out})
+	return id, nil
 }
 
 func (f *Fake) EditMessage(ctx context.Context, chatJID, msgID, newText string) error {
