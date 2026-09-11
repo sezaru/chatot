@@ -25,6 +25,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		NotificationsPerAccount: false,
 		KeepInactiveConnected:   false,
 		ThemeSource:             "auto",
+		VoiceSpeed:              1.5,
 		FontSize:                "default",
 		AutoDownload:            "photos",
 		AutoTranscribe:          true,
@@ -133,5 +134,26 @@ func TestLoadNormalizesThemeSource(t *testing.T) {
 	}
 	if got := Load(dir).ThemeSource; got != "none" {
 		t.Errorf("themeSource none loaded as %q", got)
+	}
+}
+
+func TestLoadNormalizesVoiceSpeed(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(`{"voiceSpeed": 3}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := Load(dir).VoiceSpeed; got != 1 {
+		t.Fatalf("VoiceSpeed = %v, want 1 for an unknown value", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := Load(dir).VoiceSpeed; got != 1 {
+		t.Fatalf("VoiceSpeed = %v, want 1 for an older file", got)
+	}
+	for _, c := range []struct{ in, want float64 }{{1, 1.5}, {1.5, 2}, {2, 1}, {7, 1}} {
+		if got := NextVoiceSpeed(c.in); got != c.want {
+			t.Errorf("NextVoiceSpeed(%v) = %v, want %v", c.in, got, c.want)
+		}
 	}
 }

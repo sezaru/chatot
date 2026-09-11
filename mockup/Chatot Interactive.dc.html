@@ -849,6 +849,9 @@ a{color:#1b8c72}a:hover{color:#147a63}
                           <span style="position:absolute;top:-3px;width:10px;height:10px;border-radius:999px;background:{{ m.fillFg }};left:{{ m.voicePct }}"></span>
                         </span>
                         <span style="font:11px/1 'JetBrains Mono',ui-monospace,monospace;flex:none;color:{{ m.subFg }}">{{ m.voiceLen }}</span>
+                        <sc-if value="{{ m.isPlaying }}" hint-placeholder-val="{{ false }}">
+                          <button onClick="{{ m.onSpeed }}" title="Playback speed" style="height:23px;flex:none;padding:0 6px;border:1px solid {{ m.hair }};border-radius:7px;cursor:pointer;font:700 10.5px/1 'JetBrains Mono',ui-monospace,monospace;background:{{ m.speedBg }};color:{{ m.trBtnFg }}" style-hover="background:{{ m.chipBg }}">{{ m.speedLabel }}</button>
+                        </sc-if>
                         <button onClick="{{ m.onTrBtn }}" title="{{ m.trTitle }}" style="width:23px;height:23px;flex:none;border:1px solid {{ m.hair }};border-radius:7px;display:grid;place-items:center;cursor:pointer;font-size:{{ m.trBtnSize }};font-weight:700;background:{{ m.trBtnBg }};color:{{ m.trBtnFg }}" style-hover="background:{{ m.chipBg }}">{{ m.trBtnLabel }}</button>
                       </div>
 
@@ -4210,6 +4213,11 @@ class Component extends DCLogic {
         trLinkFg: out ? '#fff' : ac2,
         trFootFg: out ? 'rgba(255,255,255,.62)' : T.dim2,
         playBg: out ? 'rgba(255,255,255,.22)' : ac, playFg: '#fff',
+        // The speed pill only exists while this note is the one playing; it
+        // shares the viewer's setting so both places always agree.
+        isPlaying: s.playing === m.id, speedLabel: s.viewSpeed + '×',
+        speedBg: out ? 'rgba(255,255,255,.2)' : T.chip,
+        onSpeed: e => { if (e && e.stopPropagation) e.stopPropagation(); this.setState(st => ({viewSpeed: st.viewSpeed === 1 ? 1.5 : st.viewSpeed === 1.5 ? 2 : 1})); },
         bars: Array.from({length: 22}, (_, i) => ({h: (5 + ((i * 7) % 15)) + 'px', bg: out ? 'rgba(255,255,255,.6)' : 'rgba(120,120,120,.55)'})),
         reacts: (m.reacts || []).map(r => ({e: r.e, n: r.n > 1 ? r.n : null, onClick: () => this.react(m.id, r.e)})),
         hasReacts: !!(m.reacts && m.reacts.length),

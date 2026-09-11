@@ -229,6 +229,12 @@ func activate(app *adw.Application, c client.Client) {
 		prefs.RecentEmojis = list
 		saveSettings()
 	}
+	// The playback tempo the speed pill last picked holds across launches.
+	ui.SetVoiceSpeed(prefs.VoiceSpeed)
+	ui.SaveVoiceSpeed = func(speed float64) {
+		prefs.VoiceSpeed = speed
+		saveSettings()
+	}
 
 	chatList := ui.NewChatList(c)
 	sidebar := adw.NewNavigationPage(chatList, "Chats")
@@ -1164,6 +1170,10 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	name := chatNameFor(d.c, jid)
 	arg := os.Getenv("CHATOT_SHOT_ARG")
 	switch state {
+	case "chipscroll":
+		// Scrolls the filter chips by CHATOT_SHOT_ARG pixels ("end" for all
+		// the way), for shots of the strip's edge fades.
+		d.chatList.ScrollChips(arg)
 	case "measure":
 		// Logs the minimum and natural widths that bound how narrow the
 		// window can go, per pane, for the collapsed (one pane) layout.
@@ -1364,7 +1374,8 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		d.conversation.JumpToQuoted(msgIdx)
 	case "voiceplay":
 		// ARG: "" plays, "pause:MS" pauses MS later, "resume:MS" starts
-		// as if it had stopped at MS before.
+		// as if it had stopped at MS before, "speed:MS" presses the speed
+		// pill MS later.
 		d.conversation.PlayVoiceAt(msgIdx, arg)
 	case "react":
 		// The message at MSG gets ARG (👍 by default) through the app's own

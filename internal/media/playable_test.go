@@ -1,6 +1,9 @@
 package media
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNeedsTranscode(t *testing.T) {
 	cases := []struct {
@@ -29,5 +32,22 @@ func TestParsePDFPages(t *testing.T) {
 	}
 	if got := parsePDFPages("garbage"); got != 0 {
 		t.Fatalf("parsePDFPages(garbage) = %d, want 0", got)
+	}
+}
+
+func TestSpeedCacheName(t *testing.T) {
+	base := speedCacheName("/tmp/a.ogg", 10, 20, 1)
+	if !strings.HasSuffix(base, ".flac") || strings.Contains(base, "-x") {
+		t.Fatalf("1× name = %q, want a plain .flac", base)
+	}
+	fast := speedCacheName("/tmp/a.ogg", 10, 20, 1.5)
+	if !strings.HasSuffix(fast, "-x1.5.flac") {
+		t.Fatalf("1.5× name = %q, want the -x1.5 suffix", fast)
+	}
+	if fast[:16] != base[:16] {
+		t.Fatalf("speeds of one file should share the source key: %q vs %q", base, fast)
+	}
+	if speedCacheName("/tmp/a.ogg", 11, 20, 1) == base {
+		t.Fatal("a changed size should change the name")
 	}
 }

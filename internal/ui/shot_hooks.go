@@ -818,6 +818,11 @@ func (cv *ConversationView) PlayVoiceAt(idx int, arg string) {
 	if kind == "pause" && n > 0 {
 		glib.TimeoutAdd(uint(n), func() bool { p.Pause(); return false })
 	}
+	if kind == "speed" && n > 0 {
+		// The pill pressed MS later: the note must carry on at the next
+		// tempo from where it is.
+		glib.TimeoutAdd(uint(n), func() bool { cycleVoiceSpeed(); return false })
+	}
 }
 
 // ReactAt puts emoji on the message at idx the way the quick-reaction row

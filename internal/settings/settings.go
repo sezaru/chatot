@@ -78,6 +78,10 @@ type Settings struct {
 	TranscriptsExpanded bool `json:"transcriptsExpanded"`
 	// VerboseLogging turns on whatsmeow's info and debug lines in the log.
 	VerboseLogging bool `json:"verboseLogging"`
+	// VoiceSpeed is the tempo every voice note and audio plays at: 1, 1.5
+	// or 2. The pill on the playing note (or the viewer's bar) cycles it,
+	// and it holds for every audio played after that.
+	VoiceSpeed float64 `json:"voiceSpeed"`
 	// GIFService is the GIF search the picker uses: "giphy" (the default;
 	// free app keys) or "tenor" (for a key issued before Tenor stopped
 	// giving them out in January 2026).
@@ -103,6 +107,19 @@ var AutoDownloadModes = []string{"always", "photos", "never"}
 // ThemeSources lists the ThemeSource values.
 var ThemeSources = []string{"auto", "none", "dms", "omarchy"}
 
+// VoiceSpeeds lists the VoiceSpeed values in the order the pill cycles.
+var VoiceSpeeds = []float64{1, 1.5, 2}
+
+// NextVoiceSpeed is the speed after v in the cycle (1 → 1.5 → 2 → 1).
+func NextVoiceSpeed(v float64) float64 {
+	for i, s := range VoiceSpeeds {
+		if s == v {
+			return VoiceSpeeds[(i+1)%len(VoiceSpeeds)]
+		}
+	}
+	return VoiceSpeeds[0]
+}
+
 // Default returns the preferences a fresh install starts with: chatot
 // matches WhatsApp's own defaults (read receipts on, as the mockup's Privacy
 // page shows them).
@@ -125,6 +142,7 @@ func Default() Settings {
 		ShowMessagePreviews:     true,
 		AutoDownload:            "photos",
 		GIFService:              "giphy",
+		VoiceSpeed:              1,
 	}
 }
 
@@ -184,7 +202,19 @@ func normalize(s Settings) Settings {
 	if !contains(ThemeSources, s.ThemeSource) {
 		s.ThemeSource = Default().ThemeSource
 	}
+	if !containsF(VoiceSpeeds, s.VoiceSpeed) {
+		s.VoiceSpeed = Default().VoiceSpeed
+	}
 	return s
+}
+
+func containsF(list []float64, v float64) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 func contains(list []string, v string) bool {
