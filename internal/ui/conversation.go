@@ -2943,11 +2943,9 @@ func (cv *ConversationView) SetCollapsed(collapsed bool) {
 	cv.backBtn.SetVisible(collapsed)
 	cv.startControlsSlot.SetVisible(collapsed)
 	cv.setCompactRows(collapsed)
-	if collapsed {
-		cv.header.AddCSSClass("chatot-collapsed")
-	} else {
-		cv.header.RemoveCSSClass("chatot-collapsed")
-	}
+	setCSSClass(cv.header, "chatot-collapsed", collapsed)
+	// The root too: the thread list's side padding shrinks with it.
+	setCSSClass(cv, "chatot-collapsed", collapsed)
 }
 
 // setCompactRows switches every realized row, and the rows made after,

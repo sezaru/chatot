@@ -1047,6 +1047,15 @@ button.chatot-composer-iconbtn.text-button,
 	padding-left: 6px;
 }
 
+/* Collapsed: a group's media row is the avatar, its gap and a 280px tile
+   in the bubble's padding, 336px in all. With 18px each side the thread
+   would hold the window open at 372, past the 360 the layout promises, so
+   the inset drops to 8px. */
+.chatot-conv-root.chatot-collapsed .chatot-conv-list {
+	padding-left: 8px;
+	padding-right: 8px;
+}
+
 .chatot-conv-title {
 	font-weight: bold;
 	font-size: 14px;

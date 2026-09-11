@@ -694,7 +694,9 @@ func (hb *hoverButtons) place(r *threadRow, want hoverPlacement) {
 		} else {
 			r.stack.RemoveOverlay(hb.box)
 			hb.box.RemoveCSSClass("chatot-hover-float")
-			hb.box.SetVAlign(gtk.AlignFill)
+			// Centre, as built: Fill would stretch the pair to the row's
+			// height, and the compact mode set Start.
+			hb.box.SetVAlign(gtk.AlignCenter)
 			hb.box.SetHAlign(gtk.AlignFill)
 			r.row.Append(hb.box)
 		}
