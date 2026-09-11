@@ -163,7 +163,13 @@ type ChatList struct {
 	// rowAccounts parallels rowJIDs in merged mode: row index -> owning
 	// account id. nil in every other mode.
 	rowAccounts []string
-	onSelect    func(jid string)
+	// rowMsgIDs parallels rowJIDs while search results are showing: row
+	// index -> the matched message, which opening the row lands on. nil
+	// for chat rows.
+	rowMsgIDs []string
+	onSelect  func(jid string)
+	// onSelectMsg opens a chat at one of its messages (a search hit).
+	onSelectMsg func(jid, msgID string)
 	// selectedJID is the chat open in the content pane. Rows are rebuilt from
 	// scratch on every refresh, which drops GtkListBox's own highlight, so
 	// the rebuild re-selects this JID's row (see reselectRow).
@@ -596,6 +602,10 @@ func NewChatList(c client.Client) *ChatList {
 		if idx < len(cl.rowAccounts) {
 			account = cl.rowAccounts[idx]
 		}
+		msgID := ""
+		if idx < len(cl.rowMsgIDs) {
+			msgID = cl.rowMsgIDs[idx]
+		}
 
 		// In merged mode a row may belong to another account. Opening it has
 		// to switch the active account first: every downstream read (the
@@ -612,6 +622,12 @@ func NewChatList(c client.Client) *ChatList {
 			cl.refresh()
 		}
 		cl.selectedJID = jid
+		// A search hit opens its chat at the matched message; a chat row
+		// (or a hit with nobody to land it) opens the chat as usual.
+		if msgID != "" && cl.onSelectMsg != nil {
+			cl.onSelectMsg(jid, msgID)
+			return
+		}
 		if cl.onSelect != nil {
 			cl.onSelect(jid)
 		}
@@ -763,6 +779,12 @@ func (cl *ChatList) OnChatSelected(f func(jid string)) {
 	cl.onSelect = f
 }
 
+// OnMessageSelected registers f to be called with the chat JID and message
+// ID of an activated search result, so the chat opens at that message.
+func (cl *ChatList) OnMessageSelected(f func(jid, msgID string)) {
+	cl.onSelectMsg = f
+}
+
 // OnNewCommunityRequested registers f to be called when the user picks "New
 // community" from the ＋ menu; STUBBED until F48 implements communities.
 func (cl *ChatList) OnNewCommunityRequested(f func()) { cl.onNewCommunity = f }
@@ -902,6 +924,7 @@ func (cl *ChatList) refreshChats(d *sidebarData) {
 	now := time.Now()
 	cl.rowJIDs = make([]string, 0, len(chats))
 	cl.rowAccounts = nil
+	cl.rowMsgIDs = nil
 	want := make([]wantRow, 0, len(chats))
 	for _, chat := range chats {
 		if !showChatInList(chat, cl.showArchived) {
@@ -944,6 +967,7 @@ func (cl *ChatList) refreshMergedChats(d *sidebarData) {
 	now := time.Now()
 	cl.rowJIDs = nil
 	cl.rowAccounts = nil
+	cl.rowMsgIDs = nil
 	var want []wantRow
 	for _, r := range d.merged {
 		mc := r.mc
@@ -984,9 +1008,8 @@ func mergedPreview(account, preview string) string {
 }
 
 // refreshSearch queries Search and rebuilds the list as result rows.
-// Clicking a result opens its chat via the same onSelect path as a normal
-// chat row; jumping to the exact matched message is left for later
-// (ConversationView.Load already lands the reader at the newest messages).
+// Clicking a result opens its chat at the matched message (onSelectMsg),
+// through the same activate path as a normal chat row.
 func (cl *ChatList) refreshSearch() {
 	hits, err := cl.c.Search(cl.query, searchResultLimit)
 	if err != nil {
@@ -997,15 +1020,18 @@ func (cl *ChatList) refreshSearch() {
 
 	if len(hits) == 0 {
 		cl.rowJIDs = nil
+		cl.rowMsgIDs = nil
 		cl.list.Append(cl.newListEmptyState())
 		return
 	}
 
 	now := time.Now()
 	cl.rowJIDs = make([]string, 0, len(hits))
+	cl.rowMsgIDs = make([]string, 0, len(hits))
 	for _, h := range hits {
 		cl.list.Append(buildSearchHitRow(cl.c, cl.avatarCache, searchHitVM(h, now)))
 		cl.rowJIDs = append(cl.rowJIDs, h.ChatJID)
+		cl.rowMsgIDs = append(cl.rowMsgIDs, h.MsgID)
 	}
 	cl.reselectRow()
 }
@@ -1548,6 +1574,7 @@ func chatHasLabel(c client.Client, jid, labelID string) bool {
 // unit-tested without a display.
 type searchHitView struct {
 	ChatJID  string
+	MsgID    string
 	ChatName string
 	Snippet  string
 	TimeText string
@@ -1568,6 +1595,7 @@ func searchHitVM(h client.SearchHit, now time.Time) searchHitView {
 	}
 	return searchHitView{
 		ChatJID:  h.ChatJID,
+		MsgID:    h.MsgID,
 		ChatName: name,
 		Snippet:  h.Snippet,
 		TimeText: formatChatTime(h.TS, now),
@@ -1592,8 +1620,15 @@ func buildSearchHitRow(c client.Client, cache *avatarCache, vm searchHitView) *g
 	textCol := gtk.NewBox(gtk.OrientationVertical, 2)
 	textCol.SetHExpand(true)
 
+	// Both labels ask for next to nothing and expand into what the sidebar
+	// gives them, as the chat rows do (see newChatRowWidget): a label's
+	// natural width is its whole text, and without the cap a long name or
+	// snippet widens the sidebar past its size instead of truncating.
 	nameLabel := gtk.NewLabel(vm.ChatName)
 	nameLabel.SetXAlign(0)
+	nameLabel.SetEllipsize(pango.EllipsizeEnd)
+	nameLabel.SetMaxWidthChars(1)
+	nameLabel.SetHExpand(true)
 	nameLabel.AddCSSClass("chatot-chat-name")
 	textCol.Append(nameLabel)
 
@@ -1603,6 +1638,8 @@ func buildSearchHitRow(c client.Client, cache *avatarCache, vm searchHitView) *g
 	snippetLabel.SetWrapMode(pango.WrapWordChar)
 	snippetLabel.SetLines(2)
 	snippetLabel.SetEllipsize(pango.EllipsizeEnd)
+	snippetLabel.SetMaxWidthChars(1)
+	snippetLabel.SetHExpand(true)
 	snippetLabel.AddCSSClass("chatot-search-snippet")
 	textCol.Append(snippetLabel)
 

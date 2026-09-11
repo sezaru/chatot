@@ -716,6 +716,13 @@ func (cl *ChatList) SearchList(text string) {
 	cl.search.SetPosition(-1)
 }
 
+// ActivateRow clicks row i of the ListBox (a search result row).
+func (cl *ChatList) ActivateRow(i int) {
+	if row := cl.list.RowAtIndex(i); row != nil {
+		row.Activate()
+	}
+}
+
 // SeedStickers files paths in the sticker library, so a screenshot of the
 // Stickers tab has something to show.
 func (c *Composer) SeedStickers(paths []string) {

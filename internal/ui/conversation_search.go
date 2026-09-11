@@ -339,8 +339,55 @@ const rowFlashDuration = 1600 * time.Millisecond
 // its row so the eye lands on it. A target outside local history (not
 // synced from the phone) gets a toast instead of a silent no-op.
 func (cv *ConversationView) jumpToQuoted(msgID string) {
+	cv.jumpAndFlash(msgID, "The original message isn't available")
+}
+
+// JumpTo takes the loaded thread to msgID and flashes its row: where a
+// sidebar search hit lands after Load. Right after Load the list has no
+// layout yet and its scroll value sits at 0, so a jump then never moves
+// the view, and every page it prepends reads as "near the top" and pulls
+// in the next, through the whole history. The jump waits for the first
+// layout instead (onUpperChanged), or a grace period if none comes: a
+// reload of the same chat can leave the height as it was. Must run on
+// the GTK main loop.
+func (cv *ConversationView) JumpTo(msgID string) {
+	if cv.laidOut {
+		cv.jumpAndFlash(msgID, "That message isn't available")
+		return
+	}
+	cv.pendingJump = msgID
+	glib.TimeoutAdd(autoScrollGrace, func() bool {
+		if cv.pendingJump == msgID {
+			trace(1, "JumpTo: no layout came, jumping anyway")
+			cv.runPendingJump()
+		}
+		return false
+	})
+}
+
+// runPendingJump performs the JumpTo that waited for the thread's layout.
+// It runs from the adjustment's handlers, so the jump goes through an idle
+// rather than moving the view from inside a geometry change.
+func (cv *ConversationView) runPendingJump() {
+	id := cv.pendingJump
+	if id == "" {
+		return
+	}
+	cv.pendingJump = ""
+	jid := cv.jid
+	glib.IdleAdd(func() bool {
+		if cv.jid == jid {
+			cv.jumpAndFlash(id, "That message isn't available")
+		}
+		return false
+	})
+}
+
+// jumpAndFlash scrolls to msgID and flashes its row, or shows missing as a
+// toast when the message is outside local history.
+func (cv *ConversationView) jumpAndFlash(msgID, missing string) {
 	if !cv.jumpToMessage(msgID) {
-		showToast(cv.toastOverlay, "The original message isn't available")
+		showToast(cv.toastOverlay, missing)
 		return
 	}
 	cv.flashID = msgID

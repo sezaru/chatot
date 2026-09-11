@@ -77,10 +77,12 @@ func (cv *ConversationView) onUpperChanged() {
 	defer cv.updateJumpButton()
 	adj := cv.scroller.VAdjustment()
 	cv.lastUpper, cv.lastPage = adj.Upper(), adj.PageSize()
+	cv.laidOut = true
 	if cv.sticky || cv.autoScrolling {
 		cv.scrollDown()
 	}
 	cv.loadOlderIfNeeded()
+	cv.runPendingJump()
 }
 
 // scrollDown scrolls to the foot of the thread. The value is set first,

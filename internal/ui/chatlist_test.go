@@ -73,6 +73,7 @@ func TestSearchHitVM(t *testing.T) {
 	t.Run("basic fields pass through", func(t *testing.T) {
 		vm := searchHitVM(client.SearchHit{
 			ChatJID:  "j1",
+			MsgID:    "m1",
 			ChatName: "Ada Lovelace",
 			Snippet:  "let's grab [pizza] tonight",
 			TS:       now.Add(-time.Hour).Unix(),
@@ -80,6 +81,9 @@ func TestSearchHitVM(t *testing.T) {
 
 		if vm.ChatJID != "j1" {
 			t.Errorf("ChatJID = %q, want j1", vm.ChatJID)
+		}
+		if vm.MsgID != "m1" {
+			t.Errorf("MsgID = %q, want m1", vm.MsgID)
 		}
 		if vm.ChatName != "Ada Lovelace" {
 			t.Errorf("ChatName = %q, want passthrough", vm.ChatName)
