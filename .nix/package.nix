@@ -66,7 +66,7 @@ in
       ];
     };
 
-    vendorHash = "sha256-TwfaQR59YWah3LOpwBGor0Sp2yeCppE5/1khtZij9gI=";
+    vendorHash = "sha256-I8XfhvcxK5eqR/q73002Dre3uYA2xD/59ob5TX+HijY=";
 
     subPackages = ["cmd/chatot"];
 
