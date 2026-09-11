@@ -589,6 +589,7 @@ func (v *AttachmentViewer) show(i int) {
 	v.gen++
 	if v.player != nil {
 		v.player.Pause()
+		forgetSpeedPlayer(v.player)
 		v.player = nil
 	}
 	v.idx = i
@@ -660,7 +661,7 @@ func (v *AttachmentViewer) show(i int) {
 		v.bottom.Append(newTransportBar(v.player, v.fullscreen))
 	case kind == "audio":
 		v.player = newPendingPlayer(m.Attachment.DurationSecs)
-		preparePlayable(v.player, path, m.Attachment.MimeType, func(err error) {
+		prepareSpeedable(v.player, path, m.Attachment.MimeType, func(err error) {
 			showToast(v.toasts, "Can't play this audio here: "+err.Error())
 		})
 		v.stage.SetChild(v.clamped(v.audioCard(m, now), viewerAudioW))

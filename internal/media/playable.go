@@ -62,7 +62,19 @@ func NeedsTranscode(path, mime string) bool {
 // file itself when it is safe, else a FLAC transcode cached under cacheDir
 // (keyed by path, size and mtime, so an edited file is re-encoded).
 func PlayableAudio(ctx context.Context, cacheDir, path, mime string) (string, error) {
-	if !NeedsTranscode(path, mime) {
+	return SpeedAudio(ctx, cacheDir, path, mime, 1)
+}
+
+// SpeedAudio is PlayableAudio at a playback tempo: the file itself when it
+// plays as is at 1×, else a FLAC render cached under cacheDir. GTK's media
+// stream has no rate of its own, so a faster note is the note re-rendered
+// through ffmpeg's atempo (which keeps the pitch), and the player maps the
+// shorter file back onto the note's own timeline.
+func SpeedAudio(ctx context.Context, cacheDir, path, mime string, speed float64) (string, error) {
+	if speed <= 0 {
+		speed = 1
+	}
+	if speed == 1 && !NeedsTranscode(path, mime) {
 		return path, nil
 	}
 	info, err := os.Stat(path)
@@ -75,8 +87,7 @@ func PlayableAudio(ctx context.Context, cacheDir, path, mime string) (string, er
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", err
 	}
-	sum := sha1.Sum([]byte(fmt.Sprintf("%s|%d|%d", path, info.Size(), info.ModTime().UnixNano())))
-	out := filepath.Join(cacheDir, hex.EncodeToString(sum[:8])+".flac")
+	out := filepath.Join(cacheDir, speedCacheName(path, info.Size(), info.ModTime().UnixNano(), speed))
 	lock := transcodeLock(out)
 	lock.Lock()
 	defer lock.Unlock()
@@ -86,8 +97,12 @@ func PlayableAudio(ctx context.Context, cacheDir, path, mime string) (string, er
 	ctx, cancel := context.WithTimeout(ctx, transcodeTimeout)
 	defer cancel()
 	tmp := out + ".part"
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-nostdin", "-loglevel", "error", "-y",
-		"-i", path, "-vn", "-map_metadata", "-1", "-c:a", "flac", "-f", "flac", tmp)
+	args := []string{"-nostdin", "-loglevel", "error", "-y", "-i", path, "-vn", "-map_metadata", "-1"}
+	if speed != 1 {
+		args = append(args, "-filter:a", fmt.Sprintf("atempo=%g", speed))
+	}
+	args = append(args, "-c:a", "flac", "-f", "flac", tmp)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	if msg, err := cmd.CombinedOutput(); err != nil {
 		os.Remove(tmp)
 		return "", fmt.Errorf("chatot/media: ffmpeg transcode: %w: %s", err, strings.TrimSpace(string(msg)))
@@ -96,4 +111,17 @@ func PlayableAudio(ctx context.Context, cacheDir, path, mime string) (string, er
 		return "", err
 	}
 	return out, nil
+}
+
+// speedCacheName is the cached render's file name: the source's identity
+// (path, size, mtime) and, past 1×, the tempo, so each speed of a note is
+// its own file and an edited source is re-rendered.
+func speedCacheName(path string, size, mtime int64, speed float64) string {
+	key := fmt.Sprintf("%s|%d|%d", path, size, mtime)
+	sum := sha1.Sum([]byte(key))
+	name := hex.EncodeToString(sum[:8])
+	if speed != 1 {
+		name += fmt.Sprintf("-x%g", speed)
+	}
+	return name + ".flac"
 }

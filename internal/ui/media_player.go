@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"path/filepath"
+	"strconv"
 
 	"github.com/diamondburned/gotk4/pkg/cairo"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
@@ -11,6 +12,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"chatot/internal/media"
+	"chatot/internal/settings"
 )
 
 // mediaPlayer drives one gtk.MediaFile and tells its widgets when to
@@ -43,6 +45,153 @@ type mediaPlayer struct {
 	// Both run on the main loop. Rebound by whoever starts the player.
 	onStop  func(secs float64)
 	onEnded func()
+	// src and mime name the audio preparePlayable was handed, for a
+	// re-render at another speed; rate is the tempo of the file the stream
+	// holds (1 for anything else), and speedGen counts SetSpeed calls so
+	// a render that finishes late is dropped.
+	src, mime string
+	rate      float64
+	speedGen  int
+	// swapping is set while SetSpeed replaces the stream: the old one's
+	// pause is not a stop worth reporting.
+	swapping bool
+}
+
+// voiceSpeed is the tempo every voice note and audio plays at (1, 1.5 or
+// 2): the pill on the playing note or the viewer's bar cycles it, and it
+// holds for every note played after that. Kept across launches through
+// SaveVoiceSpeed, which main.go points at the settings file.
+var voiceSpeed = 1.0
+
+// SaveVoiceSpeed, when set, persists a speed the pill picked.
+var SaveVoiceSpeed func(speed float64)
+
+// speedPlayers are the audio players a speed change reaches at once (the
+// ones playing re-render on the spot; idle ones catch up on their next
+// play). Main loop only.
+var speedPlayers = map[*mediaPlayer]bool{}
+
+// VoiceSpeed is the current playback tempo.
+func VoiceSpeed() float64 { return voiceSpeed }
+
+// SetVoiceSpeed makes speed the tempo from here on: whatever is playing
+// carries on at it from where it is, and every audio started later uses
+// it. Does not persist it (the startup call restores the saved value).
+func SetVoiceSpeed(speed float64) {
+	if speed <= 0 {
+		speed = 1
+	}
+	voiceSpeed = speed
+	trace(1, "voice speed %g× (%d players)", speed, len(speedPlayers))
+	for p := range speedPlayers {
+		if p.Playing() {
+			p.SetSpeed(speed)
+		} else {
+			// The label on an idle row reads the new value at once.
+			p.notify()
+		}
+	}
+}
+
+// cycleVoiceSpeed is the pill's click: the next speed, applied and saved.
+func cycleVoiceSpeed() {
+	SetVoiceSpeed(settings.NextVoiceSpeed(voiceSpeed))
+	if SaveVoiceSpeed != nil {
+		SaveVoiceSpeed(voiceSpeed)
+	}
+}
+
+// speedLabel is the pill's text for speed: "1×", "1.5×", "2×".
+func speedLabel(speed float64) string {
+	return strconv.FormatFloat(speed, 'f', -1, 64) + "×"
+}
+
+// forgetSpeedPlayer drops p from the players a speed change reaches.
+func forgetSpeedPlayer(p *mediaPlayer) { delete(speedPlayers, p) }
+
+// unspeedable gives up on re-rendering p (ffmpeg could not read its file):
+// it plays as it is, at the tempo of the file it holds.
+func (p *mediaPlayer) unspeedable() {
+	p.src = ""
+	forgetSpeedPlayer(p)
+}
+
+// Speed is the tempo of the file the player holds.
+func (p *mediaPlayer) Speed() float64 {
+	if p.rate <= 0 {
+		return 1
+	}
+	return p.rate
+}
+
+// speedable reports whether p can be re-rendered at another tempo: it has
+// a source audio file (video stages and files handed straight to
+// newMediaPlayer have none).
+func (p *mediaPlayer) speedable() bool { return p.src != "" }
+
+// SetSpeed re-renders the player's audio at speed and carries the playhead
+// over: the render happens off the main loop, the old file plays on
+// meanwhile, and at the swap the same fraction of the note continues, still
+// playing if it was. A press waiting for the file (wantPlay) is kept.
+func (p *mediaPlayer) SetSpeed(speed float64) {
+	if !p.speedable() || speed <= 0 || p.rate == speed {
+		return
+	}
+	p.speedGen++
+	gen := p.speedGen
+	src, mime := p.src, p.mime
+	go func() {
+		out, err := media.SpeedAudio(context.Background(), playableCacheDir(), src, mime, speed)
+		glib.IdleAdd(func() {
+			if gen != p.speedGen || p.src != src {
+				return
+			}
+			if err != nil {
+				log.Printf("chatot: render %s at %g×: %v", src, speed, err)
+				// The note plays on as it is, and no longer offers the
+				// pill; a press that was waiting for the render goes
+				// through the plain path now.
+				p.unspeedable()
+				if p.wantPlay {
+					p.wantPlay = false
+					p.Toggle()
+				}
+				return
+			}
+			fraction := p.Progress()
+			if p.wantSeek >= 0 {
+				fraction = p.wantSeek
+			}
+			if p.ended || (p.stream != nil && p.stream.Ended()) {
+				fraction = 0
+				p.ended = false
+			}
+			resume := p.Playing()
+			trace(1, "voice speed: %s at %g× from %.2f (playing=%v)", filepath.Base(src), speed, fraction, resume)
+			p.rate = speed
+			if p.stream == nil {
+				// Never built: the new file simply takes the old one's
+				// place, and the first play builds the stream from it.
+				p.path = out
+				p.pending = true
+				if p.wantPlay {
+					p.ensureStream()
+				}
+				p.notify()
+				return
+			}
+			p.swapping = true
+			p.SetFile(out)
+			p.swapping = false
+			if fraction > 0 {
+				p.SeekTo(fraction)
+			}
+			if resume {
+				p.wantPlay = true
+			}
+			p.notify()
+		})
+	}()
 }
 
 // newMediaPlayer prepares path for playback without starting it; the
@@ -115,7 +264,7 @@ func (p *mediaPlayer) attach(stream *gtk.MediaFile) {
 	// notifications while ending a stream, so at the end Ended() is
 	// already true here and onEnded above covers it.
 	stream.NotifyProperty("playing", func() {
-		if current() && !stream.Playing() && !stream.Ended() && p.onStop != nil {
+		if current() && !p.swapping && !stream.Playing() && !stream.Ended() && p.onStop != nil {
 			p.onStop(p.Elapsed())
 		}
 	})
@@ -126,7 +275,7 @@ func (p *mediaPlayer) attach(stream *gtk.MediaFile) {
 			return
 		}
 		if p.wantSeek >= 0 && stream.IsSeekable() {
-			stream.Seek(int64(p.wantSeek * p.Duration() * 1e6))
+			stream.Seek(int64(p.wantSeek * p.streamSeconds() * 1e6))
 			p.wantSeek = -1
 		}
 		if p.wantPlay {
@@ -188,12 +337,13 @@ func sharedVoicePlayer(path, mime string, seconds int) *mediaPlayer {
 		for k, old := range voicePlayers {
 			if !old.Playing() {
 				delete(voicePlayers, k)
+				forgetSpeedPlayer(old)
 			}
 		}
 	}
 	p := newPendingPlayer(seconds)
 	voicePlayers[path] = p
-	preparePlayable(p, path, mime, func(err error) {
+	prepareSpeedable(p, path, mime, func(err error) {
 		p.failed = err
 		p.notify()
 	})
@@ -228,8 +378,16 @@ func (p *mediaPlayer) Playing() bool {
 	return p.wantPlay || (p.stream != nil && p.stream.Playing())
 }
 
-// Toggle plays or pauses; a stream at its end starts over.
+// Toggle plays or pauses; a stream at its end starts over. A note whose
+// file is at an older speed is re-rendered first and starts when that
+// lands.
 func (p *mediaPlayer) Toggle() {
+	if p.speedable() && p.rate != voiceSpeed && !p.Playing() {
+		p.wantPlay = true
+		p.notify()
+		p.SetSpeed(voiceSpeed)
+		return
+	}
 	p.ensureStream()
 	if p.stream == nil {
 		// There is no file yet: an MP3 is still being transcoded. Remember
@@ -264,21 +422,27 @@ func (p *mediaPlayer) Pause() {
 	}
 }
 
-// Duration is the length in seconds: the stream's once prepared, else what
-// the message said.
-func (p *mediaPlayer) Duration() float64 {
+// streamSeconds is the length of the file the stream holds: the stream's
+// once prepared, else what the message said scaled to the file's tempo.
+func (p *mediaPlayer) streamSeconds() float64 {
 	if p.stream != nil && p.stream.IsPrepared() && p.stream.Duration() > 0 {
 		return float64(p.stream.Duration()) / 1e6
 	}
-	return float64(p.seconds)
+	return float64(p.seconds) / p.Speed()
 }
 
-// Elapsed is the playhead in seconds.
+// Duration is the length in seconds on the note's own timeline (a file
+// rendered at 2× plays a 1:00 note in 0:30, but it is still a 1:00 note).
+func (p *mediaPlayer) Duration() float64 {
+	return p.streamSeconds() * p.Speed()
+}
+
+// Elapsed is the playhead in seconds, on the note's own timeline.
 func (p *mediaPlayer) Elapsed() float64 {
 	if p.stream == nil {
 		return 0
 	}
-	return float64(p.stream.Timestamp()) / 1e6
+	return float64(p.stream.Timestamp()) / 1e6 * p.Speed()
 }
 
 // Progress is Elapsed over Duration, clamped to 0..1.
@@ -299,18 +463,25 @@ func (p *mediaPlayer) Progress() float64 {
 
 // SeekTo moves the playhead to fraction (0..1) of the length.
 func (p *mediaPlayer) SeekTo(fraction float64) {
+	fraction = clampF(fraction, 0, 1)
+	if p.stream == nil && p.speedable() && p.rate != voiceSpeed {
+		// The file is due for a re-render at the current speed (Toggle
+		// does it); the seek waits for the stream that render builds.
+		p.wantSeek = fraction
+		p.notify()
+		return
+	}
 	p.ensureStream()
 	if p.stream == nil {
 		return
 	}
-	fraction = clampF(fraction, 0, 1)
 	if !p.stream.IsSeekable() {
 		p.wantSeek = fraction
 		p.notify()
 		return
 	}
 	p.ended = false
-	p.stream.Seek(int64(fraction * p.Duration() * 1e6))
+	p.stream.Seek(int64(fraction * p.streamSeconds() * 1e6))
 	p.notify()
 }
 
@@ -343,18 +514,47 @@ func playableCacheDir() string {
 // loop (the player stays pending, so its widgets show the disabled state
 // until then). onFail runs on the main loop if the transcode fails.
 func preparePlayable(p *mediaPlayer, path, mime string, onFail func(error)) {
-	if !media.NeedsTranscode(path, mime) {
+	preparePlayableAt(p, path, mime, 1, onFail)
+}
+
+// prepareSpeedable is preparePlayable for a note the speed pill governs:
+// the file is rendered at the current speed, and the player follows later
+// changes (SetVoiceSpeed) until it is forgotten.
+func prepareSpeedable(p *mediaPlayer, path, mime string, onFail func(error)) {
+	p.src, p.mime = path, mime
+	speedPlayers[p] = true
+	preparePlayableAt(p, path, mime, voiceSpeed, onFail)
+}
+
+func preparePlayableAt(p *mediaPlayer, path, mime string, speed float64, onFail func(error)) {
+	p.rate = speed
+	if speed == 1 && !media.NeedsTranscode(path, mime) {
 		p.SetFile(path)
 		return
 	}
 	go func() {
-		out, err := media.PlayableAudio(context.Background(), playableCacheDir(), path, mime)
+		out, err := media.SpeedAudio(context.Background(), playableCacheDir(), path, mime, speed)
 		glib.IdleAdd(func() {
+			if err != nil && speed != 1 && !media.NeedsTranscode(path, mime) {
+				// ffmpeg could not read what GTK may still play: the note
+				// plays as it is, at 1×, rather than not at all.
+				log.Printf("chatot: render %s at %g×: %v", path, speed, err)
+				p.unspeedable()
+				if p.speedGen == 0 {
+					p.rate = 1
+					p.SetFile(path)
+				}
+				return
+			}
 			if err != nil {
 				log.Printf("chatot: transcode %s: %v", path, err)
 				if onFail != nil {
 					onFail(err)
 				}
+				return
+			}
+			if p.speedGen > 0 {
+				// A SetSpeed already overtook this render.
 				return
 			}
 			p.SetFile(out)
@@ -428,10 +628,28 @@ func newVoiceRow(p *mediaPlayer, onGreen, played bool, onToggle, onOpen func()) 
 		row.Append(timeLabel)
 	}
 
+	// The speed pill exists only while this note is the one playing (the
+	// mockup's isPlaying); it cycles the tempo for every note.
+	speed := gtk.NewButton()
+	speed.AddCSSClass("flat")
+	speed.AddCSSClass("chatot-transcribe-btn")
+	speed.AddCSSClass("chatot-transcribe-btn-on")
+	speed.AddCSSClass("chatot-speed-btn")
+	speed.SetChild(gtk.NewLabel(speedLabel(VoiceSpeed())))
+	speed.SetVAlign(gtk.AlignCenter)
+	speed.SetSizeRequest(-1, transcribeBtnSize)
+	speed.SetTooltipText("Playback speed")
+	speed.SetFocusOnClick(false)
+	speed.SetVisible(p.speedable() && p.Playing())
+	speed.ConnectClicked(cycleVoiceSpeed)
+	row.Append(speed)
+
 	p.watchUntilDestroyed(row, func() {
 		play.SetSensitive(p.Ready())
 		glyph.QueueDraw()
 		track.QueueDraw()
+		speed.Child().(*gtk.Label).SetLabel(speedLabel(VoiceSpeed()))
+		speed.SetVisible(p.speedable() && p.Playing())
 		// The length until playback has moved; then the playhead.
 		secs := p.Duration()
 		if p.Elapsed() > 0.5 {
@@ -662,6 +880,21 @@ func newTransportBarWatched(p *mediaPlayer, onFullscreen func()) (*gtk.Box, func
 	total.AddCSSClass("chatot-transport-time")
 	bar.Append(total)
 
+	// The tempo, for audio the speed pill governs (a clip's picture cannot
+	// be re-rendered the way a note is, so a video bar has no pill).
+	var speed *gtk.Button
+	if p.speedable() {
+		speed = gtk.NewButtonWithLabel(speedLabel(VoiceSpeed()))
+		speed.RemoveCSSClass("text-button")
+		speed.AddCSSClass("flat")
+		speed.AddCSSClass("chatot-transport-speed")
+		speed.SetVAlign(gtk.AlignCenter)
+		speed.SetTooltipText("Playback speed")
+		speed.SetFocusOnClick(false)
+		speed.ConnectClicked(cycleVoiceSpeed)
+		bar.Append(speed)
+	}
+
 	mute := gtk.NewButtonWithLabel("🔊")
 	mute.AddCSSClass("flat")
 	mute.RemoveCSSClass("text-button")
@@ -697,6 +930,9 @@ func newTransportBarWatched(p *mediaPlayer, onFullscreen func()) (*gtk.Box, func
 		track.QueueDraw()
 		elapsed.SetLabel(humanClock(p.Elapsed()))
 		total.SetLabel(humanClock(p.Duration()))
+		if speed != nil {
+			speed.SetLabel(speedLabel(VoiceSpeed()))
+		}
 		if p.Playing() {
 			play.SetTooltipText("Pause · Space")
 		} else {
