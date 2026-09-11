@@ -83,3 +83,16 @@ func groupFromRight(digits string, n int) string {
 	}
 	return strings.Join(parts, " ")
 }
+
+// FormatPhone is formatPhoneDisplay for callers outside the package: an
+// E.164 number spaced the way the chat list shows one.
+func FormatPhone(raw string) string { return formatPhoneDisplay(raw) }
+
+// JIDFallbackName is what a chat with no name is called: the number, for a
+// phone-number JID, spaced like the list shows one; any other JID as is.
+func JIDFallbackName(jid string) string {
+	if user, ok := strings.CutSuffix(jid, "@s.whatsapp.net"); ok && user != "" {
+		return formatPhoneDisplay("+" + user)
+	}
+	return jid
+}

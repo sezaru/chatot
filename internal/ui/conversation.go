@@ -1532,14 +1532,16 @@ func (cv *ConversationView) chatName(jid string) string {
 	}
 	chats, err := cv.c.Chats(0)
 	if err != nil {
-		return jid
+		return JIDFallbackName(jid)
 	}
 	for _, c := range chats {
 		if c.JID == jid && c.Name != "" {
 			return c.Name
 		}
 	}
-	return jid
+	// A chat opened from a number (the new-chat view, a whatsapp: link)
+	// has no row yet: the header shows the number, not the raw JID.
+	return JIDFallbackName(jid)
 }
 
 // AppendSentMessage appends an optimistic echo of a just-sent message if
