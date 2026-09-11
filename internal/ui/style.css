@@ -291,6 +291,45 @@ window {
 	opacity: 0.55;
 }
 
+/* An album (the pictures one sender posted together, album.go) is a grid
+   of tiles a hair apart, clipped to the photo tile's corners as a whole.
+   A tile's own corners are square; the sender's preview or the picture
+   covers it, and a hatch shows where there is neither. */
+.chatot-album {
+	border-radius: 10px;
+}
+
+.chatot-album-tile {
+	background-color: alpha(currentColor, 0.08);
+}
+
+.chatot-album-hatch {
+	background-color: alpha(currentColor, 0.08);
+	background-image: repeating-linear-gradient(45deg,
+		alpha(currentColor, 0.05) 0px, alpha(currentColor, 0.05) 7px,
+		alpha(currentColor, 0.10) 7px, alpha(currentColor, 0.10) 14px);
+}
+
+/* The last tile's "+N" for the pictures past the grid: a dark wash over
+   the tile with the count in the middle, as WhatsApp shows it. */
+.chatot-album-more {
+	background-color: rgba(0, 0, 0, 0.55);
+	color: white;
+	font-size: 28px;
+	font-weight: 600;
+}
+
+/* A cached clip's play glyph, centred on its poster. */
+.chatot-album-play {
+	min-width: 40px;
+	min-height: 40px;
+	border-radius: 999px;
+	background-color: rgba(0, 0, 0, 0.5);
+	color: white;
+	font-size: 16px;
+	padding-left: 3px;
+}
+
 .chatot-media-dl {
 	color: @chatot_on_accent;
 	background-color: @chatot_accent;

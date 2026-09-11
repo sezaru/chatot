@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"time"
+
 	"chatot/internal/client"
 
 	"github.com/diamondburned/gotk4/pkg/core/gioutil"
@@ -87,8 +89,14 @@ func (cv *ConversationView) refillRow(pos int) {
 	if pos < 0 || pos >= len(cv.msgs) {
 		return
 	}
-	if r := cv.rowFor(cv.msgs[pos].ID); r != nil {
-		cv.fillRow(r.wrapper, pos)
+	// A change here can take the message into or out of an album with its
+	// neighbours, and an album's bubble sits on its first row: every row
+	// of the runs on either side is refilled with this one.
+	lo, hi := albumRefillSpan(cv.msgs, pos, time.Local, cv.albumBreak())
+	for i := lo; i <= hi; i++ {
+		if r := cv.rowFor(cv.msgs[i].ID); r != nil {
+			cv.fillRow(r.wrapper, i)
+		}
 	}
 }
 

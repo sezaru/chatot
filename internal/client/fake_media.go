@@ -88,6 +88,50 @@ func (f *Fake) seedDevMedia(dir string, now int64) {
 		})
 	}
 	f.seedDevStatuses(dir, now)
+	f.seedDevAlbums(dir, now)
+}
+
+// seedDevAlbums gives the fixture group three albums from the pictures
+// album-1.jpg … album-6.jpg in dir (any that exist): five incoming ones
+// (a 2×2 grid with a "+1"), three outgoing, and two incoming of which one
+// is held back undownloaded behind its preview. Dev/screenshot only.
+func (f *Fake) seedDevAlbums(dir string, now int64) {
+	const g = "weekendtrip@g.us"
+	runs := []struct {
+		from  string
+		files []string
+		held  string
+	}{
+		{"1112223333@s.whatsapp.net", []string{"album-1.jpg", "album-2.jpg", "album-3.jpg", "album-4.jpg", "album-5.jpg"}, ""},
+		{"me", []string{"album-6.jpg", "album-2.jpg", "album-4.jpg"}, ""},
+		{"4445556666@s.whatsapp.net", []string{"album-3.jpg", "album-5.jpg"}, "album-5.jpg"},
+	}
+	ts := now - 7000
+	for r, run := range runs {
+		ts += 300
+		for i, name := range run.files {
+			path := filepath.Join(dir, name)
+			info, err := os.Stat(path)
+			if err != nil {
+				continue
+			}
+			ts += 3
+			local := path
+			var thumb []byte
+			if name == run.held {
+				local = ""
+				thumb, _ = os.ReadFile(path)
+			}
+			f.messages[g] = append(f.messages[g], Message{
+				ID: "alb" + itoa(r) + "-" + itoa(i), ChatJID: g, FromJID: run.from, FromMe: run.from == "me",
+				TS: ts, Status: MessageStatusRead,
+				Attachment: &Attachment{
+					Kind: "image", MimeType: "image/jpeg", Filename: name,
+					LocalPath: local, Size: info.Size(), Thumbnail: thumb,
+				},
+			})
+		}
+	}
 }
 
 // seedDevStatuses adds a photo and a clip status from the second fixture

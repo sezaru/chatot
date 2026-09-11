@@ -1430,6 +1430,10 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		d.conversation.ScrollThreadPx(float64(msgIdx))
 	case "msgmenu":
 		d.conversation.PopupMessageMenu(msgIdx)
+	case "tilemenu":
+		// The right-click menu of the album tile showing the picture at
+		// CHATOT_SHOT_MSG.
+		d.conversation.PopupAlbumTileMenu(msgIdx)
 	case "reactpill":
 		d.conversation.PopupReactPill(msgIdx)
 	case "reactors":

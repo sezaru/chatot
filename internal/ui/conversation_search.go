@@ -335,7 +335,9 @@ func (cv *ConversationView) jumpToMessage(msgID string) bool {
 	if pos < 0 {
 		return false
 	}
-	cv.scrollToRow(pos)
+	// A picture inside an album is on the run's first row.
+	head, _ := cv.albumSpan(pos)
+	cv.scrollToRow(head)
 	return true
 }
 
