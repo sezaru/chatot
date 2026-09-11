@@ -34,6 +34,7 @@ func (cv *ConversationView) newThreadList() *gtk.ListView {
 		// .chatot-conv-list, and margins would compound with it. The
 		// clamp holds the row at chatMaxWidth on a wide window.
 		r := newThreadRow()
+		r.setCompact(cv.compactRows)
 		cv.rows[widgetKey(r.wrapper)] = r
 		item.SetChild(chatClamp(r.wrapper))
 	})

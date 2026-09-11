@@ -16,7 +16,10 @@ import (
 // smallest a tile may get before the pane scrolls sideways instead.
 const (
 	mediaPaneCols = 5
-	mediaPaneTile = 96
+	// mediaPaneTile is a tile's minimum side. The homogeneous columns share
+	// the pane's width whatever this is, so it only matters where the pane is
+	// narrow: five of these plus the gaps still fit the collapsed 360px window.
+	mediaPaneTile = 56
 )
 
 // mediaPanePages are the mockup's three tabs, in its order.
@@ -85,6 +88,11 @@ func NewMediaPage(c client.Client, onBack func()) *MediaPage {
 	title := gtk.NewLabel("Media, links and docs")
 	title.SetXAlign(0)
 	title.SetHExpand(true)
+	// The title gives way before the segmented switcher does: in the
+	// collapsed 360px window it wraps onto two lines, as in the mockup.
+	title.SetWrap(true)
+	title.SetLines(2)
+	title.SetEllipsize(pango.EllipsizeEnd)
 	title.AddCSSClass("chatot-pane-title")
 	header.Append(title)
 

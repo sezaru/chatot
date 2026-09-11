@@ -21,7 +21,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
 </style></helmet>
 
 <div style="min-height:100vh;display:flex;align-items:safe center;justify-content:safe center;overflow:auto;padding:18px;font-family:Cantarell,system-ui,sans-serif">
-<div ref="{{ rootRef }}" style="width:min(1240px,100%);height:min(840px,calc(100vh - 36px));min-width:760px;min-height:520px;flex:none;position:relative;display:flex;flex-direction:column;border-radius:12px;overflow:hidden;background:var(--bg,#fafafa);color:var(--tx,rgba(0,0,0,.85));box-shadow:0 0 0 1px rgba(0,0,0,.14),0 18px 54px rgba(0,0,0,.3);{{ themeVars }}">
+<div ref="{{ rootRef }}" style="width:min(1240px,100%);height:min(840px,calc(100vh - 36px));min-width:360px;min-height:520px;flex:none;position:relative;display:flex;flex-direction:column;border-radius:12px;overflow:hidden;background:var(--bg,#fafafa);color:var(--tx,rgba(0,0,0,.85));box-shadow:0 0 0 1px rgba(0,0,0,.14),0 18px 54px rgba(0,0,0,.3);{{ themeVars }}">
 
 <sc-if value="{{ isLinking }}" hint-placeholder-val="{{ false }}">
   <div style="position:absolute;inset:0;z-index:60;display:flex;flex-direction:column;background:var(--bg,#fafafa)">
@@ -47,7 +47,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
 </sc-if>
 
 <div style="display:flex;height:47px;flex:none;background:var(--hdr,#fff);border-bottom:1px solid var(--bd,rgba(0,0,0,.08))">
-  <div style="flex:none;display:flex;align-items:center;gap:6px;padding:0 8px 0 10px;border-right:1px solid var(--bd,rgba(0,0,0,.08));width:{{ sidebarHeadWidth }}">
+  <div style="flex:{{ sideFlex }};display:{{ sideDisplay }};align-items:center;gap:6px;padding:0 8px 0 10px;border-right:{{ sideBorder }};width:{{ sidebarHeadWidth }}">
     <sc-if value="{{ sidebarBack }}" hint-placeholder-val="{{ false }}">
       <button onClick="{{ onSidebarBack }}" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:15px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">←</button>
     </sc-if>
@@ -66,8 +66,18 @@ a{color:#1b8c72}a:hover{color:#147a63}
     </sc-if>
     <button onClick="{{ togglePlus }}" style="width:28px;height:28px;border:none;background:transparent;border-radius:7px;display:grid;place-items:center;color:var(--dim,rgba(0,0,0,.55));font-size:15px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">＋</button>
     <button onClick="{{ toggleAppMenu }}" style="width:28px;height:28px;border:none;background:transparent;border-radius:7px;display:grid;place-items:center;color:var(--dim,rgba(0,0,0,.55));font-size:15px;letter-spacing:1px;cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">⋮</button>
+    <sc-if value="{{ sideHeadControls }}" hint-placeholder-val="{{ false }}">
+      <span style="display:flex;gap:8px;flex:none;margin-left:2px">
+        <span style="width:24px;height:24px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:11px;color:var(--dim,rgba(0,0,0,.55))">−</span>
+        <span style="width:24px;height:24px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:9px;color:var(--dim,rgba(0,0,0,.55))">□</span>
+        <span style="width:24px;height:24px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:10px;color:var(--dim,rgba(0,0,0,.55))">✕</span>
+      </span>
+    </sc-if>
   </div>
-  <div style="flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:0 10px 0 14px">
+  <div style="flex:1;min-width:0;display:{{ chatHeadDisplay }};align-items:center;gap:10px;padding:0 10px 0 {{ chatHeadPadL }}">
+    <sc-if value="{{ showBack }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ onBack }}" title="Back to the list" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:15px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">←</button>
+    </sc-if>
     <sc-if value="{{ chatSearchOn }}" hint-placeholder-val="{{ false }}">
       <div style="flex:1;display:flex;align-items:center;gap:8px;height:32px;padding:0 6px 0 12px;background:var(--chat,#fff);border:1px solid var(--bd2,rgba(0,0,0,.13));border-radius:999px">
         <input value="{{ chatQuery }}" onChange="{{ onChatQuery }}" placeholder="Search in this chat" style="flex:1;border:none;outline:none;background:transparent;font-size:13.5px"/>
@@ -94,7 +104,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
     <button onClick="{{ toggleChatMenu }}" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;display:grid;place-items:center;font-size:15px;letter-spacing:1px;color:var(--dim,rgba(0,0,0,.55));cursor:pointer" style-hover="background:var(--hov,rgba(0,0,0,.06))">⋮</button>
     </sc-if>
     <sc-if value="{{ windowControls }}" hint-placeholder-val="{{ true }}">
-      <span style="display:flex;gap:8px;flex:none">
+      <span style="display:flex;gap:8px;flex:none;margin-left:auto">
         <span style="width:24px;height:24px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:11px;color:var(--dim,rgba(0,0,0,.55))">−</span>
         <span style="width:24px;height:24px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:9px;color:var(--dim,rgba(0,0,0,.55))">□</span>
         <span style="width:24px;height:24px;border-radius:999px;background:var(--chip,rgba(0,0,0,.08));display:grid;place-items:center;font-size:10px;color:var(--dim,rgba(0,0,0,.55))">✕</span>
@@ -104,7 +114,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
 </div>
 
 <div style="display:flex;flex:1;min-height:0">
-  <div style="width:{{ sidebarHeadWidth }};flex:none;display:flex;flex-direction:column;min-height:0;background:var(--side,#ebebeb);border-right:1px solid var(--bd,rgba(0,0,0,.08))">
+  <div style="width:{{ sidebarHeadWidth }};flex:{{ sideFlex }};display:{{ sideDisplay }};flex-direction:column;min-height:0;min-width:0;background:var(--side,#ebebeb);border-right:{{ sideBorder }}">
   <div style="flex:1;min-height:0;display:flex">
 
   <sc-if value="{{ multi }}" hint-placeholder-val="{{ false }}">
@@ -369,7 +379,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
     </sc-if>
   </div>
 
-  <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:var(--chat,#fff);position:relative">
+  <div style="flex:1;min-width:0;display:{{ chatPaneDisplay }};flex-direction:column;background:var(--chat,#fff);position:relative">
 
     <sc-if value="{{ trayOpen }}" hint-placeholder-val="{{ false }}">
       <div style="position:absolute;inset:0;z-index:22;background:var(--bg,#fafafa);display:flex;flex-direction:column;animation:fade .12s ease">
@@ -382,7 +392,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
           <button onClick="{{ onTraySend }}" style="flex:none;border:none;background:var(--ac,#1b8c72);color:#fff;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer">{{ traySendLabel }}</button>
         </div>
 
-        <div style="flex:1;min-height:0;display:grid;place-items:center;padding:16px">
+        <div style="flex:1;min-height:0;min-width:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);place-items:center;padding:16px">
           <sc-if value="{{ trayIsImage }}" hint-placeholder-val="{{ true }}">
             <div style="height:100%;max-height:100%;width:auto;max-width:min(100%,460px);aspect-ratio:4/3;border-radius:12px;display:grid;place-items:center;font-size:64px;background:{{ trayPreviewBg }}">{{ trayIcon }}</div>
           </sc-if>
@@ -488,17 +498,17 @@ a{color:#1b8c72}a:hover{color:#147a63}
         </span>
         <span style="flex:none;font:11px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--dim2,rgba(0,0,0,.45))">{{ viewCounter }}</span>
         <span style="flex:none;width:1px;height:20px;background:var(--bd,rgba(0,0,0,.09));margin:0 2px"></span>
-        <button onClick="{{ onViewReply }}" title="Reply in chat" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:13px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">↩</button>
-        <button onClick="{{ onViewForward }}" title="Forward" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:13px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">↪</button>
-        <button onClick="{{ onViewStar }}" title="{{ viewStarTitle }}" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:13px;color:{{ viewStarFg }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ viewStarIcon }}</button>
+        <button onClick="{{ onViewReply }}" title="Reply in chat" style="display:{{ viewIconActionsDisplay }};width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:13px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">↩</button>
+        <button onClick="{{ onViewForward }}" title="Forward" style="display:{{ viewIconActionsDisplay }};width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:13px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">↪</button>
+        <button onClick="{{ onViewStar }}" title="{{ viewStarTitle }}" style="display:{{ viewIconActionsDisplay }};width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:13px;color:{{ viewStarFg }}" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ viewStarIcon }}</button>
         <button onClick="{{ onViewInfo }}" title="Details" style="width:28px;height:28px;flex:none;border:none;border-radius:7px;cursor:pointer;font-size:13px;background:{{ viewInfoBg }};color:{{ viewInfoFg }}" style-hover="background:var(--sel,rgba(0,0,0,.1))">ℹ</button>
         <button onClick="{{ onViewMenu }}" title="More" style="width:28px;height:28px;flex:none;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:14px;letter-spacing:1px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">⋯</button>
         <button onClick="{{ onViewPrimary }}" style="flex:none;height:28px;margin-left:3px;padding:0 13px;border:none;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;background:var(--ac,#1b8c72);color:#fff" style-hover="background:var(--ac2,#147a63)">{{ viewPrimaryLabel }}</button>
       </div>
 
-      <div style="flex:1;min-height:0;display:flex">
+      <div style="flex:1;min-height:0;display:flex;position:relative">
         <div style="flex:1;min-width:0;display:flex;flex-direction:column">
-          <div ref="{{ viewStageRef }}" style="flex:1;min-height:0;position:relative;display:grid;place-items:center;overflow:hidden;padding:24px;background:{{ viewStageBg }}">
+          <div ref="{{ viewStageRef }}" style="flex:1;min-height:0;min-width:0;position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);place-items:center;overflow:hidden;padding:24px;background:{{ viewStageBg }}">
 
             <sc-if value="{{ viewNeedsFetch }}" hint-placeholder-val="{{ false }}">
               <div style="display:flex;flex-direction:column;align-items:center;gap:13px;text-align:center">
@@ -673,7 +683,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
         </div>
 
         <sc-if value="{{ viewInfoOpen }}" hint-placeholder-val="{{ true }}">
-          <div style="width:244px;flex:none;display:flex;flex-direction:column;min-height:0;overflow-y:auto;border-left:1px solid var(--bd,rgba(0,0,0,.08));background:var(--hdr,#fff)">
+          <div style="position:{{ viewInfoPos }};inset:0;z-index:3;width:{{ viewInfoW }};flex:none;display:flex;flex-direction:column;min-height:0;overflow-y:auto;border-left:1px solid var(--bd,rgba(0,0,0,.08));background:var(--hdr,#fff)">
             <div style="flex:none;display:flex;align-items:center;gap:8px;padding:11px 12px 9px 14px">
               <span style="flex:1;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dim,rgba(0,0,0,.55))">Details</span>
               <button onClick="{{ onViewInfo }}" title="Hide details" style="width:24px;height:24px;border:none;background:transparent;border-radius:7px;cursor:pointer;font-size:11px;color:var(--dim,rgba(0,0,0,.55))" style-hover="background:var(--hov,rgba(0,0,0,.06))">✕</button>
@@ -725,7 +735,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
             </sc-if>
 
             <sc-if value="{{ m.isBubble }}" hint-placeholder-val="{{ true }}">
-              <div style="max-width:64%;position:relative;min-width:0;margin-bottom:{{ m.reactPad }}">
+              <div style="max-width:min(100%,max(64%,300px));position:relative;min-width:0;margin-bottom:{{ m.reactPad }}">
                 <div style="border-radius:14px;padding:7px 11px 5px;box-shadow:{{ m.hit }};background:{{ m.bubBg }};color:{{ m.bubFg }}">
                   <sc-if value="{{ m.author }}" hint-placeholder-val="{{ false }}"><div style="font-size:12px;font-weight:700;margin-bottom:2px;color:{{ m.authorColor }}">{{ m.author }}</div></sc-if>
                   <sc-if value="{{ m.reply }}" hint-placeholder-val="{{ false }}">
@@ -1244,7 +1254,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
 </sc-if>
 
 <sc-if value="{{ attachOpen }}" hint-placeholder-val="{{ false }}">
-  <div style="position:absolute;z-index:31;left:352px;bottom:60px;width:230px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.26);padding:6px;display:flex;flex-direction:column;gap:1px;animation:pop .1s ease">
+  <div style="position:absolute;z-index:31;left:{{ pickerLeft }};bottom:60px;width:230px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.26);padding:6px;display:flex;flex-direction:column;gap:1px;animation:pop .1s ease">
     <sc-for list="{{ attachItems }}" as="i" hint-placeholder-count="7">
       <button onClick="{{ i.onClick }}" style="display:flex;align-items:center;gap:11px;border:none;background:transparent;border-radius:7px;padding:8px 10px;font-size:13px;cursor:pointer;text-align:left;white-space:nowrap;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">
         <span style="width:28px;height:28px;flex:none;border-radius:999px;display:grid;place-items:center;font-size:13px;background:{{ i.bg }}">{{ i.icon }}</span>{{ i.label }}
@@ -1254,7 +1264,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
 </sc-if>
 
 <sc-if value="{{ pickerOpen }}" hint-placeholder-val="{{ false }}">
-  <div style="position:absolute;z-index:31;left:352px;bottom:60px;width:360px;background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.26);padding:8px;display:flex;flex-direction:column;gap:8px;animation:pop .1s ease">
+  <div style="position:absolute;z-index:31;left:{{ pickerLeft }};bottom:60px;width:min(360px,calc(100% - 16px));background:var(--pop,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.26);padding:8px;display:flex;flex-direction:column;gap:8px;animation:pop .1s ease">
     <div style="display:flex;gap:4px;background:var(--chip,rgba(0,0,0,.08));border-radius:9px;padding:3px">
       <sc-for list="{{ pickerTabs }}" as="t" hint-placeholder-count="3">
         <button onClick="{{ t.onClick }}" style="flex:1;border:none;border-radius:7px;padding:5px 0;font-size:12.5px;cursor:pointer;font-weight:{{ t.weight }};background:{{ t.bg }};color:{{ t.fg }}">{{ t.label }}</button>
@@ -1314,8 +1324,8 @@ a{color:#1b8c72}a:hover{color:#147a63}
 </sc-if>
 
 <sc-if value="{{ dialog }}" hint-placeholder-val="{{ false }}">
-  <div onClick="{{ closeDialog }}" style="position:absolute;inset:0;z-index:40;background:rgba(0,0,0,.34);display:grid;place-items:center;animation:fade .12s ease">
-    <div onClick="{{ stop }}" style="animation:pop .12s ease;background:var(--bg,#fafafa);border-radius:14px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);color:var(--tx,rgba(0,0,0,.85));width:{{ dialogWidth }}">
+  <div onClick="{{ closeDialog }}" style="position:absolute;inset:0;z-index:40;background:rgba(0,0,0,.34);display:grid;grid-template-columns:100%;place-items:center;animation:fade .12s ease">
+    <div onClick="{{ stop }}" style="animation:pop .12s ease;background:var(--bg,#fafafa);border-radius:14px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);color:var(--tx,rgba(0,0,0,.85));width:{{ dialogWidth }};max-width:calc(100% - 24px)">
 
       <sc-if value="{{ dlgIsAlert }}" hint-placeholder-val="{{ false }}">
         <div style="padding:22px 22px 8px;text-align:center;display:flex;flex-direction:column;gap:8px">
@@ -1544,12 +1554,12 @@ a{color:#1b8c72}a:hover{color:#147a63}
           <button onClick="{{ closeDialog }}" style="width:26px;height:26px;border:none;background:transparent;border-radius:999px;cursor:pointer;color:var(--dim,rgba(0,0,0,.55))">✕</button>
         </div>
         <div style="display:flex;height:400px">
-          <div style="width:170px;flex:none;border-right:1px solid var(--bd,rgba(0,0,0,.09));padding:8px;display:flex;flex-direction:column;gap:2px">
+          <div style="width:{{ prefNavWidth }};flex:none;border-right:1px solid var(--bd,rgba(0,0,0,.09));padding:8px;display:flex;flex-direction:column;gap:2px">
             <sc-for list="{{ prefTabs }}" as="t" hint-placeholder-count="5">
-              <button onClick="{{ t.onClick }}" style="display:flex;align-items:center;gap:9px;border:none;border-radius:8px;padding:8px 10px;font-size:13px;cursor:pointer;text-align:left;font-weight:{{ t.weight }};background:{{ t.bg }};color:var(--tx,rgba(0,0,0,.85))">{{ t.icon }} {{ t.label }}</button>
+              <button onClick="{{ t.onClick }}" title="{{ t.label }}" style="display:flex;align-items:center;justify-content:{{ prefNavJustify }};gap:9px;border:none;border-radius:8px;padding:8px 10px;font-size:13px;cursor:pointer;text-align:left;font-weight:{{ t.weight }};background:{{ t.bg }};color:var(--tx,rgba(0,0,0,.85))"><span style="flex:none">{{ t.icon }}</span><span style="display:{{ prefLabelDisplay }};white-space:nowrap">{{ t.label }}</span></button>
             </sc-for>
           </div>
-          <div style="flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:14px">
+          <div style="flex:1;min-width:0;overflow-y:auto;padding:16px {{ prefPadX }};display:flex;flex-direction:column;gap:14px">
             <sc-for list="{{ prefGroups }}" as="g" hint-placeholder-count="2">
               <div style="display:flex;flex-direction:column;gap:6px">
                 <span style="font-size:11.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--dim,rgba(0,0,0,.55))">{{ g.title }}</span>
@@ -3159,6 +3169,9 @@ const PEOPLE = [
 // index, it does not pick colours. Five shown here; the server owns the real table.
 const LABEL_PALETTE = ['#c26b5c', '#b58a4a', '#5a7ab5', '#7a8b5a', '#9c5b8a'];
 
+// Width below which the list and the open chat no longer fit side by side.
+const NARROW_AT = 720;
+
 const ACCOUNTS = [
   {id:'personal',label:'Sezar (personal)',phone:'+351 912 000 004',color:'#427677',initial:'S',state:'connected'},
   {id:'work',label:'Work',phone:'+351 912 774 100',color:'#5a7ab5',initial:'W',state:'connected'},
@@ -3393,7 +3406,7 @@ class Component extends DCLogic {
     reportChan: null, reportReason: '', reportUnfollow: false, linkChan: null, infoChan: null,
     communities: COMMUNITIES.map(c => Object.assign({}, c, {groups: c.groups.map(g => Object.assign({}, g))})), community: null,
     chatSearch: false, chatQuery: '', hit: 0, toast: null, toastAction: null,
-    linking: false, dark: false, multi: true, windowControls: true,
+    linking: false, dark: false, multi: true, windowControls: true, narrow: false, detail: false,
     accounts: ACCOUNTS.slice(), account: 'personal', merged: false, accountOpen: false,
     newAcctLabel: '', perAcctNotif: true, keepConnected: true,
     tray: null, traySel: 0, fileCursor: 0,
@@ -3426,19 +3439,38 @@ class Component extends DCLogic {
   }
   componentDidUpdate() { this.scrollToEnd(); this.measureStage(); }
   componentDidMount() {
-    this._lastKey = null; this.scrollToEnd(); this.measureStage();
+    this._lastKey = null; this.scrollToEnd(); this.measureStage(); this.measureRoot();
     window.addEventListener('keydown', this.onViewerKey);
     window.addEventListener('resize', this.measureStage);
+    window.addEventListener('resize', this.measureRoot);
+    if (typeof ResizeObserver === 'function' && this.rootRef.current) {
+      this._ro = new ResizeObserver(this.measureRoot);
+      this._ro.observe(this.rootRef.current);
+    }
   }
   componentWillUnmount() {
     window.removeEventListener('keydown', this.onViewerKey);
     window.removeEventListener('resize', this.measureStage);
+    window.removeEventListener('resize', this.measureRoot);
+    if (this._ro) this._ro.disconnect();
     clearInterval(this._rec);
   }
 
   // Fit-to-window has to be true fit, so the stage measures itself rather than
   // assuming a pane width: the details sidebar, the control bar and the
   // caption row all change how much room the attachment actually gets.
+  // Below NARROW_AT the two panes no longer fit side by side, so the window
+  // collapses to one pane at a time: the list, or the open chat with a back
+  // button. Collapsing keeps whatever was on screen; the back button returns
+  // to the list.
+  measureRoot = () => {
+    const el = this.rootRef.current;
+    if (!el) return;
+    const narrow = el.clientWidth < NARROW_AT;
+    if (narrow === this.state.narrow) return;
+    this.setState(st => ({narrow, detail: narrow ? st.pane !== 'tabempty' : st.detail}));
+  };
+
   viewStageRef = React.createRef();
   measureStage = () => {
     const el = this.viewStageRef.current;
@@ -3660,12 +3692,12 @@ class Component extends DCLogic {
     const raw = this.state.joinLink.trim().replace(/^https?:\/\//, '');
     if (!raw) return this.toast('Paste an invite link first');
     const known = this.state.communities.find(c => c.link === raw);
-    if (known) { this.setState({dialog: null, tab: 'communities', community: known.key, pane: 'community'}); return this.toast('You are already in ' + known.name); }
+    if (known) { this.setState({dialog: null, tab: 'communities', community: known.key, pane: 'community', detail: true}); return this.toast('You are already in ' + known.name); }
     if (!/^chat\.ot\/[a-z0-9-]{4,}$/i.test(raw)) return this.toast('That link is not a chatot invite');
     const key = 'inv' + Math.random().toString(36).slice(2, 7);
     const name = 'Invited community';
     this.setState(st => ({
-      dialog: null, joinLink: '', tab: 'communities', community: key, pane: 'community',
+      dialog: null, joinLink: '', tab: 'communities', community: key, pane: 'community', detail: true,
       communities: st.communities.concat([{
         key, name, color: '#6a6a8c', members: '1 member', admin: false, muted: false,
         about: 'You joined this community from an invite link. Its groups appear here as admins link them.',
@@ -3686,7 +3718,7 @@ class Component extends DCLogic {
     const close = fn => () => { this.setState({menu: null}); fn && fn(); };
     if (m.kind === 'app') return [
       I('📂', 'Archived', close(() => this.setState({sidebar: 'archived', query: '', labelFilter: null}))),
-      I('⭐', 'Starred messages', close(() => this.setState({pane: 'starred'}))),
+      I('⭐', 'Starred messages', close(() => this.setState({pane: 'starred', detail: true}))),
       SEP,
       I('🖥', 'Linked devices', close(() => this.setState({dialog: 'devices'}))),
       I('⚙', 'Preferences', close(() => this.setState({dialog: 'prefs'})), {accel: 'Ctrl+,'}),
@@ -3708,7 +3740,7 @@ class Component extends DCLogic {
       I('📣', 'Create a channel', close(() => this.toast('Channel creation is not in this mockup')))
     ];
     if (m.kind === 'plus' && this.state.tab === 'communities') return [
-      I('🏘', 'New community', close(() => this.setState({tab: 'chats', sidebar: 'groupname', newKind: 'community', groupName: '', picked: [], pane: 'chat'}))),
+      I('🏘', 'New community', close(() => this.setState({tab: 'chats', sidebar: 'groupname', newKind: 'community', groupName: '', picked: [], pane: 'chat', detail: false}))),
       I('🔗', 'Join with a link', close(() => this.setState({dialog: 'joinlink', joinLink: ''})))
     ];
     if (m.kind === 'plus') return [
@@ -3719,7 +3751,7 @@ class Component extends DCLogic {
     if (m.kind === 'statusrow') {
       const x = this.state.statusFeed.find(y => y.key === m.row) || {};
       return [
-        I('👁', 'View updates', close(() => this.setState(st => ({statusOpen: m.row, statusSeg: 0, pane: 'status', statusFeed: st.statusFeed.map(y => y.key === m.row ? Object.assign({}, y, {viewed: true}) : y)})))),
+        I('👁', 'View updates', close(() => this.setState(st => ({statusOpen: m.row, statusSeg: 0, pane: 'status', detail: true, statusFeed: st.statusFeed.map(y => y.key === m.row ? Object.assign({}, y, {viewed: true}) : y)})))),
         I('↩', 'Reply privately', close(() => this.toast('Replying to ' + x.name))),
         SEP,
         I('🔇', 'Mute ' + String(x.name || '').split(' ')[0], close(() => this.toast(x.name + " won't appear at the top"))),
@@ -3730,7 +3762,7 @@ class Component extends DCLogic {
       I('👁', 'Who viewed my status', close(() => this.toast('Seen by ' + (this.state.myStatus ? this.state.myStatus.views : 0) + ' contacts'))),
       I('🔒', 'Status privacy…', close(() => this.setState({dialog: 'prefs', prefTab: 'Privacy'}))),
       SEP,
-      I('🗑', 'Delete my status', close(() => { this.setState({myStatus: null, statusOpen: null, pane: 'tabempty'}); this.toast('Status deleted'); }), danger)
+      I('🗑', 'Delete my status', close(() => { this.setState({myStatus: null, statusOpen: null, pane: 'tabempty', detail: false}); this.toast('Status deleted'); }), danger)
     ];
     if (m.kind === 'statusview') return [
       I('↩', 'Reply privately', close(() => this.toast('Reply sent'))),
@@ -3758,7 +3790,7 @@ class Component extends DCLogic {
     if (m.kind === 'commrow' || m.kind === 'comm') {
       const mk = m.kind === 'commrow' ? m.row : this.state.community;
       const c = this.state.communities.find(x => x.key === mk) || {};
-      const open = extra => this.setState(Object.assign({community: mk, pane: 'community'}, extra));
+      const open = extra => this.setState(Object.assign({community: mk, pane: 'community', detail: true}, extra));
       return [
         I('ℹ', 'Community info', close(() => open({dialog: 'comminfo', commTab: 'Members', memberQuery: ''}))),
         I('🔗', 'Invite link', close(() => open({dialog: 'comminvite', copied: false}))),
@@ -3768,7 +3800,7 @@ class Component extends DCLogic {
           this.toast(c.muted ? 'Announcements unmuted' : 'Announcements muted');
         })),
         I('⤓', 'Leave community', close(() => {
-          this.setState(st => ({communities: st.communities.filter(x => x.key !== mk), community: null, pane: 'tabempty'}));
+          this.setState(st => ({communities: st.communities.filter(x => x.key !== mk), community: null, pane: 'tabempty', detail: false}));
           this.toast('Left ' + c.name);
         }), danger)
       ];
@@ -3778,7 +3810,7 @@ class Component extends DCLogic {
       return [
         I('ℹ', c.group ? 'Group info' : 'Contact info', close(() => this.setState({dialog: 'info'}))),
         I('⌕', 'Search in chat', close(() => this.setState({chatSearch: true, chatQuery: '', hit: 0})), {accel: 'Ctrl+F'}),
-        I('🖼', 'Media, links and docs', close(() => this.setState({pane: 'media', mediaTab: 'Media'}))),
+        I('🖼', 'Media, links and docs', close(() => this.setState({pane: 'media', mediaTab: 'Media', detail: true}))),
         SEP,
         I(c.muted ? '🔔' : '🔇', c.muted ? 'Unmute notifications' : 'Mute notifications…', close(() => {
           if (c.muted) { this.patch(x => { x.muted = false; x.muteUntil = null; }); this.toast('Notifications on'); }
@@ -3861,7 +3893,7 @@ class Component extends DCLogic {
   }
 
   openViewer = (mid) => this.setState({
-    pane: 'viewer', viewer: mid, viewZoom: 0, viewPage: 1, viewPlay: false,
+    pane: 'viewer', detail: true, viewer: mid, viewZoom: 0, viewPage: 1, viewPlay: false,
     viewMapZoom: 17, hover: null, menu: null, attach: false, picker: false
   });
 
@@ -4067,7 +4099,7 @@ class Component extends DCLogic {
         onClick: () => this.setState(st => {
           const chats = st.chats.slice();
           chats[i] = Object.assign({}, chats[i], {unread: 0});
-          return {chats, active: i, pane: 'chat', chatSearch: false, reply: null, hover: null};
+          return {chats, active: i, pane: 'chat', detail: true, chatSearch: false, reply: null, hover: null};
         }),
         onContext: e => { e.preventDefault(); this.openMenu('chatrow', Object.assign({row: i}, this.anchor(e, 240, 340))); }
       };
@@ -4235,7 +4267,7 @@ class Component extends DCLogic {
       onClick: () => {
         if (s.sidebar === 'newchat') {
           const i = s.chats.findIndex(c => c.name === p.name);
-          if (i > -1) this.setState({active: i, sidebar: 'chats', pane: 'chat'});
+          if (i > -1) this.setState({active: i, sidebar: 'chats', pane: 'chat', detail: true});
           else this.setState(st => ({chats: st.chats.concat([{key: p.name, name: p.name, color: p.color, time: this.now(), unread: 0, presence: 'online', msgs: []}]), active: st.chats.length, sidebar: 'chats'}));
         } else {
           this.setState(st => ({picked: st.picked.includes(p.name) ? st.picked.filter(n => n !== p.name) : st.picked.concat([p.name])}));
@@ -4442,7 +4474,7 @@ class Component extends DCLogic {
       starred.push({
         chat: c.name, initial: c.name[0] === '+' ? '+' : c.name[0].toUpperCase(), color: c.color,
         text: this.preview(m), time: m.time,
-        onClick: () => this.setState({active: ci, pane: 'chat'}),
+        onClick: () => this.setState({active: ci, pane: 'chat', detail: true}),
         onUnstar: e => { e.stopPropagation(); this.setState(st => { const chats = st.chats.slice(); const cc = Object.assign({}, chats[ci]); cc.msgs = cc.msgs.map(x => x.id === m.id ? Object.assign({}, x, {starred: false}) : x); chats[ci] = cc; return {chats}; }); }
       });
     }));
@@ -4507,7 +4539,7 @@ class Component extends DCLogic {
     const infoRows = seal([
       {icon: '🔔', label: chat.muted ? 'Unmute notifications' : 'Mute notifications', onClick: () => { this.patch(c => { c.muted = !c.muted; }); this.setState({dialog: null}); }},
       {icon: '⏱', label: 'Disappearing messages', value: 'Off', onClick: () => this.toast('Set to 7 days')},
-      {icon: '🖼', label: 'Media, links and docs', value: '15', onClick: () => this.setState({dialog: null, pane: 'media'})},
+      {icon: '🖼', label: 'Media, links and docs', value: '15', onClick: () => this.setState({dialog: null, pane: 'media', detail: true})},
       {icon: '🚫', label: 'Block ' + chat.name, onClick: () => { this.setState({dialog: null}); this.toast('Blocked'); }, color: '#c01c28'}
     ]).map(r => Object.assign({color: T.tx, value: null}, r));
 
@@ -4621,7 +4653,7 @@ class Component extends DCLogic {
       tab: tid, sidebar: 'chats', menu: null, attach: false, picker: false, accountOpen: false,
       reactPick: null, labelsOpen: null, query: '', labelFilter: null, chatSearch: false,
       statusOpen: null, channel: null, community: null,
-      pane: tid === 'chats' ? 'chat' : 'tabempty'
+      pane: tid === 'chats' ? 'chat' : 'tabempty', detail: false
     });
     const tabs = [
       {id: 'chats', label: 'Chats', title: 'Chats'},
@@ -4641,7 +4673,7 @@ class Component extends DCLogic {
 
     // status
     const openStatus = key => this.setState(st => ({
-      statusOpen: key, statusSeg: 0, statusReply: '', pane: 'status',
+      statusOpen: key, statusSeg: 0, statusReply: '', pane: 'status', detail: true,
       statusFeed: st.statusFeed.map(x => x.key === key ? Object.assign({}, x, {viewed: true}) : x)
     }));
     const statusRows = [];
@@ -4669,7 +4701,7 @@ class Component extends DCLogic {
       const src = st.statusOpen === 'me' ? st.myStatus : st.statusFeed.find(x => x.key === st.statusOpen);
       const len = src ? src.items.length : 1, next = st.statusSeg + d;
       if (next < 0) return {statusSeg: 0};
-      if (next >= len) return {statusOpen: null, statusSeg: 0, pane: 'tabempty'};
+      if (next >= len) return {statusOpen: null, statusSeg: 0, pane: 'tabempty', detail: false};
       return {statusSeg: next};
     });
 
@@ -4684,7 +4716,7 @@ class Component extends DCLogic {
       time: c.time, timeColor: c.unread ? acHi : T.dim2, unread: c.unread ? String(c.unread) : '',
       bg: s.channel === c.key ? T.sel : 'transparent',
       onClick: () => this.setState(st => ({
-        channel: c.key, pane: 'channel',
+        channel: c.key, pane: 'channel', detail: true,
         channels: st.channels.map(x => x.key === c.key ? Object.assign({}, x, {unread: 0}) : x)
       })),
       onContext: e => { e.preventDefault(); this.openMenu('chanrow', Object.assign({row: c.key}, this.anchor(e, 240, 200))); }
@@ -4709,7 +4741,7 @@ class Component extends DCLogic {
         btnFg: c.following ? T.dim : acHi,
         btnBorder: '1px solid ' + (c.following ? T.bd2 : acHi),
         onOpen: () => this.setState(st => ({
-          channel: c.key, pane: 'channel', discover: false,
+          channel: c.key, pane: 'channel', detail: true, discover: false,
           channels: st.channels.map(x => x.key === c.key ? Object.assign({}, x, {unread: 0}) : x)
         })),
         onFollow: e => {
@@ -4742,18 +4774,18 @@ class Component extends DCLogic {
       sub: c.groups.filter(g => !g.announce).length + ' groups · ' + c.members,
       unread: (() => { const n = c.groups.reduce((a, g) => a + (g.unread || 0), 0); return n ? String(n) : ''; })(),
       bg: s.community === c.key ? T.sel : 'transparent',
-      onClick: () => this.setState({community: c.key, pane: 'community'}),
+      onClick: () => this.setState({community: c.key, pane: 'community', detail: true}),
       onContext: e => { e.preventDefault(); this.openMenu('commrow', Object.assign({row: c.key}, this.anchor(e, 240, 170))); }
     }));
     const openCommGroup = g => this.setState(st => {
       const i = st.chats.findIndex(c => c.name === g.name);
-      if (i > -1) return {tab: 'chats', sidebar: 'chats', active: i, pane: 'chat'};
+      if (i > -1) return {tab: 'chats', sidebar: 'chats', active: i, pane: 'chat', detail: true};
       const chats = st.chats.concat([{
         key: 'cg_' + g.name, name: g.name, color: g.color, group: true, acct: st.account,
         time: this.now(), unread: 0, presence: (comm ? comm.name : 'Community') + ' · group',
         msgs: [{id: id(), type: 'system', text: 'You joined ' + g.name}]
       }]);
-      return {chats, tab: 'chats', sidebar: 'chats', active: chats.length - 1, pane: 'chat'};
+      return {chats, tab: 'chats', sidebar: 'chats', active: chats.length - 1, pane: 'chat', detail: true};
     });
     const commPatch = (key, fn) => this.setState(st => ({communities: st.communities.map(c => { if (c.key !== key) return c; const n = Object.assign({}, c, {groups: c.groups.map(g => Object.assign({}, g))}); fn(n); return n; })}));
     const mq = s.memberQuery.trim().toLowerCase();
@@ -4824,7 +4856,7 @@ class Component extends DCLogic {
       myRing: my ? ringOf(my.items.length, ac) : (dark ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.12)'),
       myStatusPosted: !!my,
       myStatusSub: my ? ('Today, ' + my.time + ' · ' + my.views + (my.views === 1 ? ' view' : ' views')) : 'Add to my status — it disappears after 24h',
-      onMyStatus: () => my ? this.setState({statusOpen: 'me', statusSeg: 0, pane: 'status'}) : this.postStatus(),
+      onMyStatus: () => my ? this.setState({statusOpen: 'me', statusSeg: 0, pane: 'status', detail: true}) : this.postStatus(),
       onMyStatusMenu: e => { e.stopPropagation(); this.openMenu('mystatus', this.anchor(e, 240, 160)); },
 
       paneIsStatus: s.pane === 'status' && !!statusSrc,
@@ -4842,7 +4874,7 @@ class Component extends DCLogic {
       onStatusReplyKey: e => { if (e.key === 'Enter' && s.statusReply.trim()) { this.setState({statusReply: ''}); this.toast('Reply sent to ' + (statusSrc ? statusSrc.name : '')); } },
       statusQuick: ['❤️', '😂', '😮', '👍'].map(e => ({e, title: 'React ' + e, onClick: () => this.toast('Reacted ' + e + ' to ' + (statusSrc ? statusSrc.name : '') + "'s status")})),
       onStatusPrev: () => stepStatus(-1), onStatusNext: () => stepStatus(1),
-      onStatusClose: () => this.setState({statusOpen: null, statusSeg: 0, pane: 'tabempty'}),
+      onStatusClose: () => this.setState({statusOpen: null, statusSeg: 0, pane: 'tabempty', detail: false}),
       onStatusMenu: e => this.openMenu('statusview', this.anchor(e, 240, 190)),
       onStatusViewers: () => this.toast(my ? ('Seen by ' + my.views + ' contacts') : 'No views yet'),
 
@@ -4869,7 +4901,7 @@ class Component extends DCLogic {
       onChanMenu: e => this.openMenu('chan', this.anchor(e, 250, 230)),
 
       communityRows, noCommunities: !s.communities.length,
-      onNewCommunity: () => this.setState({tab: 'chats', sidebar: 'groupname', newKind: 'community', groupName: '', picked: [], pane: 'chat'}),
+      onNewCommunity: () => this.setState({tab: 'chats', sidebar: 'groupname', newKind: 'community', groupName: '', picked: [], pane: 'chat', detail: false}),
       paneIsCommunity: s.pane === 'community' && !!comm, commRows,
       commName: comm ? comm.name : '', commInitial: comm ? initialOf(comm.name) : '',
       commColor: comm ? comm.color : ac,
@@ -4977,7 +5009,15 @@ class Component extends DCLogic {
       ...NAV,
       themeVars, multi: s.accounts.length > 1, windowControls: s.windowControls, isLinking: s.linking,
 
-      sidebarHeadWidth: s.accounts.length > 1 ? '388px' : '334px',
+      sidebarHeadWidth: s.narrow ? 'auto' : s.accounts.length > 1 ? '388px' : '334px',
+      sideFlex: s.narrow ? '1 1 0' : 'none', sideDisplay: s.narrow && s.detail ? 'none' : 'flex',
+      sideBorder: s.narrow ? 'none' : '1px solid ' + T.bd,
+      sideHeadControls: s.narrow && !s.detail && s.windowControls,
+      chatHeadDisplay: s.narrow && !s.detail ? 'none' : 'flex', chatPaneDisplay: s.narrow && !s.detail ? 'none' : 'flex',
+      chatHeadPadL: s.narrow ? '6px' : '14px', pickerLeft: s.narrow ? '8px' : '352px',
+      prefNavWidth: s.narrow ? '56px' : '170px', prefNavJustify: s.narrow ? 'center' : 'flex-start', prefLabelDisplay: s.narrow ? 'none' : 'inline', prefPadX: s.narrow ? '12px' : '18px',
+      showBack: s.narrow && s.detail,
+      onBack: () => this.setState(s.chatSearch ? {chatSearch: false, chatQuery: '', hit: 0} : {detail: false, menu: null, attach: false, picker: false, reactPick: null}),
       showAccountButton: s.sidebar === 'chats' && !s.discover,
       showPlainTitle: s.sidebar !== 'chats' || s.discover,
       emptyIsArchive: archiveMode,
@@ -5156,6 +5196,8 @@ class Component extends DCLogic {
       viewStarFg: vm && vm.starred ? ac2 : T.dim,
       onViewInfo: () => this.setState(st => ({viewInfo: !st.viewInfo})),
       viewInfoOpen: s.viewInfo, viewInfoBg: s.viewInfo ? T.chip : 'transparent',
+      viewInfoPos: s.narrow ? 'absolute' : 'static', viewInfoW: s.narrow ? 'auto' : '244px',
+      viewIconActionsDisplay: s.narrow ? 'none' : 'inline-block',
       viewInfoFg: s.viewInfo ? T.tx : T.dim,
       onViewMenu: e => this.openMenu('msg', Object.assign({mid: vm.id}, this.anchor(e, 250, 330))),
       viewPrimaryLabel: vPrimary,

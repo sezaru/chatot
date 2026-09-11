@@ -154,8 +154,7 @@ func NewAttachTray(onSend func([]trayItem), onAddReq func()) *AttachTray {
 	t.preview = gtk.NewBox(gtk.OrientationVertical, 0)
 	t.preview.AddCSSClass("chatot-tray-stage")
 	t.preview.SetVExpand(true)
-	t.preview.SetHAlign(gtk.AlignCenter)
-	t.preview.SetVAlign(gtk.AlignCenter)
+	t.preview.SetHExpand(true)
 	root.Append(t.preview)
 
 	captionRow := gtk.NewBox(gtk.OrientationHorizontal, 0)
@@ -163,12 +162,7 @@ func NewAttachTray(onSend func([]trayItem), onAddReq func()) *AttachTray {
 	t.caption = gtk.NewEntry()
 	t.caption.SetPlaceholderText("Caption")
 	t.caption.AddCSSClass("chatot-tray-caption")
-	t.caption.SetSizeRequest(460, -1)
-	// HExpand as well as HAlign: a GtkBox gives an unexpanded child only its
-	// natural width and packs it at the start, so the entry would sit
-	// left-of-centre with the alignment alone.
 	t.caption.SetHExpand(true)
-	t.caption.SetHAlign(gtk.AlignCenter)
 	// Store the caption as it is typed rather than only on send, so switching
 	// thumbnails doesn't silently drop what was written for the current one.
 	t.caption.ConnectChanged(func() {
@@ -197,7 +191,10 @@ func NewAttachTray(onSend func([]trayItem), onAddReq func()) *AttachTray {
 			}
 		})
 	}
-	captionRow.Append(t.caption)
+	// The mockup's width:min(100%,460px): the entry fills the pane up to
+	// 460px, centred, and shrinks with it instead of pinning the window
+	// open at 460 the way a size request would.
+	captionRow.Append(trayClamp(t.caption, trayStageW))
 	root.Append(captionRow)
 
 	// Outer box carries the full-bleed strip background and hairline; the
@@ -432,11 +429,36 @@ func (t *AttachTray) refresh() {
 	t.refreshStrip()
 }
 
-// trayStageW/H is the mockup's preview slot: a 4:3 card at most 460px wide.
+// trayStageW is the mockup's preview slot: a 4:3 card at most 460px wide.
+// trayCardW is the narrower "No preview available" card.
 const (
 	trayStageW = 460
-	trayStageH = 345
+	trayCardW  = 360
 )
+
+// trayFit lays w out the way the mockup's slot does (max-width:min(100%,
+// Npx) with a 4:3 aspect ratio): as wide as the pane allows up to maxW,
+// 4:3, centred in whatever is left. A size request would instead hold the
+// window open at that width, which the collapsed 360px layout cannot have.
+func trayFit(w gtk.Widgetter, maxW int) gtk.Widgetter {
+	frame := gtk.NewAspectFrame(0.5, 0.5, 4.0/3.0, false)
+	frame.SetChild(w)
+	frame.SetHExpand(true)
+	frame.SetVExpand(true)
+	clamp := trayClamp(frame, maxW)
+	gtk.BaseWidget(clamp).SetVExpand(true)
+	return clamp
+}
+
+// trayClamp gives w the pane's width up to maxW, centred.
+func trayClamp(w gtk.Widgetter, maxW int) gtk.Widgetter {
+	clamp := adw.NewClamp()
+	clamp.SetMaximumSize(maxW)
+	clamp.SetTighteningThreshold(maxW)
+	clamp.SetChild(w)
+	clamp.SetHExpand(true)
+	return clamp
+}
 
 // newTrayPreview builds the big centre slot for path: the picture itself
 // for an image, a player for a video (poster first) or an audio file, the
@@ -477,9 +499,8 @@ func trayStage(pic *gtk.Picture) gtk.Widgetter {
 
 	stage := gtk.NewBox(gtk.OrientationVertical, 0)
 	stage.AddCSSClass("chatot-tray-image")
-	stage.SetSizeRequest(trayStageW, trayStageH)
 	stage.Append(pic)
-	return stage
+	return trayFit(stage, trayStageW)
 }
 
 // videoStage is a GtkVideo in the stage card with the clip's poster frame
@@ -510,10 +531,9 @@ func (t *AttachTray) videoStage(path string, p trayPreview) gtk.Widgetter {
 
 	stage := gtk.NewBox(gtk.OrientationVertical, 0)
 	stage.AddCSSClass("chatot-tray-image")
-	stage.SetSizeRequest(trayStageW, trayStageH)
 	stage.Append(view)
 	stage.Append(newTransportBar(player, nil))
-	return stage
+	return trayFit(stage, trayStageW)
 }
 
 // audioStage is the audio card: the 🎵 glyph, the file's type, size and
@@ -521,8 +541,6 @@ func (t *AttachTray) videoStage(path string, p trayPreview) gtk.Widgetter {
 func audioStage(path string, p trayPreview) gtk.Widgetter {
 	card := gtk.NewBox(gtk.OrientationVertical, 8)
 	card.AddCSSClass("chatot-tray-nopreview")
-	card.SetSizeRequest(360, 270)
-	card.SetVAlign(gtk.AlignCenter)
 
 	glyph := gtk.NewLabel("🎵")
 	glyph.AddCSSClass("chatot-tray-glyph")
@@ -539,8 +557,9 @@ func audioStage(path string, p trayPreview) gtk.Widgetter {
 	player := newPendingPlayer(p.Seconds)
 	bar := newTransportBar(player, nil)
 	gtk.BaseWidget(bar).AddCSSClass("chatot-tray-audio")
-	gtk.BaseWidget(bar).SetSizeRequest(320, -1)
-	gtk.BaseWidget(bar).SetHAlign(gtk.AlignCenter)
+	gtk.BaseWidget(bar).SetHExpand(true)
+	gtk.BaseWidget(bar).SetMarginStart(8)
+	gtk.BaseWidget(bar).SetMarginEnd(8)
 	gtk.BaseWidget(bar).SetVExpand(true)
 	gtk.BaseWidget(bar).SetVAlign(gtk.AlignStart)
 	gtk.BaseWidget(bar).SetMarginTop(6)
@@ -553,15 +572,13 @@ func audioStage(path string, p trayPreview) gtk.Widgetter {
 		note.SetWrap(true)
 		card.Append(note)
 	})
-	return card
+	return trayFit(card, trayCardW)
 }
 
 // trayNoPreview is the mockup's "No preview available" card.
 func trayNoPreview(path string, p trayPreview) gtk.Widgetter {
 	card := gtk.NewBox(gtk.OrientationVertical, 8)
 	card.AddCSSClass("chatot-tray-nopreview")
-	card.SetSizeRequest(360, 270)
-	card.SetVAlign(gtk.AlignCenter)
 
 	glyph := gtk.NewLabel(trayGlyph(path))
 	glyph.AddCSSClass("chatot-tray-glyph")
@@ -578,7 +595,7 @@ func trayNoPreview(path string, p trayPreview) gtk.Widgetter {
 	meta.SetVExpand(true)
 	meta.SetVAlign(gtk.AlignStart)
 	card.Append(meta)
-	return card
+	return trayFit(card, trayCardW)
 }
 
 // trayMetaWithDuration is trayMeta plus a "m:ss" length when known.

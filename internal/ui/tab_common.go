@@ -350,9 +350,25 @@ func mimeForPath(path string) string {
 // NewPlainHeader is the content strip the non-chat tabs show: the same
 // draggable 46px band as the conversation header, carrying only the window
 // controls.
-func NewPlainHeader() gtk.Widgetter {
+// PlainHeader is that strip. Collapsed (one pane at a time) it also shows
+// the ← back to the list and the start side of the window controls, like
+// the conversation header does.
+type PlainHeader struct {
+	*gtk.WindowHandle
+	back      *gtk.Button
+	startSlot *gtk.Box
+}
+
+func NewPlainHeader(onBack func()) *PlainHeader {
 	row := gtk.NewBox(gtk.OrientationHorizontal, 10)
 	row.AddCSSClass("chatot-conv-headerrow")
+	startSlot := gtk.NewBox(gtk.OrientationHorizontal, 0)
+	startSlot.Append(newWindowControls(gtk.PackStart))
+	startSlot.SetVisible(false)
+	row.Append(startSlot)
+	back := newPaneBackButton("Back to the list", onBack)
+	back.SetVisible(false)
+	row.Append(back)
 	spacer := gtk.NewBox(gtk.OrientationHorizontal, 0)
 	spacer.SetHExpand(true)
 	row.Append(spacer)
@@ -361,7 +377,33 @@ func NewPlainHeader() gtk.Widgetter {
 	h := gtk.NewWindowHandle()
 	h.SetChild(row)
 	h.AddCSSClass("chatot-conv-header")
-	return h
+	return &PlainHeader{WindowHandle: h, back: back, startSlot: startSlot}
+}
+
+// SetCollapsed shows or hides the collapsed-only ← and window controls.
+func (h *PlainHeader) SetCollapsed(collapsed bool) {
+	h.back.SetVisible(collapsed)
+	h.startSlot.SetVisible(collapsed)
+	if collapsed {
+		h.AddCSSClass("chatot-collapsed")
+	} else {
+		h.RemoveCSSClass("chatot-collapsed")
+	}
+}
+
+// newPaneBackButton is the mockup's 28px ← that leads back out of a pane
+// (archived list, collapsed thread). A nil onClick leaves it unconnected.
+func newPaneBackButton(tooltip string, onClick func()) *gtk.Button {
+	back := gtk.NewButtonWithLabel("←")
+	back.AddCSSClass("flat")
+	back.RemoveCSSClass("text-button")
+	back.AddCSSClass("chatot-pane-back")
+	back.SetVAlign(gtk.AlignCenter)
+	back.SetTooltipText(tooltip)
+	if onClick != nil {
+		back.ConnectClicked(onClick)
+	}
+	return back
 }
 
 // displayLink is a link as the mockup prints it: without its scheme.

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -148,6 +149,9 @@ func (cv *ConversationView) ScrollThreadTo(fraction float64) {
 	// the shot lands short of the requested position.
 	glib.TimeoutAdd(400, func() bool { set(); return false })
 }
+
+// PressBack activates the collapsed header's ←, as a click would.
+func (cv *ConversationView) PressBack() { cv.backBtn.Activate() }
 
 // OpenSearch reveals the in-chat search bar with query typed in (the Ctrl+F
 // accelerator passes ""); a no-op with no chat open.
@@ -823,4 +827,25 @@ func (cv *ConversationView) ReactAt(idx int, emoji string) {
 		emoji = "👍"
 	}
 	cv.onReact(m, emoji)
+}
+
+// MeasureRows describes each realized thread row's horizontal minimums, for
+// the measure hook: what bounds how narrow the collapsed window can go.
+func (cv *ConversationView) MeasureRows() []string {
+	var out []string
+	for _, r := range cv.rows {
+		if r.msgID == "" {
+			continue
+		}
+		w, _, _, _ := gtk.BaseWidget(r.wrapper).Measure(gtk.OrientationHorizontal, -1)
+		b, _, _, _ := gtk.BaseWidget(r.bubble).Measure(gtk.OrientationHorizontal, -1)
+		h, _, _, _ := gtk.BaseWidget(r.hover.box).Measure(gtk.OrientationHorizontal, -1)
+		content := "-"
+		if r.content != nil {
+			c, _, _, _ := gtk.BaseWidget(r.content).Measure(gtk.OrientationHorizontal, -1)
+			content = fmt.Sprintf("%d(%s)", c, strings.Join(gtk.BaseWidget(r.content).CSSClasses(), ","))
+		}
+		out = append(out, fmt.Sprintf("row %s: wrapper=%d bubble=%d hover=%d(visible=%v) content=%s", r.msgID, w, b, h, r.hover.box.Visible(), content))
+	}
+	return out
 }

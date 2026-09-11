@@ -34,6 +34,9 @@ type threadRow struct {
 	bubble     *gtk.Box
 	reactions  *gtk.Box
 	hover      *hoverButtons
+	// compact floats the hover pair over the bubble instead of beside it;
+	// see hoverButtons.place.
+	compact bool
 	// The bubble's interior, appended once in this order and shown or hidden
 	// per bind: author, forwarded marker, quote, the rich content, the body,
 	// the read-more button, the footer. Rebuilding these was a quarter of
@@ -577,6 +580,8 @@ type hoverButtons struct {
 	// cur is what a click acts on now; nil means the pair is parked.
 	cur    *bubbleAffordances
 	placed hoverPlacement
+	// compact is the mode the box is currently parented for; see place.
+	compact bool
 }
 
 func newHoverButtons() *hoverButtons {
@@ -631,16 +636,7 @@ func (hb *hoverButtons) bind(r *threadRow, msg client.Message, vm bubbleView, h 
 	if vm.FromMe {
 		want = hoverOutgoing
 	}
-	if hb.placed != want {
-		if vm.FromMe {
-			r.row.ReorderChildAfter(hb.box, r.avatarSlot)
-			hb.box.ReorderChildAfter(hb.smiley, hb.chevron)
-		} else {
-			r.row.ReorderChildAfter(hb.box, r.stack)
-			hb.box.ReorderChildAfter(hb.chevron, hb.smiley)
-		}
-		hb.placed = want
-	}
+	hb.place(r, want)
 	hb.smiley.SetSensitive(h.onReact != nil)
 
 	a := bubbleAffordances{
@@ -678,11 +674,63 @@ func (hb *hoverButtons) park(r *threadRow) {
 	hb.box.SetOpacity(0)
 	hb.box.SetCanTarget(false)
 	hb.box.SetVisible(false)
-	if hb.placed != hoverParked {
-		r.row.ReorderChildAfter(hb.box, r.avatarSlot)
-		hb.box.ReorderChildAfter(hb.chevron, hb.smiley)
-		hb.placed = hoverParked
+	hb.place(r, hoverParked)
+}
+
+// place puts the pair where want says, in the row's current mode. Side by
+// side (the wide layout) the box is the bubble's sibling in r.row, on the
+// side away from the margin, and it keeps its 58px even while hidden so a
+// bubble never shifts when the buttons come up. Compact (the collapsed
+// window) that reservation would push a 280px card past a 360px pane, so
+// the box floats over the bubble's top corner instead, the way the
+// mockup's hover bar does, and takes no room in the row.
+func (hb *hoverButtons) place(r *threadRow, want hoverPlacement) {
+	if hb.compact != r.compact {
+		if r.compact {
+			r.row.Remove(hb.box)
+			hb.box.SetVAlign(gtk.AlignStart)
+			hb.box.AddCSSClass("chatot-hover-float")
+			r.stack.AddOverlay(hb.box)
+		} else {
+			r.stack.RemoveOverlay(hb.box)
+			hb.box.RemoveCSSClass("chatot-hover-float")
+			hb.box.SetVAlign(gtk.AlignFill)
+			hb.box.SetHAlign(gtk.AlignFill)
+			r.row.Append(hb.box)
+		}
+		hb.compact = r.compact
+		hb.placed = hoverUnplaced
 	}
+	if hb.placed == want {
+		return
+	}
+	outgoing := want == hoverOutgoing
+	switch {
+	case hb.compact && outgoing:
+		hb.box.SetHAlign(gtk.AlignStart)
+	case hb.compact:
+		hb.box.SetHAlign(gtk.AlignEnd)
+	case outgoing:
+		r.row.ReorderChildAfter(hb.box, r.avatarSlot)
+	default:
+		r.row.ReorderChildAfter(hb.box, r.stack)
+	}
+	if outgoing {
+		hb.box.ReorderChildAfter(hb.smiley, hb.chevron)
+	} else {
+		hb.box.ReorderChildAfter(hb.chevron, hb.smiley)
+	}
+	hb.placed = want
+}
+
+// setCompact switches the row between the side-by-side and floating hover
+// layouts; see hoverButtons.place.
+func (r *threadRow) setCompact(on bool) {
+	if r.compact == on {
+		return
+	}
+	r.compact = on
+	r.hover.place(r, r.hover.placed)
 }
 
 func (hb *hoverButtons) setVisible(on bool) {

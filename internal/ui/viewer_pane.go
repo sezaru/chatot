@@ -107,14 +107,22 @@ type AttachmentViewer struct {
 	primaryBtn *gtk.Button
 	menuBtn    *gtk.Button
 
-	stage     *gtk.Overlay // the current stage widget sits as its child
-	stageBox  *gtk.Box     // dark/light surface behind it
-	prevBtn   *gtk.Button
-	nextBtn   *gtk.Button
-	navRings  []*gtk.DrawingArea // the ‹ › buttons' rings, redrawn when the stage scheme flips
-	bottom    *gtk.Box           // zoom bar / transport / caption
-	strip     *gtk.Box
-	stripLbl  *gtk.Label
+	stage    *gtk.Overlay // the current stage widget sits as its child
+	stageBox *gtk.Box     // dark/light surface behind it
+	prevBtn  *gtk.Button
+	nextBtn  *gtk.Button
+	navRings []*gtk.DrawingArea // the ‹ › buttons' rings, redrawn when the stage scheme flips
+	bottom   *gtk.Box           // zoom bar / transport / caption
+	strip    *gtk.Box
+	stripLbl *gtk.Label
+	// replyBtn and forwardBtn are the header's icon actions that go when
+	// the window is collapsed (Star is starBtn); see SetCollapsed.
+	replyBtn, forwardBtn *gtk.Button
+	// bodyRow is main beside the details sidebar; body the overlay that
+	// carries the sidebar over main instead while collapsed.
+	bodyRow   *gtk.Box
+	body      *gtk.Overlay
+	collapsed bool
 	details   *gtk.Box
 	detailsOn bool
 
@@ -150,9 +158,16 @@ func NewAttachmentViewer(c client.Client, onBack func()) *AttachmentViewer {
 
 	root.Append(v.buildHeader())
 
-	body := gtk.NewBox(gtk.OrientationHorizontal, 0)
-	body.SetVExpand(true)
-	root.Append(body)
+	// The details sidebar sits beside the main column; collapsed it has no
+	// room there and covers the column instead (see SetCollapsed), so the
+	// row lives in an overlay that can host it either way.
+	v.bodyRow = gtk.NewBox(gtk.OrientationHorizontal, 0)
+	v.bodyRow.SetVExpand(true)
+	v.body = gtk.NewOverlay()
+	v.body.SetVExpand(true)
+	v.body.SetChild(v.bodyRow)
+	root.Append(v.body)
+	body := v.bodyRow
 
 	main := gtk.NewBox(gtk.OrientationVertical, 0)
 	main.SetHExpand(true)
@@ -186,11 +201,18 @@ func NewAttachmentViewer(c client.Client, onBack func()) *AttachmentViewer {
 	stripScroller.SetPropagateNaturalWidth(false)
 	stripScroller.SetHExpand(true)
 	v.strip = gtk.NewBox(gtk.OrientationHorizontal, 7)
-	stripScroller.SetChild(v.strip)
-	stripRow.Append(stripScroller)
+	// The count rides at the end of the scrolling content, as in the
+	// mockup: with more tiles than fit, it scrolls out of view with them
+	// rather than keeping a fixed share of a narrow strip for itself.
+	stripContent := gtk.NewBox(gtk.OrientationHorizontal, 0)
+	stripContent.Append(v.strip)
 	v.stripLbl = gtk.NewLabel("")
 	v.stripLbl.AddCSSClass("chatot-viewer-strip-label")
-	stripRow.Append(v.stripLbl)
+	v.stripLbl.SetHExpand(true)
+	v.stripLbl.SetHAlign(gtk.AlignEnd)
+	stripContent.Append(v.stripLbl)
+	stripScroller.SetChild(stripContent)
+	stripRow.Append(stripScroller)
 	main.Append(stripRow)
 
 	v.details = gtk.NewBox(gtk.OrientationVertical, 0)
@@ -204,6 +226,30 @@ func NewAttachmentViewer(c client.Client, onBack func()) *AttachmentViewer {
 	root.AddController(keys)
 
 	return v
+}
+
+// SetCollapsed follows the split view. The mockup's collapsed header keeps
+// the glyph, the counter, Details, ⋯ and the primary button and drops the
+// three icon actions: Reply, Forward and Star head the ⋯ menu anyway. The
+// 244px details sidebar cannot sit beside a 360px stage, so collapsed it
+// covers the stage instead, the way the mockup lays it over the pane.
+func (v *AttachmentViewer) SetCollapsed(collapsed bool) {
+	if collapsed == v.collapsed {
+		return
+	}
+	v.collapsed = collapsed
+	v.replyBtn.SetVisible(!collapsed)
+	v.forwardBtn.SetVisible(!collapsed)
+	v.starBtn.SetVisible(!collapsed)
+	if collapsed {
+		v.bodyRow.Remove(v.details)
+		v.body.AddOverlay(v.details)
+		v.details.AddCSSClass("chatot-viewer-details-over")
+	} else {
+		v.body.RemoveOverlay(v.details)
+		v.bodyRow.Append(v.details)
+		v.details.RemoveCSSClass("chatot-viewer-details-over")
+	}
 }
 
 // SetWindow sets the parent for dialogs; SetToastOverlay where toasts go.
@@ -296,17 +342,19 @@ func (v *AttachmentViewer) buildHeader() gtk.Widgetter {
 	sep.SetVAlign(gtk.AlignCenter)
 	h.Append(sep)
 
-	h.Append(v.headerButton("↩", "Reply in chat", func() {
+	v.replyBtn = v.headerButton("↩", "Reply in chat", func() {
 		if m, ok := v.Current(); ok && v.onReply != nil {
 			v.back()
 			v.onReply(m)
 		}
-	}))
-	h.Append(v.headerButton("↪", "Forward", func() {
+	})
+	h.Append(v.replyBtn)
+	v.forwardBtn = v.headerButton("↪", "Forward", func() {
 		if m, ok := v.Current(); ok && v.onForward != nil {
 			v.onForward(m)
 		}
-	}))
+	})
+	h.Append(v.forwardBtn)
 	v.starBtn = v.headerButton("☆", "Star", func() {
 		if m, ok := v.Current(); ok && v.onStar != nil {
 			v.onStar(m)
@@ -615,13 +663,13 @@ func (v *AttachmentViewer) show(i int) {
 		preparePlayable(v.player, path, m.Attachment.MimeType, func(err error) {
 			showToast(v.toasts, "Can't play this audio here: "+err.Error())
 		})
-		v.stage.SetChild(v.centred(v.audioCard(m, now), false))
+		v.stage.SetChild(v.clamped(v.audioCard(m, now), viewerAudioW))
 		v.bottom.Append(newTransportBar(v.player, nil))
 	case kind == "pdf":
 		v.stage.SetChild(v.pdfStage(path))
 		v.bottom.Append(v.zoomBar(true))
 	default:
-		v.stage.SetChild(v.centred(v.fileCard(m, kind), false))
+		v.stage.SetChild(v.clamped(v.fileCard(m, kind), viewerCardW))
 	}
 	if cap := v.captionRow(m); cap != nil {
 		v.bottom.Append(cap)
@@ -689,6 +737,26 @@ func (v *AttachmentViewer) centred(w gtk.Widgetter, fill bool) gtk.Widgetter {
 	base.SetHExpand(true)
 	base.SetVExpand(true)
 	return w
+}
+
+// viewerAudioW and viewerCardW are the mockup's card widths on the stage:
+// the voice card's width:400px and the file card's 340px, both max-width
+// 100% of the stage.
+const (
+	viewerAudioW = 400
+	viewerCardW  = 340
+)
+
+// clamped is the mockup's width:Npx;max-width:100% for a card on the
+// stage: maxW wide where the stage allows, narrower with the pane, centred
+// either way. A size request would hold the window open at maxW instead.
+func (v *AttachmentViewer) clamped(w gtk.Widgetter, maxW int) gtk.Widgetter {
+	c := adw.NewClamp()
+	c.SetMaximumSize(maxW)
+	c.SetTighteningThreshold(maxW)
+	c.SetChild(w)
+	c.SetVAlign(gtk.AlignCenter)
+	return v.centred(c, true)
 }
 
 // ---- stages -------------------------------------------------------------
@@ -760,7 +828,7 @@ func (v *AttachmentViewer) download(m client.Message, col *gtk.Box, disc *gtk.Bu
 func (v *AttachmentViewer) photoStage(path string) gtk.Widgetter {
 	texture, err := gdk.NewTextureFromFilename(path)
 	if err != nil {
-		return v.centred(v.brokenCard("This picture can't be decoded here.", path), false)
+		return v.clamped(v.brokenCard("This picture can't be decoded here.", path), viewerCardW)
 	}
 	v.pic = gtk.NewPictureForPaintable(texture)
 	v.picTex = texture
@@ -1201,7 +1269,6 @@ func (v *AttachmentViewer) renderPage(path string, n int) {
 func (v *AttachmentViewer) audioCard(m client.Message, now time.Time) gtk.Widgetter {
 	card := gtk.NewBox(gtk.OrientationVertical, 16)
 	card.AddCSSClass("chatot-viewer-card")
-	card.SetSizeRequest(400, -1)
 
 	row := gtk.NewBox(gtk.OrientationHorizontal, 11)
 	from := v.from(m)
@@ -1282,7 +1349,6 @@ func (v *AttachmentViewer) fileCard(m client.Message, kind string) gtk.Widgetter
 	card := gtk.NewBox(gtk.OrientationVertical, 14)
 	card.AddCSSClass("chatot-viewer-card")
 	card.AddCSSClass("chatot-viewer-filecard")
-	card.SetSizeRequest(340, -1)
 
 	ext := fileExt(m.Attachment.Filename)
 	tile := gtk.NewLabel(ext)
@@ -1322,7 +1388,6 @@ func (v *AttachmentViewer) fileCard(m client.Message, kind string) gtk.Widgetter
 func (v *AttachmentViewer) brokenCard(text, path string) gtk.Widgetter {
 	card := gtk.NewBox(gtk.OrientationVertical, 12)
 	card.AddCSSClass("chatot-viewer-card")
-	card.SetSizeRequest(340, -1)
 	lbl := gtk.NewLabel(text)
 	lbl.AddCSSClass("chatot-viewer-file-note")
 	lbl.SetWrap(true)
@@ -1649,7 +1714,7 @@ func (v *AttachmentViewer) toggleDetails() {
 	// The file card hides its buttons while the sidebar offers the same.
 	if m, ok := v.Current(); ok {
 		if k := viewerKind(m); k == "file" && localOK(m) {
-			v.stage.SetChild(v.centred(v.fileCard(m, k), false))
+			v.stage.SetChild(v.clamped(v.fileCard(m, k), viewerCardW))
 		}
 	}
 }
