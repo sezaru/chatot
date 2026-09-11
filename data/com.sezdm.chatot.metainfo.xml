@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.9.2-beta" date="2026-09-11">
+      <description>
+        <p>Tapping a business button or list option now reaches the business. WhatsApp had been refusing every reply, so a tap did nothing; the reply is sent the way the phone sends it, and a refused one says so in a toast instead of vanishing.</p>
+      </description>
+    </release>
     <release version="0.9.1-beta" date="2026-09-11">
       <description>
         <p>Fixes a chat that broke its layout: a reply quoting a message with a long unbroken token (a Pix key, a hash, a link) pushed the whole pane past the window's edge as soon as it scrolled into view. Quotes and every other label that shows text from the network now wrap inside the bubble.</p>
