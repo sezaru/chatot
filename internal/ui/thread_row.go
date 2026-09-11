@@ -156,6 +156,7 @@ func (r *threadRow) buildBubbleInterior() {
 	r.quote.AddCSSClass("chatot-bubble-quote")
 	r.quote.SetXAlign(0)
 	r.quote.SetWrap(true)
+	r.quote.SetWrapMode(pango.WrapWordChar)
 	// The quote is the way back to what it answers.
 	click := gtk.NewGestureClick()
 	click.ConnectReleased(func(int, float64, float64) {

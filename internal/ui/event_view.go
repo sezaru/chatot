@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 
 	"chatot/internal/client"
 )
@@ -69,6 +70,7 @@ func buildEventContent(v eventView) gtk.Widgetter {
 	title := gtk.NewLabel("📅 " + v.Title)
 	title.SetXAlign(0)
 	title.SetWrap(true)
+	title.SetWrapMode(pango.WrapWordChar)
 	title.AddCSSClass("chatot-event-title")
 	if v.Canceled {
 		title.AddCSSClass("chatot-event-canceled")
@@ -86,6 +88,7 @@ func buildEventContent(v eventView) gtk.Widgetter {
 		loc := gtk.NewLabel("📍 " + v.Location)
 		loc.SetXAlign(0)
 		loc.SetWrap(true)
+		loc.SetWrapMode(pango.WrapWordChar)
 		loc.AddCSSClass("chatot-event-location")
 		box.Append(loc)
 	}

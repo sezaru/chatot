@@ -390,6 +390,7 @@ func buildGroupInfo(dialog *cardDialog, c client.Client, cache *avatarCache, inf
 	title := gtk.NewLabel(info.Name)
 	title.AddCSSClass("chatot-info-name")
 	title.SetWrap(true)
+	title.SetWrapMode(pango.WrapWordChar)
 	title.SetJustify(gtk.JustifyCenter)
 	head.Append(title)
 	first, you := participantFirstNames(info.Participants, info.OwnerJID, own, names)
@@ -397,6 +398,7 @@ func buildGroupInfo(dialog *cardDialog, c client.Client, cache *avatarCache, inf
 		s := gtk.NewLabel(sub)
 		s.AddCSSClass("chatot-info-sub")
 		s.SetWrap(true)
+		s.SetWrapMode(pango.WrapWordChar)
 		s.SetJustify(gtk.JustifyCenter)
 		head.Append(s)
 	}
@@ -404,6 +406,7 @@ func buildGroupInfo(dialog *cardDialog, c client.Client, cache *avatarCache, inf
 		t := gtk.NewLabel(info.Topic)
 		t.AddCSSClass("chatot-info-topic")
 		t.SetWrap(true)
+		t.SetWrapMode(pango.WrapWordChar)
 		t.SetJustify(gtk.JustifyCenter)
 		t.SetMaxWidthChars(40)
 		head.Append(t)
