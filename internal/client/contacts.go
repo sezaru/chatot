@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,9 @@ type contactNames struct {
 	// syncMu serialises syncContacts: connect, history sync and app-state
 	// completion can all ask for one within the same second.
 	syncMu sync.Mutex
+	// asked is every chat resolveBusinessNames already queried the server
+	// about; a business with no verified name is not asked again.
+	asked map[string]bool
 }
 
 // OwnName returns this account's WhatsApp profile name (the push name other
@@ -87,6 +91,95 @@ func (w *Whatsmeow) syncContacts(ctx context.Context) {
 		w.upsertContact(row)
 	}
 	w.scheduleNamesRefresh()
+	w.resolveBusinessNames(ctx)
+}
+
+// verifiedNameBatch is how many users one usync query asks about.
+const verifiedNameBatch = 50
+
+// verifiedNameTimeout bounds one such query.
+const verifiedNameTimeout = 30 * time.Second
+
+// resolveBusinessNames asks the server for the verified business name of
+// every 1:1 chat the list can only show as a number. A business that has
+// not messaged this device since the link has no push name here, its
+// history-synced messages carry none, and it is in nobody's address book,
+// so the contact sync has nothing for it either; the phone shows the name
+// on its business profile, which usync returns. Each chat is asked about
+// once per process. Runs off the dispatch goroutine.
+func (w *Whatsmeow) resolveBusinessNames(ctx context.Context) {
+	if w.store == nil || w.wa == nil || !w.wa.IsConnected() {
+		return
+	}
+	chats, err := w.store.UnnamedChats()
+	if err != nil {
+		w.log.Warnf("chatot/client: unnamed chats: %v", err)
+		return
+	}
+	// The query goes to the phone-number JID where one is known: a LID
+	// alone may not resolve, and the name is filed under both.
+	targets := map[types.JID][]string{}
+	var jids []types.JID
+	w.names.mu.Lock()
+	if w.names.asked == nil {
+		w.names.asked = map[string]bool{}
+	}
+	for _, chat := range chats {
+		if w.names.asked[chat] {
+			continue
+		}
+		w.names.asked[chat] = true
+		q := chat
+		if strings.HasSuffix(chat, "@lid") {
+			if pn, err := w.store.ContactPNJID(chat); err == nil && pn != "" {
+				q = pn
+			}
+		}
+		jid, err := types.ParseJID(q)
+		if err != nil {
+			continue
+		}
+		if _, seen := targets[jid]; !seen {
+			jids = append(jids, jid)
+		}
+		targets[jid] = append(targets[jid], chat)
+	}
+	w.names.mu.Unlock()
+	found := 0
+	for start := 0; start < len(jids); start += verifiedNameBatch {
+		end := min(start+verifiedNameBatch, len(jids))
+		qctx, cancel := context.WithTimeout(ctx, verifiedNameTimeout)
+		infos, err := w.wa.GetUserInfo(qctx, jids[start:end])
+		cancel()
+		if err != nil {
+			w.log.Warnf("chatot/client: verified names: %v", err)
+			return
+		}
+		for jid, info := range infos {
+			name := verifiedNameOf(info.VerifiedName)
+			if name == "" {
+				continue
+			}
+			for _, chat := range targets[jid.ToNonAD()] {
+				w.upsertContact(store.ContactRow{JID: chat, BusinessName: name})
+			}
+			w.upsertContact(store.ContactRow{JID: jid.ToNonAD().String(), BusinessName: name})
+			found++
+		}
+	}
+	if found > 0 {
+		w.log.Infof("chatot/client: verified names: %d of %d unnamed chats are businesses", found, len(jids))
+		w.scheduleNamesRefresh()
+	}
+}
+
+// verifiedNameOf is the business name on a usync verified-name
+// certificate, "" for a personal account.
+func verifiedNameOf(v *types.VerifiedName) string {
+	if v == nil || v.Details == nil {
+		return ""
+	}
+	return strings.TrimSpace(v.Details.GetVerifiedName())
 }
 
 func contactRowFrom(jid types.JID, info types.ContactInfo) store.ContactRow {
@@ -126,15 +219,20 @@ func (w *Whatsmeow) learnFromMessage(info *types.MessageInfo) {
 			w.upsertContact(store.ContactRow{JID: info.SenderAlt.ToNonAD().String(), PushName: info.PushName})
 		}
 	}
-	if info.Chat.Server != types.HiddenUserServer {
-		return
-	}
 	alt := info.SenderAlt
 	if info.IsFromMe {
 		alt = info.RecipientAlt
 	}
-	if !alt.IsEmpty() && alt.Server == types.DefaultUserServer {
+	if alt.IsEmpty() {
+		return
+	}
+	switch {
+	case info.Chat.Server == types.HiddenUserServer && alt.Server == types.DefaultUserServer:
 		w.upsertContact(store.ContactRow{JID: info.Chat.ToNonAD().String(), PNJID: alt.ToNonAD().String()})
+	case info.Chat.Server == types.DefaultUserServer && alt.Server == types.HiddenUserServer:
+		// A number-addressed message names the LID beside it; recording
+		// the pair folds any chat opened under that LID into this one.
+		w.upsertContact(store.ContactRow{JID: alt.ToNonAD().String(), PNJID: info.Chat.ToNonAD().String()})
 	}
 }
 

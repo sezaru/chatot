@@ -53,6 +53,25 @@ func (w *Whatsmeow) ingestMessage(m *Message) error {
 	return w.ingestMessageUnread(m, unreadDelta)
 }
 
+// ingestSent records a message this device just sent and tells the
+// listeners the chat moved: whatsmeow echoes nothing for our own sends, so
+// without the event the chat only climbed the list on the next event to
+// touch it (a delivery receipt, a reply), which for a forward into a quiet
+// chat was a minute or more away.
+func (w *Whatsmeow) ingestSent(m *Message) error {
+	if m == nil {
+		return nil
+	}
+	// Filed under the same chat the person's replies land in: a send to
+	// a LID whose number is known goes in the number's chat.
+	w.lidMu.Lock()
+	m.ChatJID = w.canonicalChatJID(m.ChatJID)
+	err := w.ingestMessage(m)
+	w.lidMu.Unlock()
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: m.ChatJID}})
+	return err
+}
+
 // ingestMessageUnread is ingestMessage with an explicit unread delta, for
 // callers (history backfill) whose messages must not count as new.
 func (w *Whatsmeow) ingestMessageUnread(m *Message, unreadDelta int) error {

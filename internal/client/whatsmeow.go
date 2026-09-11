@@ -875,7 +875,7 @@ func (w *Whatsmeow) SendText(ctx context.Context, jid, text string, replyTo *Msg
 	}
 
 	out := Message{ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, Text: text, TS: time.Now().Unix(), ReplyTo: replyTo, LinkPreview: preview}
-	if err := w.ingestMessage(&out); err != nil {
+	if err := w.ingestSent(&out); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of sent message failed: %v", err)
 	}
 	return id, nil
@@ -938,7 +938,7 @@ func (w *Whatsmeow) EditMessage(ctx context.Context, chatJID, msgID, newText str
 	}
 
 	out := Message{ID: msgID, ChatJID: chatJID, FromJID: w.ownJID(), FromMe: true, Text: newText, TS: time.Now().Unix(), Edited: true}
-	if err := w.ingestMessage(&out); err != nil {
+	if err := w.ingestSent(&out); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of edited message failed: %v", err)
 	}
 	w.pushEvent(Event{Kind: EventMessage, Message: &out})
@@ -1229,7 +1229,7 @@ func (w *Whatsmeow) SendMedia(ctx context.Context, jid string, m Attachment, rep
 			Thumbnail: thumb, DurationSecs: m.DurationSecs, Size: int64(len(data)), IsGIF: m.IsGIF,
 		},
 	}
-	if err := w.ingestMessage(&out); err != nil {
+	if err := w.ingestSent(&out); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of sent media failed: %v", err)
 	}
 	return id, nil
@@ -1266,7 +1266,7 @@ func (w *Whatsmeow) SendLocation(ctx context.Context, jid string, loc Location, 
 	sent := loc
 	sent.IsLive = false
 	out := Message{ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(), ReplyTo: replyTo, Location: &sent}
-	if err := w.ingestMessage(&out); err != nil {
+	if err := w.ingestSent(&out); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of sent location failed: %v", err)
 	}
 	return id, nil
@@ -1296,7 +1296,7 @@ func (w *Whatsmeow) SendLiveLocation(ctx context.Context, jid string, lat, lon f
 
 	loc := Location{Latitude: lat, Longitude: lon, IsLive: true, LiveUntil: time.Now().Unix() + int64(durationSecs)}
 	out := Message{ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(), Location: &loc}
-	if err := w.ingestMessage(&out); err != nil {
+	if err := w.ingestSent(&out); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of sent live location failed: %v", err)
 	}
 	return id, nil
@@ -1324,7 +1324,7 @@ func (w *Whatsmeow) SendContact(ctx context.Context, jid string, contact Contact
 
 	sent := contact
 	out := Message{ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(), ReplyTo: replyTo, Contact: &sent}
-	if err := w.ingestMessage(&out); err != nil {
+	if err := w.ingestSent(&out); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of sent contact failed: %v", err)
 	}
 	return id, nil
@@ -1369,7 +1369,7 @@ func (w *Whatsmeow) ForwardMessage(ctx context.Context, msg Message, toJID strin
 		sent := *msg.Location
 		sent.IsLive = false
 		out := Message{ID: id, ChatJID: toJID, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(), Location: &sent, Forwarded: true}
-		if err := w.ingestMessage(&out); err != nil {
+		if err := w.ingestSent(&out); err != nil {
 			w.log.Warnf("chatot/client: optimistic upsert of forwarded location failed: %v", err)
 		}
 		return id, nil
@@ -1386,7 +1386,7 @@ func (w *Whatsmeow) ForwardMessage(ctx context.Context, msg Message, toJID strin
 		}
 		sent := *msg.Contact
 		out := Message{ID: id, ChatJID: toJID, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(), Contact: &sent, Forwarded: true}
-		if err := w.ingestMessage(&out); err != nil {
+		if err := w.ingestSent(&out); err != nil {
 			w.log.Warnf("chatot/client: optimistic upsert of forwarded contact failed: %v", err)
 		}
 		return id, nil
@@ -1404,7 +1404,7 @@ func (w *Whatsmeow) ForwardMessage(ctx context.Context, msg Message, toJID strin
 			return "", fmt.Errorf("chatot/client: forward text: %w", err)
 		}
 		out := Message{ID: id, ChatJID: toJID, FromJID: w.ownJID(), FromMe: true, Text: msg.Text, TS: time.Now().Unix(), Forwarded: true}
-		if err := w.ingestMessage(&out); err != nil {
+		if err := w.ingestSent(&out); err != nil {
 			w.log.Warnf("chatot/client: optimistic upsert of forwarded text failed: %v", err)
 		}
 		return id, nil
@@ -1476,7 +1476,7 @@ func (w *Whatsmeow) forwardMedia(ctx context.Context, msg Message, to types.JID,
 			LocalPath: cachedPath, Caption: att.Caption, ProtoBlob: marshalMedia(mediaProto),
 		},
 	}
-	if err := w.ingestMessage(&out); err != nil {
+	if err := w.ingestSent(&out); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of forwarded media failed: %v", err)
 	}
 	return id, nil
@@ -1504,7 +1504,7 @@ func (w *Whatsmeow) CreatePoll(ctx context.Context, jid, name string, options []
 		ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(),
 		Poll: &Poll{Name: name, Options: opts, SelectableCount: selectable},
 	}
-	if err := w.ingestMessage(&out); err != nil {
+	if err := w.ingestSent(&out); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of created poll failed: %v", err)
 	}
 	return id, nil
@@ -1601,7 +1601,7 @@ func (w *Whatsmeow) ReplyChoice(ctx context.Context, chatJID, msgID string, sel 
 		return "", fmt.Errorf("chatot/client: reply choice: send: %w", err)
 	}
 	out := Message{ID: id, ChatJID: chatJID, FromJID: w.ownJID(), FromMe: true, Text: sel.Label, TS: time.Now().Unix()}
-	if err := w.ingestMessage(&out); err != nil {
+	if err := w.ingestSent(&out); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of choice reply failed: %v", err)
 	}
 	// Unlike a composer send, nothing in the UI holds a pending row for
@@ -1774,7 +1774,7 @@ func (w *Whatsmeow) SendVoice(ctx context.Context, jid string, oggOpus []byte, d
 		ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(),
 		Attachment: &Attachment{Kind: "audio", MimeType: voiceMimetype, LocalPath: localPath, ProtoBlob: marshalMedia(aud)},
 	}
-	if err := w.ingestMessage(&out); err != nil {
+	if err := w.ingestSent(&out); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of sent voice note failed: %v", err)
 	}
 	return id, nil
@@ -1831,7 +1831,7 @@ func (w *Whatsmeow) SendSticker(ctx context.Context, jid, path string) (string, 
 		ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(),
 		Attachment: &Attachment{Kind: "sticker", MimeType: mimeType, LocalPath: localPath, ProtoBlob: marshalMedia(sticker)},
 	}
-	if err := w.ingestMessage(&out); err != nil {
+	if err := w.ingestSent(&out); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of sent sticker failed: %v", err)
 	}
 	return id, nil
@@ -2190,7 +2190,7 @@ func (w *Whatsmeow) PostStatus(ctx context.Context, text string) error {
 	// Our own update isn't echoed back, so file it under the broadcast
 	// ourselves: that is what "My status" and its viewer list read.
 	out := Message{ID: id, ChatJID: statusBroadcastJID, FromJID: w.ownJID(), FromMe: true, Text: text, TS: time.Now().Unix()}
-	if err := w.ingestMessage(&out); err != nil {
+	if err := w.ingestSent(&out); err != nil {
 		w.log.Warnf("chatot/client: persist own status: %v", err)
 	}
 	return nil
@@ -2312,7 +2312,41 @@ func (w *Whatsmeow) CheckOnWhatsApp(ctx context.Context, phone string) (string, 
 	if len(resp) == 0 || !resp[0].IsIn {
 		return "", false, nil
 	}
-	return resp[0].JID.String(), true, nil
+	r := resp[0]
+	// usync answers with the LID and the phone-number JID beside it. The
+	// chat is filed under the number: the person's replies canonicalize
+	// to it (canonicalChatJID), so a chat opened under the LID would be
+	// left behind the moment they answered.
+	jid := r.JID
+	if !r.PhoneNumber.IsEmpty() {
+		jid = r.PhoneNumber
+	}
+	if jid.Server == types.HiddenUserServer {
+		if digits := phoneDigits(phone); digits != "" {
+			jid = types.NewJID(digits, types.DefaultUserServer)
+		}
+	}
+	jid = jid.ToNonAD()
+	if r.JID.Server == types.HiddenUserServer && jid.Server == types.DefaultUserServer {
+		w.upsertContact(store.ContactRow{JID: r.JID.ToNonAD().String(), PNJID: jid.String()})
+	}
+	if name := verifiedNameOf(r.VerifiedName); name != "" {
+		w.upsertContact(store.ContactRow{JID: jid.String(), BusinessName: name})
+		if r.JID.Server == types.HiddenUserServer {
+			w.upsertContact(store.ContactRow{JID: r.JID.ToNonAD().String(), BusinessName: name})
+		}
+	}
+	return jid.String(), true, nil
+}
+
+// phoneDigits is phone with everything but its digits dropped.
+func phoneDigits(phone string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, phone)
 }
 
 // SendTyping sends a per-chat composing/paused indicator as plain text media.
