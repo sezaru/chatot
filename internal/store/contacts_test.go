@@ -44,3 +44,45 @@ func TestContactNameIgnoresDeviceSuffix(t *testing.T) {
 		t.Errorf("device-addressed twin lookup = %q, want Ken Thompson", name)
 	}
 }
+
+func TestUnnamedChats(t *testing.T) {
+	s := newTestStore(t)
+	// A chat with a synced name, one named through its contact row, one
+	// LID chat named through its phone twin, a group, and two the list can
+	// only show as a number (one of them with a bare-number push name).
+	if err := s.UpsertChat(ChatRow{JID: "1@s.whatsapp.net", Name: "Ada"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, jid := range []string{"2@s.whatsapp.net", "3@lid", "4@s.whatsapp.net", "5@s.whatsapp.net"} {
+		if err := s.BumpChatActivity(jid, false, 10, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.BumpChatActivity("6@g.us", true, 10, 0); err != nil {
+		t.Fatal(err)
+	}
+	must := func(row ContactRow) {
+		t.Helper()
+		if err := s.UpsertContact(row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(ContactRow{JID: "2@s.whatsapp.net", PushName: "Grace"})
+	must(ContactRow{JID: "3@lid", PNJID: "33@s.whatsapp.net"})
+	must(ContactRow{JID: "33@s.whatsapp.net", FullName: "Linus"})
+	must(ContactRow{JID: "5@s.whatsapp.net", PushName: "+55 48 9999-0000"})
+
+	got, err := s.UnnamedChats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"4@s.whatsapp.net", "5@s.whatsapp.net"}
+	if len(got) != len(want) {
+		t.Fatalf("UnnamedChats = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("UnnamedChats = %v, want %v", got, want)
+		}
+	}
+}

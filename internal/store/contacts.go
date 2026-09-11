@@ -111,3 +111,41 @@ func (s *Store) ContactPNJID(jid string) (string, error) {
 	}
 	return pn.String, err
 }
+
+// UnnamedChats lists the 1:1 chats the list can only show as a number: no
+// synced chat name and no usable name on the chat's contact row or its
+// LID/phone twin.
+func (s *Store) UnnamedChats() ([]string, error) {
+	rows, err := s.db.Query(`
+		SELECT jid FROM chats
+		WHERE is_group = 0 AND (jid LIKE '%@s.whatsapp.net' OR jid LIKE '%@lid')`)
+	if err != nil {
+		return nil, err
+	}
+	var all []string
+	for rows.Next() {
+		var jid string
+		if err := rows.Scan(&jid); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		all = append(all, jid)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// The name lookups run after the list is read in full: the store has a
+	// single connection, so a query inside the rows loop would deadlock.
+	var out []string
+	for _, jid := range all {
+		name, err := s.ContactName(jid)
+		if err != nil {
+			return nil, err
+		}
+		if name == "" {
+			out = append(out, jid)
+		}
+	}
+	return out, nil
+}
