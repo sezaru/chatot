@@ -57,6 +57,10 @@ type mediaView struct {
 	// whether the text is unfolded), set by the bubble from the view.
 	Transcript      string
 	TranscriptState transcriptState
+	// SearchQuery is the in-chat search under way, "" when none: its
+	// matches in the transcript are highlighted, and a transcript with
+	// one shows unfolded so the match is in view.
+	SearchQuery string
 	// voice, when set by the bubble, is told when the note plays, stops
 	// and ends (see voiceHooks).
 	voice voiceHooks

@@ -465,8 +465,9 @@ func (f *Fake) Search(query string, limit int) ([]SearchHit, error) {
 	var hits []SearchHit
 	for jid, msgs := range f.messages {
 		for _, m := range msgs {
-			if strings.Contains(strings.ToLower(m.Text), query) {
-				hits = append(hits, SearchHit{ChatJID: jid, MsgID: m.ID, ChatName: f.chatName(jid), Snippet: m.Text, TS: m.TS})
+			if h, ok := fakeSearchHit(m, query); ok {
+				h.ChatJID, h.ChatName = jid, f.chatName(jid)
+				hits = append(hits, h)
 				if limit > 0 && len(hits) >= limit {
 					return hits, nil
 				}
@@ -474,6 +475,18 @@ func (f *Fake) Search(query string, limit int) ([]SearchHit, error) {
 		}
 	}
 	return hits, nil
+}
+
+// fakeSearchHit matches the lower-cased query against m's text, then its
+// voice transcript, the way the store's index covers both.
+func fakeSearchHit(m Message, query string) (SearchHit, bool) {
+	if strings.Contains(strings.ToLower(m.Text), query) {
+		return SearchHit{MsgID: m.ID, Snippet: m.Text, TS: m.TS}, true
+	}
+	if a := m.Attachment; a != nil && a.Transcript != "" && strings.Contains(strings.ToLower(a.Transcript), query) {
+		return SearchHit{MsgID: m.ID, Snippet: a.Transcript, TS: m.TS, InTranscript: true}, true
+	}
+	return SearchHit{}, false
 }
 
 func (f *Fake) SearchInChat(chatJID, query string, limit int) ([]SearchHit, error) {
@@ -485,8 +498,9 @@ func (f *Fake) SearchInChat(chatJID, query string, limit int) ([]SearchHit, erro
 	}
 	var hits []SearchHit
 	for _, m := range f.messages[chatJID] {
-		if strings.Contains(strings.ToLower(m.Text), query) {
-			hits = append(hits, SearchHit{ChatJID: chatJID, MsgID: m.ID, ChatName: f.chatName(chatJID), Snippet: m.Text, TS: m.TS})
+		if h, ok := fakeSearchHit(m, query); ok {
+			h.ChatJID, h.ChatName = chatJID, f.chatName(chatJID)
+			hits = append(hits, h)
 			if limit > 0 && len(hits) >= limit {
 				break
 			}

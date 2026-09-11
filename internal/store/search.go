@@ -59,7 +59,11 @@ func (s *Store) Search(query string, limit int) ([]SearchHit, error) {
 
 // searchMessages runs the fts5 MATCH query, joining back to messages for
 // chat/ts and to chats/groups/contacts for display-name resolution.
-// Ranking is bm25 (best match first) with recency breaking ties.
+// Ranking is bm25 (best match first) with recency breaking ties. The index
+// holds the text and the voice transcript of each message: the snippet
+// comes from whichever column matched better (-1), and a bm25 that weighs
+// only the transcript column is below zero exactly when the query matched
+// there.
 func (s *Store) searchMessages(query string, limit int) ([]SearchHit, error) {
 	ftsQuery := buildFTSQuery(query)
 	if ftsQuery == "" {
@@ -68,7 +72,7 @@ func (s *Store) searchMessages(query string, limit int) ([]SearchHit, error) {
 	rows, err := s.db.Query(`
 		SELECT
 			m.chat_jid, m.msg_id, m.ts,
-			snippet(messages_fts, 0, '[', ']', '…', 10),
+			snippet(messages_fts, -1, '[', ']', '…', 10), bm25(messages_fts, 0, 1) < 0,
 			COALESCE(c.name, ''), COALESCE(g.name, ''),
 			COALESCE(ct.business_name, ''), COALESCE(ct.full_name, ''), COALESCE(ct.push_name, ''), COALESCE(ct.system_name, ''), COALESCE(ct.pn_jid, '')
 		FROM messages_fts
@@ -89,7 +93,7 @@ func (s *Store) searchMessages(query string, limit int) ([]SearchHit, error) {
 	for rows.Next() {
 		var h SearchHit
 		var chatName, groupName, business, full, push, system, pnJID string
-		if err := rows.Scan(&h.ChatJID, &h.MsgID, &h.TS, &h.Snippet, &chatName, &groupName, &business, &full, &push, &system, &pnJID); err != nil {
+		if err := rows.Scan(&h.ChatJID, &h.MsgID, &h.TS, &h.Snippet, &h.InTranscript, &chatName, &groupName, &business, &full, &push, &system, &pnJID); err != nil {
 			return nil, err
 		}
 		h.ChatName = resolveChatName(chatName, groupName, business, full, push, system, pnJID, h.ChatJID)
@@ -115,7 +119,7 @@ func (s *Store) SearchInChat(chatJID, query string, limit int) ([]SearchHit, err
 	rows, err := s.db.Query(`
 		SELECT
 			m.chat_jid, m.msg_id, m.ts,
-			snippet(messages_fts, 0, '[', ']', '…', 10)
+			snippet(messages_fts, -1, '[', ']', '…', 10), bm25(messages_fts, 0, 1) < 0
 		FROM messages_fts
 		JOIN messages m ON m.rowid = messages_fts.rowid
 		WHERE messages_fts MATCH ? AND m.chat_jid = ?
@@ -130,7 +134,7 @@ func (s *Store) SearchInChat(chatJID, query string, limit int) ([]SearchHit, err
 	var out []SearchHit
 	for rows.Next() {
 		var h SearchHit
-		if err := rows.Scan(&h.ChatJID, &h.MsgID, &h.TS, &h.Snippet); err != nil {
+		if err := rows.Scan(&h.ChatJID, &h.MsgID, &h.TS, &h.Snippet, &h.InTranscript); err != nil {
 			return nil, err
 		}
 		out = append(out, h)

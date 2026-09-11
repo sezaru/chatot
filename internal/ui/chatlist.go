@@ -1593,11 +1593,17 @@ func searchHitVM(h client.SearchHit, now time.Time) searchHitView {
 		initial = strings.ToUpper(string(r))
 		break
 	}
+	snippet := h.Snippet
+	if h.InTranscript {
+		// The words are a voice note's, said not typed; the row says so
+		// the way the chat list's preview line names an audio message.
+		snippet = "🎤 " + snippet
+	}
 	return searchHitView{
 		ChatJID:  h.ChatJID,
 		MsgID:    h.MsgID,
 		ChatName: name,
-		Snippet:  h.Snippet,
+		Snippet:  snippet,
 		TimeText: formatChatTime(h.TS, now),
 		Initial:  initial,
 	}

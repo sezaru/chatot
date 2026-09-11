@@ -190,3 +190,21 @@ func TestModelProgressText(t *testing.T) {
 		t.Errorf("unknown length = %q, want just what has arrived", got)
 	}
 }
+
+func TestTranscriptShownForSearchMatch(t *testing.T) {
+	folded := mediaView{Transcript: "call the plumber about the sink", TranscriptState: transcriptState{Folded: true}}
+	if transcriptShown(folded) {
+		t.Fatal("a folded transcript with no search shows")
+	}
+	folded.SearchQuery = "Plumber"
+	if !transcriptShown(folded) {
+		t.Error("a folded transcript the search matches stays folded")
+	}
+	folded.SearchQuery = "electrician"
+	if transcriptShown(folded) {
+		t.Error("a folded transcript the search misses unfolds")
+	}
+	if transcriptMatches("", "plumber") || transcriptMatches("plumber", "") {
+		t.Error("an empty transcript or query matches")
+	}
+}

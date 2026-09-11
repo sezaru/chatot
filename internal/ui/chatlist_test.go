@@ -99,6 +99,13 @@ func TestSearchHitVM(t *testing.T) {
 		}
 	})
 
+	t.Run("a transcript hit is marked as a voice note", func(t *testing.T) {
+		vm := searchHitVM(client.SearchHit{ChatJID: "j1", Snippet: "call the [plumber]", InTranscript: true}, now)
+		if vm.Snippet != "🎤 call the [plumber]" {
+			t.Errorf("Snippet = %q, want the mic prefix", vm.Snippet)
+		}
+	})
+
 	t.Run("empty chat name falls back to JID", func(t *testing.T) {
 		vm := searchHitVM(client.SearchHit{ChatJID: "1234567890@s.whatsapp.net"}, now)
 		if vm.ChatName != "1234567890@s.whatsapp.net" {

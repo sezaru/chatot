@@ -319,6 +319,7 @@ func (r *threadRow) fillContent(msg client.Message, vm bubbleView, h bubbleHooks
 			media.fetchThumb = func() { h.onFetchThumbnail(m) }
 		}
 		media.voice = h.voice
+		media.SearchQuery = h.searchQuery
 		if h.transcriptOf != nil {
 			media.TranscriptState = h.transcriptOf(msg.ID)
 		}

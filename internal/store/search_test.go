@@ -1,6 +1,10 @@
 package store
 
-import "testing"
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestSearchFindsMessageWithChatNameAndSnippet(t *testing.T) {
 	s := newTestStore(t)
@@ -188,5 +192,96 @@ func TestBuildFTSQuery(t *testing.T) {
 				t.Errorf("buildFTSQuery(%q) = %q, want %q", tc.input, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSearchFindsVoiceTranscript(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "v1", TS: 1}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "v1", Kind: "audio", MimeType: "audio/ogg"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "t1", Text: "the plumber comes tomorrow", TS: 2}))
+	must(t, s.SetMediaTranscript("a@s.whatsapp.net", "v1", "call the plumber about the kitchen sink"))
+
+	hits, err := s.Search("plumber", 10)
+	must(t, err)
+	got := map[string]SearchHit{}
+	for _, h := range hits {
+		got[h.MsgID] = h
+	}
+	v, ok := got["v1"]
+	if !ok {
+		t.Fatalf("Search: got %+v, want a hit for the voice note v1", hits)
+	}
+	if !v.InTranscript {
+		t.Error("v1: InTranscript = false, want true")
+	}
+	if !strings.Contains(v.Snippet, "[plumber]") {
+		t.Errorf("v1: Snippet = %q, want the transcript's match marked", v.Snippet)
+	}
+	if tt, ok := got["t1"]; !ok || tt.InTranscript {
+		t.Errorf("t1: got %+v (present %v), want a text hit with InTranscript false", tt, ok)
+	}
+
+	inChat, err := s.SearchInChat("a@s.whatsapp.net", "kitchen", 0)
+	must(t, err)
+	if len(inChat) != 1 || inChat[0].MsgID != "v1" || !inChat[0].InTranscript {
+		t.Fatalf("SearchInChat: got %+v, want only v1 from its transcript", inChat)
+	}
+
+	// A new transcript replaces the old one in the index.
+	must(t, s.SetMediaTranscript("a@s.whatsapp.net", "v1", "nothing to report"))
+	if hits, err := s.SearchInChat("a@s.whatsapp.net", "kitchen", 0); err != nil || len(hits) != 0 {
+		t.Errorf("after re-transcribing: got %+v, %v, want no hit", hits, err)
+	}
+}
+
+// A store whose messages_fts predates the transcript column comes back
+// with the transcripts it already had indexed.
+func TestSearchIndexRebuiltForTranscriptsOnReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chatot.db")
+	s, err := Open(path)
+	must(t, err)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "v1", TS: 1}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "v1", Kind: "audio"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "t1", Text: "hello there", TS: 2}))
+	// Back to the one-column index, with the transcript only in media,
+	// the way a store written before this release has it.
+	_, err = s.db.Exec(`
+		DROP TRIGGER messages_fts_ai; DROP TRIGGER messages_fts_ad; DROP TRIGGER messages_fts_au;
+		DROP TABLE messages_fts;
+		CREATE VIRTUAL TABLE messages_fts USING fts5(text, content='messages', content_rowid='rowid');
+		INSERT INTO messages_fts(messages_fts) VALUES ('rebuild');
+		CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
+			INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+		END;
+		CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
+			INSERT INTO messages_fts(messages_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+		END;
+		CREATE TRIGGER messages_fts_au AFTER UPDATE ON messages BEGIN
+			INSERT INTO messages_fts(messages_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+			INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+		END;
+		UPDATE media SET transcript = 'call the plumber' WHERE msg_id = 'v1';
+	`)
+	must(t, err)
+	must(t, s.Close())
+
+	s, err = Open(path)
+	must(t, err)
+	defer s.Close()
+	hits, err := s.Search("plumber", 10)
+	must(t, err)
+	if len(hits) != 1 || hits[0].MsgID != "v1" || !hits[0].InTranscript {
+		t.Fatalf("after reopen: got %+v, want the transcript hit for v1", hits)
+	}
+	if hits, err := s.Search("hello", 10); err != nil || len(hits) != 1 || hits[0].MsgID != "t1" {
+		t.Errorf("after reopen: text search got %+v, %v, want t1", hits, err)
+	}
+	// The rebuilt index keeps following writes.
+	must(t, s.SetMediaTranscript("a@s.whatsapp.net", "v1", "the electrician instead"))
+	if hits, err := s.Search("electrician", 10); err != nil || len(hits) != 1 || hits[0].MsgID != "v1" {
+		t.Errorf("after reopen: new transcript got %+v, %v, want v1", hits, err)
 	}
 }
