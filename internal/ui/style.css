@@ -1432,8 +1432,9 @@ button.chatot-conv-search-btn:hover {
 	font-size: 11.5px;
 }
 
+/* Mockup: the chips share the search pill's 8px side inset. */
 .chatot-chip-row {
-	margin: 0 6px 6px 6px;
+	margin: 0 8px 6px 8px;
 }
 
 .chatot-chip-row-old {
@@ -1504,7 +1505,9 @@ button.chatot-conv-search-btn:hover {
 }
 
 /* Mockup: a 17px pill ringed in the sidebar colour, hugging the tile's
-   top-right and overhanging it by 4px right / 3px up. */
+   top-right and overhanging it by 4px right / 3px up. The overhang is a
+   transform, not a negative margin: GTK lays the label's text out for the
+   margin-shrunk box, which pushed the numeral up and left of the pill. */
 .chatot-rail-badge {
 	background-color: @chatot_accent;
 	color: @chatot_on_accent;
@@ -1515,7 +1518,7 @@ button.chatot-conv-search-btn:hover {
 	padding: 0 5px;
 	min-width: 7px;
 	min-height: 17px;
-	margin: -3px -4px 0 0;
+	transform: translate(4px, -3px);
 }
 
 .chatot-rail-add {
@@ -3990,6 +3993,15 @@ button.chatot-member-more {
 	font-size: 9px;
 }
 
+/* The speed pill beside the T on the playing note: the same shape, filled,
+   the tempo in the mono figure of the times (mockup speedLabel). */
+.chatot-speed-btn {
+	min-width: 0;
+	padding: 0 6px;
+	font-family: "JetBrains Mono", monospace;
+	font-size: 10.5px;
+}
+
 .chatot-bubble-out .chatot-transcribe-btn {
 	border-color: alpha(@chatot_on_bubble_out, 0.28);
 	color: @chatot_on_bubble_out;
@@ -4145,6 +4157,26 @@ button.chatot-member-more {
 .chatot-chip-scroller > scrollbar {
 	opacity: 0;
 	min-height: 0;
+}
+
+/* Edge fades over the chip strip: where more chips lie beyond an edge the
+   strip melts into the sidebar there, and the fade goes once that edge is
+   reached (newChipStrip toggles the -on class). */
+.chatot-chip-fade {
+	opacity: 0;
+	transition: opacity 200ms ease-out;
+}
+
+.chatot-chip-fade-on {
+	opacity: 1;
+}
+
+.chatot-chip-fade-start {
+	background-image: linear-gradient(to right, @chatot_sidebar, alpha(@chatot_sidebar, 0));
+}
+
+.chatot-chip-fade-end {
+	background-image: linear-gradient(to left, @chatot_sidebar, alpha(@chatot_sidebar, 0));
 }
 
 /* ---- Attachment viewer pane (mockup pane === 'viewer') ------------------ */
@@ -4359,6 +4391,26 @@ button.chatot-member-more {
 	border-radius: 7px;
 	font-size: 13px;
 	opacity: 0.6;
+}
+
+/* The viewer bar's speed button (mockup onViewSpeed): a 26px outlined pill
+   in the mono figure, filled on hover. */
+.chatot-transport-speed {
+	min-height: 26px;
+	min-width: 0;
+	padding: 0 9px;
+	margin: 0;
+	border-radius: 7px;
+	border: 1px solid alpha(currentColor, 0.13);
+	background: none;
+	box-shadow: none;
+	font-family: "JetBrains Mono", monospace;
+	font-size: 11.5px;
+	font-weight: normal;
+}
+
+.chatot-transport-speed:hover {
+	background-color: alpha(currentColor, 0.06);
 }
 
 .chatot-viewer-caption-text {

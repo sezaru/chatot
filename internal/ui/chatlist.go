@@ -483,7 +483,7 @@ func NewChatList(c client.Client) *ChatList {
 		return true
 	})
 	chipScroller.AddController(chipWheel)
-	listCol.Append(chipScroller)
+	listCol.Append(newChipStrip(chipScroller))
 	listCol.Append(newChipSlider(chipScroller.HAdjustment()))
 
 	// Post-link backfill banner: hidden until "full" history chunks stream
