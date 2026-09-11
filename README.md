@@ -32,8 +32,9 @@ runtime with the Go SDK extension, bundling only what the runtime lacks
 JetBrains Mono). The build is offline:
 `build-aux/flatpak/go.mod.yml` and `modules.txt` pin every Go module. After
 changing `go.mod`, regenerate them with
-`go run github.com/dennwc/flatpak-go-mod@latest .` and move the two files
-back into `build-aux/flatpak/`.
+`go run github.com/dennwc/flatpak-go-mod@latest -out build-aux/flatpak .`
+(the tool renames its output out of a temporary vendor directory, so an
+output path on another filesystem fails).
 
 ```sh
 # build and install into your user Flatpak installation
