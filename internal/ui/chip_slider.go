@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+
 	"github.com/diamondburned/gotk4/pkg/cairo"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -110,4 +112,51 @@ func sliderValueAt(upper, page, w, x float64) float64 {
 		return 0
 	}
 	return clampF(x/(w-tw)*(upper-page), 0, upper-page)
+}
+
+// chipFadeW is the width of the strip's edge fades.
+const chipFadeW = 28
+
+// newChipStrip wraps the chip scroller in an overlay with a fade at each
+// edge. A fade shows while chips lie beyond its edge and goes once the
+// strip is scrolled to that edge, so the row reads as cut off only where
+// it is. The fades are not targets: the chips under them stay clickable.
+func newChipStrip(scroller *gtk.ScrolledWindow) *gtk.Overlay {
+	o := gtk.NewOverlay()
+	o.SetChild(scroller)
+	fade := func(class string, align gtk.Align) *gtk.Box {
+		f := gtk.NewBox(gtk.OrientationHorizontal, 0)
+		f.AddCSSClass("chatot-chip-fade")
+		f.AddCSSClass(class)
+		f.SetHAlign(align)
+		f.SetSizeRequest(chipFadeW, -1)
+		f.SetCanTarget(false)
+		o.AddOverlay(f)
+		o.SetMeasureOverlay(f, false)
+		return f
+	}
+	start := fade("chatot-chip-fade-start", gtk.AlignStart)
+	end := fade("chatot-chip-fade-end", gtk.AlignEnd)
+	adj := scroller.HAdjustment()
+	refresh := func() {
+		v := adj.Value()
+		setCSSClass(start, "chatot-chip-fade-on", v > 0.5)
+		setCSSClass(end, "chatot-chip-fade-on", v < adj.Upper()-adj.PageSize()-0.5)
+	}
+	adj.ConnectChanged(refresh)
+	adj.ConnectValueChanged(refresh)
+	return o
+}
+
+// ScrollChips scrolls the filter strip to px pixels, or to its end for
+// "end". A screenshot hook.
+func (cl *ChatList) ScrollChips(px string) {
+	adj := cl.chipScroller.HAdjustment()
+	if px == "end" {
+		adj.SetValue(adj.Upper() - adj.PageSize())
+		return
+	}
+	var v float64
+	fmt.Sscanf(px, "%g", &v)
+	adj.SetValue(v)
 }
