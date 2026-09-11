@@ -154,7 +154,7 @@ func newStatusRing(c client.Client, cache *avatarCache, jid, initial string, n i
 	ring := gtk.NewDrawingArea()
 	ring.SetSizeRequest(statusRingSize, statusRingSize)
 	ring.SetDrawFunc(func(_ *gtk.DrawingArea, cr *cairo.Context, w, h int) {
-		drawStatusRing(cr, float64(w), float64(h), n, viewed, isDark())
+		drawStatusRing(cr, float64(w), float64(h), n, viewed, statusRingColors(ring))
 	})
 
 	overlay := gtk.NewOverlay()
@@ -175,19 +175,15 @@ func newStatusRing(c client.Client, cache *avatarCache, jid, initial string, n i
 }
 
 // drawStatusRing paints n arcs (a full ring when n <= 1) in accent green,
-// or in the mockup's 20% grey once viewed, over the sidebar-coloured disc.
-// dark swaps the grey and the disc for the dark sheet's tokens (see
-// style-dark.css), which cairo can't read.
-func drawStatusRing(cr *cairo.Context, w, h float64, n int, viewed, dark bool) {
+// or in the sheet's chatot_ring_viewed once viewed, over a disc in the
+// sidebar's colour; c carries those tokens as the ring widget sees them.
+func drawStatusRing(cr *cairo.Context, w, h float64, n int, viewed bool, c ringColors) {
 	cx, cy := w/2, h/2
 	r := math.Min(w, h)/2 - statusRingWidth/2
-	switch {
-	case viewed && dark:
-		cr.SetSourceRGBA(1, 1, 1, 0.28)
-	case viewed:
-		cr.SetSourceRGBA(0, 0, 0, 0.2)
-	default:
-		cr.SetSourceRGB(0x1b/255.0, 0x8c/255.0, 0x72/255.0)
+	if viewed {
+		setSourceRGBA(cr, c.viewed, 1)
+	} else {
+		setSourceRGBA(cr, c.accent, 1)
 	}
 	cr.SetLineWidth(statusRingWidth)
 	cr.SetLineCap(cairo.LineCapButt)
@@ -204,12 +200,8 @@ func drawStatusRing(cr *cairo.Context, w, h float64, n int, viewed, dark bool) {
 			cr.Stroke()
 		}
 	}
-	// The gap disc between ring and avatar, in the sidebar's grey.
-	if dark {
-		cr.SetSourceRGB(0x26/255.0, 0x26/255.0, 0x26/255.0)
-	} else {
-		cr.SetSourceRGB(0xeb/255.0, 0xeb/255.0, 0xeb/255.0)
-	}
+	// The gap disc between ring and avatar, in the sidebar's colour.
+	setSourceRGBA(cr, c.disc, 1)
 	cr.Arc(cx, cy, 20, 0, 2*math.Pi)
 	cr.Fill()
 }
@@ -1345,4 +1337,17 @@ func coverInBox(pic gtk.Widgetter, w, h int) gtk.Widgetter {
 	overlay.SetClipOverlay(pic, true)
 	overlay.SetOverflow(gtk.OverflowHidden)
 	return overlay
+}
+
+// ringColors are the tokens a status ring draws with.
+type ringColors struct{ accent, viewed, disc [4]float64 }
+
+// statusRingColors reads the ring's tokens on w; the fallbacks are the
+// light sheet's values.
+func statusRingColors(w gtk.Widgetter) ringColors {
+	return ringColors{
+		accent: tokenRGBA(w, "chatot_accent", accentRGBA),
+		viewed: tokenRGBA(w, "chatot_ring_viewed", [4]float64{0, 0, 0, 0.2}),
+		disc:   tokenRGBA(w, "chatot_sidebar", [4]float64{0xeb / 255.0, 0xeb / 255.0, 0xeb / 255.0, 1}),
+	}
 }

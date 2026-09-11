@@ -181,16 +181,17 @@ func (m *mapView) draw(cr *cairo.Context, w, h int) {
 		cr.Restore()
 	}
 
+	accent := tokenRGBA(m, "chatot_accent", accentRGBA)
 	switch m.marker {
 	case markerFix:
 		x, y := m.screenPoint(m.mLat, m.mLon, fw, fh)
 		// The halo is the accuracy at its true size (never under 28px so a
 		// precise fix still reads as one).
 		r := math.Max(14, m.accuracy/geo.MetersPerPixel(m.mLat, m.zoom))
-		cr.SetSourceRGBA(0x1b/255.0, 0x8c/255.0, 0x72/255.0, 0.17)
+		setSourceRGBA(cr, accent, 0.17)
 		cr.Arc(x, y, r, 0, 2*math.Pi)
 		cr.FillPreserve()
-		cr.SetSourceRGBA(0x1b/255.0, 0x8c/255.0, 0x72/255.0, 0.48)
+		setSourceRGBA(cr, accent, 0.48)
 		cr.SetLineWidth(1)
 		cr.Stroke()
 		// The dot: accent with a white ring and a soft shadow.
@@ -200,7 +201,7 @@ func (m *mapView) draw(cr *cairo.Context, w, h int) {
 		cr.SetSourceRGB(1, 1, 1)
 		cr.Arc(x, y, 8, 0, 2*math.Pi)
 		cr.Fill()
-		cr.SetSourceRGB(0x1b/255.0, 0x8c/255.0, 0x72/255.0)
+		setSourceRGBA(cr, accent, 1)
 		cr.Arc(x, y, 5, 0, 2*math.Pi)
 		cr.Fill()
 	case markerPin:

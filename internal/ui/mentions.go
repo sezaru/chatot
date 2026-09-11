@@ -19,12 +19,14 @@ const (
 	mentionAccentDark = "#46c39a"
 )
 
-// mentionAccentFor picks the mention colour for the current theme.
+// mentionAccentFor picks the mention colour for the current theme: the
+// sheet's chatot_accent_text, with the light and dark values as fallbacks.
 func mentionAccentFor() string {
+	fallback := mentionAccent
 	if isDark() {
-		return mentionAccentDark
+		fallback = mentionAccentDark
 	}
-	return mentionAccent
+	return tokenHex("chatot_accent_text", fallback)
 }
 
 // mentionMarkupColor renders text as Pango markup with every resolvable
@@ -36,7 +38,7 @@ func mentionAccentFor() string {
 func mentionMarkupColor(text string, resolve func(user string) string, onGreen bool, accent string) string {
 	color := accent
 	if onGreen {
-		color = "#ffffff"
+		color = onBubbleOutHex()
 	}
 	var b strings.Builder
 	last := 0

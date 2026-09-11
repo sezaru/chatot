@@ -112,7 +112,7 @@ func (t *tabBar) buildTab(d tabDef) *gtk.Button {
 	icon.SetHAlign(gtk.AlignCenter)
 	icon.SetVAlign(gtk.AlignCenter)
 	icon.SetDrawFunc(func(_ *gtk.DrawingArea, cr *cairo.Context, w, h int) {
-		drawTabIcon(cr, d, float64(w), float64(h), t.active == id)
+		drawTabIcon(cr, d, float64(w), float64(h), t.active == id, tabIconAccent(icon))
 	})
 	t.icons[id] = icon
 
@@ -166,22 +166,31 @@ func (t *tabBar) buildTab(d tabDef) *gtk.Button {
 	return btn
 }
 
+// tabIconAccent is the active tab's stroke, the sheet's chatot_accent_text
+// as w sees it, with the light and dark greens as fallbacks.
+func tabIconAccent(w gtk.Widgetter) [4]float64 {
+	fallback := tabIconActive
+	if isDark() {
+		fallback = tabIconActiveDark
+	}
+	r, g, b := hexRGB(fallback)
+	return tokenRGBA(w, "chatot_accent_text", [4]float64{r, g, b, 1})
+}
+
 // drawTabIcon strokes d's paths with cairo, centred at tabIconPx inside
 // w×h: the mockup's 24-unit viewBox scaled down, dim 1.6px strokes or the
 // accent's 2px when active, the status ring dashed as in the design.
-func drawTabIcon(cr *cairo.Context, d tabDef, w, h float64, active bool) {
+func drawTabIcon(cr *cairo.Context, d tabDef, w, h float64, active bool, accent [4]float64) {
 	color, width := tabIconDim, 1.6
 	if isDark() {
 		color = tabIconDimDark
 	}
-	if active {
-		color, width = tabIconActive, 2
-		if isDark() {
-			color = tabIconActiveDark
-		}
-	}
 	r, g, b := hexRGB(color)
 	cr.SetSourceRGB(r, g, b)
+	if active {
+		width = 2
+		setSourceRGBA(cr, accent, 1)
+	}
 	cr.SetLineCap(cairo.LineCapRound)
 	cr.SetLineJoin(cairo.LineJoinRound)
 

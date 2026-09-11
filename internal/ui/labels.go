@@ -306,7 +306,7 @@ func (cl *ChatList) buildChipButton(chip chipSpec) *gtk.Button {
 		// on the class below (providers don't reach child widgets).
 		btn.AddCSSClass("chatot-chip-active")
 		css := gtk.NewCSSProvider()
-		css.LoadFromString("button { background-image: none; background-color: #1b8c72; color: #ffffff; font-weight: bold; } button:hover { background-color: #0f6350; }")
+		css.LoadFromString("button { background-image: none; background-color: @chatot_accent; color: @chatot_on_accent; font-weight: bold; } button:hover { background-color: @chatot_accent_hover; }")
 		btn.StyleContext().AddProvider(css, widgetPriority(uint(gtk.STYLE_PROVIDER_PRIORITY_USER)))
 	}
 	key := chip.Key

@@ -406,7 +406,7 @@ func newVoiceRow(p *mediaPlayer, onGreen, played bool, onToggle, onOpen func()) 
 	track.SetSizeRequest(120, voiceTrackH)
 	track.SetCursorFromName("pointer")
 	track.SetDrawFunc(func(_ *gtk.DrawingArea, cr *cairo.Context, w, h int) {
-		drawVoiceTrack(cr, float64(w), float64(h), p.Progress(), onGreen, played, isDark())
+		drawVoiceTrack(cr, float64(w), float64(h), p.Progress(), onGreen, played, isDark(), bubbleColorsOf(track))
 	})
 	seek := gtk.NewGestureClick()
 	seek.ConnectReleased(func(_ int, x, _ float64) {
@@ -452,25 +452,26 @@ func newVoiceRow(p *mediaPlayer, onGreen, played bool, onToggle, onOpen func()) 
 var voicePlayedRGB = [3]float64{0x53 / 255.0, 0xbd / 255.0, 0xeb / 255.0}
 
 // drawVoiceTrack paints the 4px track, its played part and the 10px knob.
-func drawVoiceTrack(cr *cairo.Context, w, h, progress float64, onGreen, played, dark bool) {
+func drawVoiceTrack(cr *cairo.Context, w, h, progress float64, onGreen, played, dark bool, c bubbleColors) {
 	cy := h / 2
-	// Track background: white at 30% on green, grey at 28% elsewhere.
+	// Track background: the bubble's text at 30% on the outgoing bubble,
+	// grey at 28% elsewhere.
 	if onGreen {
-		cr.SetSourceRGBA(1, 1, 1, 0.3)
+		setSourceRGBA(cr, c.onOut, 0.3)
 	} else {
 		cr.SetSourceRGBA(0.5, 0.5, 0.5, 0.28)
 	}
 	roundedRectPath(cr, 0, cy-2, w, 4, 2)
 	cr.Fill()
-	// Played part and knob: white on green, the accent elsewhere (blue
-	// once the note has been listened to).
+	// Played part and knob: the bubble's text on the outgoing bubble, the
+	// accent elsewhere (blue once the note has been listened to).
 	switch {
 	case onGreen:
-		cr.SetSourceRGB(1, 1, 1)
+		setSourceRGBA(cr, c.onOut, 1)
 	case played:
 		cr.SetSourceRGB(voicePlayedRGB[0], voicePlayedRGB[1], voicePlayedRGB[2])
 	default:
-		cr.SetSourceRGB(0x1b/255.0, 0x8c/255.0, 0x72/255.0)
+		setSourceRGBA(cr, c.accent, 1)
 	}
 	x := progress * w
 	if x > 0 {
@@ -638,7 +639,7 @@ func newTransportBarWatched(p *mediaPlayer, onFullscreen func()) (*gtk.Box, func
 	track.SetSizeRequest(120, 14)
 	track.SetCursorFromName("pointer")
 	track.SetDrawFunc(func(_ *gtk.DrawingArea, cr *cairo.Context, w, h int) {
-		drawTransportTrack(cr, float64(w), float64(h), p.Progress(), isDark())
+		drawTransportTrack(cr, float64(w), float64(h), p.Progress(), isDark(), tokenRGBA(track, "chatot_accent", accentRGBA))
 	})
 	seek := gtk.NewGestureClick()
 	seek.ConnectReleased(func(_ int, x, _ float64) {
@@ -716,7 +717,7 @@ func humanClock(secs float64) string {
 
 // drawTransportTrack paints the viewer's 5px track (chip grey), the accent
 // played part and a 13px accent knob ringed in the bar colour.
-func drawTransportTrack(cr *cairo.Context, w, h, progress float64, dark bool) {
+func drawTransportTrack(cr *cairo.Context, w, h, progress float64, dark bool, accent [4]float64) {
 	cy := h / 2
 	if dark {
 		cr.SetSourceRGBA(1, 1, 1, 0.12)
@@ -725,7 +726,7 @@ func drawTransportTrack(cr *cairo.Context, w, h, progress float64, dark bool) {
 	}
 	roundedRectPath(cr, 0, cy-2.5, w, 5, 2.5)
 	cr.Fill()
-	cr.SetSourceRGB(0x1b/255.0, 0x8c/255.0, 0x72/255.0)
+	setSourceRGBA(cr, accent, 1)
 	x := progress * w
 	if x > 0 {
 		roundedRectPath(cr, 0, cy-2.5, x, 5, 2.5)
@@ -741,7 +742,17 @@ func drawTransportTrack(cr *cairo.Context, w, h, progress float64, dark bool) {
 	}
 	cr.Arc(kx, cy, 4.5, 0, 6.2832)
 	cr.Fill()
-	cr.SetSourceRGB(0x1b/255.0, 0x8c/255.0, 0x72/255.0)
+	setSourceRGBA(cr, accent, 1)
 	cr.Arc(kx, cy, 3, 0, 6.2832)
 	cr.Fill()
+}
+
+// bubbleColors are the tokens a track or bar inside a bubble draws with:
+// the accent on an incoming bubble, the outgoing bubble's text colour on
+// the outgoing one.
+type bubbleColors struct{ accent, onOut [4]float64 }
+
+// bubbleColorsOf reads those tokens on w.
+func bubbleColorsOf(w gtk.Widgetter) bubbleColors {
+	return bubbleColors{tokenRGBA(w, "chatot_accent", accentRGBA), tokenRGBA(w, "chatot_on_bubble_out", whiteRGBA)}
 }

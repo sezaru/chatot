@@ -87,7 +87,7 @@ func messageMarkup(text string, resolve func(user string) string, onGreen bool, 
 	defer perfStart("markup")()
 	color := accent
 	if onGreen {
-		color = "#ffffff"
+		color = onBubbleOutHex()
 	}
 	var b strings.Builder
 	for _, s := range messageSpans(text) {

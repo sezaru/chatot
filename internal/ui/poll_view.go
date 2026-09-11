@@ -165,7 +165,7 @@ func buildPollOption(msg client.Message, v pollView, opt pollOptionView, onVote 
 	onGreen := msg.FromMe
 	bar.SetDrawFunc(func(_ *gtk.DrawingArea, cr *cairo.Context, w, h int) {
 		fg := bar.StyleContext().Color()
-		drawPollBar(cr, float64(w), float64(h), fraction, onGreen, float64(fg.Red()), float64(fg.Green()), float64(fg.Blue()))
+		drawPollBar(cr, float64(w), float64(h), fraction, onGreen, float64(fg.Red()), float64(fg.Green()), float64(fg.Blue()), bubbleColorsOf(bar))
 	})
 	col.Append(bar)
 
@@ -188,12 +188,12 @@ func buildPollOption(msg client.Message, v pollView, opt pollOptionView, onVote 
 const pollBarH = 4
 
 // drawPollBar paints the option's share: a pill track in the bubble's text
-// colour at low alpha (white at .25 on green) with an accent (white on
-// green) fill fraction wide.
-func drawPollBar(cr *cairo.Context, w, h, fraction float64, onGreen bool, r, g, b float64) {
+// colour at low alpha (the outgoing bubble's text at .25 on it) with an
+// accent (that text colour on the outgoing bubble) fill fraction wide.
+func drawPollBar(cr *cairo.Context, w, h, fraction float64, onGreen bool, r, g, b float64, c bubbleColors) {
 	pollPill(cr, 0, 0, w, h)
 	if onGreen {
-		cr.SetSourceRGBA(1, 1, 1, 0.25)
+		setSourceRGBA(cr, c.onOut, 0.25)
 	} else {
 		cr.SetSourceRGBA(r, g, b, 0.14)
 	}
@@ -204,9 +204,9 @@ func drawPollBar(cr *cairo.Context, w, h, fraction float64, onGreen bool, r, g, 
 	}
 	pollPill(cr, 0, 0, math.Max(fw, h), h)
 	if onGreen {
-		cr.SetSourceRGB(1, 1, 1)
+		setSourceRGBA(cr, c.onOut, 1)
 	} else {
-		cr.SetSourceRGB(0x1b/255.0, 0x8c/255.0, 0x72/255.0)
+		setSourceRGBA(cr, c.accent, 1)
 	}
 	cr.Fill()
 }
