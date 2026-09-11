@@ -1301,7 +1301,7 @@ func (v *AttachmentViewer) audioCard(m client.Message, now time.Time) gtk.Widget
 	wave.SetHExpand(true)
 	p := v.player
 	wave.SetDrawFunc(func(_ *gtk.DrawingArea, cr *cairo.Context, w, h int) {
-		drawWaveform(cr, float64(w), float64(h), p.Progress(), isDark())
+		drawWaveform(cr, float64(w), float64(h), p.Progress(), isDark(), tokenRGBA(wave, "chatot_accent", accentRGBA))
 	})
 	seek := gtk.NewGestureClick()
 	seek.ConnectReleased(func(_ int, x, _ float64) {
@@ -1322,7 +1322,7 @@ func (v *AttachmentViewer) audioCard(m client.Message, now time.Time) gtk.Widget
 
 // drawWaveform paints the design's 44 bars: a deterministic pseudo-envelope
 // (the file's real one isn't decoded), accent up to progress.
-func drawWaveform(cr *cairo.Context, w, h, progress float64, dark bool) {
+func drawWaveform(cr *cairo.Context, w, h, progress float64, dark bool, accent [4]float64) {
 	const n = 44
 	gap := 2.0
 	bw := (w - gap*(n-1)) / n
@@ -1333,7 +1333,7 @@ func drawWaveform(cr *cairo.Context, w, h, progress float64, dark bool) {
 		bh := 6 + math.Round(30*math.Abs(math.Sin(float64(i)*0.68))*(0.5+0.5*math.Abs(math.Cos(float64(i)*0.21))))
 		x := float64(i) * (bw + gap)
 		if float64(i)/n < progress {
-			cr.SetSourceRGB(0x1b/255.0, 0x8c/255.0, 0x72/255.0)
+			setSourceRGBA(cr, accent, 1)
 		} else if dark {
 			cr.SetSourceRGBA(1, 1, 1, 0.32)
 		} else {

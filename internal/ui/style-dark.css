@@ -15,6 +15,12 @@
 @define-color chatot_ring_viewed rgba(255, 255, 255, 0.28);
 @define-color chatot_accent_text #46c39a;
 @define-color chatot_accent_text_soft #46c39a;
+/* The flat accent reads at 3.7:1 on a dark incoming bubble, under the 4.5:1
+   a 12.5px bold label needs, so the fold control and the choice buttons use
+   a lifted accent; the transcript head keeps WhatsApp's brighter dark-mode
+   green on the grey incoming bubble. */
+@define-color chatot_accent_text_lift #7fd4bb;
+@define-color chatot_transcript_head #00a884;
 /* The light theme's #c01c28 is nearly black against these surfaces: the
    account line that reads "Logged out · scan to relink" was the report that
    sent this here. Text lifts to a salmon that clears contrast on #2d2d2d;
@@ -28,13 +34,6 @@
 
 .chatot-jump-bottom {
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-}
-
-/* The transcript head keeps WhatsApp's brighter dark-mode green on the
-   grey incoming bubble. */
-.chatot-transcript-head,
-.chatot-transcript-head:hover {
-	color: #00a884;
 }
 
 /* Hairlines and the T outline are white-on-dark inside a bubble. */
@@ -51,25 +50,24 @@
 	background-color: alpha(#ffffff, 0.12);
 }
 
-/* The flat accent reads at 3.7:1 on a dark incoming bubble, under the 4.5:1
-   a 12.5px bold label needs, so the fold control uses a lifted accent. */
+/* See chatot_accent_text_lift above. */
 .chatot-read-more,
 .chatot-read-more:hover {
-	color: #7fd4bb;
+	color: @chatot_accent_text_lift;
 }
 
 .chatot-bubble-out .chatot-read-more,
 .chatot-bubble-out .chatot-read-more:hover {
-	color: #ffffff;
+	color: @chatot_on_bubble_out;
 }
 
 /* Same lift for the choice buttons, for the same contrast reason. */
 button.chatot-choice-btn {
-	color: #7fd4bb;
+	color: @chatot_accent_text_lift;
 }
 
 .chatot-bubble-out button.chatot-choice-btn {
-	color: #ffffff;
+	color: @chatot_on_bubble_out;
 }
 
 .chatot-model-facts {

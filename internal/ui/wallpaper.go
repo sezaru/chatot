@@ -124,7 +124,7 @@ func chatWallpaperCSS(path string) string {
 		"\topacity: 0.9;\n" +
 		"}\n" +
 		".chatot-unread-separator {\n" +
-		"\tbackground-color: mix(@chatot_thread, #1b8c72, 0.12);\n" +
+		"\tbackground-color: mix(@chatot_thread, @chatot_accent, 0.12);\n" +
 		"}\n"
 }
 

@@ -10,8 +10,10 @@
    the brand. NOTE: libadwaita 1.6+ computes the accent for suggested-action /
    selection at runtime via AdwStyleManager (a read-only *system* preference —
    there is no setter), so this @define-color override is ignored for those.
-   Brand-critical elements therefore hard-code #1b8c72 via our own classes
-   below rather than relying on the accent system. */
+   Brand-critical elements therefore use the chatot_accent token via our own
+   classes below rather than relying on the accent system. Every colour that
+   is not a fixed media stage or the avatar palette is a token, so a shell
+   palette (Preferences › Appearance, see theme_dms.go) can restate them. */
 @define-color accent_color #147a63;
 @define-color accent_bg_color #1b8c72;
 @define-color accent_fg_color #ffffff;
@@ -38,6 +40,23 @@
    the brand green in both themes. */
 @define-color chatot_accent_text #147a63;
 @define-color chatot_accent_text_soft #1b8c72;
+/* Lifted variants: the fold control and choice buttons on a dark incoming
+   bubble, and the transcript head, get their own dark-sheet tones. */
+@define-color chatot_accent_text_lift #147a63;
+@define-color chatot_transcript_head #1b8c72;
+
+/* Fills. The brand green and the white on it; hover darkens, a press sits
+   between. Outgoing bubbles have their own pair, so a shell palette can
+   give them a container tone while buttons keep the accent proper, and
+   the read tick is the pale mint that sits on that bubble. */
+@define-color chatot_accent #1b8c72;
+@define-color chatot_on_accent #ffffff;
+@define-color chatot_accent_hover #0f6350;
+@define-color chatot_accent_active #147a63;
+@define-color chatot_bubble_out #1b8c72;
+@define-color chatot_on_bubble_out #ffffff;
+@define-color chatot_tick_read #cdece4;
+@define-color chatot_on_danger #ffffff;
 
 /* The mockup's error tone, split the same way as the accent above. Red text
    is the half that has to move in dark mode: #c01c28 is dark enough that on
@@ -168,8 +187,8 @@ window {
    overrides that named colour (would render the system blue). Mockup metrics:
    a 19px circle for one digit, growing into a pill for two-plus. */
 .chatot-unread-badge {
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	border-radius: 999px;
 	min-width: 7px;
 	min-height: 19px;
@@ -210,8 +229,8 @@ window {
 }
 
 .chatot-bubble-out {
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_bubble_out;
+	color: @chatot_on_bubble_out;
 }
 
 .chatot-bubble-deleted {
@@ -273,8 +292,8 @@ window {
 }
 
 .chatot-media-dl {
-	color: #ffffff;
-	background-color: #1b8c72;
+	color: @chatot_on_accent;
+	background-color: @chatot_accent;
 	border-radius: 999px;
 }
 
@@ -346,7 +365,7 @@ window {
 }
 
 .chatot-gif-badge {
-	background-color: #1b8c72;
+	background-color: @chatot_accent;
 	color: white;
 	font-size: 0.75em;
 	font-weight: bold;
@@ -374,7 +393,7 @@ window {
 	min-height: 28px;
 	font-size: 12px;
 	border-radius: 999px;
-	border: 2px solid #1b8c72;
+	border: 2px solid @chatot_accent;
 	color: @chatot_accent_text;
 }
 
@@ -483,9 +502,9 @@ window {
 }
 
 .chatot-poll-box-on {
-	background-color: #1b8c72;
-	border-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	border-color: @chatot_accent;
+	color: @chatot_on_accent;
 }
 
 .chatot-poll-foot {
@@ -514,7 +533,7 @@ button.chatot-choice-btn {
 	border-top: 1px solid alpha(currentColor, 0.18);
 	font-size: 13px;
 	font-weight: 700;
-	color: #147a63;
+	color: @chatot_accent_text;
 	transition: background-color 120ms ease;
 }
 
@@ -527,7 +546,7 @@ button.chatot-choice-btn:active {
 }
 
 .chatot-bubble-out button.chatot-choice-btn {
-	color: #ffffff;
+	color: @chatot_on_bubble_out;
 }
 
 .chatot-choice-glyph {
@@ -619,7 +638,7 @@ button.chatot-choice-phone {
    rgba(255,255,255,.7)) instead of the dark alpha above. */
 .chatot-bubble-out .chatot-bubble-time,
 .chatot-bubble-out .chatot-bubble-tick {
-	color: alpha(#ffffff, 0.7);
+	color: alpha(@chatot_on_bubble_out, 0.7);
 	opacity: 1;
 }
 
@@ -627,7 +646,7 @@ button.chatot-choice-phone {
    green outgoing bubble, where blue reads as a foreign accent. */
 .chatot-tick-read {
 	opacity: 1;
-	color: #cdece4;
+	color: @chatot_tick_read;
 	font-weight: bold;
 }
 
@@ -664,7 +683,7 @@ button.chatot-reaction-pill:hover {
 }
 
 button.chatot-reaction-pill-mine {
-	border-color: alpha(#1b8c72, 0.55);
+	border-color: alpha(@chatot_accent, 0.55);
 }
 
 .chatot-reaction-emoji {
@@ -851,8 +870,8 @@ button.chatot-composer-iconbtn.text-button,
 	/* Adwaita buttons paint a background-image gradient that hides
 	   background-color; clear it so the brand green shows. */
 	background-image: none;
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	border-radius: 999px;
 	/* Equal min-width/min-height keeps the arrow-only button a true circle. */
 	min-width: 34px;
@@ -861,11 +880,11 @@ button.chatot-composer-iconbtn.text-button,
 }
 
 .chatot-send:hover {
-	background-color: #0f6350;
+	background-color: @chatot_accent_hover;
 }
 
 .chatot-send:active {
-	background-color: #147a63;
+	background-color: @chatot_accent_active;
 }
 
 /* Attach menu rows: a 28px tinted circle (its fill set per-row in Go) beside
@@ -982,7 +1001,7 @@ button.chatot-composer-iconbtn.text-button,
 	padding: 7px 10px;
 	border-radius: 9px 9px 0 0;
 	background-color: alpha(currentColor, 0.06);
-	border-left: 3px solid #1b8c72;
+	border-left: 3px solid @chatot_accent;
 }
 
 .chatot-composer-quote-name {
@@ -1077,7 +1096,7 @@ button.chatot-composer-iconbtn.text-button,
 	min-height: 34px;
 	border-radius: 999px;
 	background-color: @chatot_danger;
-	color: #ffffff;
+	color: @chatot_on_danger;
 	font-size: 12px;
 	padding: 0;
 	border: none;
@@ -1232,8 +1251,8 @@ button.chatot-composer-iconbtn.text-button,
 /* Merged "All accounts": the header identity is a brand-green disc with the
    🗂 glyph, not the active account's colour. */
 .chatot-account-avatar-merged {
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	font-size: 13px;
 }
 
@@ -1245,8 +1264,8 @@ button.chatot-composer-iconbtn.text-button,
 /* Green initial-avatar for the account header; a plain label so the brand
    fill sticks (the button-provider gotcha only bites colored buttons). */
 .chatot-account-avatar {
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	font-size: 12px;
 }
 
@@ -1317,7 +1336,7 @@ button.chatot-composer-iconbtn.text-button,
 
 .chatot-status-dot {
 	border-radius: 999px;
-	background-color: #1b8c72;
+	background-color: @chatot_accent;
 }
 
 .chatot-status-bad.chatot-status-dot {
@@ -1404,7 +1423,7 @@ button.chatot-conv-search-btn:hover {
 }
 
 .chatot-join-banner {
-	background-color: alpha(#1b8c72, 0.12);
+	background-color: alpha(@chatot_accent, 0.12);
 	border-bottom: 1px solid alpha(currentColor, 0.12);
 }
 
@@ -1440,7 +1459,7 @@ button.chatot-conv-search-btn:hover {
 }
 
 .chatot-chip-active .chatot-chip-count {
-	color: alpha(#ffffff, 0.85);
+	color: alpha(@chatot_on_accent, 0.85);
 }
 
 /* Brand green hard-coded, like .chatot-unread-badge/.chatot-send: the
@@ -1474,21 +1493,21 @@ button.chatot-conv-search-btn:hover {
 	padding: 0;
 	font-size: 14px;
 	font-weight: bold;
-	color: #ffffff;
+	color: @chatot_on_accent;
 }
 
 /* Green ring first, gap second: GTK paints a later shadow over an earlier
    one (the reverse of CSS), so the CSS order drew a solid 4px green ring
    with no gap. The gap is the rail colour, as in the mockup. */
 .chatot-rail-active {
-	box-shadow: 0 0 0 4px #1b8c72, 0 0 0 2px @chatot_sidebar;
+	box-shadow: 0 0 0 4px @chatot_accent, 0 0 0 2px @chatot_sidebar;
 }
 
 /* Mockup: a 17px pill ringed in the sidebar colour, hugging the tile's
    top-right and overhanging it by 4px right / 3px up. */
 .chatot-rail-badge {
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	border: 2px solid @chatot_sidebar;
 	border-radius: 999px;
 	font-size: 10px;
@@ -1715,8 +1734,8 @@ button.chatot-conv-search-btn:hover {
 	padding: 7px 16px;
 	font-size: 13px;
 	font-weight: bold;
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	border: none;
 	box-shadow: none;
 }
@@ -1775,7 +1794,7 @@ button.chatot-conv-search-btn:hover {
 }
 
 .chatot-tray-tile-on {
-	box-shadow: 0 0 0 2px #1b8c72;
+	box-shadow: 0 0 0 2px @chatot_accent;
 }
 
 /* Overhangs the tile's top-right corner, per the mockup's -6px offsets. */
@@ -1981,8 +2000,8 @@ button.chatot-pane-row:active {
 	border-radius: 9px;
 	font-size: 13.5px;
 	font-weight: bold;
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	border: none;
 	box-shadow: none;
 }
@@ -2017,8 +2036,8 @@ button.chatot-pane-row:active {
 
 .chatot-people-check {
 	border-radius: 999px;
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	font-size: 11px;
 }
 
@@ -2300,8 +2319,8 @@ button.chatot-card-btnrow:active {
 
 .chatot-about-mark {
 	border-radius: 20px;
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	font-size: 38px;
 }
 
@@ -2400,9 +2419,9 @@ button.chatot-card-btnrow:active {
 }
 
 .chatot-forward-check-on {
-	background-color: #1b8c72;
-	border-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	border-color: @chatot_accent;
+	color: @chatot_on_accent;
 }
 
 .chatot-dialog-footer {
@@ -2417,8 +2436,8 @@ button.chatot-card-btnrow:active {
 	border-radius: 9px;
 	font-size: 13px;
 	font-weight: bold;
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	border: none;
 	box-shadow: none;
 }
@@ -2463,7 +2482,7 @@ button.chatot-card-btnrow:active {
 
 .chatot-linking-dot {
 	border-radius: 999px;
-	background-color: #1b8c72;
+	background-color: @chatot_accent;
 }
 
 .chatot-linking-status {
@@ -2524,7 +2543,7 @@ button.chatot-card-btnrow:active {
 }
 
 .chatot-swatch:checked {
-	box-shadow: 0 0 0 4px #1b8c72, 0 0 0 2px @view_bg_color;
+	box-shadow: 0 0 0 4px @chatot_accent, 0 0 0 2px @view_bg_color;
 }
 
 .chatot-list-delete {
@@ -2589,15 +2608,15 @@ button.chatot-tab-btn.chatot-tab-on {
 }
 
 .chatot-tab-mark {
-	background-color: #1b8c72;
+	background-color: @chatot_accent;
 	border-radius: 0 0 2px 2px;
 }
 
 /* 16px green pill overhanging the icon's top-right, ringed in the bar's
    white. */
 .chatot-tab-badge {
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	border: 2px solid @chatot_surface;
 	border-radius: 999px;
 	font-size: 9.5px;
@@ -2660,8 +2679,8 @@ button.chatot-tab-btn.chatot-tab-on {
 }
 
 .chatot-verified {
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	border-radius: 999px;
 	font-size: 8px;
 	font-weight: bold;
@@ -2757,7 +2776,7 @@ button.chatot-copy-btn {
 }
 
 button.chatot-copy-btn:hover {
-	border-color: #1b8c72;
+	border-color: @chatot_accent;
 }
 
 /* 34px white search pill with a ⌕ and a clear ✕. */
@@ -2827,7 +2846,7 @@ button.chatot-report-row:checked {
 }
 
 button.chatot-report-row:checked .chatot-radio {
-	border: 5px solid #1b8c72;
+	border: 5px solid @chatot_accent;
 	background-color: @chatot_surface;
 }
 
@@ -2835,12 +2854,12 @@ button.chatot-report-row:checked .chatot-radio {
 	border-radius: 6px;
 	border: 1px solid alpha(currentColor, 0.13);
 	font-size: 11px;
-	color: #ffffff;
+	color: @chatot_on_accent;
 }
 
 button.chatot-report-row:checked .chatot-checkbox {
-	border-color: #1b8c72;
-	background-color: #1b8c72;
+	border-color: @chatot_accent;
+	background-color: @chatot_accent;
 }
 
 .chatot-report-check {
@@ -2855,9 +2874,9 @@ button.chatot-report-row:checked .chatot-checkbox {
 }
 
 .chatot-report-check check:checked {
-	background-color: #1b8c72;
-	color: #ffffff;
-	border-color: #1b8c72;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
+	border-color: @chatot_accent;
 }
 
 /* Info cards (channel / community): the 76px avatar, the 17px name, a
@@ -2946,8 +2965,8 @@ button.chatot-report-row:checked .chatot-checkbox {
 
 /* The "My status" ＋: an 18px green disc ringed in the sidebar grey. */
 .chatot-status-plus {
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	border: 2px solid @chatot_sidebar;
 	border-radius: 999px;
 	font-size: 10px;
@@ -3213,8 +3232,8 @@ button.chatot-follow-pill {
 	border-radius: 999px;
 	border: none;
 	box-shadow: none;
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	font-size: 12.5px;
 	font-weight: bold;
 }
@@ -3269,8 +3288,8 @@ button.chatot-channel-react {
 }
 
 button.chatot-channel-react.chatot-channel-react-mine {
-	border-color: #1b8c72;
-	background-color: alpha(#1b8c72, 0.1);
+	border-color: @chatot_accent;
+	background-color: alpha(@chatot_accent, 0.1);
 	color: @chatot_accent_text;
 }
 
@@ -3326,7 +3345,7 @@ button.chatot-newcomm-btn {
 }
 
 button.chatot-newcomm-btn:hover {
-	border-color: #1b8c72;
+	border-color: @chatot_accent;
 }
 
 .chatot-list-emptystate {
@@ -3373,7 +3392,7 @@ button.chatot-community-grouprow:hover {
 }
 
 .chatot-announce-tile {
-	background-color: alpha(#1b8c72, 0.16);
+	background-color: alpha(@chatot_accent, 0.16);
 	border-radius: 12px;
 	font-size: 17px;
 }
@@ -3531,7 +3550,7 @@ button.chatot-member-more {
 
 .chatot-sync-banner-bar progress {
 	border-radius: 999px;
-	background-color: #1b8c72;
+	background-color: @chatot_accent;
 }
 
 /* Send contact: the mono phone under a picker row's name. */
@@ -3582,7 +3601,7 @@ button.chatot-member-more {
 
 .chatot-loc-chip-dot {
 	border-radius: 999px;
-	background-color: #1b8c72;
+	background-color: @chatot_accent;
 }
 
 .chatot-loc-search {
@@ -3868,7 +3887,7 @@ button.chatot-member-more {
 }
 
 .chatot-bubble-out .chatot-bubble-author {
-	color: alpha(#ffffff, 0.8);
+	color: alpha(@chatot_on_bubble_out, 0.8);
 }
 
 /* "N unread messages" separator: the system-pill look, on the accent. */
@@ -3876,7 +3895,7 @@ button.chatot-member-more {
 	font-size: 10.5px;
 	font-weight: bold;
 	color: @chatot_accent_text;
-	background-color: alpha(#1b8c72, 0.12);
+	background-color: alpha(@chatot_accent, 0.12);
 	padding: 3px 11px;
 	border-radius: 999px;
 	margin: 6px 0 4px 0;
@@ -3884,7 +3903,7 @@ button.chatot-member-more {
 
 /* Contact card's Message action on an outgoing bubble is white (linkFg). */
 .chatot-bubble-out .chatot-contact-action {
-	color: #ffffff;
+	color: @chatot_on_bubble_out;
 }
 
 /* Voice note player: 28px round play disc, 4px track with a 10px knob, mono
@@ -3899,15 +3918,15 @@ button.chatot-member-more {
 	min-height: 28px;
 	padding: 0;
 	border-radius: 999px;
-	background-color: #1b8c72;
-	color: #ffffff;
+	background-color: @chatot_accent;
+	color: @chatot_on_accent;
 	border: none;
 	box-shadow: none;
 	font-size: 11px;
 }
 
 .chatot-bubble-out .chatot-voice-play {
-	background-color: alpha(#ffffff, 0.22);
+	background-color: alpha(@chatot_on_bubble_out, 0.22);
 }
 
 /* An incoming voice note that has been listened to: WhatsApp's microphone
@@ -3923,7 +3942,7 @@ button.chatot-member-more {
 }
 
 .chatot-bubble-out .chatot-voice-time {
-	color: alpha(#ffffff, 0.78);
+	color: alpha(@chatot_on_bubble_out, 0.78);
 	opacity: 1;
 }
 
@@ -3939,7 +3958,7 @@ button.chatot-member-more {
 }
 
 .chatot-bubble-out .chatot-transcript {
-	border-top-color: alpha(#ffffff, 0.28);
+	border-top-color: alpha(@chatot_on_bubble_out, 0.28);
 }
 
 /* The button at the end of the voice row: a 23px square, outlined while it
@@ -3972,13 +3991,13 @@ button.chatot-member-more {
 }
 
 .chatot-bubble-out .chatot-transcribe-btn {
-	border-color: alpha(#ffffff, 0.28);
-	color: #ffffff;
+	border-color: alpha(@chatot_on_bubble_out, 0.28);
+	color: @chatot_on_bubble_out;
 }
 
 .chatot-bubble-out .chatot-transcribe-btn:hover,
 .chatot-bubble-out .chatot-transcribe-btn-on {
-	background-color: alpha(#ffffff, 0.2);
+	background-color: alpha(@chatot_on_bubble_out, 0.2);
 }
 
 /* Folded, the block is one line of the transcript itself, cut with an
@@ -4035,17 +4054,17 @@ button.chatot-member-more {
 	box-shadow: none;
 	font-size: 11.5px;
 	font-weight: 600;
-	color: #1b8c72;
+	color: @chatot_transcript_head;
 }
 
 .chatot-transcript-head:hover {
 	background: none;
-	color: #15705b;
+	color: @chatot_accent_text_soft;
 }
 
 .chatot-bubble-out .chatot-transcript-head,
 .chatot-bubble-out .chatot-transcript-head:hover {
-	color: alpha(#ffffff, 0.85);
+	color: alpha(@chatot_on_bubble_out, 0.85);
 }
 
 /* The long-body fold control, sitting under the clipped text in the bubble.
@@ -4060,18 +4079,18 @@ button.chatot-member-more {
 	box-shadow: none;
 	font-size: 12.5px;
 	font-weight: 700;
-	color: #147a63;
+	color: @chatot_accent_text;
 }
 
 .chatot-read-more:hover {
 	background: none;
-	color: #15705b;
+	color: @chatot_accent_text_soft;
 	text-decoration: underline;
 }
 
 .chatot-bubble-out .chatot-read-more,
 .chatot-bubble-out .chatot-read-more:hover {
-	color: #ffffff;
+	color: @chatot_on_bubble_out;
 }
 
 .chatot-transcript-dim {
@@ -4114,8 +4133,8 @@ button.chatot-member-more {
 }
 
 .chatot-bubble-out .chatot-media-open {
-	color: #ffffff;
-	border-color: alpha(#ffffff, 0.28);
+	color: @chatot_on_bubble_out;
+	border-color: alpha(@chatot_on_bubble_out, 0.28);
 }
 
 /* Filter chips scroll sideways instead of widening the sidebar. */
@@ -4187,9 +4206,9 @@ button.chatot-member-more {
 	min-height: 28px;
 	padding: 0 13px;
 	border-radius: 8px;
-	background-color: #1b8c72;
+	background-color: @chatot_accent;
 	background-image: none;
-	color: #ffffff;
+	color: @chatot_on_accent;
 	font-size: 12.5px;
 	font-weight: bold;
 	border: none;
@@ -4198,7 +4217,7 @@ button.chatot-member-more {
 }
 
 .chatot-viewer-primary:hover {
-	background-color: #147a63;
+	background-color: @chatot_accent_hover;
 }
 
 .chatot-viewer-stage {
@@ -4237,9 +4256,9 @@ button.chatot-member-more {
 	min-width: 64px;
 	min-height: 64px;
 	border-radius: 999px;
-	background-color: #1b8c72;
+	background-color: @chatot_accent;
 	background-image: none;
-	color: #ffffff;
+	color: @chatot_on_accent;
 	font-size: 22px;
 	border: none;
 	box-shadow: 0 3px 14px alpha(#000000, 0.24);
@@ -4316,15 +4335,15 @@ button.chatot-member-more {
 	min-height: 32px;
 	padding: 0;
 	border-radius: 999px;
-	background-color: #1b8c72;
+	background-color: @chatot_accent;
 	background-image: none;
-	color: #ffffff;
+	color: @chatot_on_accent;
 	border: none;
 	box-shadow: none;
 }
 
 .chatot-transport-play:hover {
-	background-color: #147a63;
+	background-color: @chatot_accent_hover;
 }
 
 .chatot-transport-time {
@@ -4375,7 +4394,7 @@ button.chatot-member-more {
 }
 
 .chatot-viewer-thumb-on {
-	box-shadow: 0 0 0 2px #1b8c72;
+	box-shadow: 0 0 0 2px @chatot_accent;
 }
 
 .chatot-viewer-thumb-glyph {
@@ -4625,21 +4644,21 @@ button.chatot-mention-row-sel {
 /* Links in message text: the mockup's linkFg accent on an incoming bubble,
    white on the green outgoing one where blue would not read. */
 .chatot-bubble-text link {
-	color: #147a63;
+	color: @chatot_accent_text;
 	text-decoration-line: underline;
 }
 
 .chatot-bubble-out .chatot-bubble-text link {
-	color: #ffffff;
+	color: @chatot_on_bubble_out;
 }
 
 .chatot-bubble-text selection {
-	background-color: alpha(#147a63, 0.35);
+	background-color: alpha(@chatot_accent_text, 0.35);
 	color: inherit;
 }
 
 .chatot-bubble-out .chatot-bubble-text selection {
-	background-color: alpha(#ffffff, 0.35);
+	background-color: alpha(@chatot_on_bubble_out, 0.35);
 }
 
 /* Floating "scroll to bottom" disc over the thread's bottom-right corner,
@@ -4691,7 +4710,7 @@ button.chatot-mention-row-sel {
 .chatot-bubble-failed {
 	font-size: 9px;
 	font-weight: bold;
-	color: #ffffff;
+	color: @chatot_on_danger;
 	background-color: @chatot_danger;
 	border-radius: 999px;
 	min-width: 13px;
@@ -4710,7 +4729,7 @@ button.chatot-retry {
 }
 
 .chatot-bubble-out button.chatot-retry {
-	color: #ffffff;
+	color: @chatot_on_bubble_out;
 	background-color: alpha(@chatot_danger, 0.85);
 }
 
