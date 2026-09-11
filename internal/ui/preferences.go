@@ -216,20 +216,8 @@ func prefAppearance(parent *gtk.Window, s *settings.Settings, c client.Client, o
 		onChange(*s)
 		return themeOptions[i]
 	}))
-	// The desktop shell's palette, offered only where DankMaterialShell has
-	// written one (or the preference already insists on it).
-	if DMSThemeAvailable() || s.ThemeSource == "dms" {
-		follow, _ := newSwitchRow("Follow the shell's colours",
-			"DankMaterialShell's palette for the wallpaper, in place of the design's",
-			ResolveThemeSource(s.ThemeSource) == "dms", func(on bool) {
-				s.ThemeSource = "none"
-				if on {
-					s.ThemeSource = "dms"
-				}
-				ApplyThemeSource(s.ThemeSource)
-				onChange(*s)
-			})
-		theme.Add(follow)
+	if row := themeSourceRow(s, onChange); row != nil {
+		theme.Add(row)
 	}
 	controls, _ := newSwitchRow("Show window controls",
 		"Hides minimize, maximize and close when off",
@@ -854,4 +842,54 @@ func gifServiceLabel(id string) string {
 		return "Tenor"
 	}
 	return "Giphy"
+}
+
+// themeSourceRow offers the desktop shell's palette: a switch where one
+// shell has written a palette, a choice where more than one has, nothing
+// where none has (unless the preference insists on a shell that is gone,
+// so it can still be switched off). "auto" shows as the shell it resolves
+// to; picking writes the explicit value.
+func themeSourceRow(s *settings.Settings, onChange func(settings.Settings)) gtk.Widgetter {
+	available := AvailableThemeSources()
+	current := ResolveThemeSource(s.ThemeSource)
+	if len(available) == 0 && current == "" {
+		return nil
+	}
+	set := func(source string) {
+		s.ThemeSource = source
+		ApplyThemeSource(source)
+		onChange(*s)
+	}
+	if len(available) <= 1 {
+		name := current
+		if len(available) == 1 {
+			name = available[0].name
+		}
+		row, _ := newSwitchRow("Follow the shell's colours",
+			ThemeSourceLabel(name)+"'s palette in place of the design's",
+			current != "", func(on bool) {
+				if on {
+					set(name)
+				} else {
+					set("none")
+				}
+			})
+		return row
+	}
+	values := []string{"none"}
+	labels := []string{ThemeSourceLabel("none")}
+	for _, src := range available {
+		values = append(values, src.name)
+		labels = append(labels, src.label)
+	}
+	pick := 0
+	for i, v := range values {
+		if v == current {
+			pick = i
+		}
+	}
+	return choiceRow("Colours", "The desktop shell's palette in place of the design's", labels[pick], labels, func(i int) string {
+		set(values[i])
+		return labels[i]
+	})
 }

@@ -17,8 +17,9 @@ type Settings struct {
 	ShowNotifications    bool   `json:"showNotifications"`
 	Theme                string `json:"theme"` // "system", "light", or "dark"
 	// ThemeSource is where the colours come from: "auto" follows the
-	// desktop shell's palette (DankMaterialShell) whenever it has written
-	// one, "dms" insists on it, "none" keeps the design's own colours.
+	// desktop shell's palette (DankMaterialShell, else Omarchy) whenever
+	// one has written it, "dms" or "omarchy" insists on that shell, "none"
+	// keeps the design's own colours.
 	ThemeSource string `json:"themeSource"`
 	// Proxy is a SOCKS5 or HTTP proxy URL (e.g. "socks5://host:port") applied
 	// to the WhatsApp connection at startup; "" connects directly. Changing
@@ -100,7 +101,7 @@ var FontSizes = []string{"small", "default", "large"}
 var AutoDownloadModes = []string{"always", "photos", "never"}
 
 // ThemeSources lists the ThemeSource values.
-var ThemeSources = []string{"auto", "none", "dms"}
+var ThemeSources = []string{"auto", "none", "dms", "omarchy"}
 
 // Default returns the preferences a fresh install starts with: chatot
 // matches WhatsApp's own defaults (read receipts on, as the mockup's Privacy

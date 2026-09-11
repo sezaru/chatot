@@ -1,30 +1,22 @@
 package ui
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
-	"github.com/diamondburned/gotk4/pkg/gdk/v4"
-	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
-	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
 // DankMaterialShell derives a Material palette from the wallpaper (or a
 // picked theme) with matugen and writes every token, for dark and light,
 // to $XDG_CACHE_HOME/DankMaterialShell/dms-colors.json; it rewrites the
-// file on each wallpaper or theme change. With the Preferences ›
-// Appearance switch on, chatot maps those tokens onto its own sheet tokens
-// and libadwaita's named colours, in a provider above the app sheets, and
-// reloads them whenever the file changes. The design's colours come back
-// the moment the switch is off or the file is gone.
+// file on each wallpaper or theme change. Its own GTK route (a gtk.css
+// importing dank-colors.css) never reaches this app, which re-applies
+// libadwaita above the user sheet, so the file is read directly.
 
 const dmsColorsFile = "dms-colors.json"
 
@@ -32,27 +24,6 @@ const dmsColorsFile = "dms-colors.json"
 func dmsCacheDir() string { return filepath.Join(glib.GetUserCacheDir(), "DankMaterialShell") }
 
 func dmsColorsPath() string { return filepath.Join(dmsCacheDir(), dmsColorsFile) }
-
-// DMSThemeAvailable reports whether DMS has written a palette this app can
-// follow, for the preference row that offers to.
-func DMSThemeAvailable() bool {
-	st, err := os.Stat(dmsColorsPath())
-	return err == nil && !st.IsDir()
-}
-
-// ResolveThemeSource turns a preference value into the source in effect:
-// "dms" or "" for the design's own colours.
-func ResolveThemeSource(source string) string {
-	switch source {
-	case "dms":
-		return "dms"
-	case "auto":
-		if DMSThemeAvailable() {
-			return "dms"
-		}
-	}
-	return ""
-}
 
 // dmsPalette is the two Material token sets DMS writes.
 type dmsPalette struct {
@@ -227,126 +198,21 @@ func shadeHex(hex string, f float64) string {
 	return fmt.Sprintf("#%02x%02x%02x", ch(c[0]), ch(c[1]), ch(c[2]))
 }
 
-// shellTheme is the provider slot above the app sheets that a shell
-// palette fills, with the file watch that keeps it current.
-type shellTheme struct {
-	display   *gdk.Display
-	sm        *adw.StyleManager
-	prio      uint
-	provider  *gtk.CSSProvider
-	installed bool
-	ready     bool
-	wanted    string
-	palette   dmsPalette
-	monitor   *gio.FileMonitor
-	pending   glib.SourceHandle
-}
-
-var shell shellTheme
-
-// ApplyThemeSource selects where the sheet's colours come from (a
-// ThemeSources value). Safe before InstallStyles: the choice is kept and
-// applied once the sheets are in.
-func ApplyThemeSource(source string) {
-	shell.wanted = source
-	if shell.ready {
-		shell.apply()
-	}
-}
-
-// init prepares the slot at prio, above the app sheets, and re-derives the
-// sheet when the scheme flips between dark and light.
-func (t *shellTheme) init(display *gdk.Display, sm *adw.StyleManager, prio uint) {
-	t.display, t.sm, t.prio = display, sm, prio
-	t.provider = gtk.NewCSSProvider()
-	t.ready = true
-	sm.NotifyProperty("dark", func() {
-		if t.installed {
-			t.provider.LoadFromString(t.palette.css(sm.Dark()))
+// dmsSource is DMS as a shell palette source.
+var dmsSource = &shellSource{
+	name:  "dms",
+	label: "DankMaterialShell",
+	available: func() bool {
+		st, err := os.Stat(dmsColorsPath())
+		return err == nil && !st.IsDir()
+	},
+	load: func() (func(dark bool) string, error) {
+		p, err := loadDMSPalette(dmsColorsPath())
+		if err != nil {
+			return nil, err
 		}
-	})
-	t.apply()
-}
-
-func (t *shellTheme) apply() {
-	if ResolveThemeSource(t.wanted) != "dms" {
-		t.uninstall()
-		t.unwatch()
-		return
-	}
-	t.reload()
-	t.watch()
-}
-
-// reload reads the palette file and (re)loads its sheet; an unreadable
-// file drops the sheet so the design's colours show rather than stale ones.
-func (t *shellTheme) reload() {
-	p, err := loadDMSPalette(dmsColorsPath())
-	if err != nil {
-		log.Printf("chatot: shell theme: %v", err)
-		t.uninstall()
-		return
-	}
-	t.palette = p
-	t.provider.LoadFromString(p.css(t.sm.Dark()))
-	if !t.installed {
-		gtk.StyleContextAddProviderForDisplay(t.display, t.provider, t.prio)
-		t.installed = true
-	}
-	trace(1, "shell theme: DMS palette loaded (dark=%v, accent text %s)", t.sm.Dark(), tokenHex("chatot_accent_text", "unresolved"))
-}
-
-func (t *shellTheme) uninstall() {
-	if t.installed {
-		gtk.StyleContextRemoveProviderForDisplay(t.display, t.provider)
-		t.installed = false
-	}
-}
-
-// watch follows the cache directory (DMS replaces the file rather than
-// editing it in place, so a watch on the file itself would go stale) and
-// reloads a moment after the last event of a burst.
-func (t *shellTheme) watch() {
-	if t.monitor != nil {
-		return
-	}
-	dir := gio.NewFileForPath(dmsCacheDir())
-	m, err := dir.MonitorDirectory(context.Background(), gio.FileMonitorNone)
-	if err != nil {
-		log.Printf("chatot: shell theme: watch %s: %v", dmsCacheDir(), err)
-		return
-	}
-	mon := gio.BaseFileMonitor(m)
-	mon.ConnectChanged(func(file, other gio.Filer, _ gio.FileMonitorEvent) {
-		if !isDMSColorsFile(file) && !isDMSColorsFile(other) {
-			return
-		}
-		if t.pending != 0 {
-			glib.SourceRemove(t.pending)
-		}
-		t.pending = glib.TimeoutAdd(200, func() bool {
-			t.pending = 0
-			if ResolveThemeSource(t.wanted) == "dms" {
-				t.reload()
-			}
-			return false
-		})
-	})
-	t.monitor = mon
-}
-
-func (t *shellTheme) unwatch() {
-	if t.monitor == nil {
-		return
-	}
-	t.monitor.Cancel()
-	t.monitor = nil
-	if t.pending != 0 {
-		glib.SourceRemove(t.pending)
-		t.pending = 0
-	}
-}
-
-func isDMSColorsFile(f gio.Filer) bool {
-	return f != nil && f.Basename() == dmsColorsFile
+		return p.css, nil
+	},
+	watchDir:   dmsCacheDir,
+	watchNames: []string{dmsColorsFile},
 }
