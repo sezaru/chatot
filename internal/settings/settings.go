@@ -16,6 +16,10 @@ type Settings struct {
 	SendTypingIndicators bool   `json:"sendTypingIndicators"`
 	ShowNotifications    bool   `json:"showNotifications"`
 	Theme                string `json:"theme"` // "system", "light", or "dark"
+	// ThemeSource is where the colours come from: "auto" follows the
+	// desktop shell's palette (DankMaterialShell) whenever it has written
+	// one, "dms" insists on it, "none" keeps the design's own colours.
+	ThemeSource string `json:"themeSource"`
 	// Proxy is a SOCKS5 or HTTP proxy URL (e.g. "socks5://host:port") applied
 	// to the WhatsApp connection at startup; "" connects directly. Changing
 	// it takes effect on the next launch, not the running session.
@@ -95,6 +99,9 @@ var FontSizes = []string{"small", "default", "large"}
 // AutoDownloadModes lists the AutoDownload values in display order.
 var AutoDownloadModes = []string{"always", "photos", "never"}
 
+// ThemeSources lists the ThemeSource values.
+var ThemeSources = []string{"auto", "none", "dms"}
+
 // Default returns the preferences a fresh install starts with: chatot
 // matches WhatsApp's own defaults (read receipts on, as the mockup's Privacy
 // page shows them).
@@ -104,6 +111,7 @@ func Default() Settings {
 		SendTypingIndicators:    true,
 		ShowNotifications:       true,
 		Theme:                   "system",
+		ThemeSource:             "auto",
 		NotificationsPerAccount: true,
 		KeepInactiveConnected:   true,
 		LocationAccess:          true,
@@ -171,6 +179,9 @@ func normalize(s Settings) Settings {
 	}
 	if !contains(AutoDownloadModes, s.AutoDownload) {
 		s.AutoDownload = Default().AutoDownload
+	}
+	if !contains(ThemeSources, s.ThemeSource) {
+		s.ThemeSource = Default().ThemeSource
 	}
 	return s
 }

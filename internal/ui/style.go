@@ -26,12 +26,14 @@ var StyleDarkCSS string
 // the dark override sheet stacked on top exactly while the style manager
 // reports a dark scheme (system preference or the Dark setting).
 //
-// The sheets normally sit at APPLICATION priority, above libadwaita's. GTK
-// also loads $XDG_CONFIG_HOME/gtk-4.0/gtk.css at USER priority, above both,
-// and a GTK theme installed there (home-manager's gtk.theme does this)
-// restyles the whole window: dark surfaces, traffic-light window controls,
-// its own entries and buttons. chatot is drawn to its mockup, not to a
-// theme, so when that file exists libadwaita's stylesheet and the app's are
+// The sheets normally sit at APPLICATION priority, above libadwaita's: the
+// light one, the dark override a step higher, and the desktop shell's
+// palette slot (theme_dms.go) a step above that. GTK also loads
+// $XDG_CONFIG_HOME/gtk-4.0/gtk.css at USER priority, above them all, and a
+// GTK theme installed there (home-manager's gtk.theme does this) restyles
+// the whole window: dark surfaces, traffic-light window controls, its own
+// entries and buttons. chatot is drawn to its mockup, not to a theme, so
+// when that file exists libadwaita's stylesheet and the app's are
 // re-applied above it; nothing changes on a system without one.
 func InstallStyles() {
 	display := gdk.DisplayGetDefault()
@@ -62,6 +64,10 @@ func InstallStyles() {
 	}
 	apply()
 	sm.NotifyProperty("dark", apply)
+
+	// The desktop shell's palette, when followed, restates the tokens from
+	// a slot above both sheets.
+	shell.init(display, sm, prio+2)
 }
 
 // isDark reports whether the style manager is currently dark, for the

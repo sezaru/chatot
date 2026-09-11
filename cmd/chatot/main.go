@@ -1033,6 +1033,7 @@ func applySettings(s settings.Settings) {
 	ui.GIFAPIKey = s.GIFAPIKey
 	client.SetVerboseLogging(s.VerboseLogging)
 	ui.ApplyTheme(s.Theme)
+	ui.ApplyThemeSource(s.ThemeSource)
 	ui.ChatWallpaper = s.ChatWallpaper
 	ui.SetChatWallpaperOverrides(settings.LoadChatWallpapers(settings.Dir()))
 
