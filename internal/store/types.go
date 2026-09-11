@@ -132,6 +132,9 @@ type SearchHit struct {
 	ChatName string
 	Snippet  string
 	TS       int64
+	// InTranscript says the query matched the message's voice transcript
+	// (the snippet is cut from it), not the text.
+	InTranscript bool
 }
 
 // ChatRow is the upsert seam for the chats table.

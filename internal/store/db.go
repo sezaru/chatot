@@ -143,6 +143,14 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
 	}
+	if err := migrateAddColumn(db, "messages", "transcript", "TEXT"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
+	}
+	if err := migrateFTSTranscript(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("chatot/store: migrate fts: %w", err)
+	}
 	if err := backfillFTS(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: fts backfill: %w", err)
@@ -171,6 +179,46 @@ func backfillFTS(db *sql.DB) error {
 		return nil
 	}
 	_, err := db.Exec(`INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')`)
+	return err
+}
+
+// migrateFTSTranscript replaces a messages_fts built before transcripts
+// were indexed. CREATE VIRTUAL TABLE IF NOT EXISTS leaves the one-column
+// table as it is, so the old index and its triggers go, the transcripts
+// already made are copied from media into messages (with no triggers in
+// place: the fts5 delete command must be handed exactly what was indexed,
+// which a row that was never indexed cannot be), and the schema is
+// applied again to create the two-column table, which is then rebuilt
+// from messages.
+func migrateFTSTranscript(db *sql.DB) error {
+	has, err := hasColumn(db, "messages_fts", "transcript")
+	if err != nil || has {
+		return err
+	}
+	_, err = db.Exec(`
+		DROP TRIGGER IF EXISTS messages_fts_ai;
+		DROP TRIGGER IF EXISTS messages_fts_ad;
+		DROP TRIGGER IF EXISTS messages_fts_au;
+		DROP TABLE IF EXISTS messages_fts;
+		UPDATE messages SET transcript = (
+			SELECT md.transcript FROM media md
+			WHERE md.chat_jid = messages.chat_jid AND md.msg_id = messages.msg_id
+		) WHERE EXISTS (
+			SELECT 1 FROM media md
+			WHERE md.chat_jid = messages.chat_jid AND md.msg_id = messages.msg_id
+				AND COALESCE(md.transcript, '') != ''
+		);
+	`)
+	if err != nil {
+		return err
+	}
+	if _, err := db.Exec(schemaSQL); err != nil {
+		return err
+	}
+	// Filled here rather than left to backfillFTS: a count of an
+	// external-content table reads the content table, so the counts it
+	// compares never differ.
+	_, err = db.Exec(`INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')`)
 	return err
 }
 

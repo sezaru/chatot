@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS messages (
     ts INTEGER NOT NULL DEFAULT 0,
     reply_to_msg_id TEXT,
     reply_to_text TEXT,
+    -- A copy of media.transcript (the text transcribed from a voice note,
+    -- see SetMediaTranscript), kept here so messages_fts can index it
+    -- beside the text: an external-content fts5 table reads one table.
+    transcript TEXT,
     -- kind='' is a plain text/media message; a non-empty kind (e.g.
     -- 'location') marks a rich message whose body lives in payload as opaque
     -- JSON that only package client understands. The store never parses it.
@@ -77,27 +81,30 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_chat_ts ON messages(chat_jid, ts);
 
--- External-content fts5 index over message text: messages has no INTEGER
--- PRIMARY KEY, so sqlite's implicit rowid (stable, unique per row) is used
--- as content_rowid. Kept in sync by triggers below; db.go backfills rows
--- written before this table existed.
+-- External-content fts5 index over message text and voice transcripts:
+-- messages has no INTEGER PRIMARY KEY, so sqlite's implicit rowid (stable,
+-- unique per row) is used as content_rowid. Kept in sync by triggers
+-- below; db.go backfills rows written before this table existed and
+-- rebuilds a table created before the transcript column (see
+-- migrateFTSTranscript).
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     text,
+    transcript,
     content='messages',
     content_rowid='rowid'
 );
 
 CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
-    INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+    INSERT INTO messages_fts(rowid, text, transcript) VALUES (new.rowid, new.text, new.transcript);
 END;
 
 CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
-    INSERT INTO messages_fts(messages_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+    INSERT INTO messages_fts(messages_fts, rowid, text, transcript) VALUES ('delete', old.rowid, old.text, old.transcript);
 END;
 
 CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
-    INSERT INTO messages_fts(messages_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
-    INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+    INSERT INTO messages_fts(messages_fts, rowid, text, transcript) VALUES ('delete', old.rowid, old.text, old.transcript);
+    INSERT INTO messages_fts(rowid, text, transcript) VALUES (new.rowid, new.text, new.transcript);
 END;
 
 CREATE TABLE IF NOT EXISTS reactions (

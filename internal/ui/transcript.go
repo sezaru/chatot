@@ -239,7 +239,7 @@ func newTranscribeButton(mv mediaView, slot transcriptSlot) *gtk.Button {
 	}
 	st := mv.TranscriptState
 	hasText := mv.Transcript != ""
-	open := hasText && transcriptOpen(st)
+	open := hasText && transcriptShown(mv)
 	running := st.Busy || st.Queued
 	btn := gtk.NewButton()
 	btn.AddCSSClass("flat")
@@ -358,7 +358,17 @@ func buildTranscriptSlot(mv mediaView) transcriptSlot {
 
 	box := gtk.NewBox(gtk.OrientationVertical, 0)
 	box.AddCSSClass("chatot-transcript")
-	open := transcriptOpen(st)
+	open := transcriptShown(mv)
+	query := mv.SearchQuery
+	// A search under way marks its matches in the text, as the bubbles'
+	// bodies do.
+	setText := func(l *gtk.Label, s string) {
+		if query == "" {
+			l.SetLabel(s)
+			return
+		}
+		l.SetMarkup(highlightMarkup(s, query))
+	}
 	// The folded line is the transcript's own first words, cut by the
 	// label's ellipsis where the bubble ends, and clicking it opens the
 	// rest — the same fold the row's chevron works.
@@ -367,7 +377,8 @@ func buildTranscriptSlot(mv mediaView) transcriptSlot {
 	preview.AddCSSClass("chatot-transcript-preview-row")
 	preview.SetFocusOnClick(false)
 	preview.SetTooltipText(transcriptFoldTooltip(false))
-	previewLabel := gtk.NewLabel(transcriptPreview(mv.Transcript))
+	previewLabel := gtk.NewLabel("")
+	setText(previewLabel, transcriptPreview(mv.Transcript))
 	previewLabel.AddCSSClass("chatot-transcript-preview")
 	previewLabel.SetXAlign(0)
 	previewLabel.SetEllipsize(pango.EllipsizeEnd)
@@ -386,7 +397,8 @@ func buildTranscriptSlot(mv mediaView) transcriptSlot {
 		}
 		return mv.Transcript
 	}
-	text := gtk.NewLabel(body())
+	text := gtk.NewLabel("")
+	setText(text, body())
 	text.AddCSSClass("chatot-transcript-text")
 	text.SetXAlign(0)
 	text.SetWrap(true)
@@ -405,7 +417,7 @@ func buildTranscriptSlot(mv mediaView) transcriptSlot {
 		rememberMore := mv.voice.onTranscriptMore
 		moreBtn.ConnectClicked(func() {
 			more = !more
-			text.SetLabel(body())
+			setText(text, body())
 			moreBtn.SetLabel(readMoreLabel(more))
 			if rememberMore != nil {
 				rememberMore(id, more)
@@ -447,6 +459,20 @@ func buildTranscriptSlot(mv mediaView) transcriptSlot {
 		widget: box, fold: fold,
 		follow: func(w func(bool)) { watchers = append(watchers, w) },
 	}
+}
+
+// transcriptShown is whether mv's transcript text is unfolded: what the
+// reader did to it or the preference (transcriptOpen), and always while an
+// in-chat search matches it, since a folded preview would cut the match
+// off where the bubble ends.
+func transcriptShown(mv mediaView) bool {
+	return transcriptOpen(mv.TranscriptState) || transcriptMatches(mv.Transcript, mv.SearchQuery)
+}
+
+// transcriptMatches reports whether query (an in-chat search, "" for
+// none) occurs in transcript.
+func transcriptMatches(transcript, query string) bool {
+	return query != "" && transcript != "" && len(findMatches(transcript, query)) > 0
 }
 
 // transcriptOf is msgID's transcription state this session.

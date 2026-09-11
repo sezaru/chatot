@@ -110,8 +110,18 @@ func (s *Store) SetMediaPlayPos(chatJID, msgID string, ms int) error {
 
 // SetMediaTranscript stores the text transcribed from an audio attachment.
 // UpsertMedia never writes the column, so a redelivery of the message keeps
-// it.
+// it. The message row gets a copy, which is what the search index reads.
 func (s *Store) SetMediaTranscript(chatJID, msgID, text string) error {
-	_, err := s.db.Exec(`UPDATE media SET transcript = ? WHERE chat_jid = ? AND msg_id = ?`, text, chatJID, msgID)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE media SET transcript = ? WHERE chat_jid = ? AND msg_id = ?`, text, chatJID, msgID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE messages SET transcript = ? WHERE chat_jid = ? AND msg_id = ?`, text, chatJID, msgID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

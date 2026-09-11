@@ -650,6 +650,9 @@ type SearchHit struct {
 	ChatName string
 	Snippet  string
 	TS       int64
+	// InTranscript says the match is in a voice note's transcript, which
+	// the snippet is cut from.
+	InTranscript bool
 }
 
 // Client is the seam the UI depends on. One real implementation
