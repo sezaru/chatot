@@ -636,6 +636,16 @@ button.chatot-reaction-pill-mine {
 	background-color: alpha(currentColor, 0.12);
 }
 
+/* Collapsed window: the pair floats over the bubble's top corner (the
+   mockup's hover bar) instead of reserving room beside the bubble. */
+.chatot-hover-float {
+	margin: 4px;
+	padding: 2px;
+	border-radius: 999px;
+	background-color: @chatot_surface;
+	box-shadow: 0 2px 8px alpha(black, 0.18);
+}
+
 .chatot-hover-chevron {
 	color: alpha(@window_fg_color, 0.6);
 }
@@ -1030,6 +1040,11 @@ button.chatot-composer-iconbtn.text-button,
 .chatot-conv-header > box {
 	min-height: 46px;
 	padding: 0 10px 0 14px;
+}
+
+/* Collapsed (one pane at a time): the ← takes the place of the 14px inset. */
+.chatot-conv-header.chatot-collapsed > box {
+	padding-left: 6px;
 }
 
 .chatot-conv-title {
@@ -4401,6 +4416,11 @@ button.chatot-member-more {
 .chatot-viewer-details {
 	border-left: 1px solid alpha(currentColor, 0.08);
 	background-color: @view_bg_color;
+}
+
+/* Collapsed: the sidebar covers the stage, so it has no edge to rule. */
+.chatot-viewer-details-over {
+	border-left: none;
 }
 
 .chatot-viewer-details-head {

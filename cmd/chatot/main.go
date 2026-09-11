@@ -241,6 +241,21 @@ func activate(app *adw.Application, c client.Client) {
 	// Files dropped anywhere on the chat pane queue as attachments.
 	contentBox.AddController(composer.DropTarget())
 
+	// The split view exists before the panes because their wiring needs its
+	// two moves: below the window's breakpoint (set once the window exists)
+	// the sidebar and the content take turns filling the window, and
+	// show-content picks which. showList/showContent are those moves.
+	split := adw.NewNavigationSplitView()
+	// Mockup proportions: the sidebar is the 54px account rail plus a 334px
+	// list column = 388px of the 1240px design canvas (31.3%). The clamps keep
+	// that usable at other window sizes without letting the sidebar drift far
+	// from the design width.
+	split.SetSidebarWidthFraction(388.0 / 1240.0)
+	split.SetMinSidebarWidth(340)
+	split.SetMaxSidebarWidth(420)
+	showList := func() { split.SetShowContent(false) }
+	showContent := func() { split.SetShowContent(true) }
+
 	// Declared up here because the starred page needs it, and it in turn needs
 	// the conversation and composer that are built above.
 	var openChat func(jid string)
@@ -251,6 +266,10 @@ func activate(app *adw.Application, c client.Client) {
 	rightPane := gtk.NewStack()
 	rightPane.SetVExpand(true)
 	rightPane.SetHExpand(true)
+	// Only the page on screen bounds the width: homogeneous, the widest
+	// page (the media grid) would hold the whole window above 400px even
+	// while the thread is showing, and the collapsed layout goes to 360.
+	rightPane.SetHhomogeneous(false)
 	rightPane.AddNamed(contentBox, "chat")
 	showChat := func() { rightPane.SetVisibleChildName("chat") }
 
@@ -279,6 +298,7 @@ func activate(app *adw.Application, c client.Client) {
 	chatList.OnStarredRequested(func() {
 		starredPage.Reload()
 		rightPane.SetVisibleChildName("starred")
+		showContent()
 	})
 
 	// The attachment tray covers the whole conversation pane (thread and
@@ -305,7 +325,8 @@ func activate(app *adw.Application, c client.Client) {
 	// tabs' own panes carry their headers below it.
 	contentHeader := gtk.NewStack()
 	contentHeader.AddNamed(conversation.Header(), "chat")
-	contentHeader.AddNamed(ui.NewPlainHeader(), "plain")
+	plainHeader := ui.NewPlainHeader(showList)
+	contentHeader.AddNamed(plainHeader, "plain")
 	contentCol := gtk.NewBox(gtk.OrientationVertical, 0)
 	contentCol.Append(contentHeader)
 	contentCol.Append(toastOverlay)
@@ -324,6 +345,13 @@ func activate(app *adw.Application, c client.Client) {
 			contentHeader.SetVisibleChildName("chat")
 		} else {
 			contentHeader.SetVisibleChildName("plain")
+		}
+		// Collapsed, a tab switch lands on the list; an opened status,
+		// channel or community on the content (like the mockup's detail).
+		if name == "chat" || name == "tabempty" {
+			showList()
+		} else {
+			showContent()
 		}
 	})
 
@@ -386,22 +414,15 @@ func activate(app *adw.Application, c client.Client) {
 		conversation.Load(jid)
 		composer.SetChat(jid)
 		composer.SetChatName(chatNameFor(c, jid))
+		showContent()
 		composer.FocusInput()
 		go markReadOnOpen(c, jid, conversation.Messages())
 	}
 	chatList.OnChatSelected(openChat)
 	conversation.OnStopLiveRequested(composer.StopLiveLocation)
 
-	split := adw.NewNavigationSplitView()
 	split.SetSidebar(sidebar)
 	split.SetContent(content)
-	// Mockup proportions: the sidebar is the 54px account rail plus a 334px
-	// list column = 388px of the 1240px design canvas (31.3%). The clamps keep
-	// that usable at other window sizes without letting the sidebar drift far
-	// from the design width.
-	split.SetSidebarWidthFraction(388.0 / 1240.0)
-	split.SetMinSidebarWidth(340)
-	split.SetMaxSidebarWidth(420)
 
 	// The window flips between the QR pairing screen and the main UI via a
 	// stack keyed on login state; whatsmeow pairing/connection events switch it.
@@ -443,6 +464,21 @@ func activate(app *adw.Application, c client.Client) {
 	win.SetIconName(appID)
 	win.SetDefaultSize(1000, 700)
 	win.SetContent(stack)
+	// Below 720px (the mockup's NARROW_AT) the sidebar and the thread no
+	// longer fit side by side: the split view collapses to one pane at a
+	// time and the three headers switch to their collapsed forms (← back
+	// to the list, window controls on whichever pane is showing).
+	narrow := adw.NewBreakpoint(adw.BreakpointConditionParse("max-width: 720sp"))
+	narrow.AddSetter(split, "collapsed", true)
+	win.AddBreakpoint(narrow)
+	split.NotifyProperty("collapsed", func() {
+		collapsed := split.Collapsed()
+		chatList.SetCollapsed(collapsed)
+		conversation.SetCollapsed(collapsed)
+		plainHeader.SetCollapsed(collapsed)
+		viewer.SetCollapsed(collapsed)
+	})
+	conversation.OnBackRequested(showList)
 	composer.SetWindow(&win.Window)
 	chatList.SetWindow(&win.Window)
 	conversation.SetWindow(&win.Window)
@@ -982,6 +1018,22 @@ type shotDeps struct {
 	saveSettings func()
 }
 
+// logWideWidgets logs every descendant of w whose minimum width would not
+// fit the collapsed layout, with its CSS classes, for the measure hook.
+func logWideWidgets(w gtk.Widgetter, path string, depth int) {
+	if depth > 12 {
+		return
+	}
+	for child := gtk.BaseWidget(w).FirstChild(); child != nil; child = gtk.BaseWidget(child).NextSibling() {
+		min, _, _, _ := gtk.BaseWidget(child).Measure(gtk.OrientationHorizontal, -1)
+		name := fmt.Sprintf("%s/%T[%s]", path, child, strings.Join(gtk.BaseWidget(child).CSSClasses(), ","))
+		if min > 330 {
+			log.Printf("measure wide %s: min=%d", name, min)
+		}
+		logWideWidgets(child, name, depth+1)
+	}
+}
+
 // shotHook drives the window into one named mockup state for screenshots.
 // loadingFallbackMS bounds the startup mark: past this the main view shows
 // with whatever the local store holds, connected or not.
@@ -999,6 +1051,28 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	name := chatNameFor(d.c, jid)
 	arg := os.Getenv("CHATOT_SHOT_ARG")
 	switch state {
+	case "measure":
+		// Logs the minimum and natural widths that bound how narrow the
+		// window can go, per pane, for the collapsed (one pane) layout.
+		for _, e := range []struct {
+			name string
+			w    gtk.Widgetter
+		}{{"window", d.win}, {"main", d.stack.ChildByName("main")}, {"chatlist", d.chatList}, {"conversation", d.conversation}, {"header", d.conversation.Header()}, {"composer", d.composer}} {
+			min, nat, _, _ := gtk.BaseWidget(e.w).Measure(gtk.OrientationHorizontal, -1)
+			log.Printf("measure %s: min=%d nat=%d alloc=%d", e.name, min, nat, gtk.BaseWidget(e.w).AllocatedWidth())
+		}
+		// The content pane is a stack; each page must fit on its own when
+		// it shows (the stack is not width-homogeneous).
+		if pane, ok := gtk.BaseWidget(gtk.BaseWidget(d.conversation).Parent()).Parent().(*gtk.Stack); ok {
+			for child := pane.FirstChild(); child != nil; child = gtk.BaseWidget(child).NextSibling() {
+				min, nat, _, _ := gtk.BaseWidget(child).Measure(gtk.OrientationHorizontal, -1)
+				log.Printf("measure page %s: min=%d nat=%d", pane.Page(child).Name(), min, nat)
+				logWideWidgets(child, pane.Page(child).Name(), 0)
+			}
+		}
+		for _, line := range d.conversation.MeasureRows() {
+			log.Printf("measure %s", line)
+		}
 	case "refreshbench":
 		d.chatList.RefreshBench(10)
 		d.chatList.RefreshBreakdown()
@@ -1298,6 +1372,11 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 			q = "relay"
 		}
 		d.conversation.OpenSearch(q)
+	case "searchback":
+		// The collapsed header's ← with the search open: it should leave
+		// the search and keep the chat.
+		d.conversation.OpenSearch("relay")
+		glib.TimeoutAdd(1500, func() bool { d.conversation.PressBack(); return false })
 	case "listsearch":
 		// The chat list's search box with CHATOT_SHOT_TEXT typed in.
 		d.chatList.SearchList(os.Getenv("CHATOT_SHOT_TEXT"))

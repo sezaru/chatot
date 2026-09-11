@@ -246,6 +246,7 @@ type ChatList struct {
 	accountBtn         *gtk.MenuButton   // header switcher button; dev-hook popup target
 	plusBtn            *gtk.MenuButton   // header ＋ menu; dev-hook popup target
 	appMenuBtn         *gtk.MenuButton   // header ⋮ app menu; dev-hook popup target
+	endControlsSlot    *gtk.Box          // end-side window controls; shown only while collapsed
 	archiveT           *gtk.ToggleButton // "Archived" mode toggle; dev-hook target
 	overflowBtn        *gtk.Button       // chip-row "…" label overflow; dev-hook target
 	overflowPop        *gtk.Popover      // the … popover while it is open, else nil
@@ -277,6 +278,10 @@ type ChatList struct {
 // SetWindow supplies the parent window the new-chat dialog needs; call once
 // after the top-level window exists.
 func (cl *ChatList) SetWindow(w *gtk.Window) { cl.window = w }
+
+// SetCollapsed follows the split view: while the sidebar fills the window
+// on its own its header also draws the end side of the window controls.
+func (cl *ChatList) SetCollapsed(collapsed bool) { cl.endControlsSlot.SetVisible(collapsed) }
 
 // NewChatList builds a ChatList for c and populates it with the current
 // chats. It also subscribes to c.Events() to keep the list live.
@@ -381,6 +386,13 @@ func NewChatList(c client.Client) *ChatList {
 	appMenuBtn.SetVAlign(gtk.AlignCenter)
 	appMenuBtn.SetTooltipText("Menu")
 	headerBox.Append(appMenuBtn)
+	// Collapsed (one pane at a time) the sidebar fills the window on its
+	// own and the conversation header with the end-side window controls is
+	// off screen, so a second set shows here; hidden while side by side.
+	endControlsSlot := gtk.NewBox(gtk.OrientationHorizontal, 0)
+	endControlsSlot.Append(newWindowControls(gtk.PackEnd))
+	endControlsSlot.SetVisible(false)
+	headerBox.Append(endControlsSlot)
 
 	accountRow := gtk.NewWindowHandle()
 	accountRow.SetChild(headerBox)
@@ -537,7 +549,7 @@ func NewChatList(c client.Client) *ChatList {
 		search:        search,
 		accountAvatar: accountAvatar, accountAvatarClass: "chatot-account-avatar",
 		accountName: accountName, accountStatus: accountStatus, accountBtn: accountBtn,
-		plusBtn: plusBtn, appMenuBtn: appMenuBtn, archiveT: archiveToggle,
+		plusBtn: plusBtn, appMenuBtn: appMenuBtn, endControlsSlot: endControlsSlot, archiveT: archiveToggle,
 		plusPopover: plusPopover,
 		tab:         "chats",
 		discoverCat: "All",

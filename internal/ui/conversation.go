@@ -245,13 +245,19 @@ type ConversationView struct {
 	events <-chan client.Event
 	jid    string // "" until a chat is loaded
 
-	header        *gtk.WindowHandle
-	headerContent *gtk.Box // avatar+title box; hidden (not the whole bar) when no chat is open
-	avatarSlot    *gtk.Box
-	avatarCache   *avatarCache
-	avatarJID     string // jid the avatar widget currently shows, "" until set
-	titleLabel    *gtk.Label
-	subtitleLabel *gtk.Label
+	header *gtk.WindowHandle
+	// backBtn and startControlsSlot show only while the split view is
+	// collapsed: ← returns to the chat list, and the slot draws the start
+	// side of the window controls that the hidden sidebar header would.
+	backBtn           *gtk.Button
+	startControlsSlot *gtk.Box
+	onBack            func()
+	headerContent     *gtk.Box // avatar+title box; hidden (not the whole bar) when no chat is open
+	avatarSlot        *gtk.Box
+	avatarCache       *avatarCache
+	avatarJID         string // jid the avatar widget currently shows, "" until set
+	titleLabel        *gtk.Label
+	subtitleLabel     *gtk.Label
 
 	headerMenuPop *gtk.Popover // ⋮ header menu; dev-hook popup target
 	window        *gtk.Window  // parent for the group-info dialog; set via SetWindow
@@ -348,6 +354,9 @@ type ConversationView struct {
 	// rows is the persistent chrome for each row GtkListView recycles, keyed
 	// by the wrapper's GObject (see widgetKey).
 	rows map[uintptr]*threadRow
+	// compactRows floats each row's hover pair over its bubble (the
+	// collapsed window); see hoverButtons.place.
+	compactRows bool
 	// avatarGens counts each sender's picture changes, so a row that keeps a
 	// cached avatar across binds still notices a new one.
 	avatarGens map[string]int
@@ -579,10 +588,15 @@ func NewConversationView(c client.Client) *ConversationView {
 	titleLabel := gtk.NewLabel("")
 	titleLabel.SetXAlign(0)
 	titleLabel.AddCSSClass("chatot-conv-title")
+	// Both lines give way to the pane: a long group name ends in an
+	// ellipsis (the mockup's text-overflow) rather than holding the
+	// collapsed window open past its 360px.
+	titleLabel.SetEllipsize(pango.EllipsizeEnd)
 	textCol.Append(titleLabel)
 
 	subtitleLabel := gtk.NewLabel("")
 	subtitleLabel.SetXAlign(0)
+	subtitleLabel.SetEllipsize(pango.EllipsizeEnd)
 	subtitleLabel.AddCSSClass("chatot-conv-subtitle")
 	textCol.Append(subtitleLabel)
 
@@ -608,6 +622,17 @@ func NewConversationView(c client.Client) *ConversationView {
 	identityPage.SetHExpand(true)
 	identityPage.Append(headerContent)
 	headerStack.AddNamed(identityPage, "identity")
+	// Collapsed (one pane at a time, below the window's breakpoint) the
+	// sidebar header is off screen, so its start-side window controls and
+	// the mockup's ← back to the list move in here; both stay hidden while
+	// the panes sit side by side.
+	startControlsSlot := gtk.NewBox(gtk.OrientationHorizontal, 0)
+	startControlsSlot.Append(newWindowControls(gtk.PackStart))
+	startControlsSlot.SetVisible(false)
+	headerRow.Append(startControlsSlot)
+	backBtn := newPaneBackButton("Back to the list", nil)
+	backBtn.SetVisible(false)
+	headerRow.Append(backBtn)
 	headerRow.Append(headerStack)
 
 	// Text ⋮ like the sidebar's app menu: the mockup shows vertical dots and
@@ -704,18 +729,20 @@ func NewConversationView(c client.Client) *ConversationView {
 	scroller := gtk.NewScrolledWindow()
 
 	cv := &ConversationView{
-		Box:           root,
-		c:             c,
-		events:        c.Events(),
-		rows:          map[uintptr]*threadRow{},
-		avatarGens:    map[string]int{},
-		unsent:        map[string][]client.Message{},
-		header:        header,
-		headerContent: headerContent,
-		avatarSlot:    avatarSlot,
-		avatarCache:   newAvatarCache(),
-		titleLabel:    titleLabel,
-		subtitleLabel: subtitleLabel,
+		Box:               root,
+		c:                 c,
+		events:            c.Events(),
+		rows:              map[uintptr]*threadRow{},
+		avatarGens:        map[string]int{},
+		unsent:            map[string][]client.Message{},
+		header:            header,
+		backBtn:           backBtn,
+		startControlsSlot: startControlsSlot,
+		headerContent:     headerContent,
+		avatarSlot:        avatarSlot,
+		avatarCache:       newAvatarCache(),
+		titleLabel:        titleLabel,
+		subtitleLabel:     subtitleLabel,
 
 		menuBtn:              menuBtn,
 		headerStack:          headerStack,
@@ -736,6 +763,15 @@ func NewConversationView(c client.Client) *ConversationView {
 		joinBanner:           joinBanner,
 		joinBannerLabel:      joinBannerLabel,
 	}
+	// ← steps back one level at a time: out of the search while it is
+	// open, and only then out of the chat to the list.
+	cv.backBtn.ConnectClicked(func() {
+		if cv.headerStack.VisibleChildName() == "search" {
+			cv.closeSearchBar()
+			return
+		}
+		fire(cv.onBack)
+	})
 
 	joinReviewBtn.ConnectClicked(func() {
 		if cv.jid != "" {
@@ -2900,3 +2936,28 @@ const (
 // stack that swaps the thread for the media and starred pages, so those
 // pages sit under the same header rather than replacing it.
 func (cv *ConversationView) Header() gtk.Widgetter { return cv.header }
+
+// SetCollapsed follows the split view: collapsed, the header shows the ←
+// back to the chat list and the start side of the window controls.
+func (cv *ConversationView) SetCollapsed(collapsed bool) {
+	cv.backBtn.SetVisible(collapsed)
+	cv.startControlsSlot.SetVisible(collapsed)
+	cv.setCompactRows(collapsed)
+	if collapsed {
+		cv.header.AddCSSClass("chatot-collapsed")
+	} else {
+		cv.header.RemoveCSSClass("chatot-collapsed")
+	}
+}
+
+// setCompactRows switches every realized row, and the rows made after,
+// between the side-by-side and floating hover layouts.
+func (cv *ConversationView) setCompactRows(on bool) {
+	cv.compactRows = on
+	for _, r := range cv.rows {
+		r.setCompact(on)
+	}
+}
+
+// OnBackRequested registers the collapsed header's ← handler.
+func (cv *ConversationView) OnBackRequested(f func()) { cv.onBack = f }
