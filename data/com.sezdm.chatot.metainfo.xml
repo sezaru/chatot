@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.13.0-beta" date="2026-09-11">
+      <description>
+        <p>Voice notes and audio can play at 1.5× or 2×: a pill on the playing note (and on the viewer's bar) picks the speed, which then holds for every audio. chatot follows the desktop's colours on DankMaterialShell and Omarchy, live as the theme changes, with a switch under Preferences › Appearance. The unread count on the account rail is centred, and the filter chips line up with the search box and fade at their edges when there are more.</p>
+      </description>
+    </release>
     <release version="0.12.0-beta" date="2026-09-11">
       <description>
         <p>Voice notes are transcribed as soon as they arrive when automatic transcription is on, instead of waiting for their chat to be opened. The forward dialog opens instantly and ticking a chat no longer stalls.</p>
