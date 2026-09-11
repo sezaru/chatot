@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.9.3-beta" date="2026-09-11">
+      <description>
+        <p>Searching for a message no longer widens the chat list: a long chat name in a result used to push the sidebar past its size, and off the window at phone widths. Opening a result now lands on the matched message instead of the end of the chat.</p>
+      </description>
+    </release>
     <release version="0.9.2-beta" date="2026-09-11">
       <description>
         <p>Tapping a business button or list option now reaches the business. WhatsApp had been refusing every reply, so a tap did nothing; the reply is sent the way the phone sends it, and a refused one says so in a toast instead of vanishing.</p>
