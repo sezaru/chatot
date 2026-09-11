@@ -216,6 +216,21 @@ func prefAppearance(parent *gtk.Window, s *settings.Settings, c client.Client, o
 		onChange(*s)
 		return themeOptions[i]
 	}))
+	// The desktop shell's palette, offered only where DankMaterialShell has
+	// written one (or the preference already insists on it).
+	if DMSThemeAvailable() || s.ThemeSource == "dms" {
+		follow, _ := newSwitchRow("Follow the shell's colours",
+			"DankMaterialShell's palette for the wallpaper, in place of the design's",
+			ResolveThemeSource(s.ThemeSource) == "dms", func(on bool) {
+				s.ThemeSource = "none"
+				if on {
+					s.ThemeSource = "dms"
+				}
+				ApplyThemeSource(s.ThemeSource)
+				onChange(*s)
+			})
+		theme.Add(follow)
+	}
 	controls, _ := newSwitchRow("Show window controls",
 		"Hides minimize, maximize and close when off",
 		s.ShowWindowControls, func(on bool) {

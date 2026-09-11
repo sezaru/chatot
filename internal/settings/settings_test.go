@@ -24,6 +24,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		Proxy:                   "socks5://localhost:9050",
 		NotificationsPerAccount: false,
 		KeepInactiveConnected:   false,
+		ThemeSource:             "auto",
 		FontSize:                "default",
 		AutoDownload:            "photos",
 		AutoTranscribe:          true,
@@ -116,5 +117,21 @@ func TestSoundFileRoundTrip(t *testing.T) {
 	}
 	if got := Load(dir); got.NotificationSoundFile != s.NotificationSoundFile || !got.VerboseLogging {
 		t.Errorf("Load = %+v, want %+v", got, s)
+	}
+}
+
+func TestLoadNormalizesThemeSource(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(`{"themeSource":"bogus"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := Load(dir).ThemeSource; got != "auto" {
+		t.Errorf("unknown themeSource loaded as %q, want auto", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(`{"themeSource":"none"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := Load(dir).ThemeSource; got != "none" {
+		t.Errorf("themeSource none loaded as %q", got)
 	}
 }
