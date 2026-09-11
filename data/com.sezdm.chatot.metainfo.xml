@@ -83,6 +83,13 @@
   </recommends>
 
   <releases>
+    <release version="0.9.0-beta" date="2026-09-10">
+      <description>
+        <p>Chatot now fits a narrow window. Below 720px the chat list and the open chat take turns, with a back button in the header, and every screen fits down to 360px wide: long chat titles end in an ellipsis, and the attach tray, the attachment viewer's header and cards and its filmstrip all shrink with the pane instead of running off its edge.</p>
+        <p>Voice transcripts: one button starts, stops and folds a transcript; your own notes are transcribed too; a running transcription says how long it has been going. A run of voice notes fetches the next note instead of stopping at it.</p>
+        <p>Faster: the thread reuses a bubble's contents instead of rebuilding them, the chat list looks up each chat's last message once, and a tapped reaction shows at once. The chat list shows the whole message on hover when the row cuts it, and the chat header says typing the way the list does.</p>
+      </description>
+    </release>
     <release version="0.8.2-beta" date="2026-09-10">
       <description>
         <p>Relink is no longer offered for an account that is still linked. Pairing replaces a session, so the card could only ever answer that the account was already linked; it now appears only for an account that has actually been signed out.</p>

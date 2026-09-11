@@ -748,7 +748,7 @@ func showAboutDialog(parent *gtk.Window) {
 // version is the single place it is declared and carries the beta tag while
 // chatot is one; the mockup shows it beside the toolkit chatot is built on.
 const (
-	aboutVersion  = "0.8.2-beta"
+	aboutVersion  = "0.9.0-beta"
 	aboutHomepage = "https://github.com/sezaru/chatot"
 	aboutIssues   = "https://github.com/sezaru/chatot/issues"
 )
