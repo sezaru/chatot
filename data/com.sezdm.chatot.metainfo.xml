@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.10.0-beta" date="2026-09-11">
+      <description>
+        <p>WhatsApp links open in chatot: the "open in app" button of a wa.me page lands in the chat with the message prefilled. Pressing Enter with the draft selected sends it instead of deleting it. A chat started from a number stays one chat when the person replies. A forwarded message moves its chat to the top of the list right away. Businesses that only appeared as numbers now show their verified name.</p>
+      </description>
+    </release>
     <release version="0.9.3-beta" date="2026-09-11">
       <description>
         <p>Searching for a message no longer widens the chat list: a long chat name in a result used to push the sidebar past its size, and off the window at phone widths. Opening a result now lands on the matched message instead of the end of the chat.</p>
