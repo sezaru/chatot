@@ -70,6 +70,9 @@ type Whatsmeow struct {
 	// starts a fresh pairing; relinkMu serializes relink.
 	startCtx context.Context
 	relinkMu sync.Mutex
+	// reconnecting is set while reconnect (a wake, a dead keepalive) has
+	// a connection attempt under way, so triggers do not stack.
+	reconnecting atomic.Bool
 	// pairing is true while a round of QR codes is being handed out, so
 	// Relink can tell "no code yet, one is coming" from "nothing is running,
 	// start a round" without racing the pump goroutine.
@@ -217,6 +220,16 @@ func (w *Whatsmeow) handleRaw(src *whatsmeow.Client, evt interface{}) {
 	}
 	if _, ok := evt.(*events.OfflineSyncCompleted); ok {
 		w.endSyncWindow()
+		return
+	}
+	// A ping the server did not answer in ten seconds is a dead socket
+	// (a network that changed under it, a suspend the wake watcher
+	// missed); whatsmeow itself waits three minutes of them before it
+	// reconnects.
+	if ka, ok := evt.(*events.KeepAliveTimeout); ok {
+		if ctx := w.startCtx; ctx != nil {
+			go w.reconnect(ctx, src, fmt.Sprintf("keepalive timed out (%d in a row)", ka.ErrorCount))
+		}
 		return
 	}
 	if mr, ok := evt.(*events.MediaRetry); ok {
@@ -508,6 +521,7 @@ func (w *Whatsmeow) Start(ctx context.Context) error {
 	}
 
 	context.AfterFunc(ctx, w.wa.Disconnect)
+	go w.watchWake(ctx)
 	return nil
 }
 
@@ -814,7 +828,7 @@ func (w *Whatsmeow) Search(query string, limit int) ([]SearchHit, error) {
 	}
 	out := make([]SearchHit, len(rows))
 	for i, r := range rows {
-		out[i] = SearchHit{ChatJID: r.ChatJID, MsgID: r.MsgID, ChatName: r.ChatName, Snippet: r.Snippet, TS: r.TS}
+		out[i] = SearchHit{ChatJID: r.ChatJID, MsgID: r.MsgID, ChatName: r.ChatName, Snippet: r.Snippet, TS: r.TS, InTranscript: r.InTranscript}
 	}
 	return out, nil
 }
@@ -827,7 +841,7 @@ func (w *Whatsmeow) SearchInChat(chatJID, query string, limit int) ([]SearchHit,
 	}
 	out := make([]SearchHit, len(rows))
 	for i, r := range rows {
-		out[i] = SearchHit{ChatJID: r.ChatJID, MsgID: r.MsgID, ChatName: r.ChatName, Snippet: r.Snippet, TS: r.TS}
+		out[i] = SearchHit{ChatJID: r.ChatJID, MsgID: r.MsgID, ChatName: r.ChatName, Snippet: r.Snippet, TS: r.TS, InTranscript: r.InTranscript}
 	}
 	return out, nil
 }
