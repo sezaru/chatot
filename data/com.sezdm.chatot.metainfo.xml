@@ -83,6 +83,12 @@
   </recommends>
 
   <releases>
+    <release version="0.9.1-beta" date="2026-09-11">
+      <description>
+        <p>Fixes a chat that broke its layout: a reply quoting a message with a long unbroken token (a Pix key, a hash, a link) pushed the whole pane past the window's edge as soon as it scrolled into view. Quotes and every other label that shows text from the network now wrap inside the bubble.</p>
+        <p>Business buttons and lists are now real buttons: tap a reply to send it, a link to open it, a number or code to copy it, and a list to pick from it. A WhatsApp Flow button says it only opens on the phone. In a narrow window, an open attachment tray hides the chat header so the files cannot be left behind, the hover reaction and menu pair keeps its size, and a group's media rows fit 360px.</p>
+      </description>
+    </release>
     <release version="0.9.0-beta" date="2026-09-10">
       <description>
         <p>Chatot now fits a narrow window. Below 720px the chat list and the open chat take turns, with a back button in the header, and every screen fits down to 360px wide: long chat titles end in an ellipsis, and the attach tray, the attachment viewer's header and cards and its filmstrip all shrink with the pane instead of running off its edge.</p>
