@@ -151,6 +151,14 @@ func storeMessageRow(m *Message) store.MessageRow {
 			row.Payload = string(b)
 		}
 	}
+	if m.Choices != nil {
+		// The exported type is its own payload: it changes with the wire
+		// shapes, and a second copy here would only lag behind.
+		row.Kind = "choices"
+		if b, err := json.Marshal(m.Choices); err == nil {
+			row.Payload = string(b)
+		}
+	}
 	if m.CallLog != nil {
 		row.Kind = "call"
 		if b, err := json.Marshal(callPayload{
@@ -271,6 +279,11 @@ func messageFromStore(m store.Message, selfJID string) Message {
 		var p callPayload
 		if err := json.Unmarshal([]byte(m.Payload), &p); err == nil {
 			out.CallLog = &CallLog{Video: p.Video, Outcome: p.Outcome, DurationSecs: p.DurationSecs}
+		}
+	case "choices":
+		var ch Choices
+		if err := json.Unmarshal([]byte(m.Payload), &ch); err == nil {
+			out.Choices = ch.orNil()
 		}
 	case "event":
 		var p eventPayload

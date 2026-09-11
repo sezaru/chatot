@@ -63,6 +63,15 @@
 	color: #ffffff;
 }
 
+/* Same lift for the choice buttons, for the same contrast reason. */
+button.chatot-choice-btn {
+	color: #7fd4bb;
+}
+
+.chatot-bubble-out button.chatot-choice-btn {
+	color: #ffffff;
+}
+
 .chatot-model-facts {
 	background-color: alpha(#ffffff, 0.09);
 }

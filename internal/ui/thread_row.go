@@ -50,6 +50,7 @@ type threadRow struct {
 	content   gtk.Widgetter
 	body      *gtk.Label
 	more      *gtk.Button
+	choices   gtk.Widgetter
 	footer    *gtk.Box
 	retry     *gtk.Button
 	timeLabel *gtk.Label
@@ -268,6 +269,23 @@ func (r *threadRow) setMore(b *gtk.Button) {
 	}
 }
 
+// setChoices puts a business message's buttons under the body (and its
+// read-more, when folded), or takes them away.
+func (r *threadRow) setChoices(w gtk.Widgetter) {
+	if r.choices != nil {
+		r.bubble.Remove(r.choices)
+		r.choices = nil
+	}
+	if w != nil {
+		var after gtk.Widgetter = r.body
+		if r.more != nil {
+			after = r.more
+		}
+		r.bubble.InsertChildAfter(w, after)
+		r.choices = w
+	}
+}
+
 // fillContent builds whatever the message carries above its body, and puts
 // the body itself in one of its three states: a caption under a picture, a
 // tombstone, or the message text.
@@ -312,6 +330,11 @@ func (r *threadRow) fillContent(msg client.Message, vm bubbleView, h bubbleHooks
 		}
 	}
 	r.fillBody(msg, vm, h)
+	if vm.Choices != nil {
+		r.setChoices(buildChoices(msg, *vm.Choices, h))
+	} else {
+		r.setChoices(nil)
+	}
 }
 
 func (r *threadRow) fillBody(msg client.Message, vm bubbleView, h bubbleHooks) {
@@ -319,7 +342,8 @@ func (r *threadRow) fillBody(msg client.Message, vm bubbleView, h bubbleHooks) {
 	// open, mentions resolve, the text copies.
 	caption := vm.IsMedia && vm.CaptionText != ""
 	rich := vm.IsLocation || vm.IsContact || vm.IsPoll || vm.IsEvent || vm.IsCall || (vm.IsMedia && !caption)
-	r.body.SetVisible(!rich)
+	// A business message can be its buttons alone; no empty line above them.
+	r.body.SetVisible(!rich && !(vm.Choices != nil && vm.Text == ""))
 	setCSSClass(r.body, "chatot-bubble-caption", caption)
 	setCSSClass(r.body, "chatot-bubble-deleted", !caption && vm.Deleted)
 	setCSSClass(r.body, "chatot-emoji-only", !caption && vm.IsEmojiOnly)

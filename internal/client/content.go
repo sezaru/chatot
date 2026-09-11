@@ -88,19 +88,19 @@ func extractRichText(m *waProto.Message, msg *Message) (ctx *waProto.ContextInfo
 		return gi.GetContextInfo(), true
 	case m.GetTemplateMessage() != nil:
 		t := m.GetTemplateMessage()
-		msg.Text = orUnsupported(templateText(t))
+		msg.Text, msg.Choices = orUnsupportedChoices(templateChoices(t))
 		return t.GetContextInfo(), true
 	case m.GetButtonsMessage() != nil:
 		b := m.GetButtonsMessage()
-		msg.Text = orUnsupported(buttonsText(b))
+		msg.Text, msg.Choices = orUnsupportedChoices(buttonsChoices(b))
 		return b.GetContextInfo(), true
 	case m.GetListMessage() != nil:
 		l := m.GetListMessage()
-		msg.Text = orUnsupported(listText(l))
+		msg.Text, msg.Choices = orUnsupportedChoices(listChoices(l))
 		return l.GetContextInfo(), true
 	case m.GetInteractiveMessage() != nil:
 		im := m.GetInteractiveMessage()
-		msg.Text = orUnsupported(interactiveText(im))
+		msg.Text, msg.Choices = orUnsupportedChoices(interactiveChoices(im))
 		return im.GetContextInfo(), true
 	case m.GetButtonsResponseMessage() != nil:
 		msg.Text = orUnsupported(m.GetButtonsResponseMessage().GetSelectedDisplayText())
@@ -206,6 +206,15 @@ func hasPayload(m *waProto.Message) bool {
 func hasContent(msg *Message) bool {
 	return msg.Text != "" || msg.Attachment != nil || msg.Location != nil ||
 		msg.Contact != nil || msg.Poll != nil || msg.EventInvite != nil || msg.CallLog != nil
+}
+
+// orUnsupportedChoices is orUnsupported for a message that may carry
+// choices: buttons with no words around them are still a message.
+func orUnsupportedChoices(s string, ch *Choices) (string, *Choices) {
+	if ch != nil {
+		return s, ch
+	}
+	return orUnsupported(s), nil
 }
 
 func orUnsupported(s string) string {

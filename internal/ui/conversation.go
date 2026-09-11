@@ -46,6 +46,9 @@ type bubbleView struct {
 	Event            eventView
 	IsCall           bool
 	Call             callView
+	// Choices are the buttons a business message offers under its text,
+	// nil for none.
+	Choices *choicesView
 	// Link is the card a text message shows for a link in it, nil for none.
 	Link         *linkView
 	Edited       bool
@@ -153,6 +156,7 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 		v.Failed = m.Status == client.MessageStatusFailed
 	}
 
+	v.Choices = choicesVM(m)
 	switch {
 	case m.Location != nil:
 		v.IsLocation = true
@@ -388,6 +392,7 @@ type ConversationView struct {
 	onRetry   func(client.Message)
 	onReact   func(msg client.Message, emoji string)
 	onVote    func(msg client.Message, options []string)
+	onChoice  func(msg client.Message, sel client.ChoiceSelection)
 	onEdit    func(client.Message)
 	onDelete  func(client.Message)
 	onStar    func(client.Message)
@@ -463,6 +468,12 @@ func (cv *ConversationView) OnReactRequested(f func(msg client.Message, emoji st
 // options is the set the user selected (currently always one).
 func (cv *ConversationView) OnVoteRequested(f func(msg client.Message, options []string)) {
 	cv.onVote = f
+}
+
+// OnChoiceRequested registers f to be called when the user taps a reply
+// button or picks a list row under a business message; sel is the pick.
+func (cv *ConversationView) OnChoiceRequested(f func(msg client.Message, sel client.ChoiceSelection)) {
+	cv.onChoice = f
 }
 
 // OnEditRequested registers f to be called when the user picks the edit
@@ -1934,6 +1945,8 @@ func copyableText(m client.Message) string {
 	switch {
 	case m.Deleted:
 		return ""
+	case m.Choices != nil:
+		return choicesCopyText(m)
 	case m.Text != "":
 		return m.Text
 	case m.Location != nil:
@@ -2055,6 +2068,7 @@ type bubbleHooks struct {
 	onReply    func(client.Message)
 	onReact    func(msg client.Message, emoji string)
 	onVote     func(msg client.Message, options []string)
+	onChoice   func(msg client.Message, sel client.ChoiceSelection)
 	onEdit     func(client.Message)
 	onDelete   func(client.Message)
 	onStar     func(client.Message)
@@ -2108,6 +2122,36 @@ func (cv *ConversationView) VoteAt(idx int, option string) {
 	}
 }
 
+// ChoiceAt taps the reply button numbered arg ("" = the first) under the
+// business message at idx — a dev/screenshot hook.
+func (cv *ConversationView) ChoiceAt(idx int, arg string) {
+	m, ok := cv.MessageAt(idx)
+	if !ok || m.Choices == nil || cv.onChoice == nil {
+		return
+	}
+	n, _ := strconv.Atoi(arg)
+	if n < 0 || n >= len(m.Choices.Buttons) {
+		return
+	}
+	b := m.Choices.Buttons[n]
+	cv.onChoice(m, client.ChoiceSelection{ID: b.ID, Label: b.Label, Index: b.Index})
+}
+
+// OpenChoiceListAt opens the list picker under the business message at
+// idx, the way its button does — a dev/screenshot hook.
+func (cv *ConversationView) OpenChoiceListAt(idx int) {
+	m, ok := cv.MessageAt(idx)
+	if !ok || m.Choices == nil || m.Choices.List == nil {
+		return
+	}
+	list := *m.Choices.List
+	showListPickerDialog(cv.window, list, func(r client.ChoiceRow) {
+		if cv.onChoice != nil {
+			cv.onChoice(m, client.ChoiceSelection{ID: r.ID, Label: r.Title, Description: r.Description, IsRow: true})
+		}
+	})
+}
+
 // mediaOpener is the click handler for msg's downloaded picture or video:
 // the full-size viewer (forward, save, open; copy for a picture,
 // fullscreen for a clip) over the view's window.
@@ -2141,7 +2185,7 @@ func (cv *ConversationView) hooks() bubbleHooks {
 	return bubbleHooks{
 		c: cv.c, window: cv.window, toasts: cv.toastOverlay, searchQuery: cv.searchQuery, host: cv.Box,
 		ownJID:  cv.c.OwnJID(),
-		onReply: cv.onReply, onReact: cv.onReact, onVote: cv.onVote, onEdit: cv.onEdit,
+		onReply: cv.onReply, onReact: cv.onReact, onVote: cv.onVote, onChoice: cv.onChoice, onEdit: cv.onEdit,
 		onDelete: cv.onDelete, onStar: cv.onStar, onForward: cv.onForward, onStopLive: cv.onStopLive,
 		onOpenViewer: cv.onOpenViewer, onLocalPath: func(id, path string) { cv.setLocalPath(id, path) }, names: cv.mentionName, avatars: cv.avatarCache,
 		avatarGen: func(jid string) int { return cv.avatarGens[jid] },

@@ -801,6 +801,10 @@ func (m *AccountManager) VotePoll(ctx context.Context, chatJID, pollMsgID string
 	return m.active().VotePoll(ctx, chatJID, pollMsgID, options)
 }
 
+func (m *AccountManager) ReplyChoice(ctx context.Context, chatJID, msgID string, sel ChoiceSelection) (string, error) {
+	return m.active().ReplyChoice(ctx, chatJID, msgID, sel)
+}
+
 func (m *AccountManager) EditMessage(ctx context.Context, chatJID, msgID, newText string) error {
 	return m.active().EditMessage(ctx, chatJID, msgID, newText)
 }
