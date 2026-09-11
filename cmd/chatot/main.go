@@ -547,7 +547,7 @@ func activate(app *adw.Application, c client.Client) {
 	viewer.SetWindow(&win.Window)
 	viewer.SetToastOverlay(toastOverlay)
 	viewer.OnForward(func(msg client.Message) {
-		ui.ShowForwardDialog(&win.Window, c, msg, toastOverlay)
+		ui.ShowForwardDialog(&win.Window, c, chatList.AvatarCache(), msg, toastOverlay)
 	})
 	viewer.OnStar(func(msg client.Message) {
 		go func() {
@@ -568,7 +568,7 @@ func activate(app *adw.Application, c client.Client) {
 	})
 	chatList.SetToastOverlay(toastOverlay)
 	chatList.OnForwardRequested(func(msg client.Message) {
-		ui.ShowForwardDialog(&win.Window, c, msg, toastOverlay)
+		ui.ShowForwardDialog(&win.Window, c, chatList.AvatarCache(), msg, toastOverlay)
 	})
 
 	if hasAccounts {
@@ -582,7 +582,7 @@ func activate(app *adw.Application, c client.Client) {
 	}
 
 	conversation.OnForwardRequested(func(msg client.Message) {
-		ui.ShowForwardDialog(&win.Window, c, msg, toastOverlay)
+		ui.ShowForwardDialog(&win.Window, c, chatList.AvatarCache(), msg, toastOverlay)
 	})
 	conversation.OnShowMediaRequested(func(jid string) {
 		mediaPage.Load(jid)
@@ -1697,7 +1697,7 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 			if pick := os.Getenv("CHATOT_SHOT_TEXT"); pick != "" {
 				ui.ForwardInitialPick = strings.Split(pick, ",")
 			}
-			ui.ShowForwardDialog(d.win, d.c, m, d.toasts)
+			ui.ShowForwardDialog(d.win, d.c, d.chatList.AvatarCache(), m, d.toasts)
 		}
 	case "export":
 		ui.ShowExportDialog(d.win, d.c, jid, name, d.toasts)

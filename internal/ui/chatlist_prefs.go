@@ -19,3 +19,7 @@ func (cl *ChatList) FocusSearch() {
 		cl.searchEntry.GrabFocus()
 	}
 }
+
+// AvatarCache is the list's avatar memo, for pickers (the forward dialog)
+// that show the same chats and should not fetch their pictures again.
+func (cl *ChatList) AvatarCache() *avatarCache { return cl.avatarCache }
