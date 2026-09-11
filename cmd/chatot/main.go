@@ -382,6 +382,13 @@ func activate(app *adw.Application, c client.Client) {
 		go func() {
 			if _, err := c.ReplyChoice(context.Background(), msg.ChatJID, msg.ID, sel); err != nil {
 				log.Printf("chatot: reply choice failed: %v", err)
+				// The tap has no pending row to turn red, so a refused
+				// send would otherwise vanish without a trace.
+				glib.IdleAdd(func() {
+					toast := adw.NewToast("Couldn't send your answer")
+					toast.SetTimeout(3)
+					toastOverlay.AddToast(toast)
+				})
 			}
 		}()
 	})

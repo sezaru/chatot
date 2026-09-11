@@ -33,3 +33,5 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 )
+
+replace go.mau.fi/whatsmeow => github.com/gsdev-br/whatsmeow v0.0.0-20260807020502-ebdf9dcfe3fe
