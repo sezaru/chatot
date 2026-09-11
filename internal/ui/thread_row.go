@@ -312,6 +312,8 @@ func (r *threadRow) fillContent(msg client.Message, vm bubbleView, h bubbleHooks
 		r.setContent(buildEventContent(vm.Event))
 	case vm.IsCall:
 		r.setContent(buildCallContent(vm.Call))
+	case vm.Album != nil:
+		r.setContent(buildAlbumContent(vm.Album, h))
 	case vm.IsMedia:
 		media := vm.Media
 		if h.onFetchThumbnail != nil {
@@ -343,7 +345,7 @@ func (r *threadRow) fillBody(msg client.Message, vm bubbleView, h bubbleHooks) {
 	// A caption reads like a text bubble's body, under the picture: links
 	// open, mentions resolve, the text copies.
 	caption := vm.IsMedia && vm.CaptionText != ""
-	rich := vm.IsLocation || vm.IsContact || vm.IsPoll || vm.IsEvent || vm.IsCall || (vm.IsMedia && !caption)
+	rich := vm.IsLocation || vm.IsContact || vm.IsPoll || vm.IsEvent || vm.IsCall || vm.Album != nil || (vm.IsMedia && !caption)
 	// A business message can be its buttons alone; no empty line above them.
 	r.body.SetVisible(!rich && !(vm.Choices != nil && vm.Text == ""))
 	setCSSClass(r.body, "chatot-bubble-caption", caption)
@@ -578,6 +580,20 @@ func (r *threadRow) renderTyping() {
 	removeAllChildren(r.typingSlot)
 	r.typingSlot.Append(newTypingBubble())
 	r.typingSlot.SetVisible(true)
+}
+
+// renderCollapsed folds the row away: a picture inside an album (album.go)
+// is shown on the run's first row, and its own takes no room at all. The
+// widgets stay for the next bind, as they do for every row.
+func (r *threadRow) renderCollapsed() {
+	r.daySep.SetVisible(false)
+	r.unreadSep.SetVisible(false)
+	r.band.SetVisible(false)
+	r.hover.park(r)
+	r.typingSlot.SetVisible(false)
+	if r.typingSlot.FirstChild() != nil {
+		removeAllChildren(r.typingSlot)
+	}
 }
 
 // hoverButtons is the 🙂/⌄ pair. Its widgets and its two clicked handlers are

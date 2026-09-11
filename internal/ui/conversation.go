@@ -36,16 +36,20 @@ type bubbleView struct {
 	MediaChip        string
 	IsMedia          bool
 	Media            mediaView
-	IsLocation       bool
-	Location         locationView
-	IsContact        bool
-	Contact          contactView
-	IsPoll           bool
-	Poll             pollView
-	IsEvent          bool
-	Event            eventView
-	IsCall           bool
-	Call             callView
+	// Album is set on the first picture of a run one sender posted together
+	// (album.go): the bubble shows the run as a grid, and the other rows of
+	// the run collapse.
+	Album      *albumView
+	IsLocation bool
+	Location   locationView
+	IsContact  bool
+	Contact    contactView
+	IsPoll     bool
+	Poll       pollView
+	IsEvent    bool
+	Event      eventView
+	IsCall     bool
+	Call       callView
 	// Choices are the buttons a business message offers under its text,
 	// nil for none.
 	Choices *choicesView
@@ -893,18 +897,30 @@ func (cv *ConversationView) fillRow(box *gtk.Box, pos int) {
 		r.renderTyping()
 		return
 	}
+	// A picture inside an album (album.go) has no row of its own: the
+	// run's first row shows the grid, and this one folds away.
+	start, end := cv.albumSpan(pos)
+	if pos > start {
+		r.msgID = msg.ID
+		box.RemoveCSSClass("chatot-row-flash")
+		r.renderCollapsed()
+		return
+	}
 	var prev *client.Message
 	if pos > 0 {
 		prev = &cv.msgs[pos-1]
 	}
 	cv.fillQuote(&msg)
 	vm := bubbleVM(msg, prev, cv.byID, time.Now())
+	if end > start {
+		applyAlbum(&vm, cv.msgs[start:end+1])
+	}
 	if cv.chatIsGroup && !msg.FromMe {
 		vm.Author = cv.senderName(msg.FromJID)
 	}
 	r.msgID = msg.ID
 	box.RemoveCSSClass("chatot-row-flash")
-	if cv.flashID != "" && msg.ID == cv.flashID {
+	if cv.flashID != "" && (msg.ID == cv.flashID || (vm.Album != nil && albumHas(vm.Album.Msgs, cv.flashID))) {
 		box.AddCSSClass("chatot-row-flash")
 	}
 	if cv.unreadAnchor != "" && msg.ID == cv.unreadAnchor {
@@ -1651,8 +1667,9 @@ func (cv *ConversationView) removeRow(pos int) {
 	cv.msgs = append(cv.msgs[:pos], cv.msgs[pos+1:]...)
 	cv.model.Splice(pos, 1)
 	// The row after the removed one may have leaned on it for its day
-	// separator.
+	// separator, and the one before may have shown it in its album.
 	cv.refillRow(pos)
+	cv.refillRow(pos - 1)
 }
 
 // withUnsent appends the chat's optimistic rows after its stored page.
@@ -1721,6 +1738,11 @@ func (cv *ConversationView) appendMessage(msg client.Message) {
 		cv.model.Splice(at, 0, msg)
 	} else {
 		cv.model.Append(msg)
+	}
+	// A picture that carries on an album goes into the grid on the run's
+	// first row, which is already showing.
+	if albumMember(msg) {
+		cv.refillRow(cv.positionOf(msg.ID))
 	}
 	if follow {
 		cv.scrollToBottom()

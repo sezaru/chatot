@@ -27,6 +27,9 @@ type bubbleShot struct {
 	reactPlus *gtk.Button
 	// openReactors opens the first reaction pill's who-reacted sheet.
 	openReactors func()
+	// tileMenu opens the picture's own menu when it is a tile of an album
+	// (nil for any other bubble).
+	tileMenu func()
 }
 
 var shotRegistry map[string]*bubbleShot
@@ -207,6 +210,14 @@ func (cv *ConversationView) PopupMessageMenu(idx int) {
 	cv.ShowHoverActions(idx)
 	if s := cv.shotFor(idx); s != nil && s.affordances.openMenu != nil {
 		s.affordances.openMenu()
+	}
+}
+
+// PopupAlbumTileMenu opens the menu a right-click on the album tile of the
+// picture at idx offers, when that picture is one of an album's tiles.
+func (cv *ConversationView) PopupAlbumTileMenu(idx int) {
+	if s := cv.shotFor(idx); s != nil && s.tileMenu != nil {
+		s.tileMenu()
 	}
 }
 
