@@ -34,7 +34,7 @@ func WatchVoiceNotes(c client.Client, events <-chan client.Event, cv *Conversati
 		// loop; the work itself goes off it.
 		glib.IdleAdd(func() {
 			if !wantsArrivalTranscript(m, AutoTranscribe, AutoDownload, time.Now()) ||
-				!transcribe.EngineAvailable() || !transcribe.ModelReady(cacheDir()) {
+				!transcribe.EngineAvailable() || !transcribe.ModelReady(cacheDir(), TranscribeModel) {
 				return
 			}
 			go transcribeArrival(c, cv, m)

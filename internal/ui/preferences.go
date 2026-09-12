@@ -119,8 +119,22 @@ func ShowPreferences(parent *gtk.Window, s *settings.Settings, c client.Client, 
 	cols.Append(stack)
 
 	if PreferencesInitialPage != "" {
-		stack.SetVisibleChildName(PreferencesInitialPage)
+		page, extra, _ := strings.Cut(PreferencesInitialPage, ":")
+		stack.SetVisibleChildName(page)
 		PreferencesInitialPage = ""
+		if extra != "" {
+			// A screenshot hook: the page scrolled to its end, and for
+			// "model" the Speech model row pressed.
+			scroller := stack.VisibleChild().(*gtk.ScrolledWindow)
+			glib.TimeoutAdd(700, func() bool {
+				adj := scroller.VAdjustment()
+				adj.SetValue(adj.Upper() - adj.PageSize())
+				if extra == "model" && prefOpenModelDialog != nil {
+					prefOpenModelDialog()
+				}
+				return false
+			})
+		}
 	}
 
 	dialog.SetChild(cols)
@@ -129,8 +143,14 @@ func ShowPreferences(parent *gtk.Window, s *settings.Settings, c client.Client, 
 
 // PreferencesInitialPage, when set, is the page the next ShowPreferences
 // opens on (a prefPages ID such as "privacy"); it is consumed on open. The
-// ⋮ menu's former Privacy and Keyboard shortcuts rows land here.
+// ⋮ menu's former Privacy and Keyboard shortcuts rows land here. A
+// ":end" or ":model" suffix is for screenshot hooks (CHATOT_SHOT_PREFS):
+// the page scrolled to its end, and the Speech model row pressed.
 var PreferencesInitialPage string
+
+// prefOpenModelDialog presses the Speech model row on the Network page
+// last built, for the screenshot hook above.
+var prefOpenModelDialog func()
 
 // newPrefNav is the 170px left rail: one glyph+label button per page, the
 // current one filled.
@@ -614,20 +634,49 @@ func prefNetwork(dialog *cardDialog, s *settings.Settings, onChange func(setting
 			onChange(*s)
 			return autoDownloadLabel(s.AutoDownload)
 		}))
-	// Switching it on fetches the speech model at once when it is missing
-	// (asked first: it is a large download), so the first voice note does
-	// not sit untranscribed.
+	// A missing model is fetched at once (asked first: it is a large
+	// download) when automatic transcripts are switched on, so the next
+	// voice note does not sit untranscribed with nothing to say why.
+	fetchIfMissing := func() {
+		if s.AutoTranscribe && transcribe.EngineAvailable() && !transcribe.ModelReady(cacheDir(), TranscribeModel) {
+			showModelDownloadDialog(dialog.Window(), nil)
+		}
+	}
+	// The model row is a button into the same prompt a voice note opens:
+	// pick a model, download it, and only then is it the model. Its word
+	// is the model in use, its sub what that costs and whether it is on
+	// disk.
+	transcripts := newSettingsCard()
+	var modelWord, modelSub *gtk.Label
+	openModelDialog := func() { showModelDownloadDialog(dialog.Window(), nil) }
+	modelRow, modelWord, modelSub := newActionRowLabels("Speech model", modelRowSub(s.TranscribeModel),
+		transcribe.ModelByKey(s.TranscribeModel).Name, false, openModelDialog)
+	prefOpenModelDialog = func() {
+		// As a click would: the row takes focus before the card opens,
+		// else the nav list, still focused, reselects its first page.
+		gtk.BaseWidget(modelRow).GrabFocus()
+		openModelDialog()
+	}
+	// The model the prompt settles on (from this row, the switch below,
+	// or a voice note while Preferences is open) lands on the row too.
+	transcribeModelWatch = func(key string) {
+		if modelWord.Root() == nil {
+			transcribeModelWatch = nil
+			return
+		}
+		s.TranscribeModel = key
+		modelWord.SetText(transcribe.ModelByKey(key).Name)
+		modelSub.SetText(modelRowSub(key))
+	}
+	transcripts.Add(modelRow)
 	autoTranscribe, _ := newSwitchRow("Transcribe voice notes automatically",
 		"Voice notes are turned into text on this computer with whisper.cpp",
 		s.AutoTranscribe, func(on bool) {
 			s.AutoTranscribe = on
 			AutoTranscribe = on
 			onChange(*s)
-			if on && transcribe.EngineAvailable() && !transcribe.ModelReady(cacheDir()) {
-				showModelDownloadDialog(dialog.Window(), nil)
-			}
+			fetchIfMissing()
 		})
-	transcripts := newSettingsCard()
 	transcripts.Add(autoTranscribe)
 	expanded, _ := newSwitchRow("Keep transcripts expanded",
 		"Show the text under a voice note right away instead of behind a fold",
@@ -672,7 +721,7 @@ func prefNetwork(dialog *cardDialog, s *settings.Settings, onChange func(setting
 	return prefPage(
 		newSettingsGroup("PROXY", proxy),
 		newSettingsGroup("MEDIA", media),
-		newSettingsGroup("VOICE TRANSCRIPTS", transcripts),
+		newSettingsGroup("TRANSCRIPTS", transcripts),
 		newSettingsGroup("GIFS", gifs),
 		newSettingsGroup("ACCOUNTS", accounts),
 	)
@@ -834,6 +883,16 @@ func newPrivacyRow(c client.Client, name, value string) gtk.Widgetter {
 	}
 	row, valueLabel = newValueRow(name, "", client.PrivacySettingLabel(value), onClick)
 	return row
+}
+
+// modelRowSub explains the Speech model row's value: the model's size,
+// memory and speed, and whether it is on disk or still to be fetched.
+func modelRowSub(key string) string {
+	m := transcribe.ModelByKey(key)
+	if transcribe.ModelReady(cacheDir(), key) {
+		return modelMeta(m) + "\u00a0· downloaded"
+	}
+	return modelMeta(m) + "\u00a0· fetched when first needed"
 }
 
 // gifServiceLabel names a settings.GIFServices value for the choice row.

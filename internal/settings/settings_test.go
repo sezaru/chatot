@@ -30,6 +30,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		AutoDownload:            "photos",
 		AutoTranscribe:          true,
 		TranscriptsExpanded:     true,
+		TranscribeModel:         "turbo",
 		ChatWallpaper:           "/home/me/.config/chatot/wallpaper/wallpaper-0badc0de.jpg",
 	}
 	if err := Save(dir, want); err != nil {
@@ -88,12 +89,20 @@ func TestLoadKeepsNotificationSoundWhenAbsent(t *testing.T) {
 
 func TestLoadNormalizesUnknownEnumValues(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(`{"fontSize":"huge","autoDownload":"wifi"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(`{"fontSize":"huge","autoDownload":"wifi","transcribeModel":"base"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	s := Load(dir)
-	if s.FontSize != "default" || s.AutoDownload != "photos" {
-		t.Errorf("Load = fontSize %q autoDownload %q, want defaults", s.FontSize, s.AutoDownload)
+	if s.FontSize != "default" || s.AutoDownload != "photos" || s.TranscribeModel != "small" {
+		t.Errorf("Load = fontSize %q autoDownload %q transcribeModel %q, want defaults", s.FontSize, s.AutoDownload, s.TranscribeModel)
+	}
+	// A file from before there was a model choice keeps the model it
+	// already downloaded.
+	if err := os.WriteFile(filepath.Join(dir, fileName), []byte(`{"autoTranscribe":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s := Load(dir); s.TranscribeModel != "small" {
+		t.Errorf("Load without transcribeModel = %q, want small", s.TranscribeModel)
 	}
 }
 

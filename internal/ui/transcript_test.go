@@ -2,6 +2,9 @@ package ui
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -206,5 +209,37 @@ func TestTranscriptShownForSearchMatch(t *testing.T) {
 	}
 	if transcriptMatches("", "plumber") || transcriptMatches("plumber", "") {
 		t.Error("an empty transcript or query matches")
+	}
+}
+
+func TestModelMetaSaysTheDownloadMemoryAndTradeOff(t *testing.T) {
+	small, turbo := transcribe.ModelByKey("small"), transcribe.ModelByKey("turbo")
+	if got, want := modelMeta(small), "181 MB download\u00a0· ~0.5\u00a0GB\u00a0RAM\u00a0· fastest"; got != want {
+		t.Errorf("modelMeta(small) = %q, want %q", got, want)
+	}
+	if got, want := modelMeta(turbo), "547 MB download\u00a0· ~0.8\u00a0GB\u00a0RAM\u00a0· ~4×\u00a0slower\u00a0· ~⅓\u00a0fewer\u00a0mistakes"; got != want {
+		t.Errorf("modelMeta(turbo) = %q, want %q", got, want)
+	}
+}
+
+func TestModelDownloadLabelAndRowSubFollowTheCache(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	if got := modelDownloadLabel("turbo"); got != "Download 547 MB" {
+		t.Errorf("modelDownloadLabel with nothing cached = %q", got)
+	}
+	if got := modelRowSub("turbo"); !strings.HasSuffix(got, "\u00a0· fetched when first needed") {
+		t.Errorf("modelRowSub with nothing cached = %q", got)
+	}
+	path := transcribe.ModelPath(cacheDir(), "turbo")
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	os.WriteFile(path, []byte("model"), 0o644)
+	if got := modelDownloadLabel("turbo"); got != "Use this model" {
+		t.Errorf("modelDownloadLabel with the model cached = %q", got)
+	}
+	if got := modelRowSub("turbo"); !strings.HasSuffix(got, "\u00a0· downloaded") {
+		t.Errorf("modelRowSub with the model cached = %q", got)
+	}
+	if got := modelDownloadLabel("small"); got != "Download 181 MB" {
+		t.Errorf("modelDownloadLabel(small) with only turbo cached = %q", got)
 	}
 }
