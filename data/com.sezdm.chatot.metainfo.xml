@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.14.0-beta" date="2026-09-11">
+      <description>
+        <p>Photos and clips one sender posts together show as a single album bubble with a grid of up to four tiles and a "+N" for the rest, as WhatsApp groups them. A tile opens the viewer on its own picture, downloads on click, and offers that picture's menu on right-click; reactions on any picture of the run show under the album.</p>
+      </description>
+    </release>
     <release version="0.13.0-beta" date="2026-09-11">
       <description>
         <p>Voice notes and audio can play at 1.5× or 2×: a pill on the playing note (and on the viewer's bar) picks the speed, which then holds for every audio. chatot follows the desktop's colours on DankMaterialShell and Omarchy, live as the theme changes, with a switch under Preferences › Appearance. The unread count on the account rail is centred, and the filter chips line up with the search box and fade at their edges when there are more.</p>
