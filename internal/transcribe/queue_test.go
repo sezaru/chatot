@@ -16,7 +16,7 @@ type blockingRun struct {
 	release chan struct{}
 }
 
-func (b *blockingRun) run(_ context.Context, _, path string) (string, error) {
+func (b *blockingRun) run(_ context.Context, _, _, path string) (string, error) {
 	b.mu.Lock()
 	b.order = append(b.order, path)
 	b.mu.Unlock()
@@ -149,7 +149,7 @@ func TestQueueReportsStartAndFailure(t *testing.T) {
 // killed exits with a signal, which is not the caller's business.
 func TestQueueCancelStopsTheRunningJob(t *testing.T) {
 	started := make(chan struct{})
-	q := NewQueue(func(ctx context.Context, _, _ string) (string, error) {
+	q := NewQueue(func(ctx context.Context, _, _, _ string) (string, error) {
 		close(started)
 		<-ctx.Done()
 		return "", errors.New("signal: killed")

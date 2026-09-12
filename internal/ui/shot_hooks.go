@@ -745,9 +745,23 @@ func (c *Composer) SeedStickers(paths []string) {
 	}
 }
 
-// DownloadSpeechModel runs the model download behind its progress dialog
-// (CHATOT_SHOT=modeldownload).
-func (cv *ConversationView) DownloadSpeechModel() { runModelDownload(cv.window, nil) }
+// DownloadSpeechModel runs the download of the model called key behind
+// its progress dialog (CHATOT_SHOT=modeldownload CHATOT_SHOT_ARG=key).
+func (cv *ConversationView) DownloadSpeechModel(key string) {
+	if key == "" {
+		key = TranscribeModel
+	}
+	runModelDownload(cv.window, key, nil)
+}
+
+// PromptSpeechModel opens the download prompt with the model called key
+// picked (CHATOT_SHOT=modelprompt CHATOT_SHOT_ARG=key).
+func (cv *ConversationView) PromptSpeechModel(key string) {
+	if key == "" {
+		key = TranscribeModel
+	}
+	showModelDownloadDialogPicked(cv.window, key, nil)
+}
 
 // TranscribeAt transcribes the downloaded voice note at idx the way its
 // Transcribe row does (CHATOT_SHOT=transcribe CHATOT_SHOT_MSG=idx).

@@ -225,6 +225,12 @@ func activate(app *adw.Application, c client.Client) {
 	// A pick in either emoji picker reorders the frequently-used row; keep
 	// it across launches, since that row is the one most picks come from.
 	ui.SetRecentEmojis(prefs.RecentEmojis)
+	// A pick in the speech-model prompt (opened from a voice note, not
+	// only from Preferences) is the same preference as the Preferences row.
+	ui.SaveTranscribeModel = func(key string) {
+		prefs.TranscribeModel = key
+		saveSettings()
+	}
 	ui.SaveRecentEmojis = func(list []string) {
 		prefs.RecentEmojis = list
 		saveSettings()
@@ -1035,6 +1041,7 @@ func applySettings(s settings.Settings) {
 	ui.AutoDownload = s.AutoDownload
 	ui.AutoTranscribe = s.AutoTranscribe
 	ui.TranscriptsExpanded = s.TranscriptsExpanded
+	ui.TranscribeModel = s.TranscribeModel
 	ui.GIFService = s.GIFService
 	ui.GIFAPIKey = s.GIFAPIKey
 	client.SetVerboseLogging(s.VerboseLogging)
@@ -1402,8 +1409,13 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		d.conversation.UnfoldTranscriptAt(msgIdx)
 	case "modeldownload":
 		// The speech model download with its progress dialog, skipping
-		// the prompt (point XDG_CACHE_HOME at a scratch dir).
-		d.conversation.DownloadSpeechModel()
+		// the prompt (point XDG_CACHE_HOME at a scratch dir);
+		// CHATOT_SHOT_ARG names the model ("small" by default, "turbo").
+		d.conversation.DownloadSpeechModel(arg)
+	case "modelprompt":
+		// The prompt before that download, as a click on Transcribe opens
+		// it when the chosen model is missing; CHATOT_SHOT_ARG as above.
+		d.conversation.PromptSpeechModel(arg)
 	case "tray":
 		// Two files so the thumbnail strip, its ✕ and the ＋ tile all render;
 		// CHATOT_SHOT_ARG=a.mp4:b.pdf queues those instead.

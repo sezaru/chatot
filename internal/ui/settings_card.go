@@ -129,8 +129,21 @@ func newActionRow(label, sub, action string, destructive bool, onClick func()) g
 // newActionRowLabel is newActionRow that also hands back the action word,
 // for rows whose word changes ("2 blocked", "1.4 GB · Clear").
 func newActionRowLabel(label, sub, action string, destructive bool, onClick func()) (gtk.Widgetter, *gtk.Label) {
+	row, word, _ := newActionRowLabels(label, sub, action, destructive, onClick)
+	return row, word
+}
+
+// newActionRowLabels is newActionRowLabel that also hands back the sub
+// label (nil when sub was ""), for a row whose explanation changes with
+// its word (the speech model's size and whether it is downloaded).
+func newActionRowLabels(label, sub, action string, destructive bool, onClick func()) (gtk.Widgetter, *gtk.Label, *gtk.Label) {
 	row := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	row.Append(settingsRowBody(label, sub))
+	body := settingsRowBody(label, sub)
+	row.Append(body)
+	var subLabel *gtk.Label
+	if sub != "" {
+		subLabel = body.LastChild().(*gtk.Label)
+	}
 
 	word := gtk.NewLabel(action)
 	word.AddCSSClass("chatot-card-action")
@@ -148,7 +161,7 @@ func newActionRowLabel(label, sub, action string, destructive bool, onClick func
 	if onClick != nil {
 		btn.ConnectClicked(onClick)
 	}
-	return btn, word
+	return btn, word, subLabel
 }
 
 // newIconRow is the Contact-info variant: a 16px glyph column, the label, and

@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"chatot/internal/transcribe"
 )
 
 // Settings holds every preference exposed by the Preferences window.
@@ -76,6 +78,11 @@ type Settings struct {
 	// as it exists; off folds it behind a "Transcript" head, as WhatsApp
 	// does, until clicked.
 	TranscriptsExpanded bool `json:"transcriptsExpanded"`
+	// TranscribeModel is the key of the whisper.cpp model voice notes are
+	// transcribed with (transcribe.Models): "small", the default, or
+	// "turbo". Each is downloaded once, the first time it is needed, and
+	// switching keeps the other one on disk.
+	TranscribeModel string `json:"transcribeModel"`
 	// VerboseLogging turns on whatsmeow's info and debug lines in the log.
 	VerboseLogging bool `json:"verboseLogging"`
 	// VoiceSpeed is the tempo every voice note and audio plays at: 1, 1.5
@@ -143,6 +150,7 @@ func Default() Settings {
 		AutoDownload:            "photos",
 		GIFService:              "giphy",
 		VoiceSpeed:              1,
+		TranscribeModel:         transcribe.DefaultModel,
 	}
 }
 
@@ -195,6 +203,9 @@ func Dir() string {
 func normalize(s Settings) Settings {
 	if !contains(FontSizes, s.FontSize) {
 		s.FontSize = Default().FontSize
+	}
+	if !transcribe.KnownModel(s.TranscribeModel) {
+		s.TranscribeModel = Default().TranscribeModel
 	}
 	if !contains(AutoDownloadModes, s.AutoDownload) {
 		s.AutoDownload = Default().AutoDownload

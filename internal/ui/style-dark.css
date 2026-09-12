@@ -70,7 +70,7 @@ button.chatot-choice-btn {
 	color: @chatot_on_bubble_out;
 }
 
-.chatot-model-facts {
+.chatot-model-card:checked {
 	background-color: alpha(#ffffff, 0.09);
 }
 

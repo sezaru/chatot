@@ -12,6 +12,8 @@ type Job struct {
 	Key      string
 	Path     string
 	CacheDir string
+	// Model is the key of the speech model to run (see Models).
+	Model string
 	// Requested marks a run someone clicked for: it goes ahead of every
 	// automatic one, and is never dropped.
 	Requested bool
@@ -32,7 +34,7 @@ type Queue struct {
 	// MaxAuto caps the automatic jobs waiting; 0 means DefaultMaxAuto.
 	MaxAuto int
 	// run does the work; Transcribe by default, replaceable in tests.
-	run func(ctx context.Context, cacheDir, path string) (string, error)
+	run func(ctx context.Context, cacheDir, model, path string) (string, error)
 
 	mu        sync.Mutex
 	requested []*Job
@@ -52,7 +54,7 @@ const DefaultMaxAuto = 8
 var Default = NewQueue(Transcribe)
 
 // NewQueue makes a queue whose jobs run through run.
-func NewQueue(run func(ctx context.Context, cacheDir, path string) (string, error)) *Queue {
+func NewQueue(run func(ctx context.Context, cacheDir, model, path string) (string, error)) *Queue {
 	return &Queue{run: run, keys: map[string]*Job{}}
 }
 
@@ -169,7 +171,7 @@ func (q *Queue) drain() {
 		q.mu.Lock()
 		q.cancel = cancel
 		q.mu.Unlock()
-		text, err := q.run(ctx, j.CacheDir, j.Path)
+		text, err := q.run(ctx, j.CacheDir, j.Model, j.Path)
 		q.mu.Lock()
 		q.cancel = nil
 		q.mu.Unlock()

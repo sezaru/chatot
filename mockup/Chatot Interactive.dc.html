@@ -1356,13 +1356,21 @@ a{color:#1b8c72}a:hover{color:#147a63}
         <div style="padding:20px 22px 14px;display:flex;flex-direction:column;gap:9px">
           <span style="font-size:15.5px;font-weight:700">{{ modelTitle }}</span>
           <span style="font-size:13px;color:var(--dim,rgba(0,0,0,.55));line-height:1.5;text-wrap:pretty">{{ modelBody }}</span>
-          <span style="display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:10px;background:var(--inb,rgba(0,0,0,.06))">
-            <span style="width:26px;height:26px;flex:none;border-radius:7px;display:grid;place-items:center;font-size:13px;background:var(--chip,rgba(0,0,0,.08))">🎙</span>
-            <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
-              <span style="font:11.5px/1.3 'JetBrains Mono',ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ggml-small-q5_1.bin</span>
-              <span style="font-size:11px;color:var(--dim,rgba(0,0,0,.55))">whisper.cpp · multilingual · runs offline</span>
-            </span>
-            <span style="flex:none;font:11.5px/1 'JetBrains Mono',ui-monospace,monospace;color:var(--dim,rgba(0,0,0,.55))">181 MB</span>
+          <span style="display:flex;flex-direction:column;gap:6px;padding-top:2px">
+            <sc-for list="{{ modelOptions }}" as="o" hint-placeholder-count="2">
+              <button onClick="{{ o.onClick }}" title="{{ o.file }}" style="width:100%;display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:10px;text-align:left;font-family:inherit;cursor:{{ o.cursor }};background:{{ o.bg }};border:{{ o.border }};color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">
+                <span style="width:17px;height:17px;flex:none;border-radius:999px;display:grid;place-items:center;border:{{ o.dotBorder }}"><span style="width:7px;height:7px;border-radius:999px;background:{{ o.dotFill }}"></span></span>
+                <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                  <span style="display:flex;align-items:baseline;gap:6px">
+                    <span style="font-size:13px;font-weight:700">{{ o.name }}</span>
+                    <sc-if value="{{ o.tag }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;color:var(--ac2,#147a63)">{{ o.tag }}</span></sc-if>
+                    <sc-if value="{{ o.have }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;color:var(--dim,rgba(0,0,0,.55))">· {{ o.haveLabel }}</span></sc-if>
+                  </span>
+                  <span style="font-size:11px;line-height:1.35;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">{{ o.meta }}</span>
+                </span>
+              </button>
+            </sc-for>
+            <span style="font-size:11px;color:var(--dim2,rgba(0,0,0,.45));padding:0 2px">whisper.cpp · multilingual · runs offline</span>
           </span>
           <sc-if value="{{ modelBusy }}" hint-placeholder-val="{{ false }}">
             <span style="display:flex;flex-direction:column;gap:6px;padding-top:2px">
@@ -1380,7 +1388,7 @@ a{color:#1b8c72}a:hover{color:#147a63}
           <button onClick="{{ onModelCancel }}" style="flex:1;border:none;background:transparent;padding:12px 0;font-size:13.5px;cursor:pointer;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ modelCancelLabel }}</button>
           <sc-if value="{{ modelIdle }}" hint-placeholder-val="{{ true }}">
             <span style="width:1px;background:var(--bd,rgba(0,0,0,.09))"></span>
-            <button onClick="{{ onModelDownload }}" style="flex:1;border:none;background:transparent;padding:12px 0;font-size:13.5px;font-weight:700;cursor:pointer;color:var(--ac2,#147a63)" style-hover="background:var(--hov,rgba(0,0,0,.06))">Download</button>
+            <button onClick="{{ onModelDownload }}" style="flex:1;border:none;background:transparent;padding:12px 0;font-size:13.5px;font-weight:700;cursor:pointer;color:var(--ac2,#147a63)" style-hover="background:var(--hov,rgba(0,0,0,.06))">{{ modelDownloadLabel }}</button>
           </sc-if>
         </div>
       </sc-if>
@@ -1839,7 +1847,10 @@ a{color:#1b8c72}a:hover{color:#147a63}
           <div style="background:var(--chat,#fff);border:1px solid var(--bd,rgba(0,0,0,.09));border-radius:11px;overflow:hidden">
             <sc-for list="{{ choiceOptions }}" as="o" hint-placeholder-count="3">
               <button onClick="{{ o.onClick }}" style="width:100%;display:flex;align-items:center;gap:11px;padding:11px 12px;border:none;border-top:{{ o.sep }};background:transparent;font-size:13.5px;cursor:pointer;text-align:left;color:var(--tx,rgba(0,0,0,.85))" style-hover="background:var(--hov,rgba(0,0,0,.06))">
-                <span style="flex:1">{{ o.label }}</span>
+                <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                  <span>{{ o.label }}</span>
+                  <sc-if value="{{ o.sub }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;line-height:1.35;color:var(--dim,rgba(0,0,0,.55));text-wrap:pretty">{{ o.sub }}</span></sc-if>
+                </span>
                 <sc-if value="{{ o.current }}" hint-placeholder-val="{{ false }}"><span style="color:var(--ac,#1b8c72);font-size:13px">✓</span></sc-if>
               </button>
             </sc-for>
@@ -3302,9 +3313,16 @@ const id = () => 'm' + (++uid);
 // never breaks mid-word, and a wall of pasted lines is capped by line count
 // even when it is short on characters.
 const TEXT_MAX_CHARS = 420, TEXT_MAX_LINES = 8, TEXT_CUT = 370;
-// The speech model chatot downloads once: whisper.cpp's multilingual small,
-// 5-bit quantised, 190,085,487 bytes on disk.
-const MODEL_MB = 181;
+// The speech models chatot can download, one at a time and each only once:
+// whisper.cpp's multilingual small (5-bit quantised, the default) and the
+// large-v3-turbo, which is slower and heavier but makes about a third fewer
+// mistakes. Sizes are the download; RAM is what whisper.cpp maps at run time.
+const MODELS = [
+  {key: 'small', name: 'Small', tag: 'Recommended', file: 'ggml-small-q5_1.bin', mb: 181, ram: '~0.5\u00a0GB\u00a0RAM', speed: 'fastest', quality: ''},
+  {key: 'turbo', name: 'Large v3 Turbo', tag: '', file: 'ggml-large-v3-turbo-q5_0.bin', mb: 547, ram: '~0.8\u00a0GB\u00a0RAM', speed: '~4×\u00a0slower', quality: '~⅓\u00a0fewer\u00a0mistakes'}
+];
+const modelByKey = k => MODELS.find(m => m.key === k) || MODELS[0];
+const modelMeta = m => [m.mb + '\u00a0MB download', m.ram, m.speed, m.quality].filter(Boolean).join('\u00a0· ');
 const isLongText = t => !!t && (t.length > TEXT_MAX_CHARS || t.split('\n').length > TEXT_MAX_LINES);
 // The accent sits at 3.7:1 on a dark incoming bubble, so the "Read more" label
 // is drawn from a lifted accent instead — derived from whichever accent is set,
@@ -3426,7 +3444,7 @@ class Component extends DCLogic {
     pollQ: '', pollDraft: ['', ''], pollMulti: false, forwardPick: [], forwardMsg: null,
     alert: null, playing: null, expandedText: {},
     emojiQuery: '', emojiCat: 'recent', reactQuery: '', reactCat: 'recent',
-    speechModel: false, modelBusy: false, modelGot: 0, trPending: null, transcripts: {},
+    modelChoice: 'small', modelsHave: [], autoTranscribe: false, trExpanded: false, modelBusy: false, modelGot: 0, trPending: null, transcripts: {},
     emojiRecents: ['👍', '❤️', '😂', '🙏', '🔥', '🎉', '😍', '😢', '👏', '🤝', '☕', '📌', '✅', '🥐', '🐦', '🏔️'],
     viewer: null, viewZoom: 0, viewInfo: false, viewPage: 1, viewPlay: false,
     viewMute: false, viewSpeed: 1, viewMapZoom: 17, viewW: 560, viewH: 620
@@ -3936,7 +3954,7 @@ class Component extends DCLogic {
   // speech model fetched once. A click on T therefore either starts the run or
   // asks for that download first, and remembers which message asked.
   transcribe = (mid) => {
-    if (!this.state.speechModel) {
+    if (!this.state.modelsHave.includes(this.state.modelChoice)) {
       return this.setState({dialog: 'speechmodel', trPending: mid, modelBusy: false, modelGot: 0});
     }
     this.runTranscribe(mid);
@@ -3973,15 +3991,21 @@ class Component extends DCLogic {
   // The download is one file with a progress bar; cancelling leaves the model
   // absent, so the next T asks again rather than silently doing nothing.
   startModelDownload = () => {
+    if (this.state.modelsHave.includes(this.state.modelChoice)) {
+      const mid = this.state.trPending;
+      this.setState({dialog: null, trPending: null}, () => { if (mid) this.runTranscribe(mid); });
+      return;
+    }
     this.setState({modelBusy: true, modelGot: 0});
     clearInterval(this._model);
     this._model = setInterval(() => this.setState(st => {
-      const got = Math.min(MODEL_MB, st.modelGot + 7);
-      if (got < MODEL_MB) return {modelGot: got};
+      const total = modelByKey(st.modelChoice).mb;
+      const got = Math.min(total, st.modelGot + (total > 300 ? 21 : 7));
+      if (got < total) return {modelGot: got};
       clearInterval(this._model);
       const mid = st.trPending;
       setTimeout(() => { if (mid) this.runTranscribe(mid); }, 120);
-      return {modelGot: got, modelBusy: false, speechModel: true, dialog: null, trPending: null};
+      return {modelGot: got, modelBusy: false, modelsHave: st.modelsHave.concat([st.modelChoice]), dialog: null, trPending: null};
     }), 140);
   };
 
@@ -4338,6 +4362,16 @@ class Component extends DCLogic {
       ])},
       {title: 'Media', rows: seal([
         row('Auto-download', s.autoDownload, () => this.setState(st => ({autoDownload: st.autoDownload === 'Wi-Fi only' ? 'Always' : st.autoDownload === 'Always' ? 'Never' : 'Wi-Fi only'})))
+      ])},
+      {title: 'Transcripts', rows: seal([
+        row('Speech model', modelByKey(s.modelChoice).name, () => this.setState({dialog: 'choice', choice: 'model'}),
+            modelMeta(modelByKey(s.modelChoice)) + (s.modelsHave.includes(s.modelChoice) ? ' · downloaded' : ' · fetched when first needed')),
+        sw(s.autoTranscribe, () => this.setState(st => {
+          const on = !st.autoTranscribe;
+          const need = on && !st.modelsHave.includes(st.modelChoice);
+          return need ? {autoTranscribe: on, dialog: 'speechmodel', trPending: null, modelBusy: false, modelGot: 0} : {autoTranscribe: on};
+        }), 'Transcribe voice notes automatically', 'Voice notes are turned into text on this computer with whisper.cpp'),
+        sw(s.trExpanded, () => this.setState(st => ({trExpanded: !st.trExpanded})), 'Keep transcripts expanded', 'Show the text under a voice note right away instead of behind a fold')
       ])}
     ];
     if (s.prefTab === 'Advanced') prefGroups = [
@@ -4536,6 +4570,14 @@ class Component extends DCLogic {
           }
         }))
       }
+    };
+    choiceMap.model = {
+      title: 'Speech model', body: 'Both run offline through whisper.cpp and understand every language WhatsApp does. A model is downloaded once, the first time it is needed.',
+      options: MODELS.map(m => ({
+        label: m.name + (m.tag ? ' · ' + m.tag.toLowerCase() : ''), sub: modelMeta(m) + (s.modelsHave.includes(m.key) ? ' · downloaded' : ''),
+        current: s.modelChoice === m.key,
+        onClick: () => { this.setState({modelChoice: m.key, modelGot: 0, dialog: 'prefs'}); this.toast('Speech model · ' + m.name); }
+      }))
     };
     const ch = choiceMap[s.choice] || {};
     const forwardList = s.chats.map((c, i) => ({
@@ -5364,14 +5406,23 @@ class Component extends DCLogic {
       anyPopover: !!(s.menu || s.attach || s.picker || s.accountOpen || s.reactPick || s.labelsOpen), closeAll: this.closeAll,
 
       dialog: !!s.dialog, closeDialog: () => this.setState({dialog: null}), stop: e => e.stopPropagation(),
-      dialogWidth: ({loc: '600px', prefs: '720px', forward: '440px', poll: '420px', about: '380px', info: '400px', alert: '340px', speechmodel: '400px', addaccount: '380px', accounts: '420px', labels: '420px', contacts: '400px', export: '380px', choice: '360px', devices: '420px', comminfo: '400px', report: '400px', chanlink: '420px', chaninfo: '400px', comminvite: '420px', commaddgroup: '400px', joinlink: '400px'})[s.dialog] || '420px',
+      dialogWidth: ({loc: '600px', prefs: '720px', forward: '440px', poll: '420px', about: '380px', info: '400px', alert: '340px', speechmodel: '440px', addaccount: '380px', accounts: '420px', labels: '420px', contacts: '400px', export: '380px', choice: '360px', devices: '420px', comminfo: '400px', report: '400px', chanlink: '420px', chaninfo: '400px', comminvite: '420px', commaddgroup: '400px', joinlink: '400px'})[s.dialog] || '420px',
       dlgIsSpeechModel: s.dialog === 'speechmodel',
       modelTitle: 'Download the speech model?',
-      modelBody: "Voice notes are transcribed on this computer by whisper.cpp. Its speech model is downloaded once, from Hugging Face, into chatot's cache.",
+      modelBody: "Voice notes are transcribed on this computer by whisper.cpp. Pick a speech model; it is downloaded once, from Hugging Face, into chatot's cache.",
       modelBusy: s.modelBusy, modelIdle: !s.modelBusy,
-      modelPct: Math.round(s.modelGot / MODEL_MB * 100) + '%',
-      modelBytes: s.modelGot + ' / ' + MODEL_MB + ' MB',
-      modelStatus: 'Downloading once',
+      modelOptions: MODELS.map(m => { const on = m.key === s.modelChoice, have = s.modelsHave.includes(m.key); return {
+        name: m.name, tag: m.tag, file: m.file, meta: modelMeta(m), mb: m.mb + ' MB',
+        have: have, haveLabel: have ? 'Downloaded' : '',
+        dotBorder: on ? '2px solid ' + ac : '2px solid ' + T.bd2, dotFill: on ? ac : 'transparent',
+        bg: on ? T.inb : 'transparent', border: on ? '1px solid ' + ac : '1px solid ' + T.bd,
+        cursor: s.modelBusy ? 'default' : 'pointer',
+        onClick: () => { if (!s.modelBusy) this.setState({modelChoice: m.key, modelGot: 0}); }
+      }; }),
+      modelDownloadLabel: s.modelsHave.includes(s.modelChoice) ? 'Use this model' : 'Download ' + modelByKey(s.modelChoice).mb + ' MB',
+      modelPct: Math.round(s.modelGot / modelByKey(s.modelChoice).mb * 100) + '%',
+      modelBytes: s.modelGot + ' / ' + modelByKey(s.modelChoice).mb + ' MB',
+      modelStatus: 'Downloading ' + modelByKey(s.modelChoice).name + ' once',
       modelCancelLabel: s.modelBusy ? 'Cancel' : 'Not now',
       onModelDownload: this.startModelDownload, onModelCancel: this.cancelModelDownload,
 
@@ -5381,7 +5432,7 @@ class Component extends DCLogic {
       alertOptions: (al.options || []).map(o => ({label: o.label, onClick: o.onClick, switchBg: o.on ? ac : T.sel, knob: o.on ? '19px' : '2px'})),
 
       dlgIsChoice: s.dialog === 'choice', choiceTitle: ch.title, choiceBody: ch.body,
-      choiceOptions: (ch.options || []).map((o, i) => Object.assign({sep: i ? '1px solid ' + T.bd : '0'}, o)),
+      choiceOptions: (ch.options || []).map((o, i) => Object.assign({sep: i ? '1px solid ' + T.bd : '0', sub: null}, o)),
 
       dlgIsExport: s.dialog === 'export',
       exportFormat: s.exportFormat || 'Plain text', exportRange: s.exportRange || 'All messages',

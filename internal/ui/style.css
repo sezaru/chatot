@@ -4901,39 +4901,129 @@ button.chatot-reactor-btn {
 	opacity: 0.72;
 }
 
-/* The speech model's facts under the download prompt: what the size in the
-   question actually belongs to. */
-.chatot-model-facts {
-	background-color: alpha(#000000, 0.06);
+/* The speech models under the download prompt: a card each, the chosen one
+   framed in the accent, with a drawn radio ring (see newModelCard) whose
+   colour is the ring's own CSS colour. */
+.chatot-model-picker {
+	margin-top: 2px;
+}
+
+.chatot-model-card {
+	background-image: none;
+	background-color: transparent;
+	box-shadow: none;
+	border: 1px solid @chatot_hairline;
 	border-radius: 10px;
 	padding: 9px 11px;
-	margin-top: 8px;
+	min-height: 0;
+	font-weight: normal;
+	color: alpha(@window_fg_color, 0.85);
 }
 
-.chatot-model-facts-glyph {
+.chatot-model-card:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-model-card:checked {
+	background-color: alpha(#000000, 0.06);
+	border-color: @chatot_accent;
+}
+
+.chatot-model-radio {
+	color: @chatot_hairline_strong;
+}
+
+.chatot-model-radio-on {
+	color: @chatot_accent;
+}
+
+.chatot-model-name {
 	font-size: 13px;
+	font-weight: 700;
 }
 
-.chatot-model-facts-name {
-	font-family: "JetBrains Mono", ui-monospace, monospace;
-	font-size: 11.5px;
+.chatot-model-tag {
+	font-size: 11px;
+	color: @chatot_accent_text;
 }
 
-.chatot-model-facts-sub {
+.chatot-model-have,
+.chatot-model-meta {
 	font-size: 11px;
 	opacity: 0.55;
 }
 
-.chatot-model-facts-size {
-	font-family: "JetBrains Mono", ui-monospace, monospace;
-	font-size: 11.5px;
+.chatot-model-foot {
+	font-size: 11px;
+	opacity: 0.45;
+	padding: 0 2px;
+}
+
+/* The card itself: left-aligned title and body over the picker, and the
+   hairline button bar the design draws across the bottom, its halves flat
+   with a 1px divider. The outer corners follow the card's radius so a
+   hovered half does not poke out of it. */
+.chatot-model-dlg-body {
+	padding: 20px 22px 14px;
+}
+
+.chatot-model-dlg-title {
+	font-size: 15.5px;
+	font-weight: 700;
+}
+
+.chatot-model-dlg-text {
+	font-size: 13px;
 	opacity: 0.55;
 }
 
-/* The download in progress, under the same facts row the prompt showed: a
-   thin accent bar, then what is happening and how far it has got. */
+.chatot-model-dlg-bar {
+	border-top: 1px solid alpha(currentColor, 0.09);
+}
+
+.chatot-model-dlg-divider {
+	background-color: alpha(currentColor, 0.09);
+	min-width: 1px;
+}
+
+.chatot-model-dlg-btn {
+	background-image: none;
+	background-color: transparent;
+	border: none;
+	box-shadow: none;
+	border-radius: 0;
+	padding: 12px 0;
+	min-height: 0;
+	font-size: 13.5px;
+	font-weight: normal;
+	color: alpha(@window_fg_color, 0.85);
+}
+
+.chatot-model-dlg-btn:hover {
+	background-color: alpha(currentColor, 0.06);
+}
+
+.chatot-model-dlg-btn-start {
+	border-radius: 0 0 0 15px;
+}
+
+.chatot-model-dlg-btn-end {
+	border-radius: 0 0 15px 0;
+}
+
+.chatot-model-dlg-btn-only {
+	border-radius: 0 0 15px 15px;
+}
+
+.chatot-model-dlg-confirm {
+	font-weight: 700;
+	color: @chatot_accent_text;
+}
+
+/* The download in progress, under the same cards the prompt showed: a thin
+   accent bar, then what is happening and how far it has got. */
 .chatot-model-progress {
-	margin-top: 9px;
+	margin-top: 2px;
 }
 
 .chatot-model-bar,

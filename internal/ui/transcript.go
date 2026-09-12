@@ -20,6 +20,10 @@ import (
 // transcribed as soon as it is downloaded, without a click.
 var AutoTranscribe = false
 
+// TranscribeModel is the key of the speech model voice notes are
+// transcribed with (transcribe.Models), the Preferences setting.
+var TranscribeModel = transcribe.DefaultModel
+
 // TranscriptsExpanded mirrors settings.TranscriptsExpanded: whether a
 // transcript starts unfolded under its note.
 var TranscriptsExpanded = false
@@ -96,7 +100,7 @@ func maybeAutoTranscribe(mv mediaView) {
 	st := mv.TranscriptState
 	if mv.voice.onTranscribe == nil || st.Busy || st.Queued || st.Err != "" ||
 		!autoTranscribeWants(AutoTranscribe, mv.Transcript, mv.TS, time.Now()) ||
-		!transcribe.EngineAvailable() || !transcribe.ModelReady(cacheDir()) {
+		!transcribe.EngineAvailable() || !transcribe.ModelReady(cacheDir(), TranscribeModel) {
 		return
 	}
 	id, path, start := mv.MsgID, mv.LocalPath, mv.voice.onTranscribe
@@ -527,7 +531,7 @@ func (cv *ConversationView) transcribe(msgID, path string, requested bool) {
 			// of the automatic ones, and unfolds the text when it lands.
 			st.Requested = true
 			cv.setTranscriptState(msgID, st)
-			transcribe.Default.Enqueue(transcribe.Job{Key: msgID, Path: path, CacheDir: cacheDir(), Requested: true})
+			transcribe.Default.Enqueue(transcribe.Job{Key: msgID, Path: path, CacheDir: cacheDir(), Model: TranscribeModel, Requested: true})
 		}
 		return
 	}
@@ -536,7 +540,7 @@ func (cv *ConversationView) transcribe(msgID, path string, requested bool) {
 		showToast(cv.toastOverlay, "Install whisper.cpp (whisper-cli) to transcribe voice notes")
 		return
 	}
-	if !transcribe.ModelReady(cacheDir()) {
+	if !transcribe.ModelReady(cacheDir(), TranscribeModel) {
 		if requested {
 			showModelDownloadDialog(cv.window, func() { cv.transcribe(msgID, path, true) })
 		}
@@ -561,7 +565,7 @@ func (cv *ConversationView) transcribe(msgID, path string, requested bool) {
 // asked first, the thread hears about the run the same way.
 func transcriptJob(c client.Client, cv *ConversationView, jid, msgID, path string, requested bool) transcribe.Job {
 	return transcribe.Job{
-		Key: msgID, Path: path, CacheDir: cacheDir(), Requested: requested,
+		Key: msgID, Path: path, CacheDir: cacheDir(), Model: TranscribeModel, Requested: requested,
 		OnStart: func() {
 			at := time.Now()
 			glib.IdleAdd(func() { cv.transcriptStarted(msgID, at) })
