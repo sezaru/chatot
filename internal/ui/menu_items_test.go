@@ -95,7 +95,7 @@ func TestChatMenuItems(t *testing.T) {
 		want := []string{
 			"Contact info", "Search in chat", "Media, links and docs", "---",
 			"Mute notifications…", "Pin chat", "Disappearing messages…", "Chat wallpaper…", "Archive chat", "---",
-			"Export chat…", "Clear chat…", "Block contact…",
+			"Export chat…", "Clear chat…", "Delete chat…", "Block contact…",
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("chatMenuItems() = %v, want %v", got, want)
@@ -180,7 +180,7 @@ func TestMessageMenuItems(t *testing.T) {
 	})
 
 	t.Run("sticker messages offer Add to stickers after Forward", func(t *testing.T) {
-		sticker := client.Message{Attachment: &client.Attachment{Kind: "sticker"}}
+		sticker := client.Message{Attachment: &client.Attachment{Kind: "sticker", LocalPath: "/tmp/s.webp"}}
 		got := labelsOf(messageMenuItems(sticker, messageMenuActions{}))
 		want := []string{
 			"Reply", "Forward", "Add to stickers", "Star message", "Copy text", "Pin in chat", "---",
@@ -189,7 +189,7 @@ func TestMessageMenuItems(t *testing.T) {
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("messageMenuItems(sticker) = %v, want %v", got, want)
 		}
-		photo := client.Message{Attachment: &client.Attachment{Kind: "image"}}
+		photo := client.Message{Attachment: &client.Attachment{Kind: "image", LocalPath: "/tmp/p.jpg"}}
 		for _, l := range labelsOf(messageMenuItems(photo, messageMenuActions{})) {
 			if l == "Add to stickers" {
 				t.Errorf("a photo offers Add to stickers")
@@ -246,5 +246,31 @@ func TestBlockChatMenuLabel(t *testing.T) {
 	}
 	if got := blockChatMenuLabel(true); got != "Unblock contact" {
 		t.Errorf("blockChatMenuLabel(true) = %q", got)
+	}
+}
+
+func TestMessageMenuItemsDownload(t *testing.T) {
+	has := func(msg client.Message) bool {
+		for _, l := range labelsOf(messageMenuItems(msg, messageMenuActions{})) {
+			if l == "Download" {
+				return true
+			}
+		}
+		return false
+	}
+	pending := client.Message{Attachment: &client.Attachment{Kind: "video"}}
+	if !has(pending) {
+		t.Error("an attachment not on disk offers no Download row")
+	}
+	local := client.Message{Attachment: &client.Attachment{Kind: "video", LocalPath: "/tmp/v.mp4"}}
+	if has(local) {
+		t.Error("a downloaded attachment still offers Download")
+	}
+	once := client.Message{Attachment: &client.Attachment{Kind: "image", ViewOnce: true}}
+	if has(once) {
+		t.Error("a view-once attachment offers Download")
+	}
+	if has(client.Message{Text: "hi"}) {
+		t.Error("a text message offers Download")
 	}
 }

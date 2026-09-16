@@ -258,6 +258,13 @@ func (w *Whatsmeow) handleRaw(src *whatsmeow.Client, evt interface{}) {
 		})
 		return
 	}
+	// The phone deleted a chat: mirror it, as the phone mirrors ours.
+	if d, ok := evt.(*events.DeleteChat); ok && !d.FromFullSync {
+		if err := w.deleteChatLocally(w.canonicalChatJID(d.JID.String())); err != nil {
+			w.log.Warnf("chatot/client: %v", err)
+		}
+		return
+	}
 	if a, ok := evt.(*events.Archive); ok {
 		w.applyChatUpdate(a.JID.String(), func(jid string) error {
 			return w.store.SetChatArchived(jid, a.Action.GetArchived())
@@ -1110,6 +1117,46 @@ func (w *Whatsmeow) ClearChat(ctx context.Context, jid string, alsoMedia bool) e
 	paths, err := w.store.ClearChat(jid, alsoMedia)
 	if err != nil {
 		return fmt.Errorf("chatot/client: clear chat: %w", err)
+	}
+	for _, p := range paths {
+		if err := media.RemoveWithinDir(w.mediaDir, p); err != nil {
+			w.log.Warnf("chatot/client: delete cached media file %s: %v", p, err)
+		}
+	}
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+// DeleteChat sends WhatsApp's delete-chat app-state patch, so the phone
+// drops the chat too, then removes it locally (deleteChatLocally). The
+// patch failing (offline, say) leaves everything in place and reports it:
+// a chat that quietly came back on the next sync would be worse.
+func (w *Whatsmeow) DeleteChat(ctx context.Context, jid string) error {
+	target, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: parse jid %q: %w", jid, err)
+	}
+	ts, err := w.store.ChatLastMessageTS(jid)
+	if err != nil {
+		w.log.Warnf("chatot/client: lookup last message ts for delete: %v", err)
+	}
+	lastMessageTS := time.Now()
+	if ts > 0 {
+		lastMessageTS = time.Unix(ts, 0)
+	}
+	if err := w.wa.SendAppState(ctx, appstate.BuildDeleteChat(target, lastMessageTS, nil, false)); err != nil {
+		return fmt.Errorf("chatot/client: send delete-chat app-state: %w", err)
+	}
+	return w.deleteChatLocally(jid)
+}
+
+// deleteChatLocally drops jid's chat row, messages and cached media files
+// and tells the UI; shared by DeleteChat and the phone's own deletion
+// arriving as an events.DeleteChat.
+func (w *Whatsmeow) deleteChatLocally(jid string) error {
+	paths, err := w.store.DeleteChat(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: delete chat: %w", err)
 	}
 	for _, p := range paths {
 		if err := media.RemoveWithinDir(w.mediaDir, p); err != nil {
@@ -2343,6 +2390,15 @@ func (w *Whatsmeow) CheckOnWhatsApp(ctx context.Context, phone string) (string, 
 	jid = jid.ToNonAD()
 	if r.JID.Server == types.HiddenUserServer && jid.Server == types.DefaultUserServer {
 		w.upsertContact(store.ContactRow{JID: r.JID.ToNonAD().String(), PNJID: jid.String()})
+		// A conversation that began before the number was known sits
+		// under the LID; opening the number would show an empty chat
+		// beside it. Point at the chat that exists.
+		lid := r.JID.ToNonAD().String()
+		if underPN, _ := w.store.HasChat(jid.String()); !underPN {
+			if underLID, _ := w.store.HasChat(lid); underLID {
+				return lid, true, nil
+			}
+		}
 	}
 	if name := verifiedNameOf(r.VerifiedName); name != "" {
 		w.upsertContact(store.ContactRow{JID: jid.String(), BusinessName: name})

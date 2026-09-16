@@ -60,8 +60,12 @@ type threadRow struct {
 	// once and read these, so a bind never rewires a signal.
 	quoteTo  string
 	onJumpTo func(string)
-	retryMsg client.Message
-	onRetry  func(client.Message)
+	// The sender the avatar and the name line open a card for (a group
+	// message from someone else), "" otherwise.
+	senderJID, senderName string
+	onOpenSender          func(jid, name string)
+	retryMsg              client.Message
+	onRetry               func(client.Message)
 	// What the avatar slot is currently showing. A group thread runs long
 	// stretches from one sender, and a recycled row often lands on the same
 	// one, so the picture is kept unless the sender, the initial or the
@@ -166,6 +170,20 @@ func (r *threadRow) buildBubbleInterior() {
 	})
 	r.quote.AddController(click)
 
+	// The name line and the avatar beside a group bubble open the sender's
+	// card, as tapping a member does on the phone.
+	openSender := func() {
+		if r.onOpenSender != nil && r.senderJID != "" {
+			r.onOpenSender(r.senderJID, r.senderName)
+		}
+	}
+	for _, w := range []gtk.Widgetter{r.author, r.avatarSlot} {
+		g := gtk.NewGestureClick()
+		g.ConnectReleased(func(int, float64, float64) { openSender() })
+		gtk.BaseWidget(w).AddController(g)
+		gtk.BaseWidget(w).SetCursorFromName("pointer")
+	}
+
 	r.body.AddCSSClass("chatot-bubble-text")
 	r.body.SetXAlign(0)
 	r.body.SetWrap(true)
@@ -217,8 +235,12 @@ func (r *threadRow) fillBubble(msg client.Message, vm bubbleView, h bubbleHooks)
 	// slip in the visibility logic away from being shown under someone
 	// else's message. Every one of them is cleared as it goes.
 	r.author.SetVisible(vm.Author != "")
+	r.senderJID, r.senderName, r.onOpenSender = "", "", h.onOpenSender
 	if vm.Author != "" {
 		r.author.SetLabel(vm.Author)
+		if !vm.FromMe {
+			r.senderJID, r.senderName = nonADJID(msg.FromJID), vm.Author
+		}
 	} else {
 		r.author.SetLabel("")
 	}

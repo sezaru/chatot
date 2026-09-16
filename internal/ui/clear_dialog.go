@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -57,6 +58,51 @@ func ShowClearChatDialog(parent *gtk.Window, c client.Client, cv *ConversationVi
 				}
 				if cv.toastOverlay != nil {
 					cv.toastOverlay.AddToast(adw.NewToast("Chat cleared"))
+				}
+			})
+		}()
+	})
+
+	dialog.Present(parent)
+}
+
+// ShowDeleteChatDialog opens the "Delete this chat?" confirmation for jid.
+// Deleting goes further than clearing: it is WhatsApp's own delete, synced
+// to the phone (see Client.DeleteChat), and the chat leaves the list. When
+// jid is the open chat, onDeleted is called afterwards so the caller can
+// show the empty pane in its place; the list refreshes off the
+// EventChatUpdate DeleteChat pushes.
+func ShowDeleteChatDialog(parent *gtk.Window, c client.Client, cv *ConversationView, jid, contactName string, onDeleted func()) {
+	body := fmt.Sprintf("Messages with %s are deleted on this device and on your phone. The other side keeps theirs.", contactName)
+	if strings.HasSuffix(jid, "@g.us") {
+		body = "The group's messages are deleted on this device and on your phone. You stay a member: the next message brings the chat back. Leave the group first to be done with it."
+	}
+	dialog := adw.NewAlertDialog("Delete this chat?", body)
+	dialog.AddResponse("cancel", "Cancel")
+	dialog.AddResponse("delete", "Delete chat")
+	dialog.SetResponseAppearance("delete", adw.ResponseDestructive)
+	dialog.SetDefaultResponse("cancel")
+	dialog.SetCloseResponse("cancel")
+
+	dialog.ConnectResponse(func(response string) {
+		if response != "delete" {
+			return
+		}
+		go func() {
+			err := c.DeleteChat(context.Background(), jid)
+			glib.IdleAdd(func() {
+				if err != nil {
+					log.Printf("chatot: delete chat failed: %v", err)
+					if cv.toastOverlay != nil {
+						cv.toastOverlay.AddToast(adw.NewToast("Couldn't delete the chat: " + err.Error()))
+					}
+					return
+				}
+				if cv.CurrentJID() == jid && onDeleted != nil {
+					onDeleted()
+				}
+				if cv.toastOverlay != nil {
+					cv.toastOverlay.AddToast(adw.NewToast("Chat deleted"))
 				}
 			})
 		}()

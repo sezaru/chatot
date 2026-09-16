@@ -2,10 +2,13 @@ package client
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 
@@ -38,6 +41,66 @@ func (w *Whatsmeow) OwnName() string {
 		return ""
 	}
 	return w.wa.Store.PushName
+}
+
+// OwnAbout asks the server for the account's own "About" line.
+func (w *Whatsmeow) OwnAbout(ctx context.Context) (string, error) {
+	if w.wa.Store.ID == nil {
+		return "", errors.New("chatot/client: not paired")
+	}
+	own := w.wa.Store.ID.ToNonAD()
+	info, err := w.wa.GetUserInfo(ctx, []types.JID{own})
+	if err != nil {
+		return "", fmt.Errorf("chatot/client: own profile: %w", err)
+	}
+	return info[own].Status, nil
+}
+
+// SetOwnName pushes the profile name through app state, which is how the
+// phone changes it, so every linked device (and the phone) follows. The
+// local copy is updated as well: whatsmeow only learns the new name from
+// the patch echo, which may arrive after the UI re-reads OwnName.
+func (w *Whatsmeow) SetOwnName(ctx context.Context, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("chatot/client: profile name cannot be empty")
+	}
+	if err := w.wa.SendAppState(ctx, appstate.BuildSettingPushName(name)); err != nil {
+		return fmt.Errorf("chatot/client: set profile name: %w", err)
+	}
+	w.wa.Store.PushName = name
+	if err := w.wa.Store.Save(ctx); err != nil {
+		w.log.Warnf("chatot/client: save device after name change: %v", err)
+	}
+	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{}})
+	return nil
+}
+
+// SetOwnAbout sets the account's "About" line.
+func (w *Whatsmeow) SetOwnAbout(ctx context.Context, about string) error {
+	about = strings.TrimSpace(about)
+	if err := w.wa.SetStatusMessage(ctx, types.SetStatusInput{Text: &about}); err != nil {
+		return fmt.Errorf("chatot/client: set about: %w", err)
+	}
+	return nil
+}
+
+// SetOwnPicture uploads jpeg as the profile picture (nil removes it): the
+// same IQ as a group picture, addressed to nobody, is the account's own.
+// The cached copy is dropped and an EventAvatar for our JID lets every
+// avatar of ours on screen re-fetch.
+func (w *Whatsmeow) SetOwnPicture(ctx context.Context, jpeg []byte) error {
+	if w.wa.Store.ID == nil {
+		return errors.New("chatot/client: not paired")
+	}
+	if _, err := w.wa.SetGroupPhoto(ctx, types.EmptyJID, jpeg); err != nil {
+		return fmt.Errorf("chatot/client: set profile picture: %w", err)
+	}
+	for _, jid := range []string{w.wa.Store.ID.String(), w.wa.Store.ID.ToNonAD().String()} {
+		w.invalidateAvatar(jid)
+		w.pushEvent(Event{Kind: EventAvatar, Avatar: &Avatar{JID: jid}})
+	}
+	return nil
 }
 
 // syncContacts mirrors whatsmeow's contact store into chatot's contacts

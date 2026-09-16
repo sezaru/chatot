@@ -103,6 +103,7 @@ func (cv *ConversationView) MenuItemsForChat(jid string, ensureOpen func()) []me
 		Wallpaper:    func() { showChatWallpaperDialog(cv.window, jid, cv.toastOverlay) },
 		Export:       opening(func() { callWithJID(cv.onExportChat, jid) }),
 		Clear:        opening(func() { callWithJID(cv.onClearChat, jid) }),
+		Delete:       opening(func() { callWithJID(cv.onDeleteChat, jid) }),
 		Block:        block,
 	})
 }
@@ -141,6 +142,20 @@ func (cv *ConversationView) showContactInfo(chat client.Chat) {
 			showBlockConfirmDialog(cv.window, cv.c, jid, chat.Name)
 		},
 	})
+}
+
+// showSenderInfo opens the contact card for a group message's sender, as
+// clicking a member does on the phone. The sender need not have a chat of
+// their own: the card's rows all act on the JID.
+func (cv *ConversationView) showSenderInfo(jid, name string) {
+	if jid == "" || isOwnJID(jid, cv.c.OwnJID()) {
+		return
+	}
+	chat := client.Chat{JID: jid, Name: name}
+	if n := cv.c.ContactName(jid); n != "" {
+		chat.Name = n
+	}
+	cv.showContactInfo(chat)
 }
 
 // showGroupInfo opens the mockup's info card for a group, its rows wired

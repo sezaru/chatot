@@ -488,6 +488,35 @@ func (s *Store) ClearChat(jid string, alsoMedia bool) (mediaPaths []string, err 
 	return mediaPaths, nil
 }
 
+// DeleteChat removes jid's chat row and everything filed under it: the
+// messages, media, reactions, votes and receipts ClearChat drops, plus the
+// chat's label associations. Like ClearChat it returns the cached media
+// paths for the caller to unlink; the store never touches the filesystem.
+// Group and contact rows stay: they describe the peer, not the chat.
+func (s *Store) DeleteChat(jid string) (mediaPaths []string, err error) {
+	if mediaPaths, err = s.ClearChat(jid, true); err != nil {
+		return nil, err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`DELETE FROM read_receipts WHERE chat_jid = ?`,
+		`DELETE FROM label_chats WHERE chat_jid = ?`,
+		`DELETE FROM chats WHERE jid = ?`,
+	} {
+		if _, err := tx.Exec(q, jid); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return mediaPaths, nil
+}
+
 // RemoveMessage drops a message and everything hanging off it (media,
 // reactions, votes, receipts): WhatsApp's "delete for me", which leaves no
 // tombstone. Unlike MarkMessageDeleted the row is gone, so a redelivery of

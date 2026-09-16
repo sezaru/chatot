@@ -42,6 +42,13 @@ var NotificationsEnabled = true
 // account's label once more than one account is linked. Set from settings.
 var NotificationsPerAccount = true
 
+// StatusNotifications gates toasts for status updates (posts in the
+// status@broadcast chat). Set from settings.
+var StatusNotifications = true
+
+// statusBroadcastJID is the chat every contact's status posts land in.
+const statusBroadcastJID = "status@broadcast"
+
 // accountPrefixedTitle prepends "label · " to title when label is non-empty,
 // producing e.g. "Work · Sam Okafor"; an empty label leaves title unchanged.
 func accountPrefixedTitle(title, label string) string {
@@ -61,6 +68,10 @@ type notifyInput struct {
 	Enabled    bool
 	AppFocused bool
 	OpenJID    string // currently-open chat JID, "" if none
+	// IsStatus marks a status update; StatusEnabled is the preference that
+	// lets those notify at all.
+	IsStatus      bool
+	StatusEnabled bool
 }
 
 // decideNotify is the pure notification policy, kept free of GTK/gio so it's
@@ -82,6 +93,9 @@ func decideNotify(in notifyInput) bool {
 	switch in.Kind {
 	case "message":
 		if in.Muted {
+			return false
+		}
+		if in.IsStatus && !in.StatusEnabled {
 			return false
 		}
 		if in.AppFocused && in.OpenJID == in.ChatJID {
@@ -117,6 +131,17 @@ func messageNotification(chatName, sender string, msg client.Message) (title, bo
 		body = sender + ": " + body
 	}
 	return chatName, body
+}
+
+// statusNotification builds the title/body for a status update: the title
+// is the poster's name and the body says it is a status, then the text or
+// the attachment placeholder, so it doesn't read as a direct message.
+func statusNotification(poster string, msg client.Message) (title, body string) {
+	_, body = messageNotification(poster, "", msg)
+	if body == "" {
+		return poster, "Status update"
+	}
+	return poster, "Status: " + body
 }
 
 // callNotification builds the title/body for an incoming-call notification.
@@ -328,25 +353,41 @@ func (n *Notifier) personName(jid string) string {
 // alongside the send: n.focused() touches live GTK state (win.IsActive) and
 // cv.jid, both of which must only be read on the main loop.
 func (n *Notifier) handleMessage(msg client.Message) {
-	name, muted := n.chatInfo(msg.ChatJID)
-	// A group toast names the sender: the title is the group, and "hello"
-	// alone said nothing about who wrote it.
-	sender := ""
-	if strings.HasSuffix(msg.ChatJID, "@g.us") && msg.FromJID != "" {
-		sender = n.personName(msg.FromJID)
+	isStatus := msg.ChatJID == statusBroadcastJID
+	if isStatus && !StatusNotifications {
+		return
 	}
-	title, body := messageNotification(name, sender, msg)
+	var title, body string
+	var muted bool
+	iconJID := msg.ChatJID
+	if isStatus {
+		// A status post is filed under status@broadcast, which is no chat
+		// of anyone's: the toast is the poster's, in name and picture.
+		title, body = statusNotification(n.personName(msg.FromJID), msg)
+		iconJID = msg.FromJID
+	} else {
+		name, m := n.chatInfo(msg.ChatJID)
+		muted = m
+		// A group toast names the sender: the title is the group, and
+		// "hello" alone said nothing about who wrote it.
+		sender := ""
+		if strings.HasSuffix(msg.ChatJID, "@g.us") && msg.FromJID != "" {
+			sender = n.personName(msg.FromJID)
+		}
+		title, body = messageNotification(name, sender, msg)
+	}
 	if !NotificationText {
 		body = hiddenNotificationBody
 	}
 	title = accountPrefixedTitle(title, n.accountPrefix())
-	icon := n.iconPath(msg.ChatJID)
+	icon := n.iconPath(iconJID)
 	glib.IdleAdd(func() {
 		focused, openJID := n.focused()
 		if !decideNotify(notifyInput{
 			Kind: "message", FromMe: msg.FromMe, ChatJID: msg.ChatJID,
 			Muted: muted, Enabled: NotificationsEnabled,
 			AppFocused: focused, OpenJID: openJID,
+			IsStatus: isStatus, StatusEnabled: StatusNotifications,
 		}) {
 			return
 		}

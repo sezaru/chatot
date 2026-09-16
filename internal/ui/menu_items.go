@@ -80,6 +80,7 @@ type chatMenuActions struct {
 	Archive   func()
 	Export    func()
 	Clear     func()
+	Delete    func()
 	Block     func()
 }
 
@@ -122,6 +123,8 @@ func chatMenuItems(chat client.Chat, blocked bool, a chatMenuActions) []menuItem
 		menuSeparator(),
 		{Icon: "⤓", Label: "Export chat…", OnActivate: a.Export},
 		{Icon: "🗑", Label: "Clear chat…", Destructive: true, OnActivate: a.Clear},
+		// Not in the mockup: WhatsApp's own delete, next to the local clear.
+		{Icon: "🗑", Label: "Delete chat…", Destructive: true, OnActivate: a.Delete},
 		{Icon: "🚫", Label: blockChatMenuLabel(blocked), Destructive: true, OnActivate: a.Block},
 	}
 }
@@ -149,6 +152,8 @@ type messageMenuActions struct {
 	Delete  func()
 	// AddToStickers files a sticker bubble's picture in the picker's library.
 	AddToStickers func()
+	// Download fetches an attachment the bubble only has a preview of.
+	Download func()
 }
 
 // messageMenuItems is a message bubble's ⋯ menu.
@@ -161,6 +166,9 @@ func messageMenuItems(msg client.Message, a messageMenuActions) []menuItem {
 	items := []menuItem{
 		{Icon: "↩", Label: "Reply", OnActivate: a.Reply},
 		{Icon: "↪", Label: "Forward", OnActivate: a.Forward},
+	}
+	if needsDownload(msg) {
+		items = append(items, menuItem{Icon: "⤓", Label: "Download", OnActivate: a.Download})
 	}
 	if isStickerMessage(msg) {
 		items = append(items, menuItem{Icon: "🙂", Label: "Add to stickers", OnActivate: a.AddToStickers})
@@ -178,6 +186,14 @@ func messageMenuItems(msg client.Message, a messageMenuActions) []menuItem {
 		menuItem{Icon: "ℹ", Label: "Message info", OnActivate: a.Info},
 		menuItem{Icon: "🗑", Label: "Delete message", Destructive: true, OnActivate: a.Delete},
 	)
+}
+
+// needsDownload reports whether msg carries an attachment that is not on
+// disk yet. A view-once attachment is left out: opening it is the one
+// chance to see it, so the bubble's own tap is the way in.
+func needsDownload(msg client.Message) bool {
+	a := msg.Attachment
+	return a != nil && a.LocalPath == "" && !a.ViewOnce
 }
 
 // isStickerMessage reports whether msg carries a sticker.

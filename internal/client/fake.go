@@ -25,6 +25,8 @@ var _ Client = (*Fake)(nil)
 // live WhatsApp link. It comes pre-seeded with a couple of chats/messages.
 type Fake struct {
 	mu       sync.Mutex
+	ownName  string // "" reads as the demo name
+	ownAbout string // "" reads as the demo line
 	chats    []Chat
 	messages map[string][]Message // chatJID -> messages, oldest first
 	events   *eventBus
@@ -723,6 +725,21 @@ func (f *Fake) ClearChat(ctx context.Context, jid string, alsoMedia bool) error 
 			break
 		}
 	}
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
+	return nil
+}
+
+func (f *Fake) DeleteChat(ctx context.Context, jid string) error {
+	f.mu.Lock()
+	delete(f.messages, jid)
+	kept := f.chats[:0]
+	for _, c := range f.chats {
+		if c.JID != jid {
+			kept = append(kept, c)
+		}
+	}
+	f.chats = kept
 	f.mu.Unlock()
 	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{JID: jid}})
 	return nil
@@ -1513,7 +1530,47 @@ var fakeParticipantNames = map[string]string{
 }
 
 // OwnName is the fixture's profile name.
-func (f *Fake) OwnName() string { return "Sezar" }
+func (f *Fake) OwnName() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ownName != "" {
+		return f.ownName
+	}
+	return "Sezar"
+}
+
+func (f *Fake) OwnAbout(ctx context.Context) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ownAbout != "" {
+		return f.ownAbout, nil
+	}
+	return "Hey there! I am using chatot.", nil
+}
+
+func (f *Fake) SetOwnName(ctx context.Context, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("chatot/client: profile name cannot be empty")
+	}
+	f.mu.Lock()
+	f.ownName = name
+	f.mu.Unlock()
+	f.events.Publish(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{}})
+	return nil
+}
+
+func (f *Fake) SetOwnAbout(ctx context.Context, about string) error {
+	f.mu.Lock()
+	f.ownAbout = strings.TrimSpace(about)
+	f.mu.Unlock()
+	return nil
+}
+
+func (f *Fake) SetOwnPicture(ctx context.Context, jpeg []byte) error {
+	f.events.Publish(Event{Kind: EventAvatar, Avatar: &Avatar{JID: fakeOwnJID}})
+	return nil
+}
 
 func (f *Fake) CreateGroup(ctx context.Context, name string, participantJIDs []string) (string, error) {
 	if !validGroupName(name) {

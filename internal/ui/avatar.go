@@ -182,12 +182,30 @@ func newAvatarInitial(jid, initial string, size int) *gtk.DrawingArea {
 	return area
 }
 
+// avatarColorCount is how many initials-avatar palette classes exist
+// (chatot-avatar-c0 … c7).
+const avatarColorCount = 8
+
+// AccountColors overrides the badge colour of an account (keyed by its
+// id) with a palette index the user picked in Edit profile. Set from
+// settings.
+var AccountColors map[string]int
+
 // avatarColorClass maps jid to one of the 8 fixed initials-avatar palette
-// classes via FNV-1a, so a contact always gets the same colour.
+// classes via FNV-1a, so a contact always gets the same colour. An account
+// id the user picked a colour for gets that one instead.
 func avatarColorClass(jid string) string {
+	if c, ok := AccountColors[jid]; ok && c >= 0 && c < avatarColorCount {
+		return fmt.Sprintf("chatot-avatar-c%d", c)
+	}
+	return fmt.Sprintf("chatot-avatar-c%d", avatarColorIndex(jid))
+}
+
+// avatarColorIndex is the palette index jid hashes to.
+func avatarColorIndex(jid string) int {
 	h := fnv.New32a()
 	h.Write([]byte(jid))
-	return fmt.Sprintf("chatot-avatar-c%d", h.Sum32()%8)
+	return int(h.Sum32() % avatarColorCount)
 }
 
 // newAvatarPicture renders a photo avatar as a size×size circle. AdwAvatar

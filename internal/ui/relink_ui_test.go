@@ -71,12 +71,12 @@ func TestAppMenuNeedsRebuild(t *testing.T) {
 // a button that never did anything.
 func TestAccountRowMenuItems(t *testing.T) {
 	linked := labelsOf(accountRowMenuItems(false, accountRowMenuActions{}))
-	if !reflect.DeepEqual(linked, []string{"Relabel…", "Remove"}) {
-		t.Errorf("accountRowMenuItems(linked) = %v, want [Relabel… Remove]", linked)
+	if !reflect.DeepEqual(linked, []string{"Edit profile…", "Remove"}) {
+		t.Errorf("accountRowMenuItems(linked) = %v, want [Edit profile… Remove]", linked)
 	}
 	out := labelsOf(accountRowMenuItems(true, accountRowMenuActions{}))
-	if !reflect.DeepEqual(out, []string{"Relabel…", "Relink", "Remove"}) {
-		t.Errorf("accountRowMenuItems(signed out) = %v, want [Relabel… Relink Remove]", out)
+	if !reflect.DeepEqual(out, []string{"Edit profile…", "Relink", "Remove"}) {
+		t.Errorf("accountRowMenuItems(signed out) = %v, want [Edit profile… Relink Remove]", out)
 	}
 }
 

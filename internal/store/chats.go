@@ -467,3 +467,10 @@ func (s *Store) RepairUnreadCounts() (int64, error) {
 	}
 	return res.RowsAffected()
 }
+
+// HasChat reports whether jid has a chat row.
+func (s *Store) HasChat(jid string) (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM chats WHERE jid = ?`, jid).Scan(&n)
+	return n > 0, err
+}

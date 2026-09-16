@@ -40,3 +40,36 @@ func ParseWhatsAppLink(raw string) (phone, text string, ok bool) {
 	}
 	return phone, q.Get("text"), true
 }
+
+// ParseWhatsAppInvite reads the group invite code a WhatsApp link carries:
+// the whatsapp://chat?code=… URI the "Join chat" button of a
+// chat.whatsapp.com page launches (with or without a slash before the
+// query), and the https://chat.whatsapp.com/<code> link itself. ok is
+// false for anything else, a link with no code included.
+func ParseWhatsAppInvite(raw string) (code string, ok bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "whatsapp":
+		// whatsapp://chat?… parses with host "chat", whatsapp:chat?… with
+		// an opaque part.
+		if strings.ToLower(u.Host) != "chat" && strings.ToLower(strings.TrimSuffix(u.Opaque, "/")) != "chat" {
+			return "", false
+		}
+		code = u.Query().Get("code")
+	case "https", "http":
+		if strings.ToLower(u.Host) != "chat.whatsapp.com" {
+			return "", false
+		}
+		code = strings.Trim(u.Path, "/")
+	default:
+		return "", false
+	}
+	code = strings.TrimSpace(code)
+	if code == "" || strings.ContainsAny(code, " \t/") {
+		return "", false
+	}
+	return code, true
+}

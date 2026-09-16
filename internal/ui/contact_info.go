@@ -103,6 +103,9 @@ func showContactInfoDialog(parent *gtk.Window, c client.Client, cache *avatarCac
 	card.Add(newIconRow(muteIcon, muteInfoRowLabel(a.Muted), "", false, closing(a.Mute)))
 	card.Add(newIconRow("⏱", "Disappearing messages", a.DisappearingValue, false, closing(a.Disappearing)))
 	card.Add(newIconRow("🖼", "Media, links and docs", a.MediaCount, false, closing(a.Media)))
+	if path, ok := cache.get(jid); ok && path != "" {
+		card.Add(newIconRow("👤", "Open profile picture", "", false, func() { openFile(path) }))
+	}
 	card.Add(newIconRow("🚫", blockChatMenuLabel(blocked), "", true, closing(a.Block)))
 	body.Append(card)
 	content.Append(body)

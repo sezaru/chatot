@@ -714,6 +714,11 @@ type Client interface {
 	// and the other party's device are never touched. If alsoMedia,
 	// downloaded attachment files are also removed from the local cache.
 	ClearChat(ctx context.Context, jid string, alsoMedia bool) error
+	// DeleteChat removes jid's chat for good, WhatsApp's own "Delete chat":
+	// the deletion is synced to the phone through app state, then the chat
+	// row, its messages and its cached media leave local storage. A group
+	// is not left by this; its next message brings the chat back.
+	DeleteChat(ctx context.Context, jid string) error
 	SendVoice(ctx context.Context, jid string, oggOpus []byte, dur int) (string, error)
 	// SendSticker uploads the file at path and sends it as a sticker message.
 	// Non-webp files are sent best-effort (no image->webp conversion here) and
@@ -861,6 +866,16 @@ type Client interface {
 	// OwnName returns this account's own profile (push) name, "" if unknown,
 	// for the account header and switcher.
 	OwnName() string
+	// OwnAbout is the account's "About" line (the profile status text).
+	OwnAbout(ctx context.Context) (string, error)
+	// SetOwnName changes the account's profile name on WhatsApp (the push
+	// name other people see), so it holds on the phone too.
+	SetOwnName(ctx context.Context, name string) error
+	// SetOwnAbout changes the account's "About" line on WhatsApp.
+	SetOwnAbout(ctx context.Context, about string) error
+	// SetOwnPicture uploads jpeg as the account's profile picture; nil
+	// removes the picture.
+	SetOwnPicture(ctx context.Context, jpeg []byte) error
 	// CreateGroup creates a group named name with the given participant JIDs
 	// (self is added implicitly); the new group is persisted as a chat and its
 	// JID returned.

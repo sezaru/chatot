@@ -229,7 +229,7 @@ two rows that were insensitive:
   inert on groups, which have no block target.
 
 Still insensitive, needing backend or UI work: Linked devices, Contact info on
-a 1:1, Pin in chat, Message info, Delete chat (no client method). Mute is
+a 1:1, Pin in chat, Message info, Delete chat (Client.DeleteChat, WhatsApp's own delete synced to the phone, since 2026-09-16). Mute is
 wired but toggles directly — WhatsApp's `MuteChat` takes no duration, so the
 mockup's 8 hours / 1 week / Always chooser has nothing to call.
 
@@ -435,7 +435,7 @@ report explicitly asked for a WhatsApp behaviour the mockup lacks.
 - Accounts card: Add… pill in the title row (no ✕, as designed), a
   content-sized list (the stretching scroller left a slab under the last row),
   vertical ⋮, mono lower-case "phone · state" line. The ⋮ menu is the design's
-  Relabel · Reconnect · Log out, spelled Relabel… / Relink / Remove. The
+  Relabel · Reconnect · Log out, spelled Edit profile… (name, About, picture and badge colour, pushed to WhatsApp) / Relink / Remove. The
   per-account proxy dialog is gone from the UI (the global proxy stays in
   Preferences → Network); `SetAccountProxy` remains in the client.
 - Add account: pairing starts on open (`AddPairingAccount`), the QR card is

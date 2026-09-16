@@ -645,3 +645,39 @@ func TestMessageLinkPreviewSticky(t *testing.T) {
 		t.Fatalf("starred: got %+v", starred)
 	}
 }
+
+func TestDeleteChatDropsRowAndLabels(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net", LastMessageTS: 5}))
+	must(t, s.UpsertChat(ChatRow{JID: "b@s.whatsapp.net", LastMessageTS: 6}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Text: "for a", TS: 1}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "b@s.whatsapp.net", MsgID: "m2", Text: "for b", TS: 2}))
+	must(t, s.UpsertMedia(MediaRow{ChatJID: "a@s.whatsapp.net", MsgID: "m1", Kind: "image", LocalPath: "/tmp/a.jpg"}))
+	must(t, s.UpsertLabel("l1", "Work", 0, false, false))
+	must(t, s.SetChatLabel("l1", "a@s.whatsapp.net", true))
+	must(t, s.SetChatLabel("l1", "b@s.whatsapp.net", true))
+
+	paths, err := s.DeleteChat("a@s.whatsapp.net")
+	if err != nil {
+		t.Fatalf("DeleteChat: %v", err)
+	}
+	if len(paths) != 1 || paths[0] != "/tmp/a.jpg" {
+		t.Fatalf("got paths %+v, want the cached file", paths)
+	}
+	chats, err := s.Chats(0)
+	must(t, err)
+	if len(chats) != 1 || chats[0].JID != "b@s.whatsapp.net" {
+		t.Fatalf("got chats %+v, want only b", chats)
+	}
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if len(msgs) != 0 {
+		t.Fatalf("got %d messages left in deleted chat", len(msgs))
+	}
+	if on, _ := s.LabelsForChat("a@s.whatsapp.net"); len(on) != 0 {
+		t.Fatalf("deleted chat still carries labels %v", on)
+	}
+	if on, _ := s.LabelsForChat("b@s.whatsapp.net"); len(on) != 1 {
+		t.Fatalf("chat b lost its label: %v", on)
+	}
+}

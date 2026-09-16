@@ -103,6 +103,29 @@ func TestMessageNotificationGroupSender(t *testing.T) {
 	}
 }
 
+func TestDecideNotifyStatusDisabled(t *testing.T) {
+	in := notifyInput{Kind: "message", Enabled: true, ChatJID: statusBroadcastJID, IsStatus: true, StatusEnabled: false}
+	if decideNotify(in) {
+		t.Fatal("expected no notification for a status update when status notifications are off")
+	}
+	in.StatusEnabled = true
+	if !decideNotify(in) {
+		t.Fatal("expected a notification for a status update when status notifications are on")
+	}
+}
+
+func TestStatusNotificationText(t *testing.T) {
+	title, body := statusNotification("Ada Lovelace", client.Message{Text: "back from the retreat"})
+	if title != "Ada Lovelace" || body != "Status: back from the retreat" {
+		t.Fatalf("got title=%q body=%q", title, body)
+	}
+	msg := client.Message{Attachment: &client.Attachment{Kind: "image"}}
+	title, body = statusNotification("Ada Lovelace", msg)
+	if title != "Ada Lovelace" || body != "Status: 📷 Photo" {
+		t.Fatalf("got title=%q body=%q", title, body)
+	}
+}
+
 func TestCallNotificationText(t *testing.T) {
 	title, body := callNotification("Grace Hopper", false)
 	if title != "Incoming call" || body != "Grace Hopper" {

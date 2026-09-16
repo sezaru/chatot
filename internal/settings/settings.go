@@ -31,6 +31,10 @@ type Settings struct {
 	// account's label (e.g. "Work · Sam Okafor") when more than one account is
 	// linked, so it's clear which account a notification belongs to.
 	NotificationsPerAccount bool `json:"notificationsPerAccount"`
+	// StatusNotifications shows a desktop notification when a contact posts
+	// a status update; off keeps status posts silent while ordinary chat
+	// notifications stay on.
+	StatusNotifications bool `json:"statusNotifications"`
 	// KeepInactiveConnected keeps every linked account connected in the
 	// background; when false only the account currently shown stays connected.
 	KeepInactiveConnected bool `json:"keepInactiveConnected"`
@@ -100,6 +104,10 @@ type Settings struct {
 	// the path of a copy the app keeps under its config dir, or "" for the
 	// plain surface.
 	ChatWallpaper string `json:"chatWallpaper"`
+	// AccountColors picks the badge colour (an index into the eight
+	// initials-avatar colours) for an account, keyed by its id; an account
+	// not listed keeps the colour hashed from its id.
+	AccountColors map[string]int `json:"accountColors,omitempty"`
 }
 
 // GIFServices lists the GIFService values in display order.
@@ -138,6 +146,7 @@ func Default() Settings {
 		Theme:                   "system",
 		ThemeSource:             "auto",
 		NotificationsPerAccount: true,
+		StatusNotifications:     true,
 		KeepInactiveConnected:   true,
 		LocationAccess:          true,
 		NotificationSound:       true,

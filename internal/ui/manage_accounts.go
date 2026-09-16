@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 
@@ -57,7 +59,7 @@ func ShowManageAccountsDialog(parent *gtk.Window, am *client.AccountManager, pre
 		list.rows = 0
 		shotAccountRowMenus = nil
 		for _, meta := range am.Accounts() {
-			list.Add(buildManageAccountRow(dialog, am, meta, changed))
+			list.Add(buildManageAccountRow(dialog, am, meta, prefs, changed, onSettingsChanged))
 		}
 	}
 	rebuild()
@@ -107,7 +109,7 @@ func accountStatusSubline(meta client.AccountMeta) string {
 // buildManageAccountRow renders one account row: avatar, name over the mono
 // status line (red when the account needs relinking), and a vertical ⋮
 // opening the design's Relabel/Relink/Remove menu.
-func buildManageAccountRow(card *cardDialog, am *client.AccountManager, meta client.AccountMeta, onChanged func()) *gtk.Box {
+func buildManageAccountRow(card *cardDialog, am *client.AccountManager, meta client.AccountMeta, prefs *settings.Settings, onChanged, onSettingsChanged func()) *gtk.Box {
 	// The window the card is presented in, which is what nested dialogs need
 	// as their parent. The card itself is not a window.
 	dialog := card.Window()
@@ -145,7 +147,7 @@ func buildManageAccountRow(card *cardDialog, am *client.AccountManager, meta cli
 	menuBtn.SetVAlign(gtk.AlignCenter)
 	menuBtn.SetTooltipText("Account options")
 	pop := newMenuPopover(accountRowMenuItems(meta.NeedsRelink, accountRowMenuActions{
-		Relabel: func() { showRelabelAccountDialog(dialog, am, meta, onChanged) },
+		Relabel: func() { showEditProfileDialog(dialog, am, meta, prefs, onChanged, onSettingsChanged) },
 		Relink:  func() { showRelinkDialog(dialog, am, meta.ID, onChanged) },
 		Remove:  func() { confirmRemoveAccount(card, am, meta, onChanged) },
 	}))
@@ -184,63 +186,231 @@ type accountRowMenuActions struct {
 // Offered unconditionally it was a dead end for anyone with a single account,
 // whose one row is by definition the account they are signed into.
 func accountRowMenuItems(needsRelink bool, a accountRowMenuActions) []menuItem {
-	items := []menuItem{{Icon: "✎", Label: "Relabel…", OnActivate: a.Relabel}}
+	items := []menuItem{{Icon: "✎", Label: "Edit profile…", OnActivate: a.Relabel}}
 	if needsRelink {
 		items = append(items, menuItem{Icon: "🔗", Label: "Relink", OnActivate: a.Relink})
 	}
 	return append(items, menuItem{Icon: "⏻", Label: "Remove", Destructive: true, OnActivate: a.Remove})
 }
 
-// showRelabelAccountDialog renames an account's switcher/rail label.
-func showRelabelAccountDialog(parent *gtk.Window, am *client.AccountManager, meta client.AccountMeta, onChanged func()) {
+// showEditProfileDialog edits what the account shows the world and the
+// rail: the profile picture, the name (WhatsApp's push name, so the phone
+// follows), the About line, and the badge colour the rail and the
+// switcher paint the account's initial in. The name also becomes the
+// account's label here, so the rail, the switcher and notifications say
+// the same thing WhatsApp does.
+func showEditProfileDialog(parent *gtk.Window, am *client.AccountManager, meta client.AccountMeta, prefs *settings.Settings, onChanged, onSettingsChanged func()) {
+	c := am.ClientFor(meta.ID)
+	if c == nil {
+		return
+	}
 	dialog := newCardDialog()
-	dialog.SetTitle("Relabel account")
+	dialog.SetTitle("Edit profile")
 	dialog.SetTransientFor(parent)
-	dialog.SetDefaultSize(340, -1)
+	dialog.SetDefaultSize(360, -1)
 
 	box := dialogBody(12)
-	card := newSettingsCard()
-	fieldRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	fieldRow.AddCSSClass("chatot-card-row")
-	fieldRow.Append(settingsRowBody("Label", "Shown in the account button"))
-	entry := gtk.NewEntry()
-	entry.SetText(meta.Name)
-	entry.SetVAlign(gtk.AlignCenter)
-	entry.SetSizeRequest(140, -1)
-	entry.AddCSSClass("chatot-card-entry")
-	fieldRow.Append(entry)
-	card.Add(fieldRow)
-	box.Append(card)
+
+	// The picture, with the two ways to change it under it.
+	cache := newAvatarCache()
+	own := c.OwnJID()
+	head := gtk.NewBox(gtk.OrientationVertical, 8)
+	head.AddCSSClass("chatot-info-head")
+	head.SetHAlign(gtk.AlignCenter)
+	avatarSlot := gtk.NewBox(gtk.OrientationVertical, 0)
+	avatarSlot.SetHAlign(gtk.AlignCenter)
+	initial := initialFor(meta.Name)
+	rebuildAvatar := func() {
+		removeAllChildren(avatarSlot)
+		avatarSlot.Append(buildAvatar(c, cache, own, initial, 76))
+	}
+	rebuildAvatar()
+	head.Append(avatarSlot)
 
 	status := gtk.NewLabel("")
 	status.SetWrap(true)
 	status.SetJustify(gtk.JustifyCenter)
 	status.AddCSSClass("chatot-linking-status")
 	status.SetVisible(false)
-	box.Append(status)
-
-	saveBtn := gtk.NewButtonWithLabel("Save")
-	saveBtn.AddCSSClass("chatot-primary-btn")
-	saveBtn.SetHExpand(true)
-	save := func() {
-		if err := am.RenameAccount(meta.ID, entry.Text()); err != nil {
-			log.Printf("chatot: relabel account %q failed: %v", meta.ID, err)
-			status.SetText("The label can't be empty")
-			status.SetVisible(true)
-			return
-		}
-		dialog.Close()
+	fail := func(what string, err error) {
+		log.Printf("chatot: %s failed: %v", what, err)
+		status.SetText("Couldn't " + what + ": " + err.Error())
+		status.SetVisible(true)
+	}
+	pictureChanged := func() {
+		cache.invalidate(own)
+		rebuildAvatar()
 		if onChanged != nil {
 			onChanged()
 		}
 	}
+	setPicture := func(jpeg []byte, what string) {
+		go func() {
+			err := c.SetOwnPicture(context.Background(), jpeg)
+			glib.IdleAdd(func() {
+				if err != nil {
+					fail(what, err)
+					return
+				}
+				pictureChanged()
+			})
+		}()
+	}
+	pics := gtk.NewBox(gtk.OrientationHorizontal, 8)
+	pics.SetHAlign(gtk.AlignCenter)
+	change := gtk.NewButtonWithLabel("Change picture…")
+	change.AddCSSClass("chatot-outline-btn")
+	change.ConnectClicked(func() {
+		pickGroupPhoto(dialog.Window(), func(jpeg []byte) { setPicture(jpeg, "change the picture") })
+	})
+	pics.Append(change)
+	remove := gtk.NewButtonWithLabel("Remove")
+	remove.AddCSSClass("chatot-outline-btn")
+	remove.ConnectClicked(func() { setPicture(nil, "remove the picture") })
+	pics.Append(remove)
+	head.Append(pics)
+	box.Append(head)
+
+	card := newSettingsCard()
+	nameEntry := gtk.NewEntry()
+	nameEntry.SetText(c.OwnName())
+	nameEntry.SetVAlign(gtk.AlignCenter)
+	nameEntry.SetSizeRequest(160, -1)
+	nameEntry.AddCSSClass("chatot-card-entry")
+	nameRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	nameRow.AddCSSClass("chatot-card-row")
+	nameRow.Append(settingsRowBody("Name", "Your WhatsApp profile name"))
+	nameRow.Append(nameEntry)
+	card.Add(nameRow)
+
+	aboutEntry := gtk.NewEntry()
+	aboutEntry.SetPlaceholderText("Loading…")
+	aboutEntry.SetSensitive(false)
+	aboutEntry.SetVAlign(gtk.AlignCenter)
+	aboutEntry.SetSizeRequest(160, -1)
+	aboutEntry.AddCSSClass("chatot-card-entry")
+	aboutRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	aboutRow.AddCSSClass("chatot-card-row")
+	aboutRow.Append(settingsRowBody("About", "The line under your name"))
+	aboutRow.Append(aboutEntry)
+	card.Add(aboutRow)
+	// The About line lives on the server only; fetched once the card is up.
+	about0 := ""
+	go func() {
+		about, err := c.OwnAbout(context.Background())
+		glib.IdleAdd(func() {
+			if err != nil {
+				log.Printf("chatot: read about failed: %v", err)
+				aboutEntry.SetPlaceholderText("Couldn't load")
+				return
+			}
+			about0 = about
+			aboutEntry.SetText(about)
+			aboutEntry.SetPlaceholderText("")
+			aboutEntry.SetSensitive(true)
+		})
+	}()
+
+	// The badge colour: the eight avatar colours as swatches, the current
+	// one ticked.
+	color := avatarColorIndex(meta.ID)
+	if v, ok := prefs.AccountColors[meta.ID]; ok && v >= 0 && v < avatarColorCount {
+		color = v
+	}
+	colorRow := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	colorRow.AddCSSClass("chatot-card-row")
+	colorRow.Append(settingsRowBody("Badge colour", "Behind your initial in the account rail"))
+	swatches := gtk.NewBox(gtk.OrientationHorizontal, 4)
+	swatches.SetVAlign(gtk.AlignCenter)
+	var ticks []*gtk.Button
+	for i := 0; i < avatarColorCount; i++ {
+		i := i
+		b := gtk.NewButtonWithLabel("")
+		b.AddCSSClass("chatot-avatar")
+		b.AddCSSClass("chatot-color-swatch")
+		b.AddCSSClass(fmt.Sprintf("chatot-avatar-c%d", i))
+		b.SetSizeRequest(24, 24)
+		b.ConnectClicked(func() {
+			color = i
+			for j, t := range ticks {
+				if j == i {
+					t.SetLabel("✓")
+				} else {
+					t.SetLabel("")
+				}
+			}
+		})
+		ticks = append(ticks, b)
+		swatches.Append(b)
+	}
+	ticks[color].SetLabel("✓")
+	colorRow.Append(swatches)
+	card.Add(colorRow)
+	box.Append(card)
+	box.Append(status)
+
+	name0 := c.OwnName()
+	saveBtn := gtk.NewButtonWithLabel("Save")
+	saveBtn.AddCSSClass("chatot-primary-btn")
+	saveBtn.SetHExpand(true)
+	save := func() {
+		name := strings.TrimSpace(nameEntry.Text())
+		if name == "" {
+			status.SetText("The name can't be empty")
+			status.SetVisible(true)
+			return
+		}
+		about := strings.TrimSpace(aboutEntry.Text())
+		aboutChanged := aboutEntry.Sensitive() && about != about0
+		saveBtn.SetSensitive(false)
+		go func() {
+			var err error
+			what := ""
+			if name != name0 {
+				if err = c.SetOwnName(context.Background(), name); err != nil {
+					what = "change the name"
+				}
+			}
+			if err == nil && aboutChanged {
+				if err = c.SetOwnAbout(context.Background(), about); err != nil {
+					what = "change the About line"
+				}
+			}
+			glib.IdleAdd(func() {
+				saveBtn.SetSensitive(true)
+				if err != nil {
+					fail(what, err)
+					return
+				}
+				if name != meta.Name {
+					if err := am.RenameAccount(meta.ID, name); err != nil {
+						log.Printf("chatot: relabel account %q failed: %v", meta.ID, err)
+					}
+				}
+				if prefs.AccountColors == nil {
+					prefs.AccountColors = map[string]int{}
+				}
+				if prefs.AccountColors[meta.ID] != color || color != avatarColorIndex(meta.ID) {
+					prefs.AccountColors[meta.ID] = color
+				}
+				AccountColors = prefs.AccountColors
+				if onSettingsChanged != nil {
+					onSettingsChanged()
+				}
+				dialog.Close()
+				if onChanged != nil {
+					onChanged()
+				}
+			})
+		}()
+	}
 	saveBtn.ConnectClicked(save)
-	entry.ConnectActivate(save)
+	nameEntry.ConnectActivate(save)
+	aboutEntry.ConnectActivate(save)
 	box.Append(saveBtn)
 
 	dialog.SetChild(box)
 	dialog.Present()
-	entry.GrabFocus()
 }
 
 // confirmRemoveAccount asks before removing meta, then removes it off the main
@@ -423,4 +593,10 @@ func showRelinkDialog(parent *gtk.Window, am *client.AccountManager, id string, 
 
 	dialog.SetChild(box)
 	dialog.Present()
+}
+
+// ShowEditProfileDialog opens the Edit profile card for meta (the
+// screenshot harness's way in; the Accounts card's row menu is the user's).
+func ShowEditProfileDialog(parent *gtk.Window, am *client.AccountManager, meta client.AccountMeta, prefs *settings.Settings, onChanged, onSettingsChanged func()) {
+	showEditProfileDialog(parent, am, meta, prefs, onChanged, onSettingsChanged)
 }

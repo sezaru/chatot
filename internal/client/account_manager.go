@@ -876,6 +876,10 @@ func (m *AccountManager) ArchiveChat(ctx context.Context, jid string, archive bo
 	return m.active().ArchiveChat(ctx, jid, archive)
 }
 
+func (m *AccountManager) DeleteChat(ctx context.Context, jid string) error {
+	return m.active().DeleteChat(ctx, jid)
+}
+
 func (m *AccountManager) MarkChatUnread(ctx context.Context, jid string, unread bool) error {
 	return m.active().MarkChatUnread(ctx, jid, unread)
 }
@@ -959,6 +963,22 @@ func (m *AccountManager) GroupInfo(ctx context.Context, jid string) (*GroupInfo,
 func (m *AccountManager) OwnJID() string { return m.active().OwnJID() }
 
 func (m *AccountManager) OwnName() string { return m.active().OwnName() }
+
+func (m *AccountManager) OwnAbout(ctx context.Context) (string, error) {
+	return m.active().OwnAbout(ctx)
+}
+
+func (m *AccountManager) SetOwnName(ctx context.Context, name string) error {
+	return m.active().SetOwnName(ctx, name)
+}
+
+func (m *AccountManager) SetOwnAbout(ctx context.Context, about string) error {
+	return m.active().SetOwnAbout(ctx, about)
+}
+
+func (m *AccountManager) SetOwnPicture(ctx context.Context, jpeg []byte) error {
+	return m.active().SetOwnPicture(ctx, jpeg)
+}
 
 // displayName is the label the UI shows for a: the user-given roster label
 // when there is one, else the account's WhatsApp profile name, else its

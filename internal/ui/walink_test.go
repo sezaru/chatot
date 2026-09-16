@@ -35,3 +35,28 @@ func TestJIDFallbackName(t *testing.T) {
 		t.Errorf("lid JID = %q", got)
 	}
 }
+
+func TestParseWhatsAppInvite(t *testing.T) {
+	cases := []struct {
+		in   string
+		code string
+		ok   bool
+	}{
+		{"whatsapp://chat/?code=DICuQsSTfcxDom8gd0wIZg", "DICuQsSTfcxDom8gd0wIZg", true},
+		{"whatsapp://chat?code=DICuQsSTfcxDom8gd0wIZg", "DICuQsSTfcxDom8gd0wIZg", true},
+		{"whatsapp:chat?code=DICuQsSTfcxDom8gd0wIZg", "DICuQsSTfcxDom8gd0wIZg", true},
+		{"https://chat.whatsapp.com/DICuQsSTfcxDom8gd0wIZg", "DICuQsSTfcxDom8gd0wIZg", true},
+		{"https://chat.whatsapp.com/DICuQsSTfcxDom8gd0wIZg/", "DICuQsSTfcxDom8gd0wIZg", true},
+		{"whatsapp://chat?code=", "", false},
+		{"whatsapp://send?phone=15551234567", "", false},
+		{"https://wa.me/15551234567", "", false},
+		{"https://chat.whatsapp.com/", "", false},
+		{"", "", false},
+	}
+	for _, c := range cases {
+		code, ok := ParseWhatsAppInvite(c.in)
+		if code != c.code || ok != c.ok {
+			t.Errorf("ParseWhatsAppInvite(%q) = %q, %v; want %q, %v", c.in, code, ok, c.code, c.ok)
+		}
+	}
+}

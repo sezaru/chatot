@@ -377,6 +377,14 @@ func prefNotifications(dialog *cardDialog, s *settings.Settings, onChange func(s
 			onChange(*s)
 		})
 	alerts.Add(perAccount)
+	status, _ := newSwitchRow("Status notifications",
+		"Notify when a contact posts a status update",
+		s.StatusNotifications, func(on bool) {
+			s.StatusNotifications = on
+			StatusNotifications = on
+			onChange(*s)
+		})
+	alerts.Add(status)
 
 	// The chime itself: pick any audio file (MP3 included; it is transcoded
 	// before GTK sees it), hear it, or go back to the default.
