@@ -302,7 +302,15 @@ func activate(app *adw.Application, c client.Client) {
 	// while the thread is showing, and the collapsed layout goes to 360.
 	rightPane.SetHhomogeneous(false)
 	rightPane.AddNamed(contentBox, "chat")
-	showChat := func() { rightPane.SetVisibleChildName("chat") }
+	// The strip above the pane (built further down) follows the pane: the
+	// plain header the tabs and a deleted chat leave behind would otherwise
+	// stay over the next chat opened, hiding its identity and ⋮.
+	contentHeader := gtk.NewStack()
+	showChat := func() {
+		chatList.HideStatus()
+		rightPane.SetVisibleChildName("chat")
+		contentHeader.SetVisibleChildName("chat")
+	}
 
 	starredPage := ui.NewStarredPage(c, showChat, func(jid string) {
 		showChat()
@@ -354,7 +362,6 @@ func activate(app *adw.Application, c client.Client) {
 	// On the Status, Channels and Communities tabs the mockup drops the chat
 	// identity and its ⋮ from that strip, leaving the window controls; the
 	// tabs' own panes carry their headers below it.
-	contentHeader := gtk.NewStack()
 	contentHeader.AddNamed(conversation.Header(), "chat")
 	plainHeader := ui.NewPlainHeader(showList)
 	contentHeader.AddNamed(plainHeader, "plain")

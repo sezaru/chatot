@@ -515,12 +515,21 @@ func (cl *ChatList) openStatus(jid string) {
 
 // closeStatus leaves the viewer for the tab's empty pane.
 func (cl *ChatList) closeStatus() {
-	cl.statusPane.leave()
-	// Nothing left to resume: a reply field losing focus after the close
-	// must not restart the clock on a hidden pane.
-	cl.statusPane.current.Items = nil
+	cl.hideStatus()
 	cl.showPane("tabempty")
 }
+
+// hideStatus leaves the viewer: the clock and clip stop and the card is
+// dropped. Nothing is left to resume: a reply field losing focus after
+// the close must not restart the clock on a hidden pane.
+func (cl *ChatList) hideStatus() {
+	cl.statusPane.leave()
+	cl.statusPane.current.Items = nil
+}
+
+// HideStatus is hideStatus for main.go, whose chat opener switches the
+// content pane without going through showPane.
+func (cl *ChatList) HideStatus() { cl.hideStatus() }
 
 // showTextStatusDialog posts a text update.
 func (cl *ChatList) showTextStatusDialog() {
@@ -641,7 +650,11 @@ type StatusPane struct {
 	pausedChip *gtk.Label
 	userPaused bool
 	typing     bool
-	elapsed    time.Duration
+	// hidden holds the update while the pane is off screen (the collapsed
+	// layout's ← back to the list keeps the page, just unmapped), so no
+	// clip plays unseen.
+	hidden  bool
+	elapsed time.Duration
 
 	// video is the clip on show, when the update is one; videoUnwatch
 	// drops its watcher.
@@ -665,6 +678,14 @@ func newStatusPane(cl *ChatList) *StatusPane {
 	root.SetVExpand(true)
 	root.SetHExpand(true)
 	p := &StatusPane{Box: root, cl: cl}
+	root.ConnectUnmap(func() {
+		p.hidden = true
+		p.applyPause()
+	})
+	root.ConnectMap(func() {
+		p.hidden = false
+		p.applyPause()
+	})
 
 	top := gtk.NewBox(gtk.OrientationVertical, 10)
 	top.AddCSSClass("chatot-status-top")
@@ -942,7 +963,7 @@ func statusProgress(elapsed time.Duration) float64 {
 
 // paused reports whether the clock is held, by the user or by a reply
 // being typed.
-func (p *StatusPane) paused() bool { return p.userPaused || p.typing }
+func (p *StatusPane) paused() bool { return p.userPaused || p.typing || p.hidden }
 
 // setUserPaused is the pause button and the card click.
 func (p *StatusPane) setUserPaused(on bool) {

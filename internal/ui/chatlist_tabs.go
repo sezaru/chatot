@@ -136,6 +136,12 @@ func (cl *ChatList) setEmptyPane(tab string) {
 // showPane asks main.go to show one of the content pane's pages: "chat",
 // "tabempty", "status", "channel" or "community".
 func (cl *ChatList) showPane(name string) {
+	// Any other page over the viewer silences it: a GtkVideo keeps
+	// playing on a hidden stack page, so a tab switch or an opened chat
+	// would leave the clip running behind the new pane.
+	if name != "status" {
+		cl.hideStatus()
+	}
 	if cl.onShowPane != nil {
 		cl.onShowPane(name)
 	}
