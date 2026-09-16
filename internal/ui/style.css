@@ -5043,3 +5043,41 @@ button.chatot-reactor-btn {
 	font-size: 11px;
 	opacity: 0.45;
 }
+
+/* Edit profile: the eight badge colours as small round swatches; the
+   picked one carries a tick. */
+.chatot-color-swatch {
+	min-width: 24px;
+	min-height: 24px;
+	padding: 0;
+	border-radius: 9999px;
+	color: white;
+	font-size: 12px;
+	font-weight: 700;
+}
+
+/* Sidebar mini-player: the voice note that kept playing after its chat was
+   left, pinned under the chat list (WhatsApp Web's audio bar). */
+.chatot-miniplayer {
+	padding: 8px 12px;
+	background-color: @chatot_surface;
+	border-top: 1px solid @chatot_hairline;
+}
+
+.chatot-miniplayer-title {
+	font-size: 12.5px;
+	font-weight: 600;
+}
+
+button.chatot-miniplayer-close {
+	min-width: 24px;
+	min-height: 24px;
+	padding: 0;
+	border-radius: 999px;
+	font-size: 12px;
+	opacity: 0.6;
+}
+
+button.chatot-miniplayer-close:hover {
+	opacity: 1;
+}

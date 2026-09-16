@@ -884,3 +884,10 @@ func (cv *ConversationView) MeasureRows() []string {
 	}
 	return out
 }
+
+// OpenNowPlaying is the click on the mini-player's title, for the
+// miniplayer shot hook: back to the note in its chat.
+func (cl *ChatList) OpenNowPlaying() { cl.miniPlayer.open() }
+
+// ActualSize presses the viewer's 1:1, for the viewer shot hook.
+func (v *AttachmentViewer) ActualSize() { v.setActualSize() }

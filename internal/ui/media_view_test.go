@@ -200,6 +200,7 @@ func TestNextZoomStepSnapsToDesignSteps(t *testing.T) {
 		{1.7, 1, 2},    // between steps → the step above
 		{1.7, -1, 1.5}, // between steps → the step below
 		{5, 1, 5},      // at the ceiling stays
+		{7, 1, 7},      // past it (1:1 on a big picture) stays too
 		{1, -1, 1},     // at Fit stays
 		{1.004, -1, 1}, // rounding noise counts as Fit
 		{2.004, 1, 3},  // rounding noise counts as the step

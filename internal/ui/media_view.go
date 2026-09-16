@@ -44,8 +44,9 @@ type mediaView struct {
 	Filename     string
 	// FromMe picks the outgoing-bubble colours for inline players.
 	FromMe bool
-	// MsgID and ChatJID name the message, for the voice hooks below.
-	MsgID, ChatJID string
+	// MsgID and ChatJID name the message, for the voice hooks below;
+	// FromJID is its sender, for the mini-player's title.
+	MsgID, ChatJID, FromJID string
 	// Played is the message's listened-to flag (an incoming voice note
 	// draws blue once set); PlayPosMS where its playback last stopped.
 	Played    bool
@@ -187,7 +188,7 @@ func mediaVM(m client.Message) mediaView {
 		IsMedia: true, Kind: a.Kind, Chip: mediaChip(a), Caption: caption,
 		IsGIF: a.IsGIF, ViewOnce: a.ViewOnce, Viewed: a.Viewed,
 		Size: a.Size, DurationSecs: a.DurationSecs, FromMe: m.FromMe,
-		MsgID: m.ID, ChatJID: m.ChatJID, Played: m.Played, PlayPosMS: a.PlayPosMS,
+		MsgID: m.ID, ChatJID: m.ChatJID, FromJID: m.FromJID, Played: m.Played, PlayPosMS: a.PlayPosMS,
 		TS: m.TS, Transcript: a.Transcript,
 	}
 	// A document's own name belongs in the title, not repeated in the meta

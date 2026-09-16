@@ -335,7 +335,7 @@ func sharedVoicePlayer(path, mime string, seconds int) *mediaPlayer {
 	// hoard streams.
 	if len(voicePlayers) >= voicePlayersCap {
 		for k, old := range voicePlayers {
-			if !old.Playing() {
+			if !old.Playing() && (nowPlaying == nil || nowPlaying.p != old) {
 				delete(voicePlayers, k)
 				forgetSpeedPlayer(old)
 			}
@@ -352,13 +352,6 @@ func sharedVoicePlayer(path, mime string, seconds int) *mediaPlayer {
 
 // voicePlayersCap is how many idle in-chat players are kept around.
 const voicePlayersCap = 24
-
-// pauseVoicePlayers stops every in-chat player (a chat switch).
-func pauseVoicePlayers() {
-	for _, p := range voicePlayers {
-		p.Pause()
-	}
-}
 
 // anyVoicePlaying reports whether a note is playing in the chat right now,
 // which is how a run started by itself knows the reader moved on.

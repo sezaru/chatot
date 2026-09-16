@@ -420,6 +420,7 @@ type ConversationView struct {
 	onShowMedia  func(jid string)
 	onExportChat func(jid string)
 	onClearChat  func(jid string)
+	onDeleteChat func(jid string)
 
 	menuBtn *gtk.Button
 
@@ -525,6 +526,10 @@ func (cv *ConversationView) OnExportRequested(f func(jid string)) { cv.onExportC
 // OnClearRequested registers f to be called when the user picks "Clear
 // chat…" from the header menu; STUBBED until F44.
 func (cv *ConversationView) OnClearRequested(f func(jid string)) { cv.onClearChat = f }
+
+// OnDeleteChatRequested registers f to be called when the user picks "Delete
+// chat…" from the header menu.
+func (cv *ConversationView) OnDeleteChatRequested(f func(jid string)) { cv.onDeleteChat = f }
 
 // OnUnreadSeen registers the callback that marks a chat read once its
 // unread pill has been looked at (a message that arrived in the
@@ -1018,8 +1023,8 @@ func (cv *ConversationView) Load(jid string) {
 	if cv.jid != jid {
 		cv.closeSearchBar()
 		cv.unreadAnchor = ""
-		// A voice note playing in the chat being left stops.
-		pauseVoicePlayers()
+		// A voice note playing in the chat being left plays on: the
+		// sidebar's mini-player takes it over (see miniPlayer).
 	}
 	cv.jid = jid
 	cv.pendingJump = ""
@@ -2117,6 +2122,10 @@ type bubbleHooks struct {
 	// onJumpTo scrolls the thread to msgID (the message a quote answers);
 	// nil leaves the quote inert.
 	onJumpTo func(msgID string)
+	// onOpenSender opens the contact card of a group message's sender (a
+	// click on the avatar or the name above the bubble); nil leaves them
+	// inert.
+	onOpenSender func(jid, name string)
 	// reactorName names a reaction's sender for the pill's tooltip and
 	// list ("You" for our own); nil prints the bare JID.
 	reactorName func(jid string) string
@@ -2225,6 +2234,7 @@ func (cv *ConversationView) hooks() bubbleHooks {
 		onOpenViewer: cv.onOpenViewer, onLocalPath: func(id, path string) { cv.setLocalPath(id, path) }, names: cv.mentionName, avatars: cv.avatarCache,
 		avatarGen: func(jid string) int { return cv.avatarGens[jid] },
 		onRetry:   cv.retrySend, reactorName: cv.senderName, onJumpTo: cv.jumpToQuoted,
+		onOpenSender:     cv.showSenderInfo,
 		onFetchThumbnail: cv.fetchThumbnail,
 		voice: voiceHooks{
 			onPlay: cv.voicePlayed, onStop: cv.voiceStopped, onEnded: cv.voiceEnded,
@@ -2238,11 +2248,27 @@ func (cv *ConversationView) hooks() bubbleHooks {
 	}
 }
 
-// voicePlayed marks the voice note msgID as listened to the moment it
+// voicePlayed marks the voice note mv as listened to the moment it
 // starts: the row turns blue at once, the store and (receipts allowing) the
 // sender hear of it in the background. Our own notes and ones already
-// played need nothing. Must run on the GTK main loop.
-func (cv *ConversationView) voicePlayed(msgID string) {
+// played need nothing. A note in a chat other than the one showing (a run
+// carrying on from the mini-player) has no row; the store and the sender
+// still hear of it. Must run on the GTK main loop.
+func (cv *ConversationView) voicePlayed(mv mediaView) {
+	msgID := mv.MsgID
+	if mv.ChatJID != cv.jid {
+		if mv.FromMe || mv.Played {
+			return
+		}
+		trace(1, "voice played (background): %s", msgID)
+		c, jid := cv.c, mv.ChatJID
+		go func() {
+			if err := c.MarkPlayed(context.Background(), jid, msgID, SendReadReceipts); err != nil {
+				log.Printf("chatot: mark played failed: %v", err)
+			}
+		}()
+		return
+	}
 	pos := cv.positionOf(msgID)
 	if pos < 0 {
 		return
@@ -2269,11 +2295,23 @@ func (cv *ConversationView) voicePlayed(msgID string) {
 	}()
 }
 
-// voiceStopped remembers where msgID's playback stopped (0 once it played
+// voiceStopped remembers where mv's playback stopped (0 once it played
 // through), in the view's copy and the store, so the next play resumes
 // there. The row is not rebuilt: the shared player already sits at that
-// position. Must run on the GTK main loop.
-func (cv *ConversationView) voiceStopped(msgID string, ms int) {
+// position. A note in another chat (paused from the mini-player) only
+// has the store to remember it. Must run on the GTK main loop.
+func (cv *ConversationView) voiceStopped(mv mediaView, ms int) {
+	msgID := mv.MsgID
+	if mv.ChatJID != cv.jid {
+		trace(1, "voice stopped (background): %s at %dms", msgID, ms)
+		c, jid := cv.c, mv.ChatJID
+		go func() {
+			if err := c.SetPlayPosition(jid, msgID, ms); err != nil {
+				log.Printf("chatot: save play position failed: %v", err)
+			}
+		}()
+		return
+	}
 	pos := cv.positionOf(msgID)
 	if pos < 0 {
 		return
@@ -2297,11 +2335,23 @@ func (cv *ConversationView) voiceStopped(msgID string, ms int) {
 }
 
 // voiceEnded plays on into the next voice note when one directly follows
-// msgID (WhatsApp keeps a run of notes going until something else comes
-// between), fetching it first when it is not in the cache. Must run on the
-// GTK main loop.
-func (cv *ConversationView) voiceEnded(msgID string) {
-	next, ok := nextVoiceMessage(cv.Messages(), msgID)
+// mv (WhatsApp keeps a run of notes going until something else comes
+// between), fetching it first when it is not in the cache. A run playing
+// on from the mini-player, with another chat showing, carries on through
+// the notes already in the cache on its chat's newest page; one that
+// would need a download ends there. Must run on the GTK main loop.
+func (cv *ConversationView) voiceEnded(mv mediaView) {
+	msgID := mv.MsgID
+	background := mv.ChatJID != cv.jid
+	msgs := cv.Messages()
+	if background {
+		var err error
+		if msgs, err = cv.c.Messages(mv.ChatJID, conversationPageSize); err != nil {
+			log.Printf("chatot: voice chain in %s: %v", mv.ChatJID, err)
+			return
+		}
+	}
+	next, ok := nextVoiceMessage(msgs, msgID)
 	if !ok {
 		return
 	}
@@ -2312,6 +2362,10 @@ func (cv *ConversationView) voiceEnded(msgID string) {
 		trace(1, "voice chain: %s -> %s", msgID, next.ID)
 		playVoice(mv, mv.voice)
 	case voiceChainFetch:
+		if background {
+			trace(1, "voice chain: %s -> %s needs a download; the run ends", msgID, next.ID)
+			return
+		}
 		trace(1, "voice chain: %s -> %s (fetching)", msgID, next.ID)
 		cv.fetchAndPlayVoice(next)
 	}
@@ -2502,6 +2556,9 @@ func (h bubbleHooks) menuItemsFor(msg client.Message, canEdit, canDelete bool) [
 		if isStickerMessage(msg) {
 			actions.AddToStickers = func() { h.addToStickers(msg) }
 		}
+		if needsDownload(msg) {
+			actions.Download = func() { h.downloadAttachment(msg) }
+		}
 	}
 	actions.Info = func() { showMessageInfoDialog(h.window, msg) }
 	if canDelete && h.onDelete != nil {
@@ -2512,6 +2569,24 @@ func (h bubbleHooks) menuItemsFor(msg client.Message, canEdit, canDelete bool) [
 		items = withoutMenuItem(items, "Edit message")
 	}
 	return items
+}
+
+// downloadAttachment fetches msg's attachment off the main loop (the menu's
+// Download row; the bubble's own tap does the same through downloadAndSwap)
+// and records the path, which rebuilds the row in its downloaded state.
+func (h bubbleHooks) downloadAttachment(msg client.Message) {
+	go func() {
+		path, err := h.c.DownloadMedia(context.Background(), msg.ID)
+		glib.IdleAdd(func() {
+			if err != nil {
+				showToast(h.toasts, "Download failed: "+err.Error())
+				return
+			}
+			if h.onLocalPath != nil {
+				h.onLocalPath(msg.ID, path)
+			}
+		})
+	}()
 }
 
 // The hover affordances follow WhatsApp's own layout rather than the design's

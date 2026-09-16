@@ -475,6 +475,7 @@ func activate(app *adw.Application, c client.Client) {
 	}
 	chatList.OnChatSelected(openChat)
 	chatList.OnMessageSelected(openChatAt)
+	chatList.OnNowPlayingOpen(openChatAt)
 	conversation.OnStopLiveRequested(composer.StopLiveLocation)
 
 	split.SetSidebar(sidebar)
@@ -606,6 +607,15 @@ func activate(app *adw.Application, c client.Client) {
 	conversation.OnClearRequested(func(jid string) {
 		ui.ShowClearChatDialog(&win.Window, c, conversation, jid, chatNameFor(c, jid))
 	})
+	deleteChat := func(jid string) {
+		ui.ShowDeleteChatDialog(&win.Window, c, conversation, jid, chatNameFor(c, jid), func() {
+			// The open chat is gone: the tab's empty pane takes its place.
+			rightPane.SetVisibleChildName("tabempty")
+			contentHeader.SetVisibleChildName("plain")
+		})
+	}
+	conversation.OnDeleteChatRequested(deleteChat)
+	chatList.OnDeleteChatRequested(func(chat client.Chat) { deleteChat(chat.JID) })
 
 	// "is-active" tracks OS-level window focus; report available/unavailable
 	// so contacts see accurate presence rather than a permanent "online".
@@ -973,6 +983,13 @@ func activate(app *adw.Application, c client.Client) {
 		}()
 	}
 	openLink = func(uri string) {
+		if code, ok := ui.ParseWhatsAppInvite(uri); ok {
+			// A group invite: the Join card, filled in, asks before
+			// joining, as WhatsApp's own invite page does.
+			win.Present()
+			chatList.ShowJoinInviteWith(code)
+			return
+		}
 		phone, text, ok := ui.ParseWhatsAppLink(uri)
 		if !ok {
 			log.Printf("chatot: not a WhatsApp chat link: %q", uri)
@@ -998,7 +1015,7 @@ func activate(app *adw.Application, c client.Client) {
 			fmt.Sscanf(v, "%d", &delay)
 		}
 		glib.TimeoutAdd(delay, func() bool {
-			shotHook(state, msgIdx, shotDeps{chatList: chatList, conversation: conversation, composer: composer, viewer: viewer, stack: stack, linking: linking, sync: syncView, win: &win.Window, c: c, am: am, prefs: &prefs, toasts: toastOverlay, saveSettings: saveSettings})
+			shotHook(state, msgIdx, shotDeps{chatList: chatList, conversation: conversation, composer: composer, viewer: viewer, stack: stack, linking: linking, sync: syncView, win: &win.Window, c: c, am: am, prefs: &prefs, toasts: toastOverlay, saveSettings: saveSettings, openChat: openChat})
 			return false
 		})
 	}
@@ -1033,6 +1050,7 @@ func applySettings(s settings.Settings) {
 	ui.LocationAccess = s.LocationAccess
 	ui.NotificationsEnabled = s.ShowNotifications
 	ui.NotificationsPerAccount = s.NotificationsPerAccount
+	ui.StatusNotifications = s.StatusNotifications
 	ui.NotificationSound = s.NotificationSound
 	ui.NotificationSoundFile = s.NotificationSoundFile
 	ui.NotificationText = s.NotificationText
@@ -1043,6 +1061,7 @@ func applySettings(s settings.Settings) {
 	ui.TranscriptsExpanded = s.TranscriptsExpanded
 	ui.TranscribeModel = s.TranscribeModel
 	ui.GIFService = s.GIFService
+	ui.AccountColors = s.AccountColors
 	ui.GIFAPIKey = s.GIFAPIKey
 	client.SetVerboseLogging(s.VerboseLogging)
 	ui.ApplyTheme(s.Theme)
@@ -1142,6 +1161,7 @@ type shotDeps struct {
 	prefs        *settings.Settings
 	toasts       *adw.ToastOverlay
 	saveSettings func()
+	openChat     func(jid string)
 }
 
 // logWideWidgets logs every descendant of w whose minimum width would not
@@ -1379,6 +1399,19 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		d.conversation.ShowHoverActions(msgIdx)
 	case "quotejump":
 		d.conversation.JumpToQuoted(msgIdx)
+	case "miniplayer":
+		// Plays the voice note at MSG, then opens ARG (Ada by default) so
+		// the note carries on in the sidebar's mini-player.
+		d.conversation.PlayVoiceAt(msgIdx, "")
+		other := arg
+		if other == "" {
+			other = "1234567890@s.whatsapp.net"
+		}
+		glib.TimeoutAdd(1200, func() bool { d.openChat(other); return false })
+		if os.Getenv("CHATOT_SHOT_ARG2") == "open" {
+			// Then the title's click: back to the note, flashed.
+			glib.TimeoutAdd(2400, func() bool { d.chatList.OpenNowPlaying(); return false })
+		}
 	case "voiceplay":
 		// ARG: "" plays, "pause:MS" pauses MS later, "resume:MS" starts
 		// as if it had stopped at MS before, "speed:MS" presses the speed
@@ -1717,7 +1750,7 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	case "viewer":
 		// Opens the attachment viewer on the message at CHATOT_SHOT_MSG;
 		// CHATOT_SHOT_ARG=info also opens the details sidebar, =menu the
-		// header's ⋯ menu.
+		// header's ⋯ menu, =actual presses the zoom bar's 1:1.
 		if m, ok := d.conversation.MessageAt(msgIdx); ok {
 			d.conversation.OpenViewer(m)
 			switch arg {
@@ -1725,6 +1758,8 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 				glib.TimeoutAdd(300, func() bool { d.viewer.ToggleDetails(); return false })
 			case "menu":
 				glib.TimeoutAdd(300, func() bool { d.viewer.PopupMenu(); return false })
+			case "actual":
+				glib.TimeoutAdd(1500, func() bool { d.viewer.ActualSize(); return false })
 			}
 		}
 	case "deletedialog":
@@ -1877,6 +1912,19 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	case "manage":
 		if d.am != nil {
 			ui.ShowManageAccountsDialog(d.win, d.am, d.prefs, refresh, d.saveSettings)
+		}
+	// The Edit profile card for the first account (CHATOT_SHOT_MSG picks
+	// another).
+	case "editprofile":
+		if d.am != nil {
+			accounts := d.am.Accounts()
+			row := msgIdx
+			if row < 0 || row >= len(accounts) {
+				row = 0
+			}
+			if len(accounts) > 0 {
+				ui.ShowEditProfileDialog(d.win, d.am, accounts[row], d.prefs, refresh, d.saveSettings)
+			}
 		}
 	// The Accounts card with one row's ⋮ open: CHATOT_SHOT_MSG picks the row.
 	// Relink only belongs there for an account that has lost its session.

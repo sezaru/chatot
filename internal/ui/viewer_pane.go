@@ -12,6 +12,7 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/cairo"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/gdkpixbuf/v2"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/graphene"
@@ -127,23 +128,26 @@ type AttachmentViewer struct {
 	detailsOn bool
 
 	// per-item state
-	player   *mediaPlayer
-	zoom     float64 // multiple of the fitted size; 1 = Fit
-	zoomLbl  *gtk.Label
-	fitBtn   *gtk.Button
-	pic      *gtk.Picture // photo/pdf page
-	picTex   *gdk.Texture // what pic shows at full size (see applyZoom)
-	anchor   zoomAnchor   // pending wheel-zoom scroll target (see zoomAt)
-	picW     int
-	picH     int
-	page     int
-	pages    int
-	pageLbl  *gtk.Label
-	pdfCache map[int]*gdk.Texture
-	mapZoom  int
-	mapView  *mapView
-	mapLbl   *gtk.Label
-	loading  bool
+	player *mediaPlayer
+	zoom   float64 // multiple of the fitted size; 1 = Fit
+	// actualBtn is the zoom bar's 1:1 (the picture's own pixels), lit
+	// like fitBtn when the zoom sits there.
+	actualBtn *gtk.Button
+	zoomLbl   *gtk.Label
+	fitBtn    *gtk.Button
+	pic       *gtk.Picture // photo/pdf page
+	picTex    *gdk.Texture // what pic shows at full size (see applyZoom)
+	anchor    zoomAnchor   // pending wheel-zoom scroll target (see zoomAt)
+	picW      int
+	picH      int
+	page      int
+	pages     int
+	pageLbl   *gtk.Label
+	pdfCache  map[int]*gdk.Texture
+	mapZoom   int
+	mapView   *mapView
+	mapLbl    *gtk.Label
+	loading   bool
 	// gen invalidates async work (downloads, page renders) from a previous
 	// item once the user has moved on.
 	gen int
@@ -472,6 +476,8 @@ func (v *AttachmentViewer) onKey(keyval uint, state gdk.ModifierType) bool {
 		v.zoomBy(-1)
 	case gdk.KEY_0, gdk.KEY_KP_0:
 		v.setZoom(1)
+	case gdk.KEY_1, gdk.KEY_KP_1:
+		v.setActualSize()
 	case gdk.KEY_space:
 		if v.player != nil {
 			v.player.Toggle()
@@ -650,7 +656,7 @@ func (v *AttachmentViewer) show(i int) {
 	case !local:
 		v.stage.SetChild(v.fetchStage(m, kind))
 	case kind == "photo":
-		v.stage.SetChild(v.photoStage(path))
+		v.stage.SetChild(v.photoStage(m, path))
 		v.bottom.Append(v.zoomBar(false))
 	case kind == "video" || kind == "gif":
 		v.player = newMediaPlayer(path, m.Attachment.DurationSecs)
@@ -825,16 +831,52 @@ func (v *AttachmentViewer) download(m client.Message, col *gtk.Box, disc *gtk.Bu
 }
 
 // photoStage is the picture on the dark stage, fitted or zoomed (see
-// applyZoom) inside a scroller.
-func (v *AttachmentViewer) photoStage(path string) gtk.Widgetter {
-	texture, err := gdk.NewTextureFromFilename(path)
-	if err != nil {
-		return v.clamped(v.brokenCard("This picture can't be decoded here.", path), viewerCardW)
+// applyZoom) inside a scroller. The full-size decode runs off the main
+// loop (see loadPhoto): a multi-megapixel photo took long enough to decode
+// that opening the viewer, or stepping to the next picture, visibly
+// stalled. Until it lands the message's embedded thumbnail stands in,
+// stretched to the fitted size, as the video stage does with its poster.
+func (v *AttachmentViewer) photoStage(m client.Message, path string) gtk.Widgetter {
+	v.pic = gtk.NewPicture()
+	v.picTex = nil
+	v.picW, v.picH = 0, 0
+	if a := m.Attachment; a != nil && len(a.Thumbnail) > 0 {
+		if t, err := gdk.NewTextureFromBytes(glib.NewBytesWithGo(a.Thumbnail)); err == nil {
+			v.picW, v.picH = t.Width(), t.Height()
+			fit := v.fitScale()
+			v.pic.SetPaintable(scaledPaintable(t, float32(float64(v.picW)*fit), float32(float64(v.picH)*fit)))
+			v.pic.SetCanShrink(true)
+			v.picW, v.picH = 0, 0
+		}
 	}
-	v.pic = gtk.NewPictureForPaintable(texture)
-	v.picTex = texture
-	v.picW, v.picH = texture.Width(), texture.Height()
+	v.loadPhoto(path)
 	return v.pictureScroller()
+}
+
+// loadPhoto decodes path in the background and swaps the texture into the
+// stage once ready, unless the viewer has moved on (v.gen changed). The
+// pixbuf is decoded on the goroutine, as loadPictureAsync does; the
+// texture is made on the main loop, which only wraps the pixels.
+func (v *AttachmentViewer) loadPhoto(path string) {
+	gen := v.gen
+	go func() {
+		pb, err := gdkpixbuf.NewPixbufFromFile(path)
+		if err == nil {
+			pb = pb.ApplyEmbeddedOrientation()
+		}
+		glib.IdleAdd(func() {
+			if v.gen != gen || v.pic == nil {
+				return
+			}
+			if err != nil {
+				v.stage.SetChild(v.clamped(v.brokenCard("This picture can't be decoded here.", path), viewerCardW))
+				return
+			}
+			v.picTex = gdk.NewTextureForPixbuf(pb)
+			v.picW, v.picH = v.picTex.Width(), v.picTex.Height()
+			v.applyZoom()
+		})
+	}()
 }
 
 // posterFromFile replaces the stage's poster — the message's small embedded
@@ -1068,13 +1110,10 @@ func (v *AttachmentViewer) applyZoom() {
 		}
 		v.zoomLbl.SetLabel(strconv.Itoa(int(shown*100+0.5)) + "%")
 	}
-	if v.fitBtn != nil {
-		if atFit {
-			v.fitBtn.AddCSSClass("chatot-viewer-fit-on")
-		} else {
-			v.fitBtn.RemoveCSSClass("chatot-viewer-fit-on")
-		}
-	}
+	setOn(v.fitBtn, atFit)
+	// A picture too small to fill the stage is not upscaled, so Fit and
+	// 1:1 are the same size then and both light up.
+	setOn(v.actualBtn, math.Abs(fit*mul-1) < 0.005 || (atFit && fit > 1))
 }
 
 // picCursor shows an open hand over a zoomed picture, which the mouse can
@@ -1108,7 +1147,7 @@ func nextZoomStep(z float64, d int) float64 {
 				return s
 			}
 		}
-		return viewerZoomSteps[len(viewerZoomSteps)-1]
+		return math.Max(z, viewerZoomSteps[len(viewerZoomSteps)-1])
 	}
 	for i := len(viewerZoomSteps) - 1; i >= 0; i-- {
 		if viewerZoomSteps[i] < z-eps {
@@ -1123,9 +1162,49 @@ func (v *AttachmentViewer) setZoom(z float64) {
 	if v.pic == nil {
 		return
 	}
-	z = math.Max(viewerZoomSteps[0], math.Min(viewerZoomSteps[len(viewerZoomSteps)-1], z))
+	z = math.Max(viewerZoomSteps[0], math.Min(v.maxZoom(), z))
 	v.zoom = z
 	v.applyZoom()
+}
+
+// maxZoom is the largest zoom multiple: the design's last step, or the
+// picture's actual size when that lies beyond it (a big photo in a small
+// window), so 1:1 is always reachable.
+func (v *AttachmentViewer) maxZoom() float64 {
+	last := viewerZoomSteps[len(viewerZoomSteps)-1]
+	if v.picTex == nil {
+		return last
+	}
+	if fit := v.fitScale(); fit > 0 && fit < 1 {
+		return math.Max(last, 1/fit)
+	}
+	return last
+}
+
+// setActualSize shows the picture at 100%: one of its pixels per output
+// pixel. A picture smaller than the stage is already at that size fitted.
+func (v *AttachmentViewer) setActualSize() {
+	if v.pic == nil {
+		return
+	}
+	fit := v.fitScale()
+	if fit <= 0 || fit >= 1 {
+		v.setZoom(1)
+		return
+	}
+	v.setZoom(1 / fit)
+}
+
+// setOn lights b (a zoom-bar button) as the current zoom, or clears it.
+func setOn(b *gtk.Button, on bool) {
+	if b == nil {
+		return
+	}
+	if on {
+		b.AddCSSClass("chatot-viewer-fit-on")
+	} else {
+		b.RemoveCSSClass("chatot-viewer-fit-on")
+	}
 }
 
 // zoomBar is the design's − 13% ＋ Fit row, with ‹ 1 / 8 › in front of it
@@ -1179,6 +1258,13 @@ func (v *AttachmentViewer) zoomBar(pages bool) gtk.Widgetter {
 	v.fitBtn.SetMarginStart(4)
 	v.fitBtn.ConnectClicked(func() { v.setZoom(1) })
 	bar.Append(v.fitBtn)
+	v.actualBtn = gtk.NewButtonWithLabel("1:1")
+	v.actualBtn.AddCSSClass("chatot-viewer-zoombtn")
+	v.actualBtn.AddCSSClass("chatot-viewer-fitbtn")
+	v.actualBtn.SetTooltipText("Actual size · 1")
+	v.actualBtn.SetFocusOnClick(false)
+	v.actualBtn.ConnectClicked(func() { v.setActualSize() })
+	bar.Append(v.actualBtn)
 	// The stage's size is only known once mapped; refit then.
 	glib.IdleAdd(func() { v.applyZoom() })
 	return strip

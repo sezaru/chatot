@@ -7,13 +7,16 @@ import (
 )
 
 // voiceHooks is what a voice-note row tells its conversation about
-// playback, keyed by message id: it started (the note counts as played),
-// it stopped at a position (remembered for the next play), or it ran out
-// (the next voice note in the thread may follow). Any hook may be nil.
+// playback, with the note's view (its message and chat): it started (the
+// note counts as played), it stopped at a position (remembered for the
+// next play), or it ran out (the next voice note in the thread may
+// follow). The chat is named because a note keeps playing after the
+// reader leaves its chat (see miniPlayer), so the conversation may be
+// showing another one by then. Any hook may be nil.
 type voiceHooks struct {
-	onPlay  func(msgID string)
-	onStop  func(msgID string, ms int)
-	onEnded func(msgID string)
+	onPlay  func(mv mediaView)
+	onStop  func(mv mediaView, ms int)
+	onEnded func(mv mediaView)
 	// onTranscribe asks for the note's transcript: requested by a click
 	// (the text unfolds once it lands) or automatically (it stays folded).
 	// onCancelTranscribe takes that back while the run is under way.
@@ -34,6 +37,9 @@ type voiceHooks struct {
 func playVoice(mv mediaView, hooks voiceHooks) *mediaPlayer {
 	p := sharedVoicePlayer(mv.LocalPath, mv.MimeType, mv.DurationSecs)
 	bindVoiceHooks(p, mv, hooks)
+	// The note becomes the one the sidebar keeps at hand, and whatever
+	// else was playing stops: one audio at a time, as on WhatsApp.
+	setNowPlaying(p, mv)
 	if p.Playing() {
 		return p
 	}
@@ -42,7 +48,7 @@ func playVoice(mv mediaView, hooks voiceHooks) *mediaPlayer {
 	}
 	p.Toggle()
 	if hooks.onPlay != nil {
-		hooks.onPlay(mv.MsgID)
+		hooks.onPlay(mv)
 	}
 	return p
 }
@@ -51,18 +57,22 @@ func playVoice(mv mediaView, hooks voiceHooks) *mediaPlayer {
 // outlives its row (it is shared across rebuilds), so this is redone by
 // whoever touches it; the closures only ever name the same message.
 func bindVoiceHooks(p *mediaPlayer, mv mediaView, hooks voiceHooks) {
-	id := mv.MsgID
 	p.onStop = func(secs float64) {
 		if hooks.onStop != nil {
-			hooks.onStop(id, int(secs*1000+0.5))
+			hooks.onStop(mv, int(secs*1000+0.5))
 		}
 	}
 	p.onEnded = func() {
 		if hooks.onStop != nil {
-			hooks.onStop(id, 0)
+			hooks.onStop(mv, 0)
 		}
 		if hooks.onEnded != nil {
-			hooks.onEnded(id)
+			hooks.onEnded(mv)
+		}
+		// Nothing followed (or the next note is still being fetched):
+		// the sidebar's mini-player has nothing left to hold.
+		if !p.Playing() {
+			clearNowPlaying(p)
 		}
 	}
 }

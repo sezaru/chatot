@@ -192,6 +192,10 @@ type ChatList struct {
 	onNewCommunity func()      // "New community" from the ＋ menu; STUBBED until F48
 	showArchived   bool        // toggled by the "Archived" button; see showChatInList
 	onStarred      func()
+	onDeleteChat   func(chat client.Chat)
+	// miniPlayer is the strip under the rows holding a voice note that
+	// plays on after its chat was left.
+	miniPlayer *miniPlayer
 	// merged shows every account's chats in one list (the mockup's 🗂 mode).
 	merged      bool
 	newsletters []client.Newsletter // channels backing the sidebar in channels mode
@@ -541,6 +545,8 @@ func NewChatList(c client.Client) *ChatList {
 	listStack.AddNamed(listScroller, "chats")
 	listStack.AddNamed(otherScroller, "other")
 	listCol.Append(listStack)
+	mini := newMiniPlayer(c)
+	listCol.Append(mini)
 
 	cl := &ChatList{
 		searchEntry: search,
@@ -557,6 +563,7 @@ func NewChatList(c client.Client) *ChatList {
 		accountName: accountName, accountStatus: accountStatus, accountBtn: accountBtn,
 		plusBtn: plusBtn, appMenuBtn: appMenuBtn, endControlsSlot: endControlsSlot, archiveT: archiveToggle,
 		plusPopover: plusPopover,
+		miniPlayer:  mini,
 		tab:         "chats",
 		discoverCat: "All",
 	}
@@ -1068,11 +1075,20 @@ func (cl *ChatList) reselectRow() {
 // calls it so a chat opened from a notification or a search hit is
 // highlighted like one opened by a click.
 func (cl *ChatList) SetSelected(jid string) {
+	// Every path that opens a chat lands here (a row click sets
+	// selectedJID itself first, so this runs before the early return).
+	cl.miniPlayer.SetCurrentChat(jid)
 	if cl.selectedJID == jid {
 		return
 	}
 	cl.selectedJID = jid
 	cl.reselectRow()
+}
+
+// OnNowPlayingOpen sets what a click on the mini-player's title does:
+// open the note's chat at the note.
+func (cl *ChatList) OnNowPlayingOpen(f func(chatJID, msgID string)) {
+	cl.miniPlayer.onOpen = f
 }
 
 // listEmptyState is the mockup's empty chat list: a line naming why nothing
@@ -1401,8 +1417,16 @@ func (cl *ChatList) rowMenuItems(chat client.Chat) []menuItem {
 	if cl.rowMenu != nil {
 		return cl.rowMenu(chat)
 	}
-	return chatRowMenuItemsFor(cl.c, chat, cl.window)
+	var del func()
+	if cl.onDeleteChat != nil {
+		del = func() { cl.onDeleteChat(chat) }
+	}
+	return chatRowMenuItemsFor(cl.c, chat, cl.window, del)
 }
+
+// OnDeleteChatRequested registers f for the row menu's "Delete chat"; unset,
+// the row is inert.
+func (cl *ChatList) OnDeleteChatRequested(f func(chat client.Chat)) { cl.onDeleteChat = f }
 
 // SetRowMenu supplies the rows of every chat row's right-click menu.
 func (cl *ChatList) SetRowMenu(f func(chat client.Chat) []menuItem) { cl.rowMenu = f }
@@ -1491,10 +1515,10 @@ func showChatContextMenu(host gtk.Widgetter, row *gtk.Box, items []menuItem, x, 
 // mockup lists the account's labels inline under a "Lists" caption rather
 // than behind a "Labels ▸" submenu, so the checklist is built here.
 //
-// "Delete chat" has no client method behind it yet, so it renders insensitive.
-// Blocking is not in this menu: the mockup puts it in the conversation
-// header's ⋮ menu, which now offers it.
-func chatRowMenuItemsFor(c client.Client, chat client.Chat, window *gtk.Window) []menuItem {
+// "Delete chat" asks for confirmation through onDelete (nil renders it
+// insensitive). Blocking is not in this menu: the mockup puts it in the
+// conversation header's ⋮ menu, which now offers it.
+func chatRowMenuItemsFor(c client.Client, chat client.Chat, window *gtk.Window, onDelete func()) []menuItem {
 	run := func(name string, do func(ctx context.Context) error) func() {
 		return func() {
 			go func() {
@@ -1514,6 +1538,7 @@ func chatRowMenuItemsFor(c client.Client, chat client.Chat, window *gtk.Window) 
 		Archive: run("archive", func(ctx context.Context) error {
 			return c.ArchiveChat(ctx, chat.JID, !chat.Archived)
 		}),
+		Delete:  onDelete,
 		NewList: func() { showCreateLabelDialog(window, c, nil) },
 		ToggleLabel: func(id string) {
 			applied := chatHasLabel(c, chat.JID, id)
@@ -2141,7 +2166,14 @@ func contactInitial(name string) string {
 
 // showJoinGroupDialog opens a modal to join a group by pasting an invite link
 // or bare code, then opens the joined group's chat via onSelect.
-func (cl *ChatList) showJoinGroupDialog() {
+func (cl *ChatList) showJoinGroupDialog() { cl.showJoinGroupDialogWith("") }
+
+// ShowJoinInviteWith opens the Join group card with code (from a
+// whatsapp://chat or chat.whatsapp.com link) filled in, so the user only
+// confirms.
+func (cl *ChatList) ShowJoinInviteWith(code string) { cl.showJoinGroupDialogWith(code) }
+
+func (cl *ChatList) showJoinGroupDialogWith(prefill string) {
 	dialog := newCardDialog()
 	dialog.SetTitle("Join group")
 	if cl.window != nil {
@@ -2169,6 +2201,7 @@ func (cl *ChatList) showJoinGroupDialog() {
 	fieldRow.Append(settingsRowBody("Invite link", "chat.whatsapp.com/…"))
 	entry := gtk.NewEntry()
 	entry.SetPlaceholderText("Link or code")
+	entry.SetText(prefill)
 	entry.SetVAlign(gtk.AlignCenter)
 	entry.SetSizeRequest(150, -1)
 	entry.AddCSSClass("chatot-card-entry")
