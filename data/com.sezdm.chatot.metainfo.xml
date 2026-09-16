@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.16.2-beta" date="2026-09-16">
+      <description>
+        <p>The About card shows the running release again: the version is now stamped into the build from the metainfo instead of being kept by hand, so it can no longer fall behind.</p>
+      </description>
+    </release>
     <release version="0.16.1-beta" date="2026-09-16">
       <description>
         <p>The chat header, with its name and ⋮ menu, comes back after a chat is deleted instead of staying hidden until the Chats tab is clicked. A status video no longer keeps playing behind another tab, an opened chat, or the narrow layout's list; it holds while off screen and resumes when the viewer returns.</p>
