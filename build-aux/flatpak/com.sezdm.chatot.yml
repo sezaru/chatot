@@ -8,9 +8,8 @@
 #
 # The build is offline: Go modules come from go.mod.yml + modules.txt
 # (regenerate both with `go run github.com/dennwc/flatpak-go-mod@latest -out build-aux/flatpak .`
-# whenever go.mod changes). The Flathub copy of this manifest is identical
-# except that the chatot module's source is a tagged git commit instead of
-# the checkout (see README, "Flatpak").
+# whenever go.mod changes). The release workflow builds this same manifest
+# into the bundles attached to each GitHub release.
 id: com.sezdm.chatot
 runtime: org.gnome.Platform
 runtime-version: '50'
@@ -30,9 +29,9 @@ finish-args:
   # source); clip and voice-note playback goes through GStreamer.
   - --socket=pulseaudio
   # Tray item (StatusNotifierItem) with unread count and Open/Quit. The item
-  # registers with the watcher under its unique bus name (Flathub never
-  # grants --own-name for org.kde.StatusNotifierItem-*); the failed request
-  # for the well-known name only logs.
+  # registers with the watcher under its unique bus name (sandboxed builds
+  # rarely get --own-name for org.kde.StatusNotifierItem-*); the failed
+  # request for the well-known name only logs.
   - --talk-name=org.kde.StatusNotifierWatcher
 
 build-options:

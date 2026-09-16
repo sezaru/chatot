@@ -1,104 +1,82 @@
 # chatot
 
-A native WhatsApp client for the desktop: GTK4 + libadwaita, talking to WhatsApp
-through [whatsmeow](https://github.com/tulir/whatsmeow) in-process. Unofficial,
-not affiliated with WhatsApp or Meta. Beta.
+A native WhatsApp client for the Linux desktop, built with GTK4 and
+libadwaita on top of [whatsmeow](https://github.com/tulir/whatsmeow). It
+links to your phone as a companion device, the way WhatsApp Web does, and
+keeps your chats, groups, communities, channels and status updates in one
+window.
 
-## Install (Nix)
+Chatot is unofficial. It is not affiliated with, endorsed by or supported
+by WhatsApp or Meta, and using an unofficial client may be against
+WhatsApp's terms of service. It is in beta.
 
-The flake builds chatot as a desktop app: the binary is wrapped with the
-GStreamer plugins, pixbuf loaders, ffmpeg/poppler/whisper.cpp and fonts it needs, and the
-package ships the `.desktop` entry and icons for app id `com.sezdm.chatot`.
+![A chat in chatot](data/screenshots/chat.png)
+
+## What it does
+
+- **Messaging**: text, replies, reactions, forwards, edits, delete for
+  everyone, mentions, polls, contact cards and business quick replies.
+- **Media**: photos, videos, albums, documents, stickers and GIFs, with an
+  in-app viewer, previews for media that is not downloaded yet and
+  on-demand download.
+- **Voice notes**: record, play at 1x/1.5x/2x, and transcribe locally with
+  whisper.cpp.
+- **Locations**: send a place from an inline map, share a live location and
+  follow someone else's.
+- **Groups, communities, channels and status**: create and manage groups,
+  browse communities and channels, view and post status updates.
+- **Organisation**: full-text search, starred messages, pins, archive,
+  mutes, labels, disappearing messages, clear or delete chats and blocked
+  contacts.
+- **Profile**: change your name, About line, profile picture and badge
+  colour from the app.
+- **Several accounts** in one window, each with its own badge.
+- **Desktop integration**: notifications with sound, a tray item with the
+  unread count, light and dark styles, chat wallpapers and shell theming.
+
+![The dark style](data/screenshots/chat-dark.png)
+
+## Install
+
+Every release on the [releases page](https://github.com/sezaru/chatot/releases)
+ships a Flatpak bundle and an AppImage for x86_64 and aarch64.
+
+**Flatpak bundle** (needs the GNOME 50 runtime, which `flatpak install`
+fetches from your configured remote if it is missing):
 
 ```sh
-# try it
-nix run github:sezdm/chatot
+flatpak install --user chatot-x86_64.flatpak
+flatpak run com.sezdm.chatot
+```
 
-# install into your profile (adds the launcher to your app grid)
-nix profile install github:sezdm/chatot
+**AppImage**:
 
-# from a checkout
-nix build .#chatot && ./result/bin/chatot
+```sh
+chmod +x chatot-x86_64.AppImage
+./chatot-x86_64.AppImage
+```
+
+The AppImage bundles its own Mesa, so outside NixOS it may fall back to
+software rendering.
+
+**Nix**: the flake builds chatot as a desktop app with everything it needs
+(GStreamer plugins, pixbuf loaders, ffmpeg, poppler, whisper.cpp, fonts)
+and installs the launcher and icons.
+
+```sh
+nix run github:sezaru/chatot
+nix profile install github:sezaru/chatot
 ```
 
 On NixOS or Home Manager, add the flake as an input and put
 `chatot.packages.${system}.chatot` in your package list.
 
-## Flatpak
-
-`build-aux/flatpak/com.sezdm.chatot.yml` builds chatot against the GNOME 50
-runtime with the Go SDK extension, bundling only what the runtime lacks
-(poppler for document previews, whisper.cpp for voice-note transcripts,
-JetBrains Mono). The build is offline:
-`build-aux/flatpak/go.mod.yml` and `modules.txt` pin every Go module. After
-changing `go.mod`, regenerate them with
-`go run github.com/dennwc/flatpak-go-mod@latest -out build-aux/flatpak .`
-(the tool renames its output out of a temporary vendor directory, so an
-output path on another filesystem fails).
-
-```sh
-# build and install into your user Flatpak installation
-flatpak run org.flatpak.Builder --force-clean --user --install \
-  --install-deps-from=flathub --ccache \
-  build-aux/flatpak/build build-aux/flatpak/com.sezdm.chatot.yml
-flatpak run com.sezdm.chatot
-
-# what Flathub checks
-flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest build-aux/flatpak/com.sezdm.chatot.yml
-flatpak run --command=flatpak-builder-lint org.flatpak.Builder appstream data/com.sezdm.chatot.metainfo.xml
-flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo build-aux/flatpak/repo
-```
-
-`build-aux/flatpak/flathub/` holds the Flathub copy of the manifest: the same
-file with the `chatot` module built from the tagged release commit and
-checker data on every source, plus links to `go.mod.yml` and `modules.txt`.
-To release, tag the commit and put its hash in that manifest. For the first
-submission, `build-aux/flatpak/flathub/push.sh "<message>"` pushes the
-directory to the `com.sezdm.chatot` branch of the flathub/flathub fork and
-prints the pull-request link; the PR text, the AI disclosure (facts in
-`docs/flathub-ai-disclosure-facts.md`) and review replies are written by
-hand, as Flathub's policy requires. After acceptance, updates are pull
-requests to `flathub/com.sezdm.chatot` bumping `tag` and `commit`.
-Screenshots referenced by the AppStream metadata live in `data/screenshots/`,
-captured from the fake account (`CHATOT_FAKE=1`).
-
-## Development
+## Building from source
 
 `direnv allow` (or `nix develop`) enters the devenv shell with the cgo GTK
-stack, Go and the mockup/capture tooling; `go run ./cmd/chatot` starts the
-app against your real account, `CHATOT_FAKE=1` against canned data. See
-`CLAUDE.md` for the mockup-driven workflow and `docs/mockup-parity-plan.md`
-for what has been built.
-
-## Notification sound
-
-Each desktop notification plays a short chime (Preferences › Notifications
-turns it off). The built-in one is a generic synthesized tone. To use your
-own, either pick a file under Preferences › Notifications › Sound file (MP3
-included; it is transcoded before GTK plays it), or drop a file named
-`notify.oga`, `notify.ogg`, `notify.opus`, `notify.flac`, `notify.wav`,
-`notify.mp3` or `notify.m4a` into `$XDG_CONFIG_HOME/chatot/` (usually
-`~/.config/chatot/`; for the Flatpak, `~/.var/app/com.sezdm.chatot/config/chatot/`).
-
-A package can ship its own default sound. With Nix:
-
-```nix
-chatot.override { notificationSound = ./my-tone.oga; }
-```
-
-That sets `CHATOT_NOTIFY_SOUND` in the wrapper to the file. Precedence, first
-wins: the file picked in Preferences, the drop-in in the config dir, the
-packaged `CHATOT_NOTIFY_SOUND` file, the built-in chime.
-
-## Chat wallpaper
-
-Preferences › Appearance › Chat wallpaper puts a picture of your own behind
-an open chat's messages, as WhatsApp Web's custom wallpaper does. The app
-keeps a copy under `$XDG_CONFIG_HOME/chatot/wallpaper/`, so the original can
-move afterwards; Reset returns to the plain surface. A chat can override
-that from its header ⋮ menu › Chat wallpaper…: the default, the plain
-background, or a picture of its own (kept under `wallpaper/chats/`, the
-choices in `chat-wallpapers.json`).
+stack, Go and the tooling. `go run ./cmd/chatot` starts the app against
+your real account; `CHATOT_FAKE=1 go run ./cmd/chatot` runs it on canned
+data. The Flatpak manifest lives in `build-aux/flatpak/`.
 
 ## License
 
