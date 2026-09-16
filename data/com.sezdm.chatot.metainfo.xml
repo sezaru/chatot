@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.16.3-beta" date="2026-09-16">
+      <description>
+        <p>A pasted link's preview card shows up as soon as the message is sent, instead of only after the chat is reopened.</p>
+      </description>
+    </release>
     <release version="0.16.2-beta" date="2026-09-16">
       <description>
         <p>The About card shows the running release again: the version is now stamped into the build from the metainfo instead of being kept by hand, so it can no longer fall behind.</p>
