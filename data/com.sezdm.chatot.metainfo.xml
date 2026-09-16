@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.16.0-beta" date="2026-09-16">
+      <description>
+        <p>A voice note or audio keeps playing when you move to another chat: a mini-player under the chat list holds it with play/pause, a seekable track and a stop button, and its name takes you back to the note. The accounts menu's Relabel became Edit profile, setting the WhatsApp name, About text, profile picture and the account's badge colour. Chats can be deleted (synced to the phone), media not yet fetched has a Download row in its menu, contact and group cards can open the picture, status updates notify under the poster's name with a switch to silence them, group invite links open the Join group dialog, and the viewer gained a 1:1 zoom and no longer lags when opening or stepping through photos.</p>
+      </description>
+    </release>
     <release version="0.15.0-beta" date="2026-09-12">
       <description>
         <p>Voice notes can be transcribed with a second, more accurate speech model: the download prompt offers whisper.cpp's Small (the default) and Large v3 Turbo side by side, with each one's download size, memory while transcribing, and speed, and Preferences → Network gained a Speech model row that opens the same prompt. Each model is downloaded once and both stay on disk, so switching back costs nothing. A model download that hits a passing server error is retried instead of failing.</p>
@@ -175,7 +180,7 @@
     </release>
     <release version="0.5.0-beta" date="2026-09-08">
       <description>
-        <p>First release on Flathub. Link previews under pasted links, sharp previews for pictures and clips that are not downloaded yet, and Copy image in the viewer. Voice notes remember their played state and position and advance to the next one. A reply quote jumps to the original message, and the chat list names who sent a group's last message. Sidebar refreshes and thread paging moved off the main loop, so long chats scroll smoothly.</p>
+        <p>First public release. Link previews under pasted links, sharp previews for pictures and clips that are not downloaded yet, and Copy image in the viewer. Voice notes remember their played state and position and advance to the next one. A reply quote jumps to the original message, and the chat list names who sent a group's last message. Sidebar refreshes and thread paging moved off the main loop, so long chats scroll smoothly.</p>
       </description>
     </release>
     <release version="0.4.0-beta" date="2026-09-06">
