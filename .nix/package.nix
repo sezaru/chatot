@@ -47,7 +47,12 @@
         ${webp-pixbuf-loader}/${gdk-pixbuf.moduleDir}/*.so \
         > $out
     '';
-  version = "0.16.1-beta";
+  # The newest <release> in the metainfo is the version: a release bumps that
+  # file (and the git tag) and nothing else. It is also stamped into the About
+  # card through ldflags below.
+  version = builtins.head (builtins.match
+    ".*<releases>[^<]*<release version=\"([^\"]+)\".*"
+    (builtins.readFile ../data/com.sezdm.chatot.metainfo.xml));
 in
   buildGoModule {
     pname = "chatot";
@@ -73,6 +78,7 @@ in
     # go-sqlite3 with FTS5 for message search; the fts5 amalgamation trips
     # -Werror=missing-braces under gcc.
     tags = ["sqlite_fts5"];
+    ldflags = ["-X chatot/internal/ui.aboutVersion=${version}"];
     env.CGO_CFLAGS = "-Wno-error=missing-braces";
 
     nativeBuildInputs = [

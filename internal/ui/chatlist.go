@@ -767,11 +767,18 @@ func showAboutDialog(parent *gtk.Window) {
 	dialog.Present()
 }
 
-// aboutVersion / aboutHomepage / aboutIssues are the About card's facts. The
-// version is the single place it is declared and carries the beta tag while
-// chatot is one; the mockup shows it beside the toolkit chatot is built on.
+// aboutVersion is stamped at build time from the newest <release> in
+// data/com.sezdm.chatot.metainfo.xml (see .nix/package.nix and
+// build-aux/flatpak/com.sezdm.chatot.yml) through
+//
+//	-ldflags "-X chatot/internal/ui.aboutVersion=..."
+//
+// so a release is declared in one place. A plain `go build` shows "dev".
+var aboutVersion = "dev"
+
+// aboutHomepage / aboutIssues are the About card's links; the mockup shows the
+// version beside the toolkit chatot is built on.
 const (
-	aboutVersion  = "0.15.0-beta"
 	aboutHomepage = "https://github.com/sezaru/chatot"
 	aboutIssues   = "https://github.com/sezaru/chatot/issues"
 )
