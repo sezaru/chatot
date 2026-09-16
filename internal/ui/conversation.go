@@ -1115,6 +1115,16 @@ func bubbleSig(m client.Message) string {
 			b.WriteByte(';')
 		}
 	}
+	if lp := m.LinkPreview; lp != nil {
+		// A sent link's card lands in the store after the bubble was
+		// drawn: the row has to rebind once the card is there.
+		b.WriteString("|L")
+		b.WriteString(lp.URL)
+		b.WriteByte(':')
+		b.WriteString(lp.Title)
+		b.WriteByte(':')
+		b.WriteString(strconv.Itoa(len(lp.Thumbnail)))
+	}
 	if m.CallLog != nil {
 		// An accept turns a missed call into an answered one in place.
 		b.WriteByte('|')
@@ -1631,6 +1641,12 @@ func (cv *ConversationView) ResolveSent(localID string, msg client.Message, err 
 		r.msgID = msg.ID
 	}
 	cv.refillRow(pos)
+	// msg is the composer's copy: the send may have added to the stored
+	// one on the way out (a pasted link's card), and only the store has
+	// that. Read it back so the bubble settles into what was sent.
+	if err == nil {
+		cv.refreshInPlace()
+	}
 }
 
 // retrySend is a failed bubble's Retry: the failed row goes, and the

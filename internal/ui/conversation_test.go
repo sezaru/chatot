@@ -424,6 +424,10 @@ func TestBubbleSigDetectsLiveChanges(t *testing.T) {
 		"edit":         func(m client.Message) client.Message { m.Edited = true; m.Text = "hello"; return m },
 		"star":         func(m client.Message) client.Message { m.Starred = true; return m },
 		"voice played": func(m client.Message) client.Message { m.Played = true; return m },
+		"link card": func(m client.Message) client.Message {
+			m.LinkPreview = &client.LinkPreview{URL: "https://example.com", Title: "Example"}
+			return m
+		},
 		"poll tally": func(m client.Message) client.Message {
 			m.Poll = &client.Poll{Options: []client.PollOption{{Name: "A", Count: 2}}}
 			return m
