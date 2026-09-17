@@ -34,7 +34,11 @@ type mediaView struct {
 	Thumbnail    []byte
 	// fetchThumb, when set by the bubble, asks for the attachment's
 	// high-quality preview once the tile finds it only has a stamp.
-	fetchThumb   func()
+	fetchThumb func()
+	// onLocal, when set by the bubble, records that its own download put
+	// the file at path, so the view's message list (and the viewer opened
+	// from it) sees the attachment as downloaded rather than asking again.
+	onLocal      func(path string)
 	IsGIF        bool
 	ViewOnce     bool
 	Viewed       bool
@@ -476,6 +480,9 @@ func downloadAndSwap(mv *mediaView, msg client.Message, c client.Client, slot *g
 			}
 			mv.HasLocal = true
 			mv.LocalPath = path
+			if mv.onLocal != nil {
+				mv.onLocal(path)
+			}
 			slot.Remove(current)
 			switch {
 			case inlineableMedia(*mv):

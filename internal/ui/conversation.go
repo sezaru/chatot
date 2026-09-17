@@ -2240,6 +2240,17 @@ func (h bubbleHooks) mediaOpener(msg client.Message) func(path string) {
 	}
 }
 
+// localRecorder is the bubble's report that its own download put msgID's
+// file at path (see mediaView.onLocal); nil when nobody listens. Without
+// it only the bubble knew, so stepping the viewer onto a document that
+// was downloaded from the thread asked to download it again.
+func (h bubbleHooks) localRecorder(msgID string) func(path string) {
+	if h.onLocalPath == nil {
+		return nil
+	}
+	return func(path string) { h.onLocalPath(msgID, path) }
+}
+
 // hooks assembles the bubbleHooks for this view's current state.
 func (cv *ConversationView) hooks() bubbleHooks {
 	return bubbleHooks{
