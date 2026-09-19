@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.17.0-beta" date="2026-09-19">
+      <description>
+        <p>A group only its admins can post to now says so in place of the message box, instead of letting you write something the server would refuse. A contact card gained an Open chat row, so a group message's sender is one click from a chat with them. Pictures sent together stay in one album bubble rather than leaving the last one out, a voice note no longer gets stuck refusing to play, pause or seek, a note you have listened to takes its colour from the theme instead of a fixed blue, and the selected thumbnail in the attachment viewer's filmstrip is no longer clipped.</p>
+      </description>
+    </release>
     <release version="0.16.4-beta" date="2026-09-17">
       <description>
         <p>Stepping through the attachment viewer no longer asks to download a document that was already downloaded from the chat.</p>
