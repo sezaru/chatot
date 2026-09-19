@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.17.1-beta" date="2026-09-19">
+      <description>
+        <p>A shared link's preview card is back to one width: a listing with a long title and description no longer arrives in a bubble half the window wide, with the picture stretched across it and a band of empty space under the message.</p>
+      </description>
+    </release>
     <release version="0.17.0-beta" date="2026-09-19">
       <description>
         <p>A group only its admins can post to now says so in place of the message box, instead of letting you write something the server would refuse. A contact card gained an Open chat row, so a group message's sender is one click from a chat with them. Pictures sent together stay in one album bubble rather than leaving the last one out, a voice note no longer gets stuck refusing to play, pause or seek, a note you have listened to takes its colour from the theme instead of a fixed blue, and the selected thumbnail in the attachment viewer's filmstrip is no longer clipped.</p>
