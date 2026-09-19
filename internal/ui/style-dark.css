@@ -21,6 +21,9 @@
    green on the grey incoming bubble. */
 @define-color chatot_accent_text_lift #7fd4bb;
 @define-color chatot_transcript_head #00a884;
+/* The played-note cast lifts too: the light sheet's #5faf9c sits too close
+   to the accent against these surfaces to say "heard" at a glance. */
+@define-color chatot_voice_played #76baaa;
 /* The light theme's #c01c28 is nearly black against these surfaces: the
    account line that reads "Logged out · scan to relink" was the report that
    sent this here. Text lifts to a salmon that clears contrast on #2d2d2d;

@@ -208,7 +208,12 @@ func NewAttachmentViewer(c client.Client, onBack func()) *AttachmentViewer {
 	// The count rides at the end of the scrolling content, as in the
 	// mockup: with more tiles than fit, it scrolls out of view with them
 	// rather than keeping a fixed share of a narrow strip for itself.
+	// The row's padding lives on this box rather than on stripRow, as it
+	// does on the mockup's scrolling div: a scroller clips its child at
+	// the child's own edge, so padding outside it cut the 2px ring off
+	// the selected tile at the top and bottom of the strip.
 	stripContent := gtk.NewBox(gtk.OrientationHorizontal, 0)
+	stripContent.AddCSSClass("chatot-viewer-strip-content")
 	stripContent.Append(v.strip)
 	v.stripLbl = gtk.NewLabel("")
 	v.stripLbl.AddCSSClass("chatot-viewer-strip-label")

@@ -187,6 +187,7 @@ func omarchyCSS(p omarchyPalette) string {
 	for _, n := range []string{"chatot_accent_text", "chatot_accent_text_soft", "chatot_accent_text_lift", "chatot_transcript_head", "chatot_tick_read"} {
 		def(n, accent)
 	}
+	def("chatot_voice_played", playedCast(accent, dark))
 	bubble := mixHex(bg, accent, 0.3)
 	if !dark {
 		bubble = mixHex(bg, accent, 0.22)

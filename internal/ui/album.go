@@ -41,16 +41,40 @@ func albumMember(m client.Message) bool {
 	return !(m.FromMe && m.Status == client.MessageStatusFailed)
 }
 
+// albumSameSender reports whether prev and m came from the same person.
+// Our own sends are one sender whatever FromJID says: an optimistic row
+// carries none at all (the composer does not know it), the store's copy
+// carries the account's, and a run of three pictures settled into a mix of
+// the two — which left the last one out of its own album. Theirs are
+// compared without the device suffix, since the same person can arrive
+// addressed either way.
+func albumSameSender(prev, m client.Message) bool {
+	if prev.FromMe != m.FromMe {
+		return false
+	}
+	if prev.FromMe {
+		return true
+	}
+	return nonADJID(prev.FromJID) == nonADJID(m.FromJID)
+}
+
 // albumJoins reports whether m carries on the run prev is in: the same
 // sender, within albumGap of it, on the same day, forwarded or not alike.
+// The gap is taken either way round: a just-sent picture is timed by this
+// machine's clock and its neighbour by the server's, so the run must not
+// break on a second's disagreement between them.
 func albumJoins(prev, m client.Message, loc *time.Location) bool {
 	if !albumMember(prev) || !albumMember(m) {
 		return false
 	}
-	if prev.FromMe != m.FromMe || prev.FromJID != m.FromJID || prev.Forwarded != m.Forwarded {
+	if !albumSameSender(prev, m) || prev.Forwarded != m.Forwarded {
 		return false
 	}
-	if m.TS < prev.TS || m.TS-prev.TS > albumGap {
+	gap := m.TS - prev.TS
+	if gap < 0 {
+		gap = -gap
+	}
+	if gap > albumGap {
 		return false
 	}
 	return sameDay(prev.TS, m.TS, loc)

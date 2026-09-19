@@ -122,6 +122,7 @@ func dmsCSS(m map[string]string, dark bool) string {
 	for _, n := range []string{"chatot_accent_text", "chatot_accent_text_soft", "chatot_accent_text_lift", "chatot_transcript_head", "chatot_tick_read"} {
 		def(n, primary)
 	}
+	def("chatot_voice_played", playedCast(primary, dark))
 	def("chatot_bubble_out", hex("primary_container"))
 	def("chatot_on_bubble_out", hex("on_primary_container"))
 
@@ -180,6 +181,17 @@ func withAlpha(hex string, alpha float64) string {
 		return ""
 	}
 	return fmt.Sprintf("rgba(%d, %d, %d, %.2f)", c[0], c[1], c[2], alpha)
+}
+
+// playedCast is the colour a listened-to voice note wears: the accent mixed
+// towards white, far enough that "heard" and "not heard" are two colours at
+// a glance, and further on a dark surface where a small step vanishes. It
+// matches the chatot_voice_played values the light and dark sheets define.
+func playedCast(accent string, dark bool) string {
+	if dark {
+		return mixHex(accent, "#ffffff", 0.4)
+	}
+	return mixHex(accent, "#ffffff", 0.3)
 }
 
 // shadeHex scales hex's channels by f (under 1 darkens); "" stays "".

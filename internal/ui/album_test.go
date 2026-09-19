@@ -199,3 +199,30 @@ func TestAlbumRefillSpan_CoversTheRunsOnEitherSide(t *testing.T) {
 		t.Errorf("revoked member: refill %d..%d, want 1..2", lo, hi)
 	}
 }
+
+func TestAlbumJoins_OwnSendsGroupAcrossFromJIDAndClockSkew(t *testing.T) {
+	// A just-sent run settles into a mix of copies: the optimistic ones
+	// carry no FromJID and this machine's clock, the ones the store has
+	// handed back carry the account's JID and the server's second.
+	optimistic := albumPhoto("p1", "me", 1000)
+	optimistic.FromJID = ""
+	stored := albumPhoto("p2", "me", 999)
+	stored.FromJID = "me@s.whatsapp.net"
+	if !albumJoins(optimistic, stored, time.UTC) {
+		t.Error("own pictures must group whatever FromJID and clock they carry")
+	}
+	if !albumJoins(stored, optimistic, time.UTC) {
+		t.Error("the same holds the other way round")
+	}
+}
+
+func TestAlbumJoins_TheirDeviceSuffixIsNotAnotherSender(t *testing.T) {
+	a := albumPhoto("p1", "a:12@s.whatsapp.net", 1000)
+	b := albumPhoto("p2", "a@s.whatsapp.net", 1002)
+	if !albumJoins(a, b, time.UTC) {
+		t.Error("the same person addressed with and without a device joins")
+	}
+	if albumJoins(a, albumPhoto("p3", "b@s.whatsapp.net", 1002), time.UTC) {
+		t.Error("another sender still breaks the run")
+	}
+}

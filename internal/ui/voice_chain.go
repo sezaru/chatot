@@ -35,7 +35,25 @@ type voiceHooks struct {
 // row's play disc and auto-advance both go through here so a note started
 // either way is marked played and remembers its position.
 func playVoice(mv mediaView, hooks voiceHooks) *mediaPlayer {
-	p := sharedVoicePlayer(mv.LocalPath, mv.MimeType, mv.DurationSecs)
+	return playVoiceWith(sharedVoicePlayer(mv.LocalPath, mv.MimeType, mv.DurationSecs), mv, hooks)
+}
+
+// playVoiceWith is playVoice for a caller that already holds mv's player:
+// the row's disc, track and time label are bound to that one object, so it
+// is the one that must play, whatever sharedVoicePlayer would hand back
+// now. p goes (back) into the cache under mv's file, so the next lookup —
+// and setNowPlaying's one-audio-at-a-time sweep — finds the player the row
+// is watching; a different one filed there is silenced first.
+func playVoiceWith(p *mediaPlayer, mv mediaView, hooks voiceHooks) *mediaPlayer {
+	if p == nil {
+		return playVoice(mv, hooks)
+	}
+	if mv.LocalPath != "" {
+		if old, ok := voicePlayers[mv.LocalPath]; ok && old != p {
+			old.Pause()
+		}
+		voicePlayers[mv.LocalPath] = p
+	}
 	bindVoiceHooks(p, mv, hooks)
 	// The note becomes the one the sidebar keeps at hand, and whatever
 	// else was playing stops: one audio at a time, as on WhatsApp.

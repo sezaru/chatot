@@ -869,15 +869,18 @@ func newVoiceBubble(mv mediaView, open func(path string)) gtk.Widgetter {
 		path := mv.LocalPath
 		onOpen = func() { open(path) }
 	}
-	// The disc starts the note through playVoice (played flag, resume
-	// position, the hooks) and pauses it directly.
+	// The disc starts the note through playVoiceWith (played flag, resume
+	// position, the hooks) and pauses it directly. With, not the plain
+	// playVoice: the row's disc, track and time label watch this very
+	// player, so a second one looked up by path — the cache can have moved
+	// on — would play with none of them following it.
 	bindVoiceHooks(player, mv, mv.voice)
 	toggle := func() {
 		if player.Playing() {
 			player.Pause()
 			return
 		}
-		playVoice(mv, mv.voice)
+		playVoiceWith(player, mv, mv.voice)
 	}
 	row := newVoiceRow(player, mv.FromMe, mv.Played, toggle, onOpen)
 	tr := buildTranscriptSlot(mv)

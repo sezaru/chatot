@@ -57,6 +57,10 @@
 @define-color chatot_on_bubble_out #ffffff;
 @define-color chatot_tick_read #cdece4;
 @define-color chatot_on_danger #ffffff;
+/* A voice note that has been listened to: the accent mixed 30% into white,
+   so "heard" reads as a softer cast of the same colour instead of the
+   fixed WhatsApp blue it used to be. The dark sheet lifts it further. */
+@define-color chatot_voice_played #5faf9c;
 
 /* The mockup's error tone, split the same way as the accent above. Red text
    is the half that has to move in dark mode: #c01c28 is dark enough that on
@@ -3971,10 +3975,14 @@ button.chatot-member-more {
 	background-color: alpha(@chatot_on_bubble_out, 0.22);
 }
 
-/* An incoming voice note that has been listened to: WhatsApp's microphone
-   blue takes over from the green (the track's knob follows, in cairo). */
+/* An incoming voice note that has been listened to: a lighter cast of the
+   accent takes over from it (the track's played part and knob follow, in
+   cairo), the way WhatsApp's microphone changes colour once heard. Derived
+   from the accent rather than fixed, so a shell palette recolours it with
+   everything else; @chatot_voice_played is restated by theme_dms.go and
+   theme_omarchy.go. */
 .chatot-voice-play.chatot-voice-played {
-	background-color: #53bdeb;
+	background-color: @chatot_voice_played;
 }
 
 .chatot-voice-time {
@@ -4464,9 +4472,17 @@ button.chatot-member-more {
 	background-color: alpha(currentColor, 0.06);
 }
 
+/* The hairline spans the pane; the padding sits on the scrolling content
+   inside it (chatot-viewer-strip-content), so the selected tile's 2px ring
+   is drawn into that padding instead of being clipped at the scroller's
+   edge. */
 .chatot-viewer-strip {
-	padding: 9px 12px;
+	padding: 0;
 	border-top: 1px solid alpha(currentColor, 0.08);
+}
+
+.chatot-viewer-strip-content {
+	padding: 9px 12px;
 }
 
 .chatot-viewer-strip-label {

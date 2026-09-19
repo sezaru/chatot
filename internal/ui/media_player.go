@@ -312,6 +312,12 @@ func (p *mediaPlayer) notify() {
 	}
 }
 
+// watched reports whether any live widget repaints from p. Watchers are
+// registered by the voice row, the transport bar and the video stage and
+// dropped when those go away (watchUntilDestroyed), so this is "something
+// on screen is showing this player".
+func (p *mediaPlayer) watched() bool { return len(p.watchers) > 0 }
+
 // watchUntilDestroyed is Watch for a widget's lifetime.
 func (p *mediaPlayer) watchUntilDestroyed(w gtk.Widgetter, f func()) {
 	unwatch := p.Watch(f)
@@ -330,12 +336,15 @@ func sharedVoicePlayer(path, mime string, seconds int) *mediaPlayer {
 	if p, ok := voicePlayers[path]; ok {
 		return p
 	}
-	// Bounded: once the cap is reached every idle player is dropped (a
-	// rebuilt bubble simply makes a fresh one), so a long session doesn't
-	// hoard streams.
+	// Bounded: once the cap is reached every idle player nothing is
+	// showing is dropped (a rebuilt bubble simply makes a fresh one), so a
+	// long session doesn't hoard streams. A player some row is still
+	// watching stays: dropping it handed that row's next press a second
+	// player, which then played with the row's disc, track and time label
+	// all bound to the one left behind.
 	if len(voicePlayers) >= voicePlayersCap {
 		for k, old := range voicePlayers {
-			if !old.Playing() && (nowPlaying == nil || nowPlaying.p != old) {
+			if !old.Playing() && !old.watched() && (nowPlaying == nil || nowPlaying.p != old) {
 				delete(voicePlayers, k)
 				forgetSpeedPlayer(old)
 			}
@@ -658,9 +667,10 @@ func newVoiceRow(p *mediaPlayer, onGreen, played bool, onToggle, onOpen func()) 
 	return row
 }
 
-// voicePlayedRGB is the accent of an incoming voice note that has been
-// listened to: WhatsApp's microphone blue, in place of the green.
-var voicePlayedRGB = [3]float64{0x53 / 255.0, 0xbd / 255.0, 0xeb / 255.0}
+// playedRGBA is chatot_voice_played, the softer cast of the accent a
+// listened-to note wears. The fallback is the light sheet's value, for a
+// stack that does not define the token.
+var playedRGBA = [4]float64{0x5f / 255.0, 0xaf / 255.0, 0x9c / 255.0, 1}
 
 // drawVoiceTrack paints the 4px track, its played part and the 10px knob.
 func drawVoiceTrack(cr *cairo.Context, w, h, progress float64, onGreen, played, dark bool, c bubbleColors) {
@@ -680,7 +690,7 @@ func drawVoiceTrack(cr *cairo.Context, w, h, progress float64, onGreen, played, 
 	case onGreen:
 		setSourceRGBA(cr, c.onOut, 1)
 	case played:
-		cr.SetSourceRGB(voicePlayedRGB[0], voicePlayedRGB[1], voicePlayedRGB[2])
+		setSourceRGBA(cr, c.played, 1)
 	default:
 		setSourceRGBA(cr, c.accent, 1)
 	}
@@ -978,10 +988,14 @@ func drawTransportTrack(cr *cairo.Context, w, h, progress float64, dark bool, ac
 
 // bubbleColors are the tokens a track or bar inside a bubble draws with:
 // the accent on an incoming bubble, the outgoing bubble's text colour on
-// the outgoing one.
-type bubbleColors struct{ accent, onOut [4]float64 }
+// the outgoing one, and the played cast a listened-to voice note wears.
+type bubbleColors struct{ accent, onOut, played [4]float64 }
 
 // bubbleColorsOf reads those tokens on w.
 func bubbleColorsOf(w gtk.Widgetter) bubbleColors {
-	return bubbleColors{tokenRGBA(w, "chatot_accent", accentRGBA), tokenRGBA(w, "chatot_on_bubble_out", whiteRGBA)}
+	return bubbleColors{
+		accent: tokenRGBA(w, "chatot_accent", accentRGBA),
+		onOut:  tokenRGBA(w, "chatot_on_bubble_out", whiteRGBA),
+		played: tokenRGBA(w, "chatot_voice_played", playedRGBA),
+	}
 }
