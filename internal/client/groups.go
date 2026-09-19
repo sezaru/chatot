@@ -64,6 +64,11 @@ func linkedParent(info *types.GroupInfo) string {
 // OwnJID exposes this device's own user JID for the UI's admin gating.
 func (w *Whatsmeow) OwnJID() string { return w.ownJID() }
 
+// CanonicalChatJID exposes the LID-to-phone-number chat resolution the
+// ingest path already applies (lidchat.go), for the UI's "open a chat with
+// this person".
+func (w *Whatsmeow) CanonicalChatJID(jid string) string { return w.canonicalChatJID(jid) }
+
 // CreateGroup creates a group and persists it as a chat so it appears in the
 // list, returning the new group's JID.
 func (w *Whatsmeow) CreateGroup(ctx context.Context, name string, participantJIDs []string) (string, error) {

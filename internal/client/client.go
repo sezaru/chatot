@@ -854,6 +854,12 @@ type Client interface {
 	// OwnJID returns this device's own user JID ("" if not logged in), so the
 	// UI can decide whether the current user is a group admin/owner.
 	OwnJID() string
+	// CanonicalChatJID is the chat a person's JID belongs to: a LID
+	// resolves to its phone-number chat whenever the mapping is known, so
+	// "open a chat with them" lands where their messages are filed rather
+	// than in a second, empty chat. Groups, channels and unmapped JIDs
+	// pass through unchanged.
+	CanonicalChatJID(jid string) string
 	// ContactName resolves a participant or contact JID (phone-number or LID
 	// form) to its display name: the address book / push name, else a
 	// "+number" for a phone-number JID, else "". Used for group senders and

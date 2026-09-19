@@ -55,16 +55,19 @@ func orderParticipants(parts []client.GroupParticipant, ownerJID string) []clien
 }
 
 // isSelfAdmin reports whether ownJID is the group owner or an admin, gating
-// the participant-mutation controls.
+// the participant-mutation controls (and the composer's read-only line, see
+// send_rule.go). The comparison goes through isOwnJID: OwnJID carries this
+// device's suffix (user:device@server) while a group lists its owner and
+// participants without one, so matching the strings outright never found us.
 func isSelfAdmin(info client.GroupInfo, ownJID string) bool {
 	if ownJID == "" {
 		return false
 	}
-	if info.OwnerJID == ownJID {
+	if isOwnJID(info.OwnerJID, ownJID) {
 		return true
 	}
 	for _, p := range info.Participants {
-		if p.JID == ownJID {
+		if isOwnJID(p.JID, ownJID) {
 			return p.IsAdmin || p.IsSuperAdmin
 		}
 	}

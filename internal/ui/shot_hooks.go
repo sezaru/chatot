@@ -345,8 +345,15 @@ func (cv *ConversationView) ShowDisappearing() {
 	showDisappearingDialog(cv.window, cv.c, cv.jid, cv.disappearingTimer(cv.jid), nil)
 }
 
-// ShowContactInfo opens the contact-info card for the open chat.
-func (cv *ConversationView) ShowContactInfo() {
+// ShowContactInfo opens the contact-info card for the open chat, or — with
+// a JID in CHATOT_SHOT_ARG — for that person, the way clicking a group
+// message's author does. The latter is the card that carries "Open chat":
+// the open chat's own card has nowhere to send the reader.
+func (cv *ConversationView) ShowContactInfo(jid string) {
+	if jid != "" {
+		cv.showSenderInfo(jid, cv.senderName(jid))
+		return
+	}
 	if cv.jid != "" {
 		cv.showContactInfo(chatByJID(cv.c, cv.jid))
 	}

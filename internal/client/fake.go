@@ -1486,6 +1486,10 @@ func cloneGroupInfo(g *GroupInfo) *GroupInfo {
 // OwnJID returns the Fake's own user JID.
 func (f *Fake) OwnJID() string { return fakeOwnJID }
 
+// CanonicalChatJID has no LID map to consult: the fake files every chat
+// under the JID it was given.
+func (f *Fake) CanonicalChatJID(jid string) string { return jid }
+
 // ContactName resolves a fixture person: the chat list's names plus the
 // group participants the fixture threads mention.
 // MessagePreview is the demo message's text or attachment label; see

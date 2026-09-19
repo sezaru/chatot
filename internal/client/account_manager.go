@@ -962,6 +962,10 @@ func (m *AccountManager) GroupInfo(ctx context.Context, jid string) (*GroupInfo,
 
 func (m *AccountManager) OwnJID() string { return m.active().OwnJID() }
 
+func (m *AccountManager) CanonicalChatJID(jid string) string {
+	return m.active().CanonicalChatJID(jid)
+}
+
 func (m *AccountManager) OwnName() string { return m.active().OwnName() }
 
 func (m *AccountManager) OwnAbout(ctx context.Context) (string, error) {

@@ -414,6 +414,21 @@ type Composer struct {
 	recordPause *gtk.Button
 	recordTick  glib.SourceHandle
 
+	// noticeRow stands in for the entry strip in a chat that refuses our
+	// messages (see send_rule.go); sendBlock is the line it carries, "" while
+	// the chat takes messages. blockMemo is the last answer per chat, so
+	// re-opening one locks straight away rather than flashing an open strip
+	// while the group is re-read; blockReq names the chat the read in flight
+	// is for; blockFetching and blockDirty coalesce a burst of reads into one
+	// more after the one already out.
+	noticeRow     *gtk.Box
+	noticeLabel   *gtk.Label
+	sendBlock     string
+	blockMemo     map[string]string
+	blockReq      string
+	blockFetching bool
+	blockDirty    bool
+
 	typing *typingModel // debounces our own composing/paused SendTyping calls
 
 	onSent       func(client.Message)
@@ -552,6 +567,20 @@ func NewComposer(c client.Client) *Composer {
 	recordRow.SetVisible(false)
 	strip.Append(recordRow)
 
+	// A chat that refuses our messages (an announcement group we are not
+	// an admin of) swaps the strip for a line saying so, the way WhatsApp
+	// replaces its composer: an entry that takes text nothing can be done
+	// with is worse than no entry.
+	noticeRow := gtk.NewBox(gtk.OrientationHorizontal, 0)
+	noticeRow.SetVisible(false)
+	noticeLabel := gtk.NewLabel("")
+	noticeLabel.AddCSSClass("chatot-composer-notice")
+	noticeLabel.SetHExpand(true)
+	noticeLabel.SetWrap(true)
+	noticeLabel.SetJustify(gtk.JustifyCenter)
+	noticeRow.Append(noticeLabel)
+	strip.Append(noticeRow)
+
 	comp := &Composer{
 		Box:         root,
 		c:           c,
@@ -565,6 +594,9 @@ func NewComposer(c client.Client) *Composer {
 		recordBtn:   recordBtn,
 		entryRow:    entryRow,
 		recordRow:   recordRow,
+		noticeRow:   noticeRow,
+		noticeLabel: noticeLabel,
+		blockMemo:   map[string]string{},
 		recordTime:  recordTime,
 		recordDot:   recordDot,
 		recordTrace: recordTrace,
@@ -728,6 +760,7 @@ func (c *Composer) SetChat(jid string) {
 	c.emojiBtn.SetSensitive(jid != "")
 	c.entry.SetSensitive(jid != "")
 	c.recordBtn.SetSensitive(jid != "" && !c.recording)
+	c.refreshSendRule(jid)
 	c.refreshQuoteBar()
 	c.refreshEditBar()
 }
@@ -751,6 +784,11 @@ func (c *Composer) SetChatName(name string) {
 // StartReply arms reply mode for msg; called from the conversation view's
 // per-bubble reply affordance.
 func (c *Composer) StartReply(msg client.Message) {
+	// Nothing to reply with in a chat that takes no messages from us: the
+	// quote bar would stand above a strip that has no entry under it.
+	if c.sendRefused() {
+		return
+	}
 	c.state.StartReply(msg)
 	c.refreshQuoteBar()
 	c.refreshEditBar()
@@ -763,6 +801,9 @@ func (c *Composer) StartReply(msg client.Message) {
 // the user amends it in place, and show the editing bar. Called from the
 // conversation view's per-bubble edit affordance.
 func (c *Composer) StartEdit(msg client.Message) {
+	if c.sendRefused() {
+		return
+	}
 	c.state.StartEdit(msg)
 	c.entry.SetText(msg.Text)
 	c.refreshQuoteBar()
@@ -844,6 +885,13 @@ func (c *Composer) dispatch(msg client.Message) {
 	if msg.ChatJID == "" {
 		return
 	}
+	// Every send but the location sheet's and an edit funnels through
+	// here, so this is where a chat that refuses our messages stops the
+	// ones the strip cannot: a drop on the thread, a paste, a Retry.
+	if msg.ChatJID == c.state.jid && c.sendRefused() {
+		log.Printf("chatot: %s takes no messages from us; send dropped", msg.ChatJID)
+		return
+	}
 	if c.onSent != nil {
 		c.onSent(msg)
 	}
@@ -919,6 +967,9 @@ func (c *Composer) OnSendResult(f func(localID string, msg client.Message, err e
 // EditMessage impl pushes an EventMessage so the open chat re-renders the
 // amended bubble; nothing is appended here.
 func (c *Composer) submitEdit() {
+	if c.sendRefused() {
+		return
+	}
 	action, ok := c.state.SubmitEdit(wireMentions(c.entry.Text(), c.mentionNames))
 	if !ok {
 		return
@@ -1403,7 +1454,7 @@ func (c *Composer) sendSticker(path string) {
 // positioning session alive for its duration. No-ops if there's no active
 // chat or no window set yet.
 func (c *Composer) pickLocation() {
-	if c.state.jid == "" || c.window == nil {
+	if c.state.jid == "" || c.window == nil || c.sendRefused() {
 		return
 	}
 	showLocationPicker(c.window, LocationAccess, func(res locationResult) {
@@ -1418,6 +1469,9 @@ func (c *Composer) pickLocation() {
 // sendLocation sends a fixed point in the background (mirroring submit's
 // flow), with the sheet's map preview as the message thumbnail.
 func (c *Composer) sendLocation(res locationResult) {
+	if c.sendRefused() {
+		return
+	}
 	action, ok := c.state.SubmitLocation(res.Name, res.Address, geo.FormatCoord(res.Lat), geo.FormatCoord(res.Lon))
 	if !ok {
 		return
@@ -1454,6 +1508,9 @@ type liveShare struct {
 // sendLiveLocation sends a live share and remembers it so the bubble's
 // Stop sharing (or the chosen duration) can end it.
 func (c *Composer) sendLiveLocation(res locationResult) {
+	if c.sendRefused() {
+		return
+	}
 	action, ok := c.state.SubmitLiveLocation(res.Lat, res.Lon, res.DurationSecs)
 	if !ok {
 		return
@@ -1536,6 +1593,9 @@ func (c *Composer) endLiveShare(share *liveShare) {
 // dialog open — if the form is unusable (blank question or <2 options). Single-
 // select only from the composer; multi-select is out of scope.
 func (c *Composer) sendPoll(question string, options []string, multi bool) bool {
+	if c.sendRefused() {
+		return false
+	}
 	selectable := 1
 	if multi {
 		// "Allow multiple answers" = every option selectable; parsePollForm
@@ -1572,6 +1632,9 @@ func (c *Composer) sendPoll(question string, options []string, multi bool) bool 
 // sendContact resolves a contact send from the picked chat's name/JID against
 // composeState and sends it in the background, mirroring sendLocation's flow.
 func (c *Composer) sendContact(jid, name, phone string) {
+	if c.sendRefused() {
+		return
+	}
 	if phone == "" {
 		phone = phoneFromJID(jid)
 	}
@@ -1624,7 +1687,7 @@ func (c *Composer) toggleRecording() {
 		c.stopRecording()
 		return
 	}
-	if c.state.jid == "" || c.recorder != nil {
+	if c.state.jid == "" || c.recorder != nil || c.sendRefused() {
 		return
 	}
 
@@ -1712,8 +1775,7 @@ func (c *Composer) resetRecordButton() {
 // enterRecordingUI swaps the idle strip for the recording bar and starts the
 // once-a-second timer that drives its elapsed label.
 func (c *Composer) enterRecordingUI() {
-	c.entryRow.SetVisible(false)
-	c.recordRow.SetVisible(true)
+	c.syncStripRows()
 	c.recordTime.SetLabel("0:00")
 	c.setPausedUI(false)
 	c.recordTick = glib.TimeoutAdd(1000, func() bool {
@@ -1750,8 +1812,16 @@ func (c *Composer) leaveRecordingUI() {
 		glib.SourceRemove(c.levelTick)
 		c.levelTick = 0
 	}
-	c.recordRow.SetVisible(false)
-	c.entryRow.SetVisible(true)
+	c.syncStripRows()
+}
+
+// syncStripRows shows whichever of the three strip rows the composer's
+// state calls for: the recording bar while a recording is in flight, the
+// read-only line in a chat that refuses our messages, the entry otherwise.
+func (c *Composer) syncStripRows() {
+	c.recordRow.SetVisible(c.recording)
+	c.noticeRow.SetVisible(!c.recording && c.sendBlock != "")
+	c.entryRow.SetVisible(!c.recording && c.sendBlock == "")
 }
 
 // recordingClock formats the recording timer the way the mockup's mono label

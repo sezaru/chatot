@@ -79,6 +79,11 @@ func TestIsSelfAdmin(t *testing.T) {
 		{"member@s.whatsapp.net", false},
 		{"stranger@s.whatsapp.net", false},
 		{"", false},
+		// OwnJID is this device's address; the group lists people without
+		// a device suffix, so the two only meet through isOwnJID.
+		{"owner:17@s.whatsapp.net", true},
+		{"admin:3@s.whatsapp.net", true},
+		{"member:3@s.whatsapp.net", false},
 	}
 	for _, tc := range cases {
 		if got := isSelfAdmin(info, tc.own); got != tc.want {

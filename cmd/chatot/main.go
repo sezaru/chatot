@@ -711,6 +711,18 @@ func activate(app *adw.Application, c client.Client) {
 		}
 	}
 	setTray(prefs.ShowTrayIcon)
+	// A group whose "Only admins can send" switch moved pushes a chat
+	// update: the composer re-reads whether the open chat still takes our
+	// messages rather than waiting for the next time it is opened.
+	go func() {
+		for ev := range c.Events() {
+			if ev.Kind != client.EventChatUpdate || ev.ChatUpdate == nil {
+				continue
+			}
+			jid := ev.ChatUpdate.JID
+			glib.IdleAdd(func() { composer.RefreshSendRule(jid) })
+		}
+	}()
 	go watchTrayUnread(c, func(n int) {
 		trayMu.Lock()
 		defer trayMu.Unlock()
@@ -1798,7 +1810,9 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	case "timer":
 		d.conversation.ShowDisappearing()
 	case "contactinfo":
-		d.conversation.ShowContactInfo()
+		// CHATOT_SHOT_ARG=<jid> shows that person's card (a group sender);
+		// unset, the open chat's own.
+		d.conversation.ShowContactInfo(arg)
 	case "joinrequests":
 		d.conversation.ShowJoinRequests()
 	case "composersize":

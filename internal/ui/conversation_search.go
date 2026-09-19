@@ -121,8 +121,17 @@ func (cv *ConversationView) MessageMenuItems(msg client.Message) []menuItem {
 func (cv *ConversationView) showContactInfo(chat client.Chat) {
 	jid := chat.JID
 	timer := cv.disappearingTimer(jid)
+	// "Open chat" is for the card reached from a group message's sender;
+	// from the header it names the chat already showing, so it is left
+	// out. A sender is often addressed by LID while their chat is filed
+	// under the phone number, hence the canonical JID rather than theirs.
+	var openChat func()
+	if target := cv.c.CanonicalChatJID(jid); target != cv.jid {
+		openChat = func() { cv.openChat(target) }
+	}
 	showContactInfoDialog(cv.window, cv.c, cv.avatarCache, jid, chat.Name, cv.c.IsBlocked(jid), contactInfoActions{
-		Muted: chat.Muted,
+		OpenChat: openChat,
+		Muted:    chat.Muted,
 		// The card's Mute row is a plain toggle in the mockup (the ⋮ menu is
 		// where a duration is asked for).
 		Mute: func() {
@@ -592,4 +601,15 @@ func (cv *ConversationView) mediaCount(jid string) string {
 		return ""
 	}
 	return strconv.Itoa(n)
+}
+
+// openChat asks the app to show jid's 1:1 chat, through the same
+// "app.open-chat" action a contact card's Message button, the chat list and
+// a notification's click all use — so no new callback has to be threaded
+// down to the dialogs that offer it.
+func (cv *ConversationView) openChat(jid string) {
+	if jid == "" {
+		return
+	}
+	cv.Box.ActivateAction("app.open-chat", glib.NewVariantString(jid))
 }

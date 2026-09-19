@@ -42,6 +42,9 @@ type contactInfoActions struct {
 	MediaCount        string
 	Media             func()
 	Block             func()
+	// OpenChat opens a 1:1 chat with this contact; nil (their chat is
+	// already the one showing) leaves the row out.
+	OpenChat func()
 }
 
 // muteInfoRowLabel is the card's Mute row wording for the chat's state.
@@ -100,6 +103,12 @@ func showContactInfoDialog(parent *gtk.Window, c client.Client, cache *avatarCac
 	}
 	body := dialogBody(8)
 	card := newSettingsCard()
+	// First row when it is there: the card is most often reached from a
+	// group message's sender, where writing to them is the thing one came
+	// for and there was no way to it short of finding them in the list.
+	if a.OpenChat != nil {
+		card.Add(newIconRow("💬", "Open chat", "", false, closing(a.OpenChat)))
+	}
 	card.Add(newIconRow(muteIcon, muteInfoRowLabel(a.Muted), "", false, closing(a.Mute)))
 	card.Add(newIconRow("⏱", "Disappearing messages", a.DisappearingValue, false, closing(a.Disappearing)))
 	card.Add(newIconRow("🖼", "Media, links and docs", a.MediaCount, false, closing(a.Media)))
