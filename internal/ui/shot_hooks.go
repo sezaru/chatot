@@ -875,19 +875,32 @@ func (cv *ConversationView) ReactAt(idx int, emoji string) {
 // the measure hook: what bounds how narrow the collapsed window can go.
 func (cv *ConversationView) MeasureRows() []string {
 	var out []string
+	span := func(w gtk.Widgetter) string {
+		min, nat, _, _ := gtk.BaseWidget(w).Measure(gtk.OrientationHorizontal, -1)
+		return fmt.Sprintf("%d/%d", min, nat)
+	}
 	for _, r := range cv.rows {
 		if r.msgID == "" {
 			continue
 		}
-		w, _, _, _ := gtk.BaseWidget(r.wrapper).Measure(gtk.OrientationHorizontal, -1)
-		b, _, _, _ := gtk.BaseWidget(r.bubble).Measure(gtk.OrientationHorizontal, -1)
-		h, _, _, _ := gtk.BaseWidget(r.hover.box).Measure(gtk.OrientationHorizontal, -1)
 		content := "-"
 		if r.content != nil {
-			c, _, _, _ := gtk.BaseWidget(r.content).Measure(gtk.OrientationHorizontal, -1)
-			content = fmt.Sprintf("%d(%s)", c, strings.Join(gtk.BaseWidget(r.content).CSSClasses(), ","))
+			content = fmt.Sprintf("%s(%s)", span(r.content), strings.Join(gtk.BaseWidget(r.content).CSSClasses(), ","))
 		}
-		out = append(out, fmt.Sprintf("row %s: wrapper=%d bubble=%d hover=%d(visible=%v) content=%s", r.msgID, w, b, h, r.hover.box.Visible(), content))
+		out = append(out, fmt.Sprintf("row %s: wrapper=%s bubble=%s hover=%s(visible=%v) content=%s alloc=%d",
+			r.msgID, span(r.wrapper), span(r.bubble), span(r.hover.box), r.hover.box.Visible(), content,
+			r.bubble.AllocatedWidth()))
+		// What the bubble's natural width comes from: a box takes the
+		// widest of its children, so the one whose natural matches the
+		// bubble's is the one sizing it.
+		for c := r.bubble.FirstChild(); c != nil; c = gtk.BaseWidget(c).NextSibling() {
+			if !gtk.BaseWidget(c).Visible() {
+				continue
+			}
+			out = append(out, fmt.Sprintf("row %s   child %T[%s]: %s expand=%v", r.msgID, c,
+				strings.Join(gtk.BaseWidget(c).CSSClasses(), ","), span(c),
+				gtk.BaseWidget(c).ComputeExpand(gtk.OrientationHorizontal)))
+		}
 	}
 	return out
 }

@@ -1221,6 +1221,20 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		// the way), for shots of the strip's edge fades.
 		d.chatList.ScrollChips(arg)
 	case "measure":
+		// CHATOT_SHOT_ARG=<percent> scrolls the thread there first and
+		// measures a second later: the per-row lines only say anything
+		// about rows GTK has realized and allocated.
+		if arg != "" {
+			if pct, err := strconv.Atoi(arg); err == nil {
+				d.conversation.ScrollThreadTo(float64(pct) / 100)
+				glib.TimeoutAdd(1200, func() bool {
+					for _, line := range d.conversation.MeasureRows() {
+						log.Printf("measure %s", line)
+					}
+					return false
+				})
+			}
+		}
 		// Logs the minimum and natural widths that bound how narrow the
 		// window can go, per pane, for the collapsed (one pane) layout.
 		for _, e := range []struct {
