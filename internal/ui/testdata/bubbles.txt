@@ -5,7 +5,8 @@
     *gtk.Box .horizontal
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
-          *gtk.Label .chatot-bubble-text text="hello there"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="hello there"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
       *gtk.Box .chatot-hover-actions.horizontal
@@ -26,7 +27,8 @@
           *gtk.Label text="🙂"
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-out.vertical
-          *gtk.Label .chatot-bubble-text text="hi back"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="hi back"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
             *gtk.Label .chatot-bubble-tick.chatot-tick-read text="✓✓"
@@ -43,7 +45,8 @@
           *gtk.Label text="🙂"
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-out.vertical
-          *gtk.Label .chatot-bubble-text text="sending"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="sending"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
             *gtk.Label .chatot-bubble-tick text="✓"
@@ -56,7 +59,8 @@
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
           *gtk.Label .chatot-bubble-quote text="hello there"
-          *gtk.Label .chatot-bubble-text text="answering"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="answering"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
       *gtk.Box .chatot-hover-actions.horizontal
@@ -73,7 +77,8 @@
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
           *gtk.Label .chatot-forwarded text="↩ Forwarded"
-          *gtk.Label .chatot-bubble-text text="passed on"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="passed on"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
       *gtk.Box .chatot-hover-actions.horizontal
@@ -89,7 +94,8 @@
     *gtk.Box .horizontal
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
-          *gtk.Label .chatot-bubble-text text="fixed typo"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="fixed typo"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00 · edited"
       *gtk.Box .chatot-hover-actions.horizontal
@@ -105,7 +111,8 @@
     *gtk.Box .horizontal
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
-          *gtk.Label .chatot-bubble-deleted.chatot-bubble-text text="🚫 This message was deleted"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-deleted.chatot-bubble-text text="🚫 This message was deleted"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
 
@@ -116,7 +123,8 @@
     *gtk.Box .chatot-row-reacted.horizontal
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
-          *gtk.Label .chatot-bubble-text text="nice"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="nice"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
         *gtk.Box .chatot-bubble-reactions.horizontal
@@ -136,7 +144,8 @@
     *gtk.Box .horizontal
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
-          *gtk.Label .chatot-bubble-text text="new day"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="new day"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
       *gtk.Box .chatot-hover-actions.horizontal
@@ -152,7 +161,8 @@
     *gtk.Box .horizontal
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
-          *gtk.Label .chatot-bubble-text text="a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps…"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps going. a long sentence that keeps…"
           *gtk.Button .chatot-read-more.flat.text-button
             *gtk.Label text="Read more"
           *gtk.Box .horizontal
@@ -170,7 +180,8 @@
     *gtk.Box .horizontal
       *gtk.Overlay
         *gtk.Box .chatot-bubble-bare.vertical
-          *gtk.Label .chatot-bubble-text.chatot-emoji-only text="🎉"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text.chatot-emoji-only text="🎉"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
       *gtk.Box .chatot-hover-actions.horizontal
@@ -190,7 +201,8 @@
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
           *gtk.Label .chatot-bubble-author text="Alice"
-          *gtk.Label .chatot-bubble-text text="from alice"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="from alice"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
       *gtk.Box .chatot-hover-actions.horizontal
@@ -210,7 +222,8 @@
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
           *gtk.Label .chatot-bubble-author text="Bob"
-          *gtk.Label .chatot-bubble-text text="from bob"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="from bob"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
       *gtk.Box .chatot-hover-actions.horizontal
@@ -230,7 +243,8 @@
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
           *gtk.Label .chatot-bubble-author text="Alice"
-          *gtk.Label .chatot-bubble-text text="alice once more"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="alice once more"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
       *gtk.Box .chatot-hover-actions.horizontal
@@ -246,7 +260,8 @@
     *gtk.Box .horizontal
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-out.vertical
-          *gtk.Label .chatot-bubble-text text="never left"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="never left"
           *gtk.Box .horizontal
             *gtk.Button .chatot-retry.flat.text-button
               *gtk.Label text="↻ Retry"
@@ -260,7 +275,8 @@
     *gtk.Box .horizontal
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-out.vertical
-          *gtk.Label .chatot-bubble-text text="on its way"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="on its way"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
             *gtk.DrawingArea .chatot-bubble-tick
@@ -277,7 +293,8 @@
           *gtk.Label text="🙂"
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-out.vertical
-          *gtk.Label .chatot-bubble-text text="two ticks"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="two ticks"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
             *gtk.Label .chatot-bubble-tick text="✓✓"
@@ -290,11 +307,13 @@
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
           *gtk.Box .chatot-link-card.vertical
-            *gtk.Box .chatot-link-card-body.vertical
-              *gtk.Label .chatot-link-title text="Example"
-              *gtk.Label .chatot-link-desc text="a page"
-              *gtk.Label .chatot-link-host text="🔗 example.com"
-          *gtk.Label .chatot-bubble-text.link text="look at <a href=\"https://example.com\">https://example.com</a>"
+            *adw.Clamp
+              *gtk.Box .chatot-link-card-body.vertical
+                *gtk.Label .chatot-link-title text="Example"
+                *gtk.Label .chatot-link-desc text="a page"
+                *gtk.Label .chatot-link-host text="🔗 example.com"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text.link text="look at <a href=\"https://example.com\">https://example.com</a>"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
       *gtk.Box .chatot-hover-actions.horizontal
@@ -316,7 +335,8 @@
               *gtk.Box .vertical
                 *gtk.Label .chatot-media-dl.chatot-media-dl-lg text="⬇"
                 *gtk.Label .chatot-media-caption text="📷  Photo"
-          *gtk.Label .chatot-bubble-caption.chatot-bubble-text text="on holiday"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-caption.chatot-bubble-text text="on holiday"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
       *gtk.Box .chatot-hover-actions.horizontal

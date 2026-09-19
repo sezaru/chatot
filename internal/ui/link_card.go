@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 
@@ -40,6 +41,11 @@ func buildLinkCard(v linkView) gtk.Widgetter {
 	card.AddCSSClass("chatot-link-card")
 	card.SetSizeRequest(linkCardW, -1)
 	card.SetOverflow(gtk.OverflowHidden)
+	// The card is a tile of one width, like the video tile it lines up
+	// with: pinned at both ends (the size request is its minimum, halign
+	// keeps a wider bubble from stretching it) so a long title, a long
+	// description or a long URL beside it can never widen the picture.
+	card.SetHAlign(gtk.AlignStart)
 
 	if len(v.Thumbnail) > 0 {
 		if pixbuf, err := pixbufFromBytes(v.Thumbnail); err == nil {
@@ -47,6 +53,13 @@ func buildLinkCard(v linkView) gtk.Widgetter {
 		}
 	}
 
+	// The text sits in a clamp at the card's width: a label's natural
+	// width is measured in "characters", which lands wherever the font
+	// puts it, and the title's and the description's landed past the
+	// card's own 280. That made the card's natural width larger than its
+	// minimum, and a card that is not one fixed width leaves its bubble
+	// negotiating one — which is how a marketplace listing ended up in a
+	// bubble half the pane wide.
 	body := gtk.NewBox(gtk.OrientationVertical, 2)
 	body.AddCSSClass("chatot-link-card-body")
 	if v.Title != "" {
@@ -80,7 +93,12 @@ func buildLinkCard(v linkView) gtk.Widgetter {
 		host.SetMarginTop(2)
 		body.Append(host)
 	}
-	card.Append(body)
+	bodyClamp := adw.NewClamp()
+	bodyClamp.SetUnit(adw.LengthUnitPx)
+	bodyClamp.SetMaximumSize(linkCardW)
+	bodyClamp.SetTighteningThreshold(linkCardW)
+	bodyClamp.SetChild(body)
+	card.Append(bodyClamp)
 
 	if href := linkHref(v.URL); href != "" {
 		click := gtk.NewGestureClick()

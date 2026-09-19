@@ -213,6 +213,23 @@ func NewFake() *Fake {
 				Description: "A quiet cabin on the north shore with a wood stove, a dock and a view of the hills. Kayaks included.",
 				Thumbnail:   fakeMapThumbnail(),
 			}},
+		// m12b is the shape a marketplace link arrives in: a description
+		// far longer than the card's three lines, and a body whose second
+		// URL is one long unbreakable token, long enough to fold behind a
+		// "Read more". Both together are what blew the card up.
+		{ID: "m12b", ChatJID: "1112223333@s.whatsapp.net", FromJID: "me", FromMe: true, TS: now - 2250,
+			Status: MessageStatusRead,
+			Text:   "Tem esse outro anuncio tb https://shop.example.com/cabeca-de-chuveiro-de-4-polegadas-de-5-velocidades-com-filtr/p/MLB65297397?pdp_filters=item_id:MLB4490745411#polycard_client=recommendations_vip_pads-up&wid=MLB4490745411&sid=recos&reco_backend=recomm_platform_base_pads_rfa_MERGE_marketplace&reco_model=multi_trigger_backend_merge&reco_client=vip-pads-up&reco_item_pos=0&reco_backend_type=low_level&reco_id=1a2b3c4d porém não sei se é o mesmo modelo pela diferença dos valores",
+			LinkPreview: &LinkPreview{
+				URL:   "https://shop.example.com/cabeca-de-chuveiro-de-4-polegadas-de-5-velocidades-com-filtr/p/MLB65297397",
+				Title: "Cabeça De Chuveiro De 4 Polegadas De 5 Velocidades Com Filtr - R$ 78,44",
+				Description: "Filtro multistágio remove cloro e metais, garantindo água pura em seu banho diário. | " +
+					"Cabeça com ajuste de 360° facilita posicionamento, enquanto bicos autolimpantes evitam calcário. | " +
+					"Material de ABS durável e fixo na parede, garantindo uso prolongado sem desgaste frequente. | " +
+					"Diâmetro de 10.414 cm proporciona cobertura ampla, ideal para banhos relaxantes e eficazes. | " +
+					"Tecnologia de pressurização mantém fluxo contínuo, mesmo em locais de baixa pressão.",
+				Thumbnail: fakeMapThumbnail(),
+			}},
 		// m13 seeds F49's view-once bubble: unopened, so it renders the
 		// "Click to open · closes after viewing" placeholder.
 		{ID: "m13", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 2200,

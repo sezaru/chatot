@@ -627,11 +627,12 @@ func TestFakeChatLinksReturnsURLMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ChatLinks: %v", err)
 	}
-	if len(links) != 1 || links[0].MsgID != "m12" {
-		t.Fatalf("ChatLinks = %+v, want one link m12", links)
+	// Newest first: m12b is the marketplace listing seeded after m12.
+	if len(links) != 2 || links[0].MsgID != "m12b" || links[1].MsgID != "m12" {
+		t.Fatalf("ChatLinks = %+v, want m12b then m12", links)
 	}
-	if links[0].URL != "https://stay.example.com/cabin/4412" || links[0].Host != "stay.example.com" {
-		t.Errorf("links[0] = %+v", links[0])
+	if links[1].URL != "https://stay.example.com/cabin/4412" || links[1].Host != "stay.example.com" {
+		t.Errorf("links[1] = %+v", links[1])
 	}
 }
 

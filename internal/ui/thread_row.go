@@ -3,6 +3,7 @@ package ui
 import (
 	"chatot/internal/client"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 )
@@ -44,11 +45,14 @@ type threadRow struct {
 	// exceptions: a picture, location, poll, contact, call, event or link
 	// card is a different subtree every time and carries its own handlers,
 	// and none of them is common enough on a fling to be worth keeping.
-	author    *gtk.Label
-	fwd       *gtk.Label
-	quote     *gtk.Label
-	content   gtk.Widgetter
-	body      *gtk.Label
+	author  *gtk.Label
+	fwd     *gtk.Label
+	quote   *gtk.Label
+	content gtk.Widgetter
+	body    *gtk.Label
+	// bodyHost is the clamp the body sits in; it is the bubble's child, so
+	// it is what the read-more, the choices and visibility act on.
+	bodyHost  *adw.Clamp
 	more      *gtk.Button
 	choices   gtk.Widgetter
 	footer    *gtk.Box
@@ -194,6 +198,17 @@ func (r *threadRow) buildBubbleInterior() {
 	// (~two-thirds of the pane) instead of stretching edge-to-edge, matching
 	// the mockup's bubble sizing.
 	r.body.SetMaxWidthChars(48)
+	// The body rides in a clamp so its width can be capped in pixels when
+	// the bubble holds something that has a width of its own. A label can
+	// only be capped in "characters", which lands wherever the font puts
+	// it — beside a link card that was far enough past the card's 280 to
+	// drag the whole bubble (and the card's picture with it) out of shape.
+	// Wide open by default, so an ordinary bubble is sized exactly as before.
+	r.bodyHost = adw.NewClamp()
+	r.bodyHost.SetUnit(adw.LengthUnitPx)
+	r.bodyHost.SetMaximumSize(chatMaxWidth)
+	r.bodyHost.SetTighteningThreshold(chatMaxWidth)
+	r.bodyHost.SetChild(r.body)
 
 	r.footer.SetHAlign(gtk.AlignEnd)
 	// WhatsApp's failed send: a Retry beside the time and a red badge where
@@ -222,7 +237,7 @@ func (r *threadRow) buildBubbleInterior() {
 	r.bubble.Append(r.author)
 	r.bubble.Append(r.fwd)
 	r.bubble.Append(r.quote)
-	r.bubble.Append(r.body)
+	r.bubble.Append(r.bodyHost)
 	r.bubble.Append(r.footer)
 }
 
@@ -287,7 +302,7 @@ func (r *threadRow) setMore(b *gtk.Button) {
 		r.more = nil
 	}
 	if b != nil {
-		r.bubble.InsertChildAfter(b, r.body)
+		r.bubble.InsertChildAfter(b, r.bodyHost)
 		r.more = b
 	}
 }
@@ -300,7 +315,7 @@ func (r *threadRow) setChoices(w gtk.Widgetter) {
 		r.choices = nil
 	}
 	if w != nil {
-		var after gtk.Widgetter = r.body
+		var after gtk.Widgetter = r.bodyHost
 		if r.more != nil {
 			after = r.more
 		}
@@ -370,7 +385,16 @@ func (r *threadRow) fillBody(msg client.Message, vm bubbleView, h bubbleHooks) {
 	caption := vm.IsMedia && vm.CaptionText != ""
 	rich := vm.IsLocation || vm.IsContact || vm.IsPoll || vm.IsEvent || vm.IsCall || vm.Album != nil || (vm.IsMedia && !caption)
 	// A business message can be its buttons alone; no empty line above them.
-	r.body.SetVisible(!rich && !(vm.Choices != nil && vm.Text == ""))
+	r.bodyHost.SetVisible(!rich && !(vm.Choices != nil && vm.Text == ""))
+	// A link card fixes the bubble's width, so the text under it wraps to
+	// the card rather than reaching past it and pulling the card wide.
+	if vm.Link != nil {
+		r.bodyHost.SetMaximumSize(linkCardW)
+		r.bodyHost.SetTighteningThreshold(linkCardW)
+	} else {
+		r.bodyHost.SetMaximumSize(chatMaxWidth)
+		r.bodyHost.SetTighteningThreshold(chatMaxWidth)
+	}
 	setCSSClass(r.body, "chatot-bubble-caption", caption)
 	setCSSClass(r.body, "chatot-bubble-deleted", !caption && vm.Deleted)
 	setCSSClass(r.body, "chatot-emoji-only", !caption && vm.IsEmojiOnly)
