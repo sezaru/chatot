@@ -416,9 +416,8 @@ func marshalMedia(m proto.Message) []byte {
 // typographic dashes); lines with neither are skipped.
 func parseVCardPhones(vcard string) []string {
 	var phones []string
-	for _, line := range strings.Split(strings.ReplaceAll(vcard, "\r\n", "\n"), "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "TEL") {
+	for _, line := range vcardLines(vcard) {
+		if !vcardIsTEL(line) {
 			continue
 		}
 		idx := strings.LastIndex(line, ":")
@@ -434,6 +433,40 @@ func parseVCardPhones(vcard string) []string {
 		}
 	}
 	return phones
+}
+
+// vcardLines splits a vCard into content lines, undoing the line folding
+// the format allows (RFC 6350 §3.2: a break followed by one space or tab
+// continues the line before it). A folded TEL would otherwise arrive as a
+// property with no value and a stray continuation nobody reads.
+func vcardLines(vcard string) []string {
+	var out []string
+	for _, line := range strings.Split(strings.ReplaceAll(vcard, "\r\n", "\n"), "\n") {
+		if len(out) > 0 && (strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")) {
+			out[len(out)-1] += strings.TrimLeft(line, " \t")
+			continue
+		}
+		out = append(out, strings.TrimSpace(line))
+	}
+	return out
+}
+
+// vcardIsTEL reports whether a content line is a TEL property. The name is
+// matched the way the format defines it rather than by a literal prefix:
+// it is case-insensitive, and it may carry a group prefix ("item1.TEL;…"),
+// which is exactly what WhatsApp writes for a number that has a label on
+// it. Matching "TEL" literally skipped every one of those, so a shared
+// contact arrived with no number at all and its card's Message row had
+// nothing to open.
+func vcardIsTEL(line string) bool {
+	name := line
+	if i := strings.IndexAny(name, ";:"); i >= 0 {
+		name = name[:i]
+	}
+	if dot := strings.LastIndex(name, "."); dot >= 0 {
+		name = name[dot+1:]
+	}
+	return strings.EqualFold(strings.TrimSpace(name), "TEL")
 }
 
 // vcardWAID is the digits of a TEL line's waid= parameter, "" when absent.

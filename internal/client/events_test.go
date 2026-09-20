@@ -463,6 +463,19 @@ func TestParseVCardPhones(t *testing.T) {
 		{"waid", "BEGIN:VCARD\nTEL;type=CELL;waid=554899010873:+55 48\u00a09901\u20110873\nEND:VCARD", []string{"+554899010873"}},
 		{"none", "BEGIN:VCARD\nFN:No Phone\nEND:VCARD", nil},
 		{"empty", "", nil},
+		// A number with a label on it is written as a group, which is what
+		// WhatsApp sends for most address-book contacts. Matching "TEL" as
+		// a literal prefix skipped every one of them, so the card arrived
+		// with no number and its Message row had nothing to open.
+		{"grouped", "BEGIN:VCARD\nitem1.TEL;waid=554899977139:+55 48 99997-7139\nitem1.X-ABLabel:Celular\nEND:VCARD", []string{"+554899977139"}},
+		{"grouped no waid", "BEGIN:VCARD\nitem2.TEL;type=CELL:+595 983 590139\nEND:VCARD", []string{"+595 983 590139"}},
+		{"lowercase", "BEGIN:VCARD\ntel;type=cell:+123456789\nEND:VCARD", []string{"+123456789"}},
+		// Folded: the format lets a long line continue on the next one
+		// behind a single space.
+		{"folded", "BEGIN:VCARD\nitem1.TEL;type=CELL;waid=5548999\n 77139:+55 48 99997-7139\nEND:VCARD", []string{"+554899977139"}},
+		// A group prefix on something else is still not a phone number.
+		{"grouped other", "BEGIN:VCARD\nitem1.X-ABLabel:Celular\nEND:VCARD", nil},
+		{"telephone-ish name", "BEGIN:VCARD\nX-TEL:+123456789\nEND:VCARD", nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

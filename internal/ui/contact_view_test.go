@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	"chatot/internal/client"
@@ -69,5 +70,25 @@ func TestContactChatJID(t *testing.T) {
 	}
 	if _, ok := contactChatJID([]string{"call the office"}); ok {
 		t.Error("contactChatJID(non-number) reported ok")
+	}
+	// A card written without a waid carries its number as bare digits, no
+	// "+" in front. The same contact shared twice showed up both ways, and
+	// only the copy with the "+" could be messaged.
+	for _, bare := range []string{"554899010873", "595983590139", "55 48 9901-0873"} {
+		got, ok := contactChatJID([]string{bare})
+		if !ok {
+			t.Errorf("contactChatJID(%q) reported not ok", bare)
+			continue
+		}
+		if want := strings.ReplaceAll(strings.ReplaceAll(bare, " ", ""), "-", "") + "@s.whatsapp.net"; got != want {
+			t.Errorf("contactChatJID(%q) = %q, want %q", bare, got, want)
+		}
+	}
+	// Too short to be carrying a country code: a national number must not
+	// be guessed into one.
+	for _, national := range []string{"99010873", "4471", "2079460958"} {
+		if _, ok := contactChatJID([]string{national}); ok {
+			t.Errorf("contactChatJID(%q) reported ok; too short to be international", national)
+		}
 	}
 }

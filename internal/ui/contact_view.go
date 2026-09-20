@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strings"
+	"unicode"
 
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -111,6 +112,41 @@ func contactChatJID(phones []string) (string, bool) {
 		if norm, valid := normalizePhone(p); valid {
 			return strings.TrimPrefix(norm, "+") + "@s.whatsapp.net", true
 		}
+		if digits, valid := vcardBareInternational(p); valid {
+			return digits + "@s.whatsapp.net", true
+		}
 	}
 	return "", false
+}
+
+// vcardBareInternational reads a TEL value that is already a country code
+// and number with no "+" in front of it — which is how a card written
+// without a waid parameter carries one. normalizePhone will not guess a
+// country for a number that does not say it has one, and rightly so for
+// something typed into the new-chat field; on a vCard the alternative is a
+// card whose Message row does nothing, which is what a contact shared
+// twice showed, working from one copy and dead from the other.
+//
+// The length is the guard: a national number written without its country
+// code is shorter than this, so only a string long enough to carry one is
+// read as international.
+const vcardMinInternationalDigits = 11
+
+func vcardBareInternational(phone string) (string, bool) {
+	var b strings.Builder
+	for _, r := range phone {
+		switch {
+		case unicode.IsDigit(r):
+			b.WriteRune(r)
+		case unicode.IsSpace(r) || unicode.Is(unicode.Pd, r) || r == '(' || r == ')' || r == '.':
+			// Separators the number may be written with.
+		default:
+			return "", false
+		}
+	}
+	digits := b.String()
+	if len(digits) < vcardMinInternationalDigits || len(digits) > 15 {
+		return "", false
+	}
+	return digits, true
 }
