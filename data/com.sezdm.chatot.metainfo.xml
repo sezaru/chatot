@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.17.2-beta" date="2026-09-20">
+      <description>
+        <p>A shared contact's card can be messaged again: the phone number is now read off every shape of vCard WhatsApp sends, including the one it uses whenever the number carries a label, which until now arrived with no number at all and left the card's Message row doing nothing. Cards already filed without a number are not recovered by this.</p>
+      </description>
+    </release>
     <release version="0.17.1-beta" date="2026-09-19">
       <description>
         <p>A shared link's preview card is back to one width: a listing with a long title and description no longer arrives in a bubble half the window wide, with the picture stretched across it and a band of empty space under the message.</p>
