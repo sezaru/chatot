@@ -431,6 +431,12 @@ type Composer struct {
 
 	typing *typingModel // debounces our own composing/paused SendTyping calls
 
+	// drafts holds each chat's unsent text while another chat is open;
+	// restoring is set while SetChat pours one back into the entry, so the
+	// change it raises reads as a switch rather than a keystroke.
+	drafts    draftBook
+	restoring bool
+
 	onSent       func(client.Message)
 	onSendResult func(localID string, msg client.Message, err error)
 	localSeq     int // see localMessageID
@@ -604,6 +610,7 @@ func NewComposer(c client.Client) *Composer {
 		sendBtn:     sendBtn,
 		gifProvider: settingsProvider{},
 		typing:      newTypingModel(typingDebounce),
+		drafts:      draftBook{},
 	}
 
 	pickerPopover, pickerStack := newPickerPopover(comp)
@@ -668,7 +675,10 @@ func (c *Composer) onEntryChanged() {
 	c.updateSendVisibility()
 	c.refreshMentionPicker()
 	jid := c.state.jid
-	if jid == "" {
+	// A draft poured back on a chat switch is not the user typing: it
+	// neither starts a composing burst in the new chat nor, when empty,
+	// reports paused to it.
+	if jid == "" || c.restoring {
 		return
 	}
 	if strings.TrimSpace(c.entry.Text()) == "" {
@@ -742,12 +752,23 @@ func (c *Composer) SetDraft(text string) { c.entry.SetText(text) }
 // outbound message right after a successful send.
 func (c *Composer) OnSent(f func(client.Message)) { c.onSent = f }
 
-// SetChat switches the composer to jid, clearing any pending reply. If we
-// were mid-burst composing in the previous chat, tell it we've stopped —
-// the entry's text isn't cleared on a chat switch, so nothing else would
-// trigger that paused transition.
+// SetChat switches the composer to jid, clearing any pending reply. The
+// entry's text belongs to the chat it was typed in: a switch stashes it
+// (see draftBook) and pours jid's own draft back, so what was left half
+// written in one chat shows up again only there. If we were mid-burst
+// composing in the previous chat, tell it we've stopped — the stash
+// clears the entry without a keystroke, so nothing else would trigger
+// that paused transition.
 func (c *Composer) SetChat(jid string) {
 	prevJID := c.state.jid
+	if jid != prevJID {
+		// An edit in progress holds the bubble's text, not a draft: the
+		// switch drops the edit, and stashing it would turn the old
+		// message into a new one on the way back.
+		if _, editing := c.state.EditTarget(); !editing {
+			c.drafts.Put(prevJID, c.entry.Text(), c.mentionNames)
+		}
+	}
 	c.state.SetChat(jid)
 	if c.typing.Cleared() && prevJID != "" {
 		c.sendTypingAsync(prevJID, false)
@@ -755,6 +776,18 @@ func (c *Composer) SetChat(jid string) {
 	c.mentionNames = nil
 	if c.mentions != nil {
 		c.mentions.Hide()
+	}
+	if jid != prevJID {
+		d := c.drafts.Take(jid)
+		// Only a real change touches the buffer: the first open lands on
+		// an empty entry, and a scroll-to-cursor queued on the unmapped
+		// view leaves its layout clipping the line's last glyph.
+		if d.text != c.entry.Text() {
+			c.restoring = true
+			c.entry.SetText(d.text)
+			c.restoring = false
+		}
+		c.mentionNames = d.mentions
 	}
 	c.attachBtn.SetSensitive(jid != "")
 	c.emojiBtn.SetSensitive(jid != "")
