@@ -374,7 +374,8 @@ func extractText(m *waProto.Message, msg *Message) {
 		return
 	}
 	if id := ctx.GetStanzaID(); id != "" {
-		msg.ReplyTo = &MsgRef{ChatJID: msg.ChatJID, MsgID: id, Text: quotedPreview(msg.ChatJID, ctx.GetQuotedMessage())}
+		msg.ReplyTo = &MsgRef{ChatJID: msg.ChatJID, MsgID: id, Text: quotedPreview(msg.ChatJID, ctx.GetQuotedMessage()), FromJID: ctx.GetParticipant()}
+
 	}
 	msg.Forwarded = ctx.GetIsForwarded()
 }

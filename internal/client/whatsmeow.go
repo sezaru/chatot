@@ -869,9 +869,7 @@ func (w *Whatsmeow) SendText(ctx context.Context, jid, text string, replyTo *Msg
 		waMsg.Conversation = proto.String(text)
 	} else {
 		ext := &waE2E.ExtendedTextMessage{Text: proto.String(text)}
-		if replyTo != nil {
-			ext.ContextInfo = w.replyContextInfo(jid, *replyTo)
-		}
+		ext.ContextInfo, replyTo = w.replyContext(ctx, replyTo)
 		if len(mentions) > 0 {
 			if ext.ContextInfo == nil {
 				ext.ContextInfo = &waE2E.ContextInfo{}
@@ -1200,22 +1198,105 @@ func mentionedUsers(text string) []string {
 	return out
 }
 
-// replyContextInfo builds the ContextInfo for a reply, quoting the target
-// message's text and, for group chats, naming its original sender so
-// WhatsApp can resolve the "@X replied" attribution. Best-effort: if the
-// target isn't in the local store (e.g. store lookup race), it still sends
-// a bare StanzaID reply.
-func (w *Whatsmeow) replyContextInfo(jid string, replyTo MsgRef) *waE2E.ContextInfo {
-	ctx := &waE2E.ContextInfo{StanzaID: proto.String(replyTo.MsgID)}
-	quoted, ok, err := w.store.MessageByID(replyTo.ChatJID, replyTo.MsgID)
+// replyContext builds the ContextInfo for a reply, quoting the target
+// message's text and naming its author, and returns the reply's MsgRef
+// with that author filled in for the local copy (nil, nil for no reply).
+// WhatsApp takes a quote without a participant as the recipient's own
+// message, so ours must be named too. Best-effort: if the target isn't in
+// the local store (e.g. store lookup race), it still sends a bare
+// StanzaID reply.
+func (w *Whatsmeow) replyContext(ctx context.Context, replyTo *MsgRef) (*waE2E.ContextInfo, *MsgRef) {
+	if replyTo == nil {
+		return nil, nil
+	}
+	ref := *replyTo
+	info := &waE2E.ContextInfo{StanzaID: proto.String(ref.MsgID)}
+	quoted, ok, err := w.store.MessageByID(ref.ChatJID, ref.MsgID)
 	if err != nil || !ok {
-		return ctx
+		return info, &ref
 	}
-	ctx.QuotedMessage = &waE2E.Message{Conversation: proto.String(quoted.Text)}
-	if !quoted.FromMe && quoted.FromJID != "" {
-		ctx.Participant = proto.String(quoted.FromJID)
+	info.QuotedMessage = &waE2E.Message{Conversation: proto.String(quoted.Text)}
+	ownPN, ownLID := w.ownIdentities()
+	lid := quoted.FromMe && w.chatAddressesByLID(ctx, ref.ChatJID)
+	if p := quoteParticipant(quoted, ownPN, ownLID, lid); p != "" {
+		info.Participant = proto.String(p)
+		ref.FromJID = p
 	}
-	return ctx
+	return info, &ref
+}
+
+// quoteParticipant is the participant a quote of quoted names: its sender
+// without the device part, or for our own message whichever of our
+// identities the chat addresses its members by.
+func quoteParticipant(quoted store.Message, ownPN, ownLID types.JID, lidAddressed bool) string {
+	if !quoted.FromMe {
+		return nonADString(quoted.FromJID)
+	}
+	if lidAddressed && !ownLID.IsEmpty() {
+		return ownLID.ToNonAD().String()
+	}
+	if !ownPN.IsEmpty() {
+		return ownPN.ToNonAD().String()
+	}
+	return nonADString(quoted.FromJID)
+}
+
+// chatAddressesByLID reports whether chatJID knows its members by LID: a
+// LID chat does, and a group does when its latest message from someone
+// else came from a LID. A group nobody else has written in yet asks
+// WhatsApp for its addressing mode (whatsmeow keeps its cached copy to
+// itself); if that fails too, it is taken as phone-number addressed.
+func (w *Whatsmeow) chatAddressesByLID(ctx context.Context, chatJID string) bool {
+	j, err := types.ParseJID(chatJID)
+	if err != nil {
+		return false
+	}
+	switch j.Server {
+	case types.HiddenUserServer:
+		return true
+	case types.GroupServer:
+		sender, err := w.store.LastSenderJID(chatJID)
+		if err != nil {
+			return false
+		}
+		if sender != "" {
+			return strings.HasSuffix(sender, "@"+types.HiddenUserServer)
+		}
+		if w.wa == nil {
+			return false
+		}
+		info, err := w.wa.GetGroupInfo(ctx, j)
+		if err != nil {
+			w.log.Warnf("chatot/client: addressing mode of %s: %v", chatJID, err)
+			return false
+		}
+		return info.AddressingMode == types.AddressingModeLID
+	}
+	return false
+}
+
+// ownIdentities is this account's phone-number JID and LID, either empty
+// when unknown (not logged in, or a store-only fixture).
+func (w *Whatsmeow) ownIdentities() (pn, lid types.JID) {
+	if w.wa == nil || w.wa.Store == nil {
+		return types.EmptyJID, types.EmptyJID
+	}
+	if w.wa.Store.ID != nil {
+		pn = *w.wa.Store.ID
+	}
+	return pn, w.wa.Store.LID
+}
+
+// nonADString is jid without its device part, unparseable input unchanged.
+func nonADString(jid string) string {
+	if jid == "" {
+		return ""
+	}
+	j, err := types.ParseJID(jid)
+	if err != nil {
+		return jid
+	}
+	return j.ToNonAD().String()
 }
 
 // ownJID returns this device's own JID as a string, or "" if not logged in.
@@ -1257,10 +1338,7 @@ func (w *Whatsmeow) SendMedia(ctx context.Context, jid string, m Attachment, rep
 		return "", fmt.Errorf("chatot/client: send media: upload: %w", err)
 	}
 
-	var ctxInfo *waE2E.ContextInfo
-	if replyTo != nil {
-		ctxInfo = w.replyContextInfo(jid, *replyTo)
-	}
+	ctxInfo, replyTo := w.replyContext(ctx, replyTo)
 	waMsg, mediaProto := buildMediaMessage(kind, mimeType, m, &resp, ctxInfo)
 	var thumb []byte
 	if len(m.Thumbnail) > 0 {
@@ -1315,9 +1393,7 @@ func (w *Whatsmeow) SendLocation(ctx context.Context, jid string, loc Location, 
 	if loc.Address != "" {
 		locMsg.Address = proto.String(loc.Address)
 	}
-	if replyTo != nil {
-		locMsg.ContextInfo = w.replyContextInfo(jid, *replyTo)
-	}
+	locMsg.ContextInfo, replyTo = w.replyContext(ctx, replyTo)
 
 	id := w.wa.GenerateMessageID()
 	if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{LocationMessage: locMsg}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
@@ -1374,9 +1450,7 @@ func (w *Whatsmeow) SendContact(ctx context.Context, jid string, contact Contact
 		DisplayName: proto.String(contact.DisplayName),
 		Vcard:       proto.String(buildVCard(contact)),
 	}
-	if replyTo != nil {
-		contactMsg.ContextInfo = w.replyContextInfo(jid, *replyTo)
-	}
+	contactMsg.ContextInfo, replyTo = w.replyContext(ctx, replyTo)
 
 	id := w.wa.GenerateMessageID()
 	if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{ContactMessage: contactMsg}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
@@ -1652,9 +1726,11 @@ func (w *Whatsmeow) ReplyChoice(ctx context.Context, chatJID, msgID string, sel 
 		StanzaID:      proto.String(msgID),
 		QuotedMessage: &waE2E.Message{Conversation: proto.String(target.Text)},
 	}
-	if !target.FromMe && target.FromJID != "" {
-		ctxInfo.Participant = proto.String(target.FromJID)
+	ownPN, ownLID := w.ownIdentities()
+	if p := quoteParticipant(target, ownPN, ownLID, w.chatAddressesByLID(ctx, chatJID)); p != "" {
+		ctxInfo.Participant = proto.String(p)
 	}
+
 	waMsg := choiceReply(offer.Choices.Source, sel, ctxInfo)
 
 	id := w.wa.GenerateMessageID()

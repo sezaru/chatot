@@ -109,6 +109,7 @@ func storeMessageRow(m *Message) store.MessageRow {
 	if m.ReplyTo != nil {
 		row.ReplyToMsgID = m.ReplyTo.MsgID
 		row.ReplyToText = m.ReplyTo.Text
+		row.ReplyToFrom = nonADString(m.ReplyTo.FromJID)
 	}
 	if lp := m.LinkPreview; lp != nil {
 		if b, err := json.Marshal(linkPayload{
@@ -233,7 +234,8 @@ func messageFromStore(m store.Message, selfJID string) Message {
 		Status: m.Status, Starred: m.Starred, Forwarded: m.Forwarded, Played: m.Played,
 	}
 	if m.ReplyToMsgID != "" {
-		out.ReplyTo = &MsgRef{ChatJID: m.ChatJID, MsgID: m.ReplyToMsgID, Text: m.ReplyToText}
+		out.ReplyTo = &MsgRef{ChatJID: m.ChatJID, MsgID: m.ReplyToMsgID, Text: m.ReplyToText, FromJID: m.ReplyToFrom}
+
 	}
 	if m.Attachment != nil {
 		out.Attachment = &Attachment{

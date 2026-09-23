@@ -531,6 +531,9 @@ type MsgRef struct {
 	// carried it (WhatsApp sends a copy of what was quoted): what the
 	// quote shows when the message itself is not stored.
 	Text string
+	// FromJID is who wrote the quoted message (the reply's participant),
+	// for the quote's author line when the message itself is not loaded.
+	FromJID string
 }
 
 // Attachment describes media attached to a message, inbound or outbound.

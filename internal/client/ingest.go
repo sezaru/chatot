@@ -97,8 +97,15 @@ func (w *Whatsmeow) ingestMessageUnread(m *Message, unreadDelta int) error {
 			return err
 		}
 	}
+	if r := m.ReplyTo; r != nil && w.isSelfJID(r.FromJID) {
+		// A quote of ours may name us by LID; the UI knows us by number.
+		if pn, _ := w.ownIdentities(); !pn.IsEmpty() {
+			r.FromJID = pn.ToNonAD().String()
+		}
+	}
 	row := storeMessageRow(m)
 	if err := w.store.UpsertMessage(row); err != nil {
+
 		return err
 	}
 	if m.Attachment != nil {

@@ -48,6 +48,7 @@ type Message struct {
 	TS           int64
 	ReplyToMsgID string
 	ReplyToText  string              // the quoted message as the reply carried it, for one not stored
+	ReplyToFrom  string              // who wrote the quoted message, as the reply named them
 	Reactions    map[string][]string // emoji -> reactor JIDs, oldest first
 	Attachment   *Attachment
 	// Kind is "" for a plain text/media message or a rich-kind tag (e.g.
@@ -158,11 +159,13 @@ type MessageRow struct {
 	TS           int64
 	ReplyToMsgID string // "" leaves any existing reply link untouched
 	ReplyToText  string // preview of the quoted message; "" leaves any existing one
-	Kind         string // "" plain message; "location" etc. for a rich kind
-	Payload      string // opaque JSON body for a rich kind, "" otherwise
-	Edited       bool   // true for a MESSAGE_EDIT upsert; sticky in the store
-	Deleted      bool   // true for a REVOKE upsert; sticky in the store
-	Forwarded    bool   // true for a forwarded upsert; sticky in the store
+	ReplyToFrom  string // the quoted message's author; "" leaves any existing one
+
+	Kind      string // "" plain message; "location" etc. for a rich kind
+	Payload   string // opaque JSON body for a rich kind, "" otherwise
+	Edited    bool   // true for a MESSAGE_EDIT upsert; sticky in the store
+	Deleted   bool   // true for a REVOKE upsert; sticky in the store
+	Forwarded bool   // true for a forwarded upsert; sticky in the store
 	// Status is unused by UpsertMessage (delivery/read state is only ever
 	// advanced via SetMessagesStatus, so a re-upsert can never regress it);
 	// kept here so callers building a full row have the field available.
