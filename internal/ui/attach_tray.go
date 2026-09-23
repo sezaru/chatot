@@ -514,7 +514,7 @@ func (t *AttachTray) videoStage(path string, p trayPreview) gtk.Widgetter {
 	view.SetVExpand(true)
 	if player.stream != nil {
 		player.stream.NotifyProperty("error", func() {
-			if err := player.stream.Error(); err != nil {
+			if err := mediaStreamError(&player.stream.MediaStream); err != nil {
 				note := gtk.NewLabel("Can't play here · " + err.Error())
 				note.AddCSSClass("chatot-tray-meta")
 				note.SetHAlign(gtk.AlignCenter)

@@ -284,7 +284,7 @@ func (p *mediaPlayer) attach(stream *gtk.MediaFile) {
 		}
 	})
 	stream.NotifyProperty("error", func() {
-		if err := stream.Error(); err != nil && current() {
+		if err := mediaStreamError(&stream.MediaStream); err != nil && current() {
 			log.Printf("chatot: media %s: %v", p.path, err)
 		}
 	})
