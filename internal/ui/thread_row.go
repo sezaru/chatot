@@ -747,11 +747,16 @@ func (hb *hoverButtons) bind(r *threadRow, msg client.Message, vm bubbleView, h 
 		pop.SetChild(buildReactRow(a.bubble, msg, h, pop, at))
 		pop.Popup()
 	}
+	// An album's chevron is the whole album's: Forward sends every picture.
+	var run []client.Message
+	if vm.Album != nil {
+		run = vm.Album.Msgs
+	}
 	a.openMenu = func() {
 		pop := a.popover(hb.chevron, gtk.PosBottom, bubbleMenuWidth)
 		// Actions only: the mockup's ⋯ menu carries no reaction row, that is
 		// what the 🙂 button beside it is for.
-		pop.SetChild(buildMenuBox(h.menuItemsFor(msg, canEdit, canDelete), pop))
+		pop.SetChild(buildMenuBox(h.runMenuItems(msg, run, canEdit, canDelete), pop))
 		pop.Popup()
 	}
 	hb.cur = &a

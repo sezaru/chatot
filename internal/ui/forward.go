@@ -127,13 +127,16 @@ func (w *forwardRowWidget) setPicked(on bool) {
 	w.check.QueueDraw()
 }
 
-// ShowForwardDialog opens the "Forward to" picker for msg: a searchable
-// multi-select list of the user's chats and a Send button that dispatches
-// ForwardMessage to every checked chat in the background, reporting the
+// ShowForwardDialog opens the "Forward to" picker for msgs (one message, or
+// every picture of an album in thread order): a searchable multi-select
+// list of the user's chats and a Send button that dispatches ForwardMessage
+// for each message to every checked chat in the background, reporting the
 // outcome via toastOverlay (may be nil). cache is the caller's avatar
 // memo, normally the chat list's, so the rows show the pictures it already
-// has without asking again; nil makes a private one.
-func ShowForwardDialog(parent *gtk.Window, c client.Client, cache *avatarCache, msg client.Message, toastOverlay *adw.ToastOverlay) {
+// has without asking again; nil makes a private one. onDone (may be nil)
+// runs on the GTK main loop with the chats something reached, so an open
+// thread among them can show the copies.
+func ShowForwardDialog(parent *gtk.Window, c client.Client, cache *avatarCache, msgs []client.Message, toastOverlay *adw.ToastOverlay, onDone func(jids []string)) {
 	t0 := time.Now()
 	chats, err := c.Chats(0)
 	if err != nil {
@@ -273,19 +276,27 @@ func ShowForwardDialog(parent *gtk.Window, c client.Client, cache *avatarCache, 
 			return
 		}
 		go func() {
-			ok := 0
+			var reached []string
 			for _, jid := range targets {
-				if _, err := c.ForwardMessage(context.Background(), msg, jid); err != nil {
-					log.Printf("chatot: forward to %s failed: %v", jid, err)
-					continue
+				sent := 0
+				for _, msg := range msgs {
+					if _, err := c.ForwardMessage(context.Background(), msg, jid); err != nil {
+						log.Printf("chatot: forward %s to %s failed: %v", msg.ID, jid, err)
+						continue
+					}
+					sent++
 				}
-				ok++
-			}
-			if toastOverlay == nil {
-				return
+				if sent > 0 {
+					reached = append(reached, jid)
+				}
 			}
 			glib.IdleAdd(func() {
-				toastOverlay.AddToast(adw.NewToast(fmt.Sprintf("Forwarded to %d chat(s)", ok)))
+				if onDone != nil && len(reached) > 0 {
+					onDone(reached)
+				}
+				if toastOverlay != nil {
+					toastOverlay.AddToast(adw.NewToast(fmt.Sprintf("Forwarded to %d chat(s)", len(reached))))
+				}
 			})
 		}()
 	})

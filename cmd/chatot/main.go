@@ -566,9 +566,12 @@ func activate(app *adw.Application, c client.Client) {
 	conversation.SetToastOverlay(toastOverlay)
 	viewer.SetWindow(&win.Window)
 	viewer.SetToastOverlay(toastOverlay)
-	viewer.OnForward(func(msg client.Message) {
-		ui.ShowForwardDialog(&win.Window, c, chatList.AvatarCache(), msg, toastOverlay)
-	})
+	// Every forward funnels through here, so a copy sent to the open chat
+	// shows up in it.
+	forward := func(msgs ...client.Message) {
+		ui.ShowForwardDialog(&win.Window, c, chatList.AvatarCache(), msgs, toastOverlay, conversation.ShowForwarded)
+	}
+	viewer.OnForward(func(msg client.Message) { forward(msg) })
 	viewer.OnStar(func(msg client.Message) {
 		go func() {
 			if err := c.StarMessage(context.Background(), msg.ChatJID, msg.ID, !msg.Starred); err != nil {
@@ -587,9 +590,7 @@ func activate(app *adw.Application, c client.Client) {
 		})
 	})
 	chatList.SetToastOverlay(toastOverlay)
-	chatList.OnForwardRequested(func(msg client.Message) {
-		ui.ShowForwardDialog(&win.Window, c, chatList.AvatarCache(), msg, toastOverlay)
-	})
+	chatList.OnForwardRequested(func(msg client.Message) { forward(msg) })
 
 	if hasAccounts {
 		refresh := func() { chatList.RefreshAccounts() }
@@ -601,9 +602,7 @@ func activate(app *adw.Application, c client.Client) {
 		})
 	}
 
-	conversation.OnForwardRequested(func(msg client.Message) {
-		ui.ShowForwardDialog(&win.Window, c, chatList.AvatarCache(), msg, toastOverlay)
-	})
+	conversation.OnForwardRequested(forward)
 	conversation.OnShowMediaRequested(func(jid string) {
 		mediaPage.Load(jid)
 		rightPane.SetVisibleChildName("media")
@@ -1811,7 +1810,7 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 			if pick := os.Getenv("CHATOT_SHOT_TEXT"); pick != "" {
 				ui.ForwardInitialPick = strings.Split(pick, ",")
 			}
-			ui.ShowForwardDialog(d.win, d.c, d.chatList.AvatarCache(), m, d.toasts)
+			ui.ShowForwardDialog(d.win, d.c, d.chatList.AvatarCache(), []client.Message{m}, d.toasts, d.conversation.ShowForwarded)
 		}
 	case "export":
 		ui.ShowExportDialog(d.win, d.c, jid, name, d.toasts)

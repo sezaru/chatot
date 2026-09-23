@@ -185,7 +185,7 @@ func (cv *ConversationView) showGroupInfo(chat client.Chat) {
 		MediaCount: cv.mediaCount(jid),
 		Media:      func() { callWithJID(cv.onShowMedia, jid) },
 		Toast:      func(text string) { showToast(cv.toastOverlay, text) },
-		Forward:    cv.onForward,
+		Forward:    forwardOne(cv.onForward),
 	})
 }
 
@@ -193,7 +193,7 @@ func (cv *ConversationView) showGroupInfo(chat client.Chat) {
 // reaches it through Group info).
 func (cv *ConversationView) showGroupInvite(chat client.Chat) {
 	showInviteLinkDialog(cv.window, cv.c, chat.JID, "Invite to "+chat.Name, groupInviteBody,
-		func(text string) { showToast(cv.toastOverlay, text) }, cv.onForward)
+		func(text string) { showToast(cv.toastOverlay, text) }, forwardOne(cv.onForward))
 }
 
 // disappearingTimer is the chat's current disappearing-message timer in

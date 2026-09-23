@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -404,7 +405,7 @@ type ConversationView struct {
 	onEdit    func(client.Message)
 	onDelete  func(client.Message)
 	onStar    func(client.Message)
-	onForward func(client.Message)
+	onForward func(msgs ...client.Message)
 	// onUnreadSeen fires when the unread pill comes down because the reader
 	// has looked at it: the chat is read from that moment.
 	onUnreadSeen func(jid string, msgs []client.Message)
@@ -504,8 +505,9 @@ func (cv *ConversationView) OnDeleteRequested(f func(client.Message)) { cv.onDel
 func (cv *ConversationView) OnStarRequested(f func(client.Message)) { cv.onStar = f }
 
 // OnForwardRequested registers f to be called when the user picks Forward
-// from a bubble's "⋯" menu; msg is the message to forward.
-func (cv *ConversationView) OnForwardRequested(f func(client.Message)) { cv.onForward = f }
+// from a bubble's "⋯" menu; msgs is the message to forward, or every
+// picture of an album when the menu is the whole album's.
+func (cv *ConversationView) OnForwardRequested(f func(msgs ...client.Message)) { cv.onForward = f }
 
 // OnStopLiveRequested wires the location bubble's Stop sharing button.
 func (cv *ConversationView) OnStopLiveRequested(f func(client.Message)) { cv.onStopLive = f }
@@ -1592,6 +1594,47 @@ func (cv *ConversationView) AppendSentMessage(msg client.Message) {
 	cv.appendMessage(msg)
 }
 
+// ShowForwarded brings in the copies a forward just filed, when the open
+// chat is among jids. A forward lands in the store with only a chat-list
+// update (no EventMessage), so without this the thread only showed it on
+// the next open. Must run on the GTK main loop.
+func (cv *ConversationView) ShowForwarded(jids []string) {
+	if cv.jid == "" || !slices.Contains(jids, cv.jid) {
+		return
+	}
+	jid, gen := cv.jid, cv.loadGen
+	go func() {
+		msgs, err := cv.c.Messages(jid, conversationPageSize)
+		if err != nil {
+			log.Printf("chatot: reload after forward: %v", err)
+			return
+		}
+		glib.IdleAdd(func() {
+			if gen != cv.loadGen || jid != cv.jid {
+				return
+			}
+			var last int64
+			if stored := cv.storedPositions(); len(stored) > 0 {
+				last = cv.msgs[stored[len(stored)-1]].TS
+			}
+			for _, m := range msgs {
+				if m.TS >= last && cv.positionOf(m.ID) < 0 {
+					cv.appendMessage(m)
+				}
+			}
+		})
+	}()
+}
+
+// forwardOne adapts a forward hook to the one-message shape the dialogs
+// and menus outside the thread take; nil stays nil.
+func forwardOne(f func(msgs ...client.Message)) func(client.Message) {
+	if f == nil {
+		return nil
+	}
+	return func(m client.Message) { f(m) }
+}
+
 // isUnsent reports whether msg is an optimistic row the store does not
 // hold: a send in flight or a failed one.
 func isUnsent(msg client.Message) bool { return msg.Status < client.MessageStatusSent }
@@ -2128,7 +2171,7 @@ type bubbleHooks struct {
 	onEdit     func(client.Message)
 	onDelete   func(client.Message)
 	onStar     func(client.Message)
-	onForward  func(client.Message)
+	onForward  func(msgs ...client.Message)
 	onStopLive func(client.Message)
 	// onOpenViewer opens msg's attachment in the viewer pane; nil falls
 	// back to the standalone photo/video windows.
@@ -2236,7 +2279,7 @@ func (h bubbleHooks) mediaOpener(msg client.Message) func(path string) {
 			showVideoFullscreen(h.window, path, msg, nil)
 			return
 		}
-		showImageViewer(h.window, path, msg, h.onForward)
+		showImageViewer(h.window, path, msg, forwardOne(h.onForward))
 	}
 }
 
@@ -2562,12 +2605,23 @@ func (h bubbleHooks) addToStickers(msg client.Message) {
 // bubble can't offer (nothing to copy, someone else's message for Edit) is
 // left inert rather than omitted, so the menu keeps the design's shape.
 func (h bubbleHooks) menuItemsFor(msg client.Message, canEdit, canDelete bool) []menuItem {
+	return h.runMenuItems(msg, nil, canEdit, canDelete)
+}
+
+// runMenuItems is menuItemsFor for a bubble that shows a run of messages
+// (an album, msg its first picture): Forward sends the whole run, the way
+// it was posted. A nil run is the single message.
+func (h bubbleHooks) runMenuItems(msg client.Message, run []client.Message, canEdit, canDelete bool) []menuItem {
 	actions := messageMenuActions{}
 	if h.onReply != nil {
 		actions.Reply = func() { h.onReply(msg) }
 	}
 	if h.onForward != nil {
-		actions.Forward = func() { h.onForward(msg) }
+		if len(run) > 1 {
+			actions.Forward = func() { h.onForward(run...) }
+		} else {
+			actions.Forward = func() { h.onForward(msg) }
+		}
 	}
 	if h.onStar != nil {
 		actions.Star = func() { h.onStar(msg) }
