@@ -453,7 +453,7 @@ func buildGroupInfo(dialog *cardDialog, c client.Client, cache *avatarCache, inf
 	card.Add(newIconRow("⏱", "Disappearing messages", a.DisappearingValue, false, closing(a.Disappearing)))
 	card.Add(newIconRow("🖼", "Media, links and docs", a.MediaCount, false, closing(a.Media)))
 	if path, ok := cache.get(info.JID); ok && path != "" {
-		card.Add(newIconRow("👤", "Open group picture", "", false, func() { openFile(path) }))
+		card.Add(newIconRow("👤", "Open group picture", "", false, func() { openProfilePicture(c, info.JID, path) }))
 	}
 	card.Add(newIconRow("🔗", "Invite link", "", false, func() {
 		showInviteLinkDialog(dialog.Window(), c, info.JID, "Invite to "+info.Name, groupInviteBody, a.Toast, a.Forward)

@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"chatot/internal/client"
@@ -113,7 +114,7 @@ func showContactInfoDialog(parent *gtk.Window, c client.Client, cache *avatarCac
 	card.Add(newIconRow("⏱", "Disappearing messages", a.DisappearingValue, false, closing(a.Disappearing)))
 	card.Add(newIconRow("🖼", "Media, links and docs", a.MediaCount, false, closing(a.Media)))
 	if path, ok := cache.get(jid); ok && path != "" {
-		card.Add(newIconRow("👤", "Open profile picture", "", false, func() { openFile(path) }))
+		card.Add(newIconRow("👤", "Open profile picture", "", false, func() { openProfilePicture(c, jid, path) }))
 	}
 	card.Add(newIconRow("🚫", blockChatMenuLabel(blocked), "", true, closing(a.Block)))
 	body.Append(card)
@@ -174,5 +175,21 @@ func muteChatAsync(c client.Client, jid string, mute bool) {
 		if err := c.MuteChat(context.Background(), jid, mute); err != nil {
 			log.Printf("chatot: mute chat failed: %v", err)
 		}
+	}()
+}
+
+// openProfilePicture opens jid's picture at full resolution in the
+// desktop's viewer. preview is the list's small copy (what the card draws),
+// opened instead when the full one can't be had.
+func openProfilePicture(c client.Client, jid, preview string) {
+	go func() {
+		path, err := c.AvatarFull(context.Background(), jid)
+		if err != nil {
+			log.Printf("chatot: full profile picture %s: %v", jid, err)
+		}
+		if path == "" {
+			path = preview
+		}
+		glib.IdleAdd(func() { openFile(path) })
 	}()
 }

@@ -2053,6 +2053,11 @@ func (f *Fake) Avatar(ctx context.Context, jid string) (string, error) {
 	return "", nil
 }
 
+// AvatarFull is Avatar at full size: none here either.
+func (f *Fake) AvatarFull(ctx context.Context, jid string) (string, error) {
+	return "", nil
+}
+
 // fakeMapThumbnail draws a stand-in for the map preview a real WhatsApp
 // location message embeds: a pale tile with a couple of "roads" and a strip of
 // water, so the location bubble's map rendering can be exercised without a

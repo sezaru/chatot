@@ -1120,6 +1120,10 @@ func (m *AccountManager) Avatar(ctx context.Context, jid string) (string, error)
 	return m.active().Avatar(ctx, jid)
 }
 
+func (m *AccountManager) AvatarFull(ctx context.Context, jid string) (string, error) {
+	return m.active().AvatarFull(ctx, jid)
+}
+
 // MergedChat is one row of the merged "All accounts" list: a chat plus which
 // account it belongs to, so the sidebar can stripe and label it.
 type MergedChat struct {

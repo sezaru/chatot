@@ -996,6 +996,9 @@ type Client interface {
 	// fetching it on first use. Returns ("", nil) if there's no picture (or
 	// it's not visible to us) — that's normal, not an error.
 	Avatar(ctx context.Context, jid string) (localPath string, err error)
+	// AvatarFull is jid's picture at full resolution, for opening it; Avatar
+	// is the small preview. ("", nil) when there is none, as for Avatar.
+	AvatarFull(ctx context.Context, jid string) (localPath string, err error)
 }
 
 // ErrNoThumbnail is DownloadThumbnail's answer for an attachment WhatsApp

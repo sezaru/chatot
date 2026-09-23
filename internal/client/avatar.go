@@ -21,6 +21,11 @@ func avatarCacheName(jid string) string {
 	return r.Replace(jid) + ".jpg"
 }
 
+// avatarFullCacheName is the full-resolution picture's file beside the preview.
+func avatarFullCacheName(jid string) string {
+	return strings.TrimSuffix(avatarCacheName(jid), ".jpg") + "-full.jpg"
+}
+
 // avatarEntry is what's memoized per jid: either a resolved cache path (with
 // the picture ID it was fetched under, for a future ExistingID revalidation)
 // or missing=true, meaning the contact has no picture / it's not visible to
@@ -53,18 +58,10 @@ func (w *Whatsmeow) Avatar(ctx context.Context, jid string) (string, error) {
 		return cached, nil
 	}
 
-	to, err := types.ParseJID(jid)
+	to, err := w.avatarTarget(ctx, jid)
 	if err != nil {
-		return "", fmt.Errorf("chatot/client: avatar: parse jid %q: %w", jid, err)
+		return "", err
 	}
-	// The picture lives on the phone-number identity; ask for that one when
-	// the chat is LID-addressed and the mapping is known.
-	if to.Server == types.HiddenUserServer {
-		if pn, err := w.wa.Store.LIDs.GetPNForLID(ctx, to); err == nil && !pn.IsEmpty() {
-			to = pn
-		}
-	}
-
 	info, err := w.wa.GetProfilePictureInfo(ctx, to, &whatsmeow.GetProfilePictureParams{Preview: true, ExistingID: entry.id})
 	if err != nil {
 		if avatarDefinitelyMissing(err) {
@@ -92,25 +89,77 @@ func (w *Whatsmeow) Avatar(ctx context.Context, jid string) (string, error) {
 	// WhatsApp says a picture exists; a failed download of it is transient
 	// (network blip, expired signed URL) and must not be remembered as
 	// "no picture" — leave the memo empty so the next rebuild retries.
-	resp, err := http.Get(info.URL)
+	path := filepath.Join(w.avatarDir, avatarCacheName(jid))
+	if err := downloadAvatar(jid, info.URL, path); err != nil {
+		return "", err
+	}
+	w.memoAvatar(jid, avatarEntry{id: info.ID, path: path})
+	return path, nil
+}
+
+// AvatarFull resolves jid's profile picture at full resolution — the one
+// WhatsApp shows when the picture is opened, where Avatar is the small
+// preview the lists draw — to a local file, cached beside the preview and
+// dropped with it when the picture changes. ("", nil) when there is none.
+func (w *Whatsmeow) AvatarFull(ctx context.Context, jid string) (string, error) {
+	path := filepath.Join(w.avatarDir, avatarFullCacheName(jid))
+	if fileExists(path) {
+		return path, nil
+	}
+	to, err := w.avatarTarget(ctx, jid)
 	if err != nil {
-		return "", fmt.Errorf("chatot/client: avatar %s: download: %w", jid, err)
+		return "", err
+	}
+	info, err := w.wa.GetProfilePictureInfo(ctx, to, &whatsmeow.GetProfilePictureParams{Preview: false})
+	if err != nil {
+		if avatarDefinitelyMissing(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("chatot/client: full avatar %s: %w", jid, err)
+	}
+	if info == nil || info.URL == "" {
+		return "", nil
+	}
+	if err := downloadAvatar(jid, info.URL, path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// avatarTarget is the JID whose picture to ask for: the picture lives on
+// the phone-number identity, so a LID-addressed chat asks for that one when
+// the mapping is known.
+func (w *Whatsmeow) avatarTarget(ctx context.Context, jid string) (types.JID, error) {
+	to, err := types.ParseJID(jid)
+	if err != nil {
+		return types.JID{}, fmt.Errorf("chatot/client: avatar: parse jid %q: %w", jid, err)
+	}
+	if to.Server == types.HiddenUserServer {
+		if pn, err := w.wa.Store.LIDs.GetPNForLID(ctx, to); err == nil && !pn.IsEmpty() {
+			to = pn
+		}
+	}
+	return to, nil
+}
+
+// downloadAvatar fetches a profile picture from url into path.
+func downloadAvatar(jid, url, path string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("chatot/client: avatar %s: download: %w", jid, err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("chatot/client: avatar %s: read: %w", jid, err)
+		return fmt.Errorf("chatot/client: avatar %s: read: %w", jid, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("chatot/client: avatar %s: download: HTTP %d", jid, resp.StatusCode)
+		return fmt.Errorf("chatot/client: avatar %s: download: HTTP %d", jid, resp.StatusCode)
 	}
-
-	path := filepath.Join(w.avatarDir, avatarCacheName(jid))
 	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return "", fmt.Errorf("chatot/client: avatar: write cache file: %w", err)
+		return fmt.Errorf("chatot/client: avatar: write cache file: %w", err)
 	}
-	w.memoAvatar(jid, avatarEntry{id: info.ID, path: path})
-	return path, nil
+	return nil
 }
 
 // avatarDefinitelyMissing tells the "there is no picture to fetch" answers
@@ -138,6 +187,7 @@ func (w *Whatsmeow) invalidateAvatar(jid string) {
 	w.avatarMu.Unlock()
 	if w.avatarDir != "" {
 		os.Remove(filepath.Join(w.avatarDir, avatarCacheName(jid)))
+		os.Remove(filepath.Join(w.avatarDir, avatarFullCacheName(jid)))
 	}
 }
 
