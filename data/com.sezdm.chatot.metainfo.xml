@@ -83,6 +83,20 @@
   </recommends>
 
   <releases>
+    <release version="0.17.3-beta" date="2026-09-23">
+      <description>
+        <p>Fixes for forwarding, pictures and the attachment viewer:</p>
+        <ul>
+          <li>A message forwarded to the chat on screen shows up in it at once</li>
+          <li>Forwarding an album sends every picture and clip in it, not only the first</li>
+          <li>A tall photo with a caption no longer leaves a band of empty bubble under the caption</li>
+          <li>A message deleted from the viewer leaves the viewer too</li>
+          <li>The viewer's strip scrolls to the selected attachment in a chat with many of them</li>
+          <li>Opening a profile or group picture shows it at full resolution</li>
+          <li>Previewing a clip whose audio output fails no longer crashes the app</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.17.2-beta" date="2026-09-20">
       <description>
         <p>A shared contact's card can be messaged again: the phone number is now read off every shape of vCard WhatsApp sends, including the one it uses whenever the number carries a label, which until now arrived with no number at all and left the card's Message row doing nothing. Cards already filed without a number are not recovered by this.</p>
