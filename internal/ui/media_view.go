@@ -748,18 +748,32 @@ func inlineMediaWidget(mv mediaView, open func(path string)) gtk.Widgetter {
 		return clamp
 	}
 	// Decoded at twice the tile so it stays crisp on HiDPI. The tile is
-	// as tall as the picture at the bubble width, so a wide screenshot is
+	// as tall as the picture at inlinePhotoSide, so a wide screenshot is
 	// not letterboxed in a 200px box (the size settles once decoded; the
 	// texture is memoised, so a recycled row gets it at once).
+	//
+	// The footprint is a plain box and the picture an overlay on it, so
+	// the tile measures the same at every width, the way the undownloaded
+	// tile's drawing does. A GtkPicture sized itself: its natural width is
+	// its texture's and its height follows the width it is measured at,
+	// so the thread measured a captioned portrait wider (and far taller)
+	// than the bubble it got, and the difference stayed as a band of empty
+	// bubble under the caption.
+	frame := gtk.NewBox(gtk.OrientationVertical, 0)
+	frame.SetSizeRequest(inlinePhotoSide, inlinePhotoMinH)
 	p := gtk.NewPicture()
 	p.SetCanShrink(true)
-	p.SetContentFit(gtk.ContentFitContain)
-	p.SetSizeRequest(inlinePhotoSide, inlinePhotoMinH)
+	p.SetContentFit(gtk.ContentFitCover)
+	tile := gtk.NewOverlay()
+	tile.SetChild(frame)
+	tile.AddOverlay(p)
+	tile.SetHAlign(gtk.AlignStart)
+	tile.SetOverflow(gtk.OverflowHidden)
 	loadPictureAsync(mv.LocalPath, inlinePhotoSide*2, func(t gdk.Paintabler) {
 		p.SetPaintable(t)
-		p.SetSizeRequest(inlinePhotoSide, inlinePhotoHeight(t.IntrinsicWidth(), t.IntrinsicHeight()))
+		frame.SetSizeRequest(inlinePhotoSide, inlinePhotoHeight(t.IntrinsicWidth(), t.IntrinsicHeight()))
 	})
-	return p
+	return tile
 }
 
 // inlinePhotoMinH/MaxH bound the photo bubble's height: a banner-shaped

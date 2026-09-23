@@ -388,9 +388,13 @@ func (r *threadRow) fillBody(msg client.Message, vm bubbleView, h bubbleHooks) {
 	r.bodyHost.SetVisible(!rich && !(vm.Choices != nil && vm.Text == ""))
 	// A link card fixes the bubble's width, so the text under it wraps to
 	// the card rather than reaching past it and pulling the card wide.
+	// A photo or clip does the same for its caption.
 	if vm.Link != nil {
 		r.bodyHost.SetMaximumSize(linkCardW)
 		r.bodyHost.SetTighteningThreshold(linkCardW)
+	} else if caption && isVisualKind(vm.Media.Kind) {
+		r.bodyHost.SetMaximumSize(inlinePhotoSide)
+		r.bodyHost.SetTighteningThreshold(inlinePhotoSide)
 	} else {
 		r.bodyHost.SetMaximumSize(chatMaxWidth)
 		r.bodyHost.SetTighteningThreshold(chatMaxWidth)
