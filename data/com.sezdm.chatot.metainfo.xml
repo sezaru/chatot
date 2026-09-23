@@ -83,6 +83,14 @@
   </recommends>
 
   <releases>
+    <release version="0.17.5-beta" date="2026-09-23">
+      <description>
+        <p>Each chat keeps its own draft:</p>
+        <ul>
+          <li>Text left unsent in a chat no longer follows you into the next one; it is back when you return to that chat</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.17.4-beta" date="2026-09-23">
       <description>
         <p>Replies name the right person again:</p>
