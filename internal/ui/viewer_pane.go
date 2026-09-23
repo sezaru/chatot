@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -115,6 +116,10 @@ type AttachmentViewer struct {
 	navRings []*gtk.DrawingArea // the ‹ › buttons' rings, redrawn when the stage scheme flips
 	bottom   *gtk.Box           // zoom bar / transport / caption
 	strip    *gtk.Box
+	// stripView scrolls the filmstrip; show brings the selected tile into it.
+	stripView *gtk.Viewport
+	// stripGen drops a pending strip scroll once the strip is rebuilt.
+	stripGen int
 	stripLbl *gtk.Label
 	// replyBtn and forwardBtn are the header's icon actions that go when
 	// the window is collapsed (Star is starBtn); see SetCollapsed.
@@ -220,7 +225,10 @@ func NewAttachmentViewer(c client.Client, onBack func()) *AttachmentViewer {
 	v.stripLbl.SetHExpand(true)
 	v.stripLbl.SetHAlign(gtk.AlignEnd)
 	stripContent.Append(v.stripLbl)
-	stripScroller.SetChild(stripContent)
+	v.stripView = gtk.NewViewport(nil, nil)
+	v.stripView.SetScrollToFocus(false)
+	v.stripView.SetChild(stripContent)
+	stripScroller.SetChild(v.stripView)
 	stripRow.Append(stripScroller)
 	main.Append(stripRow)
 
@@ -310,6 +318,42 @@ func (v *AttachmentViewer) Current() (client.Message, bool) {
 		return client.Message{}, false
 	}
 	return v.items[v.idx], true
+}
+
+// Remove drops a message deleted or revoked while the viewer holds it:
+// the stage moves on to the next attachment (the previous one at the end),
+// and the viewer goes back to the chat once nothing is left. The items are
+// a copy of the thread taken at Open, so without this a deletion from the
+// ⋯ menu left the picture on show and in the strip. Must run on the GTK
+// main loop.
+func (v *AttachmentViewer) Remove(chatJID, msgID string) {
+	if chatJID != v.chat.JID {
+		return
+	}
+	at := slices.IndexFunc(v.items, func(m client.Message) bool { return m.ID == msgID })
+	if at < 0 {
+		return
+	}
+	shown := at == v.idx
+	v.items = slices.Delete(v.items, at, at+1)
+	if len(v.items) == 0 {
+		v.idx = 0
+		if v.Mapped() {
+			v.back()
+		}
+		return
+	}
+	if at < v.idx {
+		v.idx--
+	}
+	v.idx = min(v.idx, len(v.items)-1)
+	if shown {
+		v.show(v.idx)
+		return
+	}
+	// Another tile went: the stage (a clip mid-play, a zoom) stays put.
+	v.refreshCounter()
+	v.refreshStrip()
 }
 
 // ---- header -------------------------------------------------------------
@@ -593,6 +637,18 @@ func hasLocal(m client.Message) (string, bool) {
 	return mv.LocalPath, mv.HasLocal
 }
 
+// refreshCounter sets the header's "n / total" and the ‹ › buttons for
+// the current position.
+func (v *AttachmentViewer) refreshCounter() {
+	if len(v.items) > 1 {
+		v.counter.SetLabel(strconv.Itoa(v.idx+1) + " / " + strconv.Itoa(len(v.items)))
+	} else {
+		v.counter.SetLabel("")
+	}
+	v.prevBtn.SetVisible(v.idx > 0)
+	v.nextBtn.SetVisible(v.idx < len(v.items)-1)
+}
+
 func (v *AttachmentViewer) show(i int) {
 	if i < 0 || i >= len(v.items) {
 		return
@@ -622,14 +678,8 @@ func (v *AttachmentViewer) show(i int) {
 	v.glyph.SetLabel(viewerGlyph(kind))
 	v.title.SetLabel(viewerTitle(m, kind))
 	v.sub.SetLabel(v.subline(m, kind, now))
-	if len(v.items) > 1 {
-		v.counter.SetLabel(strconv.Itoa(i+1) + " / " + strconv.Itoa(len(v.items)))
-	} else {
-		v.counter.SetLabel("")
-	}
+	v.refreshCounter()
 	v.refreshStar()
-	v.prevBtn.SetVisible(i > 0)
-	v.nextBtn.SetVisible(i < len(v.items)-1)
 
 	dark := kind == "photo" || kind == "video" || kind == "gif"
 	if dark {
@@ -1687,10 +1737,40 @@ func (v *AttachmentViewer) captionRow(m client.Message) gtk.Widgetter {
 
 func (v *AttachmentViewer) refreshStrip() {
 	removeAllChildren(v.strip)
+	var on gtk.Widgetter
 	for i, m := range v.items {
-		v.strip.Append(v.stripTile(i, m))
+		tile := v.stripTile(i, m)
+		if i == v.idx {
+			on = tile
+		}
+		v.strip.Append(tile)
 	}
 	v.stripLbl.SetLabel(pluralCount(len(v.items), "attachment", "attachments") + " in this chat")
+	// A chat with more attachments than fit opened the strip at its start,
+	// the selected tile somewhere off to the right.
+	if on != nil {
+		v.scrollStripTo(on)
+	}
+}
+
+// scrollStripTo brings a just-built strip tile into view. GtkViewport's
+// ScrollTo reads the tile's bounds on the spot and does nothing for a tile
+// that has not been laid out yet, so it waits for the frame after the
+// tile's first: tick callbacks run before layout, and only once mapped
+// (a viewer opened off screen scrolls when it shows).
+func (v *AttachmentViewer) scrollStripTo(tile gtk.Widgetter) {
+	v.stripGen++
+	gen, frames := v.stripGen, 0
+	gtk.BaseWidget(tile).AddTickCallback(func(gtk.Widgetter, gdk.FrameClocker) bool {
+		if gen != v.stripGen {
+			return false
+		}
+		if frames++; frames < 2 {
+			return true
+		}
+		v.stripView.ScrollTo(tile, nil)
+		return false
+	})
 }
 
 // stripTile is one 52px filmstrip tile: a cover thumbnail for a picture or

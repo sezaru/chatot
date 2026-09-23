@@ -333,6 +333,18 @@ func activate(app *adw.Application, c client.Client) {
 	viewer.OnMenu(conversation.MessageMenuItems)
 	viewer.OnReply(composer.StartReply)
 	viewer.OnDownloaded(conversation.SetLocalPath)
+	// A message deleted (for me or for everyone, here or on the phone)
+	// leaves the viewer too, not just the thread.
+	viewerEvents := c.Events()
+	go func() {
+		for ev := range viewerEvents {
+			if ev.Kind != client.EventRevoke || ev.Revoke == nil {
+				continue
+			}
+			r := *ev.Revoke
+			glib.IdleAdd(func() { viewer.Remove(r.ChatJID, r.MsgID) })
+		}
+	}()
 
 	chatList.OnStarredRequested(func() {
 		starredPage.Reload()
