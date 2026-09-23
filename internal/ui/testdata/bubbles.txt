@@ -58,9 +58,30 @@
     *gtk.Box .horizontal
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
-          *gtk.Label .chatot-bubble-quote text="hello there"
+          *gtk.Box .chatot-bubble-quote.vertical
+            *gtk.Label .chatot-bubble-quote-text text="hello there"
           *adw.Clamp
             *gtk.Label .chatot-bubble-text text="answering"
+          *gtk.Box .horizontal
+            *gtk.Label .chatot-bubble-time text="12:00"
+      *gtk.Box .chatot-hover-actions.horizontal
+        *gtk.Button .chatot-hover-btn.text-button
+          *gtk.Label text="🙂"
+        *gtk.Button .chatot-hover-btn.chatot-hover-chevron
+          *gtk.DrawingArea
+
+== incoming-quote-named ==
+*gtk.Box .vertical
+  *gtk.Label .chatot-day-separator text="Today"
+  *gtk.Box .horizontal
+    *gtk.Box .horizontal
+      *gtk.Overlay
+        *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
+          *gtk.Box .chatot-bubble-quote.vertical
+            *gtk.Label .chatot-bubble-quote-name text="Alice"
+            *gtk.Label .chatot-bubble-quote-text text="what alice said"
+          *adw.Clamp
+            *gtk.Label .chatot-bubble-text text="answering alice"
           *gtk.Box .horizontal
             *gtk.Label .chatot-bubble-time text="12:00"
       *gtk.Box .chatot-hover-actions.horizontal

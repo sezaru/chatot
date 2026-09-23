@@ -469,3 +469,33 @@ func TestRowOnScreen(t *testing.T) {
 		}
 	}
 }
+
+// The quote names who wrote the quoted message, the way WhatsApp's does:
+// the loaded target's sender, else the author the reply carried.
+func TestBubbleVM_ReplyNamesQuotedAuthor(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+	byID := map[string]client.Message{
+		"theirs": {ID: "theirs", FromJID: "257157073207386@lid", Text: "viu a entrevista?"},
+		"mine":   {ID: "mine", FromMe: true, FromJID: "554888073648:59@s.whatsapp.net", Text: "Vi sim haha"},
+	}
+	reply := func(ref client.MsgRef) client.Message {
+		return client.Message{ID: "r", Text: "reply", TS: now.Unix(), ReplyTo: &ref}
+	}
+	cases := []struct {
+		name     string
+		ref      client.MsgRef
+		wantFrom string
+		wantMine bool
+	}{
+		{"loaded, theirs", client.MsgRef{MsgID: "theirs"}, "257157073207386@lid", false},
+		{"loaded, ours", client.MsgRef{MsgID: "mine"}, "554888073648:59@s.whatsapp.net", true},
+		{"paged out, carried author", client.MsgRef{MsgID: "gone", Text: "old", FromJID: "1234567890@s.whatsapp.net"}, "1234567890@s.whatsapp.net", false},
+		{"paged out, no author", client.MsgRef{MsgID: "gone", Text: "old"}, "", false},
+	}
+	for _, c := range cases {
+		v := bubbleVM(reply(c.ref), nil, byID, now)
+		if v.QuotedFrom != c.wantFrom || v.QuotedMine != c.wantMine {
+			t.Errorf("%s: QuotedFrom=%q QuotedMine=%v, want %q %v", c.name, v.QuotedFrom, v.QuotedMine, c.wantFrom, c.wantMine)
+		}
+	}
+}

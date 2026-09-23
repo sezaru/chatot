@@ -33,10 +33,16 @@ type bubbleView struct {
 	DayText          string
 	QuotedText       string
 	HasQuote         bool
-	Reactions        []reactionView
-	MediaChip        string
-	IsMedia          bool
-	Media            mediaView
+	// QuotedFrom is who wrote the quoted message ("" when unknown), and
+	// QuotedMine whether we did; QuotedAuthor is the name the quote shows,
+	// resolved from them by the conversation.
+	QuotedFrom   string
+	QuotedMine   bool
+	QuotedAuthor string
+	Reactions    []reactionView
+	MediaChip    string
+	IsMedia      bool
+	Media        mediaView
 	// Album is set on the first picture of a run one sender posted together
 	// (album.go): the bubble shows the run as a grid, and the other rows of
 	// the run collapse.
@@ -135,10 +141,12 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 			// A picture, voice note or poll has no Text: quote its kind
 			// label ("📷 Photo") the way the chat list previews it.
 			v.QuotedText = messageSnippet(q)
+			v.QuotedFrom, v.QuotedMine = q.FromJID, q.FromMe
 		} else {
 			// Not among the loaded rows: the preview the reply carried,
 			// or the one fillQuote read off the store.
 			v.QuotedText = m.ReplyTo.Text
+			v.QuotedFrom = m.ReplyTo.FromJID
 		}
 		if v.QuotedText == "" {
 			v.QuotedText = "↩ reply"
@@ -925,6 +933,7 @@ func (cv *ConversationView) fillRow(box *gtk.Box, pos int) {
 	if cv.chatIsGroup && !msg.FromMe {
 		vm.Author = cv.senderName(msg.FromJID)
 	}
+	vm.QuotedAuthor = cv.quotedAuthor(vm)
 	r.msgID = msg.ID
 	box.RemoveCSSClass("chatot-row-flash")
 	if cv.flashID != "" && (msg.ID == cv.flashID || (vm.Album != nil && albumHas(vm.Album.Msgs, cv.flashID))) {
@@ -1986,6 +1995,21 @@ func (cv *ConversationView) fillQuote(m *client.Message) {
 		ref.Text = text
 		m.ReplyTo = &ref
 	}
+}
+
+// quotedAuthor names the author of the message a bubble quotes, as
+// WhatsApp's quote does: "You" or the sender's name, "" when the reply
+// never said who.
+func (cv *ConversationView) quotedAuthor(vm bubbleView) string {
+	switch {
+	case !vm.HasQuote:
+		return ""
+	case vm.QuotedMine:
+		return "You"
+	case vm.QuotedFrom != "":
+		return cv.senderName(vm.QuotedFrom)
+	}
+	return ""
 }
 
 // senderName resolves a group message's sender for the bubble's author

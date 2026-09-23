@@ -45,11 +45,15 @@ type threadRow struct {
 	// exceptions: a picture, location, poll, contact, call, event or link
 	// card is a different subtree every time and carries its own handlers,
 	// and none of them is common enough on a fling to be worth keeping.
-	author  *gtk.Label
-	fwd     *gtk.Label
-	quote   *gtk.Label
-	content gtk.Widgetter
-	body    *gtk.Label
+	author *gtk.Label
+	fwd    *gtk.Label
+	quote  *gtk.Box
+	// quoteName and quoteText are the quote's two lines: who wrote the
+	// quoted message, then the message.
+	quoteName *gtk.Label
+	quoteText *gtk.Label
+	content   gtk.Widgetter
+	body      *gtk.Label
 	// bodyHost is the clamp the body sits in; it is the bubble's child, so
 	// it is what the read-more, the choices and visibility act on.
 	bodyHost  *adw.Clamp
@@ -94,7 +98,9 @@ func newThreadRow() *threadRow {
 		hover:      newHoverButtons(),
 		author:     gtk.NewLabel(""),
 		fwd:        gtk.NewLabel("↩ Forwarded"),
-		quote:      gtk.NewLabel(""),
+		quote:      gtk.NewBox(gtk.OrientationVertical, 1),
+		quoteName:  gtk.NewLabel(""),
+		quoteText:  gtk.NewLabel(""),
 		body:       gtk.NewLabel(""),
 		footer:     gtk.NewBox(gtk.OrientationHorizontal, 4),
 		retry:      gtk.NewButtonWithLabel("↻ Retry"),
@@ -162,9 +168,17 @@ func (r *threadRow) buildBubbleInterior() {
 	r.fwd.SetXAlign(0)
 
 	r.quote.AddCSSClass("chatot-bubble-quote")
-	r.quote.SetXAlign(0)
-	r.quote.SetWrap(true)
-	r.quote.SetWrapMode(pango.WrapWordChar)
+	r.quoteName.AddCSSClass("chatot-bubble-quote-name")
+	r.quoteName.SetXAlign(0)
+	r.quoteName.SetEllipsize(pango.EllipsizeEnd)
+	r.quoteName.SetMaxWidthChars(40)
+	r.quoteName.SetVisible(false)
+	r.quoteText.AddCSSClass("chatot-bubble-quote-text")
+	r.quoteText.SetXAlign(0)
+	r.quoteText.SetWrap(true)
+	r.quoteText.SetWrapMode(pango.WrapWordChar)
+	r.quote.Append(r.quoteName)
+	r.quote.Append(r.quoteText)
 	// The quote is the way back to what it answers.
 	click := gtk.NewGestureClick()
 	click.ConnectReleased(func(int, float64, float64) {
@@ -263,10 +277,16 @@ func (r *threadRow) fillBubble(msg client.Message, vm bubbleView, h bubbleHooks)
 
 	r.quote.SetVisible(vm.HasQuote)
 	if !vm.HasQuote {
-		r.quote.SetLabel("")
+		r.quoteName.SetLabel("")
+		r.quoteName.SetVisible(false)
+		r.quoteText.SetLabel("")
+
 	}
 	if vm.HasQuote {
-		r.quote.SetLabel(resolveMentionsPlain(vm.QuotedText, h.names))
+		r.quoteName.SetLabel(vm.QuotedAuthor)
+		r.quoteName.SetVisible(vm.QuotedAuthor != "")
+		r.quoteText.SetLabel(resolveMentionsPlain(vm.QuotedText, h.names))
+
 		r.quoteTo, r.onJumpTo = "", h.onJumpTo
 		if h.onJumpTo != nil && msg.ReplyTo != nil {
 			r.quoteTo = msg.ReplyTo.MsgID

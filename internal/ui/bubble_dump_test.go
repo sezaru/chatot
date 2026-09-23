@@ -92,6 +92,8 @@ func bubbleCases(now time.Time) []struct {
 		{"outgoing-pending", client.Message{ID: "c", Text: "sending", FromMe: true, TS: ts}, nil, ""},
 		{"incoming-quote", client.Message{ID: "d", Text: "answering", FromJID: "1@s.whatsapp.net", TS: ts,
 			ReplyTo: &client.MsgRef{MsgID: "a"}}, nil, ""},
+		{"incoming-quote-named", client.Message{ID: "d2", Text: "answering alice", FromJID: "1@s.whatsapp.net", TS: ts,
+			ReplyTo: &client.MsgRef{MsgID: "qa"}}, nil, ""},
 		{"incoming-forwarded", client.Message{ID: "e", Text: "passed on", FromJID: "1@s.whatsapp.net", TS: ts, Forwarded: true}, nil, ""},
 		{"incoming-edited", client.Message{ID: "f", Text: "fixed typo", FromJID: "1@s.whatsapp.net", TS: ts, Edited: true}, nil, ""},
 		{"deleted", client.Message{ID: "g", FromJID: "1@s.whatsapp.net", TS: ts, Deleted: true}, nil, ""},
@@ -128,11 +130,18 @@ func bubbleCases(now time.Time) []struct {
 }
 
 func testVM(msg client.Message, prev *client.Message, author string, now time.Time) bubbleView {
-	byID := map[string]client.Message{"a": {ID: "a", Text: "hello there"}}
+	byID := map[string]client.Message{
+		"a":  {ID: "a", Text: "hello there"},
+		"qa": {ID: "qa", Text: "what alice said", FromJID: "alice@s.whatsapp.net"},
+	}
 	vm := bubbleVM(msg, prev, byID, now)
 	// A group thread's author line is filled by fillRow, not by bubbleVM, and
-	// it is what puts an avatar beside the bubble.
+	// it is what puts an avatar beside the bubble. So is the quote's author.
 	vm.Author = author
+	if vm.QuotedFrom == "alice@s.whatsapp.net" {
+		vm.QuotedAuthor = "Alice"
+	}
+
 	return vm
 }
 
