@@ -305,7 +305,7 @@ func (n *Notifier) handleReaction(r client.Reaction) {
 	if strings.HasSuffix(r.ChatJID, "@g.us") {
 		reactor = n.personName(r.ReactorJID)
 	}
-	title, body := reactionNotification(name, reactor, r.Emoji, r.TargetPreview)
+	title, body := reactionNotification(name, reactor, r.Emoji, resolveMentionsPlain(r.TargetPreview, n.mentionName))
 	if !NotificationText {
 		body = hiddenReactionBody
 	}
@@ -347,6 +347,21 @@ func (n *Notifier) personName(jid string) string {
 	return phoneFromJID(jid)
 }
 
+// mentionName resolves the numeric user part of an @mention (a phone number
+// or a LID) to a display name, "" when unknown.
+func (n *Notifier) mentionName(user string) string {
+	own := n.c.OwnJID()
+	for _, jid := range []string{user + "@s.whatsapp.net", user + "@lid"} {
+		if isOwnJID(jid, own) {
+			return "You"
+		}
+		if name := n.c.ContactName(jid); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
 // handleMessage runs on the background events goroutine. chatInfo (a plain
 // store read) and messageNotification (pure) are safe off the main loop, but
 // the focus/open-chat read and decideNotify are deferred into glib.IdleAdd
@@ -357,6 +372,7 @@ func (n *Notifier) handleMessage(msg client.Message) {
 	if isStatus && !StatusNotifications {
 		return
 	}
+	msg.Text = resolveMentionsPlain(msg.Text, n.mentionName)
 	var title, body string
 	var muted bool
 	iconJID := msg.ChatJID
