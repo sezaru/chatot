@@ -83,6 +83,16 @@
   </recommends>
 
   <releases>
+    <release version="0.17.6-beta" date="2026-09-26">
+      <description>
+        <p>Mentions, audio files and the viewer:</p>
+        <ul>
+          <li>A notification for a message that mentions someone shows their name, not their number</li>
+          <li>The send tray no longer offers a caption for an audio file, which WhatsApp cannot carry</li>
+          <li>The photo and video viewer no longer steps through voice notes</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.17.5-beta" date="2026-09-23">
       <description>
         <p>Each chat keeps its own draft:</p>
