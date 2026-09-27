@@ -277,7 +277,7 @@ func extractText(m *waProto.Message, msg *Message) {
 		ctx = vid.GetContextInfo()
 	case m.GetAudioMessage() != nil:
 		aud := m.GetAudioMessage()
-		msg.Attachment = &Attachment{Kind: "audio", MimeType: aud.GetMimetype(), ProtoBlob: marshalMedia(aud), Size: int64(aud.GetFileLength()), DurationSecs: int(aud.GetSeconds())}
+		msg.Attachment = &Attachment{Kind: "audio", MimeType: aud.GetMimetype(), ProtoBlob: marshalMedia(aud), Size: int64(aud.GetFileLength()), DurationSecs: int(aud.GetSeconds()), Voice: aud.GetPTT()}
 		ctx = aud.GetContextInfo()
 	case m.GetDocumentMessage() != nil:
 		doc := m.GetDocumentMessage()

@@ -187,7 +187,7 @@ func storeMediaRow(chatJID, msgID string, a *Attachment) store.MediaRow {
 		Kind: a.Kind, Filename: a.Filename, Caption: a.Caption,
 		MimeType: a.MimeType, LocalPath: a.LocalPath, ProtoBlob: a.ProtoBlob,
 		Thumbnail: a.Thumbnail, IsGif: a.IsGIF, ViewOnce: a.ViewOnce,
-		FileSize: a.Size, DurationSecs: a.DurationSecs,
+		FileSize: a.Size, DurationSecs: a.DurationSecs, Voice: a.Voice,
 	}
 }
 
@@ -245,6 +245,7 @@ func messageFromStore(m store.Message, selfJID string) Message {
 			IsGIF: m.Attachment.IsGif, ViewOnce: m.Attachment.ViewOnce, Viewed: m.Attachment.Viewed,
 			Size: m.Attachment.FileSize, DurationSecs: m.Attachment.DurationSecs,
 			PlayPosMS: m.Attachment.PlayPosMS, Transcript: m.Attachment.Transcript,
+			Voice: m.Attachment.Voice,
 		}
 	}
 	if m.LinkPreview != "" {

@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	_ "github.com/mattn/go-sqlite3"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 //go:embed schema.sql
@@ -152,6 +153,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
 	}
+	if err := migrateMediaVoice(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
+	}
 	if err := migrateFTSTranscript(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: migrate fts: %w", err)
@@ -185,6 +190,74 @@ func backfillFTS(db *sql.DB) error {
 	}
 	_, err := db.Exec(`INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')`)
 	return err
+}
+
+// migrateMediaVoice adds media.voice and fills it in once for the audio rows
+// already stored, from the PTT flag in their saved descriptors. One
+// transaction, so a failed backfill leaves no column behind to skip it next
+// time.
+func migrateMediaVoice(db *sql.DB) error {
+	has, err := hasColumn(db, "media", "voice")
+	if err != nil || has {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`ALTER TABLE media ADD COLUMN voice INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	rows, err := tx.Query(`SELECT chat_jid, msg_id, proto_blob FROM media WHERE kind = 'audio' AND proto_blob IS NOT NULL`)
+	if err != nil {
+		return err
+	}
+	type key struct{ chat, msg string }
+	var voices []key
+	for rows.Next() {
+		var k key
+		var blob []byte
+		if err := rows.Scan(&k.chat, &k.msg, &blob); err != nil {
+			rows.Close()
+			return err
+		}
+		if audioBlobIsVoice(blob) {
+			voices = append(voices, k)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, k := range voices {
+		if _, err := tx.Exec(`UPDATE media SET voice = 1 WHERE chat_jid = ? AND msg_id = ?`, k.chat, k.msg); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// audioBlobIsVoice reads the PTT flag (field 6) of a marshaled
+// waE2E.AudioMessage, so the store needs no whatsmeow import.
+func audioBlobIsVoice(b []byte) bool {
+	for len(b) > 0 {
+		num, typ, n := protowire.ConsumeTag(b)
+		if n < 0 {
+			return false
+		}
+		b = b[n:]
+		if num == 6 && typ == protowire.VarintType {
+			v, n := protowire.ConsumeVarint(b)
+			return n > 0 && v != 0
+		}
+		n = protowire.ConsumeFieldValue(num, typ, b)
+		if n < 0 {
+			return false
+		}
+		b = b[n:]
+	}
+	return false
 }
 
 // migrateFTSTranscript replaces a messages_fts built before transcripts

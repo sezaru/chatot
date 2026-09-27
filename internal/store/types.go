@@ -123,6 +123,9 @@ type Attachment struct {
 	// Transcript is the text transcribed from an audio attachment, "" until
 	// one was made. See SetMediaTranscript.
 	Transcript string
+	// Voice marks a voice note recorded in the chat (WhatsApp's PTT flag),
+	// as opposed to an audio file someone attached.
+	Voice bool
 }
 
 // SearchHit is a single Search result: either a message match (MsgID set,
@@ -248,4 +251,7 @@ type MediaRow struct {
 	// DurationSecs is the playback length of an audio/video attachment,
 	// 0 when unknown.
 	DurationSecs int
+	// Voice marks a voice note recorded in the chat (WhatsApp's PTT flag),
+	// as opposed to an audio file someone attached.
+	Voice bool
 }

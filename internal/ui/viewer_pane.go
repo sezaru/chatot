@@ -49,6 +49,10 @@ func viewerKind(m client.Message) string {
 		}
 		return "video"
 	case "audio":
+		// A voice note is talk, not media: the viewer is for files.
+		if a.Voice {
+			return ""
+		}
 		return "audio"
 	case "document":
 		if strings.EqualFold(filepath.Ext(a.Filename), ".pdf") || strings.Contains(a.MimeType, "pdf") {

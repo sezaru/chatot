@@ -243,7 +243,7 @@ func NewFake() *Fake {
 		// m16 seeds the voice-note bubble, which had no fake coverage at all:
 		// undownloaded, so it renders the "🎤 Voice message · 0:12" row.
 		{ID: "m16", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 1900,
-			Attachment: &Attachment{Kind: "audio", MimeType: "audio/ogg", Size: 49152, DurationSecs: 12}},
+			Attachment: &Attachment{Kind: "audio", MimeType: "audio/ogg", Size: 49152, DurationSecs: 12, Voice: true}},
 		// m17/m18 seed the call-log bubbles: a missed voice call the way a
 		// live offer logs one, and a video call the phone answered.
 		{ID: "call:m17", ChatJID: "1112223333@s.whatsapp.net", FromJID: "1112223333@s.whatsapp.net", FromMe: false, TS: now - 1850,
@@ -574,7 +574,7 @@ func (f *Fake) ReceiveVoice(jid, sender string, dur int) {
 // audio.
 func (f *Fake) ReceiveVoiceFile(jid, sender string, dur int, filename string) {
 	msg := Message{ChatJID: jid, FromJID: sender,
-		Attachment: &Attachment{Kind: "audio", MimeType: "audio/ogg", Size: int64(dur) * 4096, DurationSecs: dur, Filename: filename}}
+		Attachment: &Attachment{Kind: "audio", MimeType: "audio/ogg", Size: int64(dur) * 4096, DurationSecs: dur, Filename: filename, Voice: true}}
 	f.receive(jid, msg, fmt.Sprintf("🎤 %d:%02d", dur/60, dur%60))
 }
 
@@ -766,7 +766,7 @@ func (f *Fake) SendVoice(ctx context.Context, jid string, oggOpus []byte, dur in
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	id := f.nextMsgID()
-	att := Attachment{Kind: "audio", MimeType: "audio/ogg", Data: oggOpus}
+	att := Attachment{Kind: "audio", MimeType: "audio/ogg", Data: oggOpus, Voice: true}
 	f.appendOutbound(jid, Message{ID: id, ChatJID: jid, FromJID: "me", FromMe: true, TS: time.Now().Unix(), Attachment: &att})
 	return id, nil
 }

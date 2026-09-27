@@ -70,6 +70,7 @@ func (f *Fake) seedDevMedia(dir string, now int64) {
 			Attachment: &Attachment{
 				Kind: k.kind, MimeType: k.mime, Filename: k.file, Caption: k.caption,
 				LocalPath: local, Size: info.Size(), DurationSecs: k.secs, Transcript: k.transcript,
+				Voice: k.kind == "audio" && k.file != "demo.mp3",
 			},
 		})
 	}

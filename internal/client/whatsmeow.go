@@ -1909,7 +1909,7 @@ func (w *Whatsmeow) SendVoice(ctx context.Context, jid string, oggOpus []byte, d
 	}
 	out := Message{
 		ID: id, ChatJID: jid, FromJID: w.ownJID(), FromMe: true, TS: time.Now().Unix(),
-		Attachment: &Attachment{Kind: "audio", MimeType: voiceMimetype, LocalPath: localPath, ProtoBlob: marshalMedia(aud)},
+		Attachment: &Attachment{Kind: "audio", MimeType: voiceMimetype, LocalPath: localPath, ProtoBlob: marshalMedia(aud), Voice: true},
 	}
 	if err := w.ingestSent(&out); err != nil {
 		w.log.Warnf("chatot/client: optimistic upsert of sent voice note failed: %v", err)

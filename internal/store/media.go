@@ -14,8 +14,8 @@ func (s *Store) UpsertMedia(row MediaRow) error {
 		thumb = row.Thumbnail
 	}
 	_, err := s.db.Exec(`
-		INSERT INTO media(chat_jid, msg_id, kind, filename, caption, mime_type, local_path, proto_blob, thumbnail, is_gif, view_once, file_size, duration_secs)
-		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, ?)
+		INSERT INTO media(chat_jid, msg_id, kind, filename, caption, mime_type, local_path, proto_blob, thumbnail, is_gif, view_once, file_size, duration_secs, voice)
+		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(chat_jid, msg_id) DO UPDATE SET
 			kind = excluded.kind,
 			filename = COALESCE(excluded.filename, media.filename),
@@ -26,11 +26,12 @@ func (s *Store) UpsertMedia(row MediaRow) error {
 			thumbnail = COALESCE(excluded.thumbnail, media.thumbnail),
 			is_gif = excluded.is_gif,
 			view_once = excluded.view_once,
+			voice = excluded.voice,
 			-- 0 means "the sender didn't say", so never let it clobber a
 			-- size/duration an earlier copy of the message did carry.
 			file_size = MAX(excluded.file_size, media.file_size),
 			duration_secs = MAX(excluded.duration_secs, media.duration_secs)
-	`, row.ChatJID, row.MsgID, row.Kind, row.Filename, row.Caption, row.MimeType, row.LocalPath, blob, thumb, boolToInt(row.IsGif), boolToInt(row.ViewOnce), row.FileSize, row.DurationSecs)
+	`, row.ChatJID, row.MsgID, row.Kind, row.Filename, row.Caption, row.MimeType, row.LocalPath, blob, thumb, boolToInt(row.IsGif), boolToInt(row.ViewOnce), row.FileSize, row.DurationSecs, boolToInt(row.Voice))
 	return err
 }
 

@@ -583,6 +583,9 @@ type Attachment struct {
 	// Transcript is the text transcribed from an audio attachment on this
 	// computer, "" until one was made. See SetTranscript.
 	Transcript string
+	// Voice marks a voice note recorded in the chat (WhatsApp's PTT flag),
+	// as opposed to an audio file someone attached.
+	Voice bool
 }
 
 // MediaItem is one image/video attachment in a chat, for the media/links/docs

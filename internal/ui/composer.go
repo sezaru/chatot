@@ -1786,7 +1786,7 @@ func (c *Composer) stopRecording() {
 			}
 			c.onSent(client.Message{
 				ID: id, ChatJID: jid, FromMe: true, TS: time.Now().Unix(),
-				Attachment: &client.Attachment{Kind: "audio", MimeType: "audio/ogg; codecs=opus", LocalPath: localPath},
+				Attachment: &client.Attachment{Kind: "audio", MimeType: "audio/ogg; codecs=opus", LocalPath: localPath, Voice: true},
 			})
 		})
 	}()
