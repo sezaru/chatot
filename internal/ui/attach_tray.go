@@ -233,9 +233,14 @@ func (t *AttachTray) Open(paths []string) {
 // that fed Open hands focus back to the composer entry as it goes away,
 // which can land after this call, so the grab is repeated once idle.
 // Without-selecting: a draft carried in from the composer stays as typed
-// rather than being replaced by the next keystroke.
+// rather than being replaced by the next keystroke. An audio file's disabled
+// entry can't take the keyboard, so Send does and Enter still sends.
 func (t *AttachTray) focusCaption() {
 	grab := func() {
+		if !t.caption.Sensitive() {
+			t.sendBtn.GrabFocus()
+			return
+		}
 		t.caption.GrabFocusWithoutSelecting()
 		t.caption.SetPosition(-1)
 	}
@@ -304,14 +309,23 @@ func (t *AttachTray) OnPaste(files func(paths []string), image func(*gdk.Texture
 func (t *AttachTray) Empty() bool { return len(t.items) == 0 }
 
 // SeedCaption gives the first queued item text as its caption when it has
-// none yet: the composer's draft, carried into the tray.
-func (t *AttachTray) SeedCaption(text string) {
-	if len(t.items) == 0 || t.items[0].Caption != "" {
-		return
+// none yet: the composer's draft, carried into the tray. It reports whether
+// the draft was taken; an audio file takes no caption, so the draft stays
+// where it is.
+func (t *AttachTray) SeedCaption(text string) bool {
+	if len(t.items) == 0 || t.items[0].Caption != "" || !takesCaption(t.items[0].Path) {
+		return false
 	}
 	t.items[0].Caption = text
 	t.refresh()
 	t.caption.SetPosition(-1)
+	return true
+}
+
+// takesCaption reports whether WhatsApp carries a caption for the file at
+// path: its audio message has no caption field, unlike every other kind.
+func takesCaption(path string) bool {
+	return guessAttachmentKind(path) != "audio"
 }
 
 // discard is the Cancel button: the first caption is handed back before
@@ -423,6 +437,13 @@ func (t *AttachTray) refresh() {
 	// onto whichever item is selected — harmless here because the selection is
 	// already the one being loaded, but the order matters.
 	t.caption.SetText(item.Caption)
+	captioned := takesCaption(item.Path)
+	t.caption.SetSensitive(captioned)
+	if captioned {
+		t.caption.SetPlaceholderText("Caption")
+	} else {
+		t.caption.SetPlaceholderText("Audio files can't have a caption")
+	}
 
 	removeAllChildren(t.preview)
 	t.preview.Append(t.newTrayPreview(item.Path))

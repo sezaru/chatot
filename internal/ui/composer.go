@@ -1318,8 +1318,7 @@ func (c *Composer) openTray(paths []string) {
 		seed = c.entry.Text()
 	}
 	c.tray.Open(paths)
-	if seed != "" {
-		c.tray.SeedCaption(seed)
+	if seed != "" && c.tray.SeedCaption(seed) {
 		c.entry.SetText("")
 	}
 }
