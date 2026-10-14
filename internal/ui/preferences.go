@@ -55,6 +55,9 @@ type PreferenceHooks struct {
 	// RefreshChatList rebuilds the sidebar rows after a preference that
 	// changes how they render.
 	RefreshChatList func()
+	// RefreshThread re-renders the open chat's rows after a preference
+	// that changes how bubbles are built.
+	RefreshThread func()
 	// SetTrayVisible adds or removes the tray icon.
 	SetTrayVisible func(show bool)
 	// Toasts is the main window's toast overlay for short confirmations.
@@ -642,6 +645,17 @@ func prefNetwork(dialog *cardDialog, s *settings.Settings, onChange func(setting
 			onChange(*s)
 			return autoDownloadLabel(s.AutoDownload)
 		}))
+	collapse, _ := newSwitchRow("Collapse pictures and link previews",
+		"Photos and videos take one line until clicked",
+		s.CollapseMedia, func(on bool) {
+			s.CollapseMedia = on
+			CollapseMedia = on
+			if Prefs.RefreshThread != nil {
+				Prefs.RefreshThread()
+			}
+			onChange(*s)
+		})
+	media.Add(collapse)
 	// A missing model is fetched at once (asked first: it is a large
 	// download) when automatic transcripts are switched on, so the next
 	// voice note does not sit untranscribed with nothing to say why.

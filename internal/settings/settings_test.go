@@ -30,6 +30,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		AutoDownload:            "photos",
 		AutoTranscribe:          true,
 		TranscriptsExpanded:     true,
+		CollapseMedia:           true,
 		TranscribeModel:         "turbo",
 		ChatWallpaper:           "/home/me/.config/chatot/wallpaper/wallpaper-0badc0de.jpg",
 	}

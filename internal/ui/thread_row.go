@@ -369,6 +369,8 @@ func (r *threadRow) fillContent(msg client.Message, vm bubbleView, h bubbleHooks
 		r.setContent(buildEventContent(vm.Event))
 	case vm.IsCall:
 		r.setContent(buildCallContent(vm.Call))
+	case vm.Album != nil && CollapseMedia:
+		r.setContent(buildFoldedAlbumContent(vm.Album, h, h.mediaUnfolded(msg.ID)))
 	case vm.Album != nil:
 		r.setContent(buildAlbumContent(vm.Album, h))
 	case vm.IsMedia:
@@ -383,9 +385,15 @@ func (r *threadRow) fillContent(msg client.Message, vm bubbleView, h bubbleHooks
 		if h.transcriptOf != nil {
 			media.TranscriptState = h.transcriptOf(msg.ID)
 		}
+		if foldsMedia(media) {
+			r.setContent(buildFoldedMediaContent(msg, media, h, h.mediaUnfolded(msg.ID)))
+			break
+		}
 		r.setContent(buildMediaContent(msg, media, h.c, h.mediaOpener(msg)))
 	default:
-		if vm.Link != nil {
+		if vm.Link != nil && CollapseMedia {
+			r.setContent(buildCompactLinkCard(*vm.Link))
+		} else if vm.Link != nil {
 			r.setContent(buildLinkCard(*vm.Link))
 		} else {
 			r.setContent(nil)

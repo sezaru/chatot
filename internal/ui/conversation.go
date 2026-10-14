@@ -399,6 +399,10 @@ type ConversationView struct {
 	// until first used.
 	expandedText map[string]bool
 
+	// unfoldedMedia holds the folded attachments (see CollapseMedia) the
+	// reader opened this session. Nil until first used.
+	unfoldedMedia map[string]bool
+
 	// unsent holds, per chat, the optimistic rows the store does not have:
 	// sends in flight and sends that failed. Load appends them after the
 	// stored page and refreshInPlace leaves them out of its comparison
@@ -2226,6 +2230,11 @@ type bubbleHooks struct {
 	// leaves long bodies folded with a working control.
 	textExpandedOf func(msgID string) bool
 	onExpandText   func(msgID string, open bool)
+	// mediaUnfoldedOf reports whether msgID's folded attachment is open,
+	// and onUnfoldMedia records a fold change. Both nil leaves every
+	// attachment folded under CollapseMedia, with a working control.
+	mediaUnfoldedOf func(msgID string) bool
+	onUnfoldMedia   func(msgID string, open bool)
 	// voice hears a voice note start, stop and end (played flag, resume
 	// position, auto-advance); zero leaves the rows self-contained.
 	voice voiceHooks
@@ -2336,9 +2345,11 @@ func (cv *ConversationView) hooks() bubbleHooks {
 			onToggleTranscript: cv.setTranscriptOpen,
 			onTranscriptMore:   cv.setTranscriptMore,
 		},
-		transcriptOf:   cv.transcriptOf,
-		textExpandedOf: cv.textExpanded,
-		onExpandText:   cv.setTextExpanded,
+		transcriptOf:    cv.transcriptOf,
+		textExpandedOf:  cv.textExpanded,
+		onExpandText:    cv.setTextExpanded,
+		mediaUnfoldedOf: cv.mediaUnfolded,
+		onUnfoldMedia:   cv.setMediaUnfolded,
 	}
 }
 

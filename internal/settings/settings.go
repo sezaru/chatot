@@ -82,6 +82,10 @@ type Settings struct {
 	// as it exists; off folds it behind a "Transcript" head, as WhatsApp
 	// does, until clicked.
 	TranscriptsExpanded bool `json:"transcriptsExpanded"`
+	// CollapseMedia folds photos, videos and albums in the thread to one
+	// line until clicked, and shows link previews as a compact card with a
+	// small picture beside the title.
+	CollapseMedia bool `json:"collapseMedia"`
 	// TranscribeModel is the key of the whisper.cpp model voice notes are
 	// transcribed with (transcribe.Models): "small", the default, or
 	// "turbo". Each is downloaded once, the first time it is needed, and

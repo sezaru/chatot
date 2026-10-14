@@ -4944,6 +4944,52 @@ button.chatot-reactor-btn {
 	opacity: 0.72;
 }
 
+/* Collapse pictures and link previews (Preferences): the compact link card
+   keeps the full card's surface with its picture as a square at the start. */
+.chatot-link-card-compact .chatot-link-card-body {
+	padding: 6px 9px 7px 9px;
+}
+
+/* A folded photo, clip or album: one line like a document row, a small
+   square of the picture, and a chevron that turns once the attachment
+   is unfolded underneath. */
+.chatot-media-fold {
+	min-width: 220px;
+}
+
+.chatot-media-fold-head {
+	min-height: 0;
+	min-width: 0;
+	padding: 2px 0 3px 0;
+	margin: 0;
+	background: none;
+	border: none;
+	box-shadow: none;
+	color: inherit;
+	font-weight: normal;
+}
+
+.chatot-media-fold-head:hover {
+	background: none;
+}
+
+.chatot-media-fold-head:hover .chatot-media-fold-chev {
+	opacity: 1;
+}
+
+.chatot-media-fold-thumb {
+	border-radius: 6px;
+}
+
+.chatot-media-fold-chev {
+	opacity: 0.6;
+	margin-left: 4px;
+}
+
+.chatot-media-fold-open .chatot-media-fold-chev {
+	transform: rotate(180deg);
+}
+
 /* The speech models under the download prompt: a card each, the chosen one
    framed in the accent, with a drawn radio ring (see newModelCard) whose
    colour is the ring's own CSS colour. */

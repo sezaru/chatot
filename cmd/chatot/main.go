@@ -756,6 +756,7 @@ func activate(app *adw.Application, c client.Client) {
 	})
 
 	ui.Prefs.RefreshChatList = chatList.RebuildRows
+	ui.Prefs.RefreshThread = conversation.RefillRows
 	ui.Prefs.SetTrayVisible = setTray
 	ui.Prefs.Toasts = toastOverlay
 	ui.Prefs.ManageAccounts = func() {
@@ -1089,6 +1090,7 @@ func applySettings(s settings.Settings) {
 	ui.AutoDownload = s.AutoDownload
 	ui.AutoTranscribe = s.AutoTranscribe
 	ui.TranscriptsExpanded = s.TranscriptsExpanded
+	ui.CollapseMedia = s.CollapseMedia
 	ui.TranscribeModel = s.TranscribeModel
 	ui.GIFService = s.GIFService
 	ui.AccountColors = s.AccountColors
