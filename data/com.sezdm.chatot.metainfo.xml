@@ -83,6 +83,15 @@
   </recommends>
 
   <releases>
+    <release version="0.18.0-beta" date="2026-10-14">
+      <description>
+        <p>Pictures can take less room:</p>
+        <ul>
+          <li>A new Media preference collapses photos, videos and albums to one line in the chat, unfolded with a click, and shows link previews as a compact card with a small picture</li>
+          <li>Stepping through the attachment viewer is instant again in chats with many attachments, where it could take seconds per picture</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.17.6-beta" date="2026-09-26">
       <description>
         <p>Mentions, audio files and the viewer:</p>
