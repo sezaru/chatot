@@ -1794,7 +1794,12 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 	case "viewer":
 		// Opens the attachment viewer on the message at CHATOT_SHOT_MSG;
 		// CHATOT_SHOT_ARG=info also opens the details sidebar, =menu the
-		// header's ⋯ menu, =actual presses the zoom bar's 1:1.
+		// header's ⋯ menu, =actual presses the zoom bar's 1:1, =stepbench
+		// loads 20 older pages first, then steps back 20 times and logs what
+		// each step cost.
+		if arg == "stepbench" {
+			d.conversation.LoadOlderPages(20)
+		}
 		if m, ok := d.conversation.MessageAt(msgIdx); ok {
 			d.conversation.OpenViewer(m)
 			switch arg {
@@ -1804,6 +1809,8 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 				glib.TimeoutAdd(300, func() bool { d.viewer.PopupMenu(); return false })
 			case "actual":
 				glib.TimeoutAdd(1500, func() bool { d.viewer.ActualSize(); return false })
+			case "stepbench":
+				glib.TimeoutAdd(1500, func() bool { d.viewer.StepBench(20); return false })
 			}
 		}
 	case "deletedialog":

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
@@ -125,6 +126,15 @@ type AttachmentViewer struct {
 	// stripGen drops a pending strip scroll once the strip is rebuilt.
 	stripGen int
 	stripLbl *gtk.Label
+	// tiles holds each item's strip tile, so stepping only moves the
+	// selected mark instead of rebuilding a strip that can run to
+	// hundreds of tiles.
+	tiles []viewerTile
+	// stripStop stops the thumbnail decodes for a strip since rebuilt.
+	stripStop *atomic.Bool
+	// thumbs holds the strip faces decoded from local files (pictures
+	// with no embedded thumbnail), by path, for the chat on show.
+	thumbs map[string]*gdkpixbuf.Pixbuf
 	// replyBtn and forwardBtn are the header's icon actions that go when
 	// the window is collapsed (Star is starBtn); see SetCollapsed.
 	replyBtn, forwardBtn *gtk.Button
@@ -290,6 +300,9 @@ func (v *AttachmentViewer) OnDownloaded(f func(msgID, path string)) { v.onDownlo
 // Open shows msgID among the viewable messages of chat (msgs is the loaded
 // thread; every attachment in it navigates as one sequence).
 func (v *AttachmentViewer) Open(chat client.Chat, msgs []client.Message, msgID string) {
+	if chat.JID != v.chat.JID {
+		v.thumbs = nil
+	}
 	v.chat = chat
 	v.items = v.items[:0]
 	v.idx = 0
@@ -306,14 +319,17 @@ func (v *AttachmentViewer) Open(chat client.Chat, msgs []client.Message, msgID s
 	v.details.SetVisible(false)
 	v.infoBtn.RemoveCSSClass("chatot-viewer-hbtn-on")
 	v.show(v.idx)
+	v.refreshStrip()
 	v.GrabFocus()
 }
 
-// Close pauses playback when the pane is left.
+// Close pauses playback when the pane is left, and stops decoding strip
+// thumbnails.
 func (v *AttachmentViewer) Close() {
 	if v.player != nil {
 		v.player.Pause()
 	}
+	v.stopFileThumbs()
 }
 
 // Current is the message on show.
@@ -353,10 +369,10 @@ func (v *AttachmentViewer) Remove(chatJID, msgID string) {
 	v.idx = min(v.idx, len(v.items)-1)
 	if shown {
 		v.show(v.idx)
-		return
+	} else {
+		// Another tile went: the stage (a clip mid-play, a zoom) stays put.
+		v.refreshCounter()
 	}
-	// Another tile went: the stage (a clip mid-play, a zoom) stays put.
-	v.refreshCounter()
 	v.refreshStrip()
 }
 
@@ -740,7 +756,7 @@ func (v *AttachmentViewer) show(i int) {
 	if cap := v.captionRow(m); cap != nil {
 		v.bottom.Append(cap)
 	}
-	v.refreshStrip()
+	v.selectTile()
 	if v.detailsOn {
 		v.fillDetails()
 	}
@@ -885,6 +901,7 @@ func (v *AttachmentViewer) download(m client.Message, col *gtk.Box, disc *gtk.Bu
 				v.onDownloaded(m.ID, path)
 			}
 			v.show(v.idx)
+			v.refreshStrip()
 		})
 	}()
 }
@@ -1739,21 +1756,110 @@ func (v *AttachmentViewer) captionRow(m client.Message) gtk.Widgetter {
 
 // ---- filmstrip ----------------------------------------------------------
 
+// viewerTile is one strip tile: the button, and the overlay that carries
+// the selected mark and the face.
+type viewerTile struct {
+	btn     *gtk.Button
+	overlay *gtk.Overlay
+}
+
+// refreshStrip rebuilds the strip from v.items. Stepping does not come
+// here (see selectTile): a chat can hold hundreds of attachments.
 func (v *AttachmentViewer) refreshStrip() {
 	removeAllChildren(v.strip)
-	var on gtk.Widgetter
+	v.stopFileThumbs()
+	v.tiles = v.tiles[:0]
+	var pending []int
 	for i, m := range v.items {
-		tile := v.stripTile(i, m)
-		if i == v.idx {
-			on = tile
+		tile, wantsFile := v.stripTile(i, m)
+		v.tiles = append(v.tiles, tile)
+		if wantsFile {
+			pending = append(pending, i)
 		}
-		v.strip.Append(tile)
+		v.strip.Append(tile.btn)
 	}
 	v.stripLbl.SetLabel(pluralCount(len(v.items), "attachment", "attachments") + " in this chat")
 	// A chat with more attachments than fit opened the strip at its start,
 	// the selected tile somewhere off to the right.
-	if on != nil {
-		v.scrollStripTo(on)
+	if v.idx < len(v.tiles) {
+		v.scrollStripTo(v.tiles[v.idx].btn)
+	}
+	v.loadFileThumbs(pending)
+}
+
+// selectTile moves the selected mark to v.idx and brings that tile into
+// view. A strip not yet rebuilt for v.items is left for refreshStrip.
+func (v *AttachmentViewer) selectTile() {
+	if len(v.tiles) != len(v.items) {
+		return
+	}
+	for i, t := range v.tiles {
+		if i == v.idx {
+			t.overlay.AddCSSClass("chatot-viewer-thumb-on")
+		} else if t.overlay.HasCSSClass("chatot-viewer-thumb-on") {
+			t.overlay.RemoveCSSClass("chatot-viewer-thumb-on")
+		}
+	}
+	v.scrollStripTo(v.tiles[v.idx].btn)
+}
+
+// loadFileThumbs gives the tiles at idxs (pictures with no embedded
+// thumbnail) a face decoded from the file itself. That decode reads the
+// whole picture, and a chat of screenshots has dozens of multi-megabyte
+// PNGs, so it runs off the main loop, nearest the selected tile first.
+func (v *AttachmentViewer) loadFileThumbs(idxs []int) {
+	if v.thumbs == nil {
+		v.thumbs = map[string]*gdkpixbuf.Pixbuf{}
+	}
+	var paths []string
+	var todo []int
+	for _, i := range idxs {
+		path, _ := hasLocal(v.items[i])
+		if pb, ok := v.thumbs[path]; ok {
+			v.tiles[i].overlay.SetChild(coverThumb(pb, viewerThumb, viewerThumb, 0, false))
+			continue
+		}
+		todo = append(todo, i)
+	}
+	if len(todo) == 0 {
+		return
+	}
+	at := v.idx
+	slices.SortStableFunc(todo, func(a, b int) int { return absInt(a-at) - absInt(b-at) })
+	for _, i := range todo {
+		path, _ := hasLocal(v.items[i])
+		paths = append(paths, path)
+	}
+	stop := new(atomic.Bool)
+	v.stripStop = stop
+	go func() {
+		for n, path := range paths {
+			if stop.Load() {
+				return
+			}
+			pb, err := gdkpixbufAtScale(path, viewerThumb*2)
+			if err != nil {
+				log.Printf("chatot: viewer strip thumb for %s: %v", filepath.Base(path), err)
+				continue
+			}
+			pb = pb.ApplyEmbeddedOrientation()
+			i := todo[n]
+			glib.IdleAdd(func() {
+				if stop.Load() {
+					return
+				}
+				v.thumbs[path] = pb
+				v.tiles[i].overlay.SetChild(coverThumb(pb, viewerThumb, viewerThumb, 0, false))
+			})
+		}
+	}()
+}
+
+// stopFileThumbs abandons the decodes loadFileThumbs has left to run.
+func (v *AttachmentViewer) stopFileThumbs() {
+	if v.stripStop != nil {
+		v.stripStop.Store(true)
+		v.stripStop = nil
 	}
 }
 
@@ -1780,7 +1886,7 @@ func (v *AttachmentViewer) scrollStripTo(tile gtk.Widgetter) {
 // stripTile is one 52px filmstrip tile: a cover thumbnail for a picture or
 // clip, a coloured extension tile for a document, a glyph otherwise, with
 // a small badge (⬇ pending, the clip's length, GIF).
-func (v *AttachmentViewer) stripTile(i int, m client.Message) gtk.Widgetter {
+func (v *AttachmentViewer) stripTile(i int, m client.Message) (tile viewerTile, wantsFile bool) {
 	kind := viewerKind(m)
 	overlay := gtk.NewOverlay()
 	overlay.AddCSSClass("chatot-viewer-thumb")
@@ -1820,12 +1926,8 @@ func (v *AttachmentViewer) stripTile(i int, m client.Message) gtk.Widgetter {
 				face = coverThumb(pb, viewerThumb, viewerThumb, 0, false)
 			}
 		}
-		if face == nil {
-			if path, ok := hasLocal(m); ok && kind == "photo" {
-				if pb, err := gdkpixbufAtScale(path, viewerThumb*2); err == nil {
-					face = coverThumb(pb, viewerThumb, viewerThumb, 0, false)
-				}
-			}
+		if face == nil && kind == "photo" {
+			_, wantsFile = hasLocal(m)
 		}
 		if face == nil {
 			lbl := gtk.NewLabel(viewerGlyph(kind))
@@ -1866,7 +1968,7 @@ func (v *AttachmentViewer) stripTile(i int, m client.Message) gtk.Widgetter {
 	btn.SetTooltipText(viewerTitle(m, kind) + " · " + time.Unix(m.TS, 0).Format("15:04"))
 	idx := i
 	btn.ConnectClicked(func() { v.show(idx) })
-	return btn
+	return viewerTile{btn: btn, overlay: overlay}, wantsFile
 }
 
 func localOK(m client.Message) bool {
@@ -2268,6 +2370,13 @@ func (v *AttachmentViewer) fullscreen() {
 		return
 	}
 	showVideoFullscreen(v.window, path, m, v.player)
+}
+
+func absInt(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 func maxInt(a, b int) int {

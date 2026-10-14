@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
@@ -911,3 +914,51 @@ func (cl *ChatList) OpenNowPlaying() { cl.miniPlayer.open() }
 
 // ActualSize presses the viewer's 1:1, for the viewer shot hook.
 func (v *AttachmentViewer) ActualSize() { v.setActualSize() }
+
+// StepBench steps the viewer back n times from the newest attachment, one
+// step every 400 ms, and logs what each cost the main loop: the show
+// itself and the time until the frame after it has been drawn.
+func (v *AttachmentViewer) StepBench(n int) {
+	if len(v.items) > 0 {
+		v.show(len(v.items) - 1)
+	}
+	var spent []time.Duration
+	var step func()
+	step = func() {
+		if n == 0 || v.idx == 0 {
+			slices.Sort(spent)
+			if len(spent) > 0 {
+				log.Printf("stepbench: %d steps over %d items, median %v, max %v", len(spent), len(v.items), spent[len(spent)/2], spent[len(spent)-1])
+			}
+			return
+		}
+		n--
+		t0 := time.Now()
+		v.step(-1)
+		shown := time.Since(t0)
+		frames := 0
+		v.stage.AddTickCallback(func(gtk.Widgetter, gdk.FrameClocker) bool {
+			if frames++; frames < 2 {
+				return true
+			}
+			d := time.Since(t0)
+			spent = append(spent, d)
+			log.Printf("stepbench: item %d show %v, drawn %v", v.idx, shown, d)
+			glib.TimeoutAdd(400, func() bool { step(); return false })
+			return false
+		})
+	}
+	step()
+}
+
+// LoadOlderPages prepends up to n older pages of the open thread at once,
+// as scrolling to the top n times would.
+func (cv *ConversationView) LoadOlderPages(n int) {
+	for ; n > 0; n-- {
+		older, err := cv.c.MessagesBefore(cv.jid, cv.oldestID, conversationPageSize)
+		if err != nil || len(older) == 0 {
+			return
+		}
+		cv.prependOlder(older)
+	}
+}
