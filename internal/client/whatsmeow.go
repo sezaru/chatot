@@ -2356,11 +2356,12 @@ func (w *Whatsmeow) applyBlocklistEvent(bl *events.Blocklist) {
 	}
 	w.blockMu.Lock()
 	for _, ch := range bl.Changes {
-		jid := ch.JID.String()
-		if ch.Action == events.BlocklistChangeActionBlock {
-			w.blocked[jid] = true
-		} else {
-			delete(w.blocked, jid)
+		for _, jid := range []string{ch.JID.String(), w.canonicalChatJID(ch.JID.String())} {
+			if ch.Action == events.BlocklistChangeActionBlock {
+				w.blocked[jid] = true
+			} else {
+				delete(w.blocked, jid)
+			}
 		}
 	}
 	w.blockMu.Unlock()
@@ -2369,30 +2370,47 @@ func (w *Whatsmeow) applyBlocklistEvent(bl *events.Blocklist) {
 
 // setBlockedCache replaces the cached blocked set wholesale from a
 // types.Blocklist snapshot (returned by GetBlocklist/UpdateBlocklist).
+// WhatsApp lists blocked people by LID, with the phone number beside it
+// when it has one; every form goes in the set, so a chat is found blocked
+// whichever way it is filed.
 func (w *Whatsmeow) setBlockedCache(list *types.Blocklist) {
 	if list == nil {
 		return
 	}
-	set := make(map[string]bool, len(list.JIDs))
-	for _, j := range list.JIDs {
-		set[j.String()] = true
+	set := make(map[string]bool, 3*len(list.Items))
+	for _, it := range list.Items {
+		for _, j := range []types.JID{it.LID, it.PN} {
+			if !j.IsEmpty() {
+				set[j.String()] = true
+			}
+		}
+		set[w.blockedChatJID(it)] = true
 	}
 	w.blockMu.Lock()
 	w.blocked = set
 	w.blockMu.Unlock()
 }
 
-// Blocklist fetches the full blocked-JID list and refreshes the local cache
-// IsBlocked reads.
+// blockedChatJID is the chat a blocklist entry is filed under: its phone
+// number when the list or the LID map knows it, else the LID.
+func (w *Whatsmeow) blockedChatJID(it types.BlocklistItem) string {
+	if !it.PN.IsEmpty() {
+		return it.PN.ToNonAD().String()
+	}
+	return w.canonicalChatJID(it.LID.String())
+}
+
+// Blocklist fetches the full blocked list, as chat JIDs, and refreshes the
+// local cache IsBlocked reads.
 func (w *Whatsmeow) Blocklist(ctx context.Context) ([]string, error) {
-	list, err := w.wa.GetBlocklist(ctx)
+	list, err := w.wa.GetBlocklist(ctx, "")
 	if err != nil {
 		return nil, fmt.Errorf("chatot/client: get blocklist: %w", err)
 	}
 	w.setBlockedCache(list)
-	out := make([]string, len(list.JIDs))
-	for i, j := range list.JIDs {
-		out[i] = j.String()
+	out := make([]string, 0, len(list.Items))
+	for _, it := range list.Items {
+		out = append(out, w.blockedChatJID(it))
 	}
 	return out, nil
 }
@@ -2408,7 +2426,7 @@ func (w *Whatsmeow) SetBlocked(ctx context.Context, jid string, blocked bool) er
 	if blocked {
 		action = events.BlocklistChangeActionBlock
 	}
-	list, err := w.wa.UpdateBlocklist(ctx, target, action)
+	list, err := w.wa.UpdateBlocklist(ctx, target, action, "")
 	if err != nil {
 		return fmt.Errorf("chatot/client: update blocklist: %w", err)
 	}

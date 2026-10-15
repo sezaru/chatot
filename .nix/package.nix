@@ -71,7 +71,14 @@ in
       ];
     };
 
-    vendorHash = "sha256-I8XfhvcxK5eqR/q73002Dre3uYA2xD/59ob5TX+HijY=";
+    vendorHash = "sha256-UEEBs745dZbqN4xCB4TdM/z9smacpGUzIBkJxthaIcQ=";
+    # whatsmeow carries one local fix (see the patch's header), applied to
+    # the vendored copy so the hash above covers it.
+    overrideModAttrs = _: {
+      postBuild = ''
+        patch -p1 -d vendor/go.mau.fi/whatsmeow < ${../patches/whatsmeow-no-biz-response.patch}
+      '';
+    };
 
     subPackages = ["cmd/chatot"];
 

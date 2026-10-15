@@ -152,3 +152,10 @@ modules:
           - mockup
           - node_modules
       - go.mod.yml
+      # The one local fix to whatsmeow (see the patch's header), applied to
+      # the vendored copy go.mod.yml just unpacked.
+      - type: patch
+        path: ../../patches/whatsmeow-no-biz-response.patch
+        options:
+          - -d
+          - vendor/go.mau.fi/whatsmeow
