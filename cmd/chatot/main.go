@@ -357,6 +357,9 @@ func activate(app *adw.Application, c client.Client) {
 	// sitting inside the composer.
 	attachTray := ui.NewAttachTray(composer.SendTrayItems, composer.ReopenFilePicker)
 	composer.SetTray(attachTray)
+	// Open, the tray covers contentBox and its drop target: files dropped
+	// on it join the batch.
+	attachTray.AddController(composer.DropTarget())
 	paneOverlay := gtk.NewOverlay()
 	paneOverlay.SetChild(rightPane)
 	paneOverlay.AddOverlay(attachTray)
