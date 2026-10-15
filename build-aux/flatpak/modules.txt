@@ -193,6 +193,7 @@ go.mau.fi/whatsmeow/store/sqlstore
 go.mau.fi/whatsmeow/store/sqlstore/upgrades
 go.mau.fi/whatsmeow/types
 go.mau.fi/whatsmeow/types/events
+go.mau.fi/whatsmeow/types/richresponse
 go.mau.fi/whatsmeow/util/cbcutil
 go.mau.fi/whatsmeow/util/gcmutil
 go.mau.fi/whatsmeow/util/hkdfutil

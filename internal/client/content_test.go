@@ -5,6 +5,7 @@ import (
 
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	waWeb "go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -126,5 +127,67 @@ func TestApplyHistoryMessageStubs(t *testing.T) {
 	}
 	if m, ok, _ := w.store.MessageByID(chat, "text"); !ok || m.Text != "hello" {
 		t.Fatalf("text: ok=%v %+v", ok, m)
+	}
+}
+
+// Kinds WhatsApp added lately: each lands as the bubble chatot already has
+// for it, or as a line of text, never as "Unsupported".
+func TestExtractTextNewerKinds(t *testing.T) {
+	var msg Message
+	extractText(&waE2E.Message{InstantImageMessage: &waE2E.ImageMessage{Mimetype: proto.String("image/jpeg"), Caption: proto.String("now")}}, &msg)
+	if msg.Attachment == nil || msg.Attachment.Kind != "image" || msg.Attachment.Caption != "now" {
+		t.Fatalf("instant image: %+v", msg.Attachment)
+	}
+
+	msg = Message{}
+	extractText(&waE2E.Message{AudioStickerMessage: &waE2E.FutureProofMessage{Message: &waE2E.Message{
+		StickerMessage: &waE2E.StickerMessage{Mimetype: proto.String("image/webp")},
+	}}}, &msg)
+	if msg.Attachment == nil || msg.Attachment.Kind != "sticker" {
+		t.Fatalf("sticker with sound: %+v", msg.Attachment)
+	}
+
+	msg = Message{}
+	extractText(&waE2E.Message{EventInviteMessage: &waE2E.EventInviteMessage{
+		EventTitle: proto.String("Picnic"), Caption: proto.String("bring food"), LocationName: proto.String("Park"),
+		StartTime: proto.Int64(1_790_000_000_000), EndTime: proto.Int64(1_790_003_600),
+		Status: waE2E.EventInviteMessage_CANCELED.Enum(),
+	}}, &msg)
+	if ev := msg.EventInvite; ev == nil || ev.Name != "Picnic" || ev.Location != "Park" || ev.StartTS != 1_790_000_000 || ev.EndTS != 1_790_003_600 || !ev.Canceled {
+		t.Fatalf("event invite: %+v", msg.EventInvite)
+	}
+
+	for _, c := range []struct {
+		name string
+		m    *waE2E.Message
+		want string
+	}{
+		{"song", &waE2E.Message{MusicMessage: &waE2E.MusicMessage{
+			EmbeddedMusic: &waE2E.EmbeddedMusic{Title: proto.String("Garota de Ipanema"), Author: proto.String("Tom Jobim")},
+			SongUri:       proto.String("https://open.spotify.com/track/x"),
+		}}, "🎵 Garota de Ipanema · Tom Jobim\nhttps://open.spotify.com/track/x"},
+		{"untitled song", &waE2E.Message{MusicMessage: &waE2E.MusicMessage{}}, "🎵 Song"},
+		{"location request", &waE2E.Message{RequestLocationMessage: &waE2E.RequestLocationMessage{}}, "📍 Location request"},
+		{"shared history", &waE2E.Message{MessageHistoryNotice: &waE2E.MessageHistoryNotice{
+			MessageHistoryMetadata: &waE2E.MessageHistoryMetadata{MessageCount: proto.Int64(42)},
+		}}, "🕘 42 recent messages shared with new members"},
+	} {
+		msg = Message{}
+		extractText(c.m, &msg)
+		if msg.Text != c.want {
+			t.Errorf("%s: text %q, want %q", c.name, msg.Text, c.want)
+		}
+	}
+
+	// Bookkeeping that rides along with nothing to read stays out.
+	for name, m := range map[string]*waE2E.Message{
+		"location request cancelled": {RequestLocationUpdateMessage: &waE2E.RequestLocationUpdateMessage{}},
+		"chat privacy setting":       {Acp2SettingMessage: &waE2E.FutureProofMessage{}},
+	} {
+		msg = Message{}
+		extractText(m, &msg)
+		if hasContent(&msg) {
+			t.Errorf("%s: became a bubble %+v", name, msg)
+		}
 	}
 }

@@ -79,7 +79,8 @@ warnings about `free` are noise). No `./.claude/verify` script exists.
   switcher addaccount manage. Legacy: `CHATOT_SHOT_ATTACH=1`,
   `CHATOT_SHOT_PREFS=1`, `CHATOT_SHOT_MEDIA=1`. Send states: `send` (+`CHATOT_SHOT_TEXT`)
   with `CHATOT_FAKE_SENDDELAY=<ms>` for the pending clock or
-  `CHATOT_FAKE_SENDFAIL=1` for the failed bubble; `sendretry` fails then
+  `CHATOT_FAKE_SENDFAIL=1` for the failed bubble (`=admins`: an admins-only
+  group refusing it, which also locks the composer); `sendretry` fails then
   retries; `reactors` (+`CHATOT_SHOT_MSG`) opens a pill's who-reacted sheet. Fake JIDs: Ada
   `1234567890@s.whatsapp.net` (3 texts: in, out-read "Yep!", in-forwarded),
   Grace `1112223333@s.whatsapp.net` (all media types), group

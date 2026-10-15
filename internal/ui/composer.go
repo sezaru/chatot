@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"mime"
@@ -937,6 +938,9 @@ func (c *Composer) dispatch(msg client.Message) {
 		sent := pending
 		sent.ID = id
 		glib.IdleAdd(func() {
+			if errors.Is(err, client.ErrSendNotAllowed) {
+				c.refuseSends(pending.ChatJID)
+			}
 			if c.onSendResult != nil {
 				c.onSendResult(pending.ID, sent, err)
 			}

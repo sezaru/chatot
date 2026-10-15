@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -86,6 +87,11 @@ type Whatsmeow struct {
 
 	blockMu sync.Mutex
 	blocked map[string]bool // jid -> blocked, warmed on connect and kept live by SetBlocked + inbound events
+	// The list as last read, and the server's hash of it: a fetch that
+	// sends the hash back gets no list when nothing changed, and this one
+	// stands. blockHash is "" whenever the copy may be out of date.
+	blockItems []types.BlocklistItem
+	blockHash  string
 
 	names contactNames
 
@@ -853,6 +859,19 @@ func (w *Whatsmeow) SearchInChat(chatJID, query string, limit int) ([]SearchHit,
 	return out, nil
 }
 
+// sendComposed sends a message the reader composed (text, media, a
+// location, a forward, ...) under id. In a group only admins may post to,
+// whatsmeow checks our rights against its copy of the group and refuses
+// before anything goes out, as ErrSendNotAllowed; the server would only
+// reject it after the fact.
+func (w *Whatsmeow) sendComposed(ctx context.Context, to types.JID, msg *waE2E.Message, id types.MessageID) error {
+	_, err := w.wa.SendMessage(ctx, to, msg, whatsmeow.SendRequestExtra{ID: id, CheckPermissions: true})
+	if errors.Is(err, whatsmeow.ErrNoPermissionInGroup) {
+		return ErrSendNotAllowed
+	}
+	return err
+}
+
 // SendText sends a plain-text (optionally reply) message. On success the
 // sent message is upserted into the local store immediately (optimistic
 // echo), rather than waiting for whatsmeow to redeliver it as an event.
@@ -889,7 +908,7 @@ func (w *Whatsmeow) SendText(ctx context.Context, jid, text string, replyTo *Msg
 	}
 
 	id := w.wa.GenerateMessageID()
-	if _, err := w.wa.SendMessage(ctx, to, waMsg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+	if err := w.sendComposed(ctx, to, waMsg, id); err != nil {
 		return "", fmt.Errorf("chatot/client: send text: %w", err)
 	}
 
@@ -1346,7 +1365,7 @@ func (w *Whatsmeow) SendMedia(ctx context.Context, jid string, m Attachment, rep
 	}
 
 	id := w.wa.GenerateMessageID()
-	if _, err := w.wa.SendMessage(ctx, to, waMsg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+	if err := w.sendComposed(ctx, to, waMsg, id); err != nil {
 		return "", fmt.Errorf("chatot/client: send media: %w", err)
 	}
 
@@ -1396,7 +1415,7 @@ func (w *Whatsmeow) SendLocation(ctx context.Context, jid string, loc Location, 
 	locMsg.ContextInfo, replyTo = w.replyContext(ctx, replyTo)
 
 	id := w.wa.GenerateMessageID()
-	if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{LocationMessage: locMsg}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+	if err := w.sendComposed(ctx, to, &waE2E.Message{LocationMessage: locMsg}, id); err != nil {
 		return "", fmt.Errorf("chatot/client: send location: %w", err)
 	}
 
@@ -1427,7 +1446,7 @@ func (w *Whatsmeow) SendLiveLocation(ctx context.Context, jid string, lat, lon f
 	}
 
 	id := w.wa.GenerateMessageID()
-	if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{LiveLocationMessage: liveMsg}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+	if err := w.sendComposed(ctx, to, &waE2E.Message{LiveLocationMessage: liveMsg}, id); err != nil {
 		return "", fmt.Errorf("chatot/client: send live location: %w", err)
 	}
 
@@ -1453,7 +1472,7 @@ func (w *Whatsmeow) SendContact(ctx context.Context, jid string, contact Contact
 	contactMsg.ContextInfo, replyTo = w.replyContext(ctx, replyTo)
 
 	id := w.wa.GenerateMessageID()
-	if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{ContactMessage: contactMsg}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+	if err := w.sendComposed(ctx, to, &waE2E.Message{ContactMessage: contactMsg}, id); err != nil {
 		return "", fmt.Errorf("chatot/client: send contact: %w", err)
 	}
 
@@ -1498,7 +1517,7 @@ func (w *Whatsmeow) ForwardMessage(ctx context.Context, msg Message, toJID strin
 			locMsg.Address = proto.String(msg.Location.Address)
 		}
 		id := w.wa.GenerateMessageID()
-		if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{LocationMessage: locMsg}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		if err := w.sendComposed(ctx, to, &waE2E.Message{LocationMessage: locMsg}, id); err != nil {
 			return "", fmt.Errorf("chatot/client: forward location: %w", err)
 		}
 		sent := *msg.Location
@@ -1516,7 +1535,7 @@ func (w *Whatsmeow) ForwardMessage(ctx context.Context, msg Message, toJID strin
 			ContextInfo: forwardContextInfo(),
 		}
 		id := w.wa.GenerateMessageID()
-		if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{ContactMessage: contactMsg}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		if err := w.sendComposed(ctx, to, &waE2E.Message{ContactMessage: contactMsg}, id); err != nil {
 			return "", fmt.Errorf("chatot/client: forward contact: %w", err)
 		}
 		sent := *msg.Contact
@@ -1535,7 +1554,7 @@ func (w *Whatsmeow) ForwardMessage(ctx context.Context, msg Message, toJID strin
 			ContextInfo: forwardContextInfo(),
 		}}
 		id := w.wa.GenerateMessageID()
-		if _, err := w.wa.SendMessage(ctx, to, waMsg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+		if err := w.sendComposed(ctx, to, waMsg, id); err != nil {
 			return "", fmt.Errorf("chatot/client: forward text: %w", err)
 		}
 		out := Message{ID: id, ChatJID: toJID, FromJID: w.ownJID(), FromMe: true, Text: msg.Text, TS: time.Now().Unix(), Forwarded: true}
@@ -1596,7 +1615,7 @@ func (w *Whatsmeow) forwardMedia(ctx context.Context, msg Message, to types.JID,
 		att.Kind = kind
 	}
 
-	if _, err := w.wa.SendMessage(ctx, to, waMsg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+	if err := w.sendComposed(ctx, to, waMsg, id); err != nil {
 		return "", fmt.Errorf("chatot/client: forward media: %w", err)
 	}
 
@@ -1627,7 +1646,7 @@ func (w *Whatsmeow) CreatePoll(ctx context.Context, jid, name string, options []
 
 	waMsg := w.wa.BuildPollCreation(name, options, selectable)
 	id := w.wa.GenerateMessageID()
-	if _, err := w.wa.SendMessage(ctx, to, waMsg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+	if err := w.sendComposed(ctx, to, waMsg, id); err != nil {
 		return "", fmt.Errorf("chatot/client: create poll: %w", err)
 	}
 
@@ -1734,7 +1753,7 @@ func (w *Whatsmeow) ReplyChoice(ctx context.Context, chatJID, msgID string, sel 
 	waMsg := choiceReply(offer.Choices.Source, sel, ctxInfo)
 
 	id := w.wa.GenerateMessageID()
-	if _, err := w.wa.SendMessage(ctx, to, waMsg, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+	if err := w.sendComposed(ctx, to, waMsg, id); err != nil {
 		return "", fmt.Errorf("chatot/client: reply choice: send: %w", err)
 	}
 	out := Message{ID: id, ChatJID: chatJID, FromJID: w.ownJID(), FromMe: true, Text: sel.Label, TS: time.Now().Unix()}
@@ -1899,7 +1918,7 @@ func (w *Whatsmeow) SendVoice(ctx context.Context, jid string, oggOpus []byte, d
 	}
 
 	id := w.wa.GenerateMessageID()
-	if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{AudioMessage: aud}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+	if err := w.sendComposed(ctx, to, &waE2E.Message{AudioMessage: aud}, id); err != nil {
 		return "", fmt.Errorf("chatot/client: send voice: %w", err)
 	}
 
@@ -1956,7 +1975,7 @@ func (w *Whatsmeow) SendSticker(ctx context.Context, jid, path string) (string, 
 	}
 
 	id := w.wa.GenerateMessageID()
-	if _, err := w.wa.SendMessage(ctx, to, &waE2E.Message{StickerMessage: sticker}, whatsmeow.SendRequestExtra{ID: id}); err != nil {
+	if err := w.sendComposed(ctx, to, &waE2E.Message{StickerMessage: sticker}, id); err != nil {
 		return "", fmt.Errorf("chatot/client: send sticker: %w", err)
 	}
 
@@ -2346,6 +2365,9 @@ func (w *Whatsmeow) PostStatus(ctx context.Context, text string) error {
 // EventChatUpdate so the chat list (and any open block-state UI) refreshes.
 func (w *Whatsmeow) applyBlocklistEvent(bl *events.Blocklist) {
 	if bl.Action == events.BlocklistActionModify {
+		w.blockMu.Lock()
+		w.blockHash = ""
+		w.blockMu.Unlock()
 		go func() {
 			if _, err := w.Blocklist(context.Background()); err != nil {
 				w.log.Warnf("chatot/client: refresh blocklist: %v", err)
@@ -2355,6 +2377,9 @@ func (w *Whatsmeow) applyBlocklistEvent(bl *events.Blocklist) {
 		return
 	}
 	w.blockMu.Lock()
+	if w.blocked == nil {
+		w.blocked = make(map[string]bool)
+	}
 	for _, ch := range bl.Changes {
 		for _, jid := range []string{ch.JID.String(), w.canonicalChatJID(ch.JID.String())} {
 			if ch.Action == events.BlocklistChangeActionBlock {
@@ -2363,6 +2388,14 @@ func (w *Whatsmeow) applyBlocklistEvent(bl *events.Blocklist) {
 				delete(w.blocked, jid)
 			}
 		}
+	}
+	// Changes made to the very list we hold keep it current under the new
+	// hash; changes to some other version of it mean ours is stale.
+	if w.blockHash != "" && bl.PrevDHash == w.blockHash && bl.DHash != "" {
+		w.blockItems = applyBlocklistChanges(w.blockItems, bl.Changes)
+		w.blockHash = bl.DHash
+	} else {
+		w.blockHash = ""
 	}
 	w.blockMu.Unlock()
 	w.pushEvent(Event{Kind: EventChatUpdate, ChatUpdate: &ChatUpdate{}})
@@ -2388,7 +2421,33 @@ func (w *Whatsmeow) setBlockedCache(list *types.Blocklist) {
 	}
 	w.blockMu.Lock()
 	w.blocked = set
+	w.blockItems = slices.Clone(list.Items)
+	w.blockHash = list.DHash
 	w.blockMu.Unlock()
+}
+
+// applyBlocklistChanges is items with a batch of block and unblock changes
+// made to it: a change names a person by LID or by phone number, whichever
+// the server sent.
+func applyBlocklistChanges(items []types.BlocklistItem, changes []events.BlocklistChange) []types.BlocklistItem {
+	out := slices.Clone(items)
+	for _, ch := range changes {
+		jid := ch.JID.ToNonAD()
+		out = slices.DeleteFunc(out, func(it types.BlocklistItem) bool {
+			return it.LID == jid || it.PN == jid
+		})
+		if ch.Action != events.BlocklistChangeActionBlock {
+			continue
+		}
+		it := types.BlocklistItem{Active: true}
+		if jid.Server == types.HiddenUserServer {
+			it.LID = jid
+		} else {
+			it.PN = jid
+		}
+		out = append(out, it)
+	}
+	return out
 }
 
 // blockedChatJID is the chat a blocklist entry is filed under: its phone
@@ -2400,19 +2459,35 @@ func (w *Whatsmeow) blockedChatJID(it types.BlocklistItem) string {
 	return w.canonicalChatJID(it.LID.String())
 }
 
-// Blocklist fetches the full blocked list, as chat JIDs, and refreshes the
-// local cache IsBlocked reads.
+// Blocklist fetches the blocked list, as chat JIDs, and refreshes the local
+// cache IsBlocked reads. The hash of the list already held goes along, so
+// the server only sends the list again when it changed.
 func (w *Whatsmeow) Blocklist(ctx context.Context) ([]string, error) {
-	list, err := w.wa.GetBlocklist(ctx, "")
+	w.blockMu.Lock()
+	hash := w.blockHash
+	w.blockMu.Unlock()
+	list, err := w.wa.GetBlocklist(ctx, hash)
 	if err != nil {
 		return nil, fmt.Errorf("chatot/client: get blocklist: %w", err)
 	}
+	if list == nil {
+		// Unchanged since hash.
+		w.blockMu.Lock()
+		items := slices.Clone(w.blockItems)
+		w.blockMu.Unlock()
+		return w.blockedChats(items), nil
+	}
 	w.setBlockedCache(list)
-	out := make([]string, 0, len(list.Items))
-	for _, it := range list.Items {
+	return w.blockedChats(list.Items), nil
+}
+
+// blockedChats is the chat each blocklist entry is filed under.
+func (w *Whatsmeow) blockedChats(items []types.BlocklistItem) []string {
+	out := make([]string, 0, len(items))
+	for _, it := range items {
 		out = append(out, w.blockedChatJID(it))
 	}
-	return out, nil
+	return out
 }
 
 // SetBlocked blocks or unblocks jid, refreshing the cached set from the

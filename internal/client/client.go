@@ -14,6 +14,10 @@ import (
 // than fails.
 var ErrUnsupported = errors.New("chatot/client: not supported by this backend")
 
+// ErrSendNotAllowed is returned by a send to a group that takes messages
+// from its admins alone, when we are not one: the message never left.
+var ErrSendNotAllowed = errors.New("chatot/client: only admins can send messages to this group")
+
 // EventKind identifies the payload carried by an Event.
 type EventKind int
 

@@ -262,8 +262,13 @@ func extractText(m *waProto.Message, msg *Message) {
 				Thumbnail: ext.GetJPEGThumbnail(),
 			}
 		}
-	case m.GetImageMessage() != nil:
+	case m.GetImageMessage() != nil || m.GetInstantImageMessage() != nil:
+		// An instant image (a photo taken in the camera and sent at once)
+		// is an ImageMessage in another field.
 		img := m.GetImageMessage()
+		if img == nil {
+			img = m.GetInstantImageMessage()
+		}
 		msg.Attachment = &Attachment{Kind: "image", MimeType: img.GetMimetype(), Caption: img.GetCaption(), ProtoBlob: marshalMedia(img), Thumbnail: img.GetJPEGThumbnail(), ViewOnce: img.GetViewOnce(), Size: int64(img.GetFileLength())}
 		ctx = img.GetContextInfo()
 	case m.GetVideoMessage() != nil || m.GetPtvMessage() != nil:
@@ -338,6 +343,17 @@ func extractText(m *waProto.Message, msg *Message) {
 			Location: eventLocationText(ev.GetLocation()),
 			StartTS:  ev.GetStartTime(), EndTS: ev.GetEndTime(),
 			Canceled: ev.GetIsCanceled(),
+		}
+		ctx = ev.GetContextInfo()
+	case m.GetEventInviteMessage() != nil:
+		// An invite to an event held elsewhere (a community's, say): the
+		// same card, from the fields the invite carries.
+		ev := m.GetEventInviteMessage()
+		msg.EventInvite = &EventInvite{
+			Name: ev.GetEventTitle(), Description: ev.GetCaption(),
+			Location: ev.GetLocationName(),
+			StartTS:  unixSeconds(ev.GetStartTime()), EndTS: unixSeconds(ev.GetEndTime()),
+			Canceled: ev.GetIsCanceled() || ev.GetStatus() == waE2E.EventInviteMessage_CANCELED,
 		}
 		ctx = ev.GetContextInfo()
 	case m.GetCallLogMesssage() != nil:
@@ -486,6 +502,16 @@ func vcardWAID(params string) string {
 		return v
 	}
 	return ""
+}
+
+// unixSeconds takes a timestamp WhatsApp may send in seconds or in
+// milliseconds to seconds: no event starts after the year 5138, so anything
+// past 1e11 is milliseconds.
+func unixSeconds(ts int64) int64 {
+	if ts > 1e11 {
+		return ts / 1000
+	}
+	return ts
 }
 
 // eventLocationText renders an event's attached location as a single display

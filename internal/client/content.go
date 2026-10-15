@@ -20,7 +20,8 @@ const placeholderText = "Waiting for this message. This may take a while."
 // unwrapContent peels the transport wrappers WhatsApp nests a real message
 // inside (a message sent from another own device, a disappearing or
 // view-once envelope, a document-with-caption, an edit, a bot reply, a
-// comment) until it reaches the leaf that carries the content. whatsmeow
+// comment, a sticker with sound, a channel's scheduled post) until it
+// reaches the leaf that carries the content. whatsmeow
 // unwraps most of these on the live path but the history-sync path hands
 // over the raw WebMessageInfo, so this runs on both.
 func unwrapContent(m *waProto.Message) *waProto.Message {
@@ -53,6 +54,12 @@ func unwrapContent(m *waProto.Message) *waProto.Message {
 			inner = m.GetPollCreationMessageV4().GetMessage()
 		case m.GetPollCreationOptionImageMessage().GetMessage() != nil:
 			inner = m.GetPollCreationOptionImageMessage().GetMessage()
+		case m.GetAudioStickerMessage().GetMessage() != nil:
+			inner = m.GetAudioStickerMessage().GetMessage()
+		case m.GetNewsletterScheduledMessage().GetMessage() != nil:
+			inner = m.GetNewsletterScheduledMessage().GetMessage()
+		case m.GetBotGroupParticipantMessage().GetMessage() != nil:
+			inner = m.GetBotGroupParticipantMessage().GetMessage()
 		default:
 			return m
 		}
@@ -78,8 +85,9 @@ func pollCreation(m *waProto.Message) *waProto.PollCreationMessage {
 // extractRichText covers the message kinds that render as plain text in
 // chatot even though WhatsApp models them as structured payloads: group
 // invites, business templates/buttons/lists and their replies, products,
-// orders, invoices, scheduled calls, sticker packs and withheld
-// placeholders. It reports whether m was one of those.
+// orders, invoices, scheduled calls, sticker packs, withheld placeholders,
+// Meta AI answers, shared songs, location requests and shared-history
+// notices. It reports whether m was one of those.
 func extractRichText(m *waProto.Message, msg *Message) (ctx *waProto.ContextInfo, ok bool) {
 	switch {
 	case m.GetGroupInviteMessage() != nil:
@@ -141,6 +149,30 @@ func extractRichText(m *waProto.Message, msg *Message) (ctx *waProto.ContextInfo
 	case m.GetSendPaymentMessage() != nil, m.GetRequestPaymentMessage() != nil:
 		msg.Text = "💸 Payment"
 		return nil, true
+	case m.GetRichResponseMessage() != nil:
+		rr := m.GetRichResponseMessage()
+		msg.Text = orUnsupported(richResponseText(rr))
+		return rr.GetContextInfo(), true
+	case m.GetMusicMessage() != nil:
+		mu := m.GetMusicMessage()
+		song := mu.GetEmbeddedMusic()
+		title := joinNonEmpty(" · ", song.GetTitle(), song.GetAuthor())
+		if title == "" {
+			title = "Song"
+		}
+		msg.Text = joinNonEmpty("\n", "🎵 "+title, mu.GetSongUri())
+		return mu.GetContextInfo(), true
+	case m.GetRequestLocationMessage() != nil:
+		msg.Text = "📍 Location request"
+		return m.GetRequestLocationMessage().GetContextInfo(), true
+	case m.GetMessageHistoryNotice() != nil:
+		// A group admin shared recent messages with people they added.
+		n := m.GetMessageHistoryNotice()
+		msg.Text = "🕘 Recent messages shared with new members"
+		if c := n.GetMessageHistoryMetadata().GetMessageCount(); c > 0 {
+			msg.Text = fmt.Sprintf("🕘 %d recent messages shared with new members", c)
+		}
+		return n.GetContextInfo(), true
 	}
 	return nil, false
 }
@@ -178,6 +210,10 @@ var noiseFields = map[string]bool{
 	"cancelPaymentRequestMessage":                true,
 	"paymentInviteMessage":                       true,
 	"scheduledCallEditMessage":                   true,
+	"requestLocationUpdateMessage":               true,
+	"statusLinkPreviewMetadata":                  true,
+	"acp2SettingMessage":                         true,
+	"botPlatformRegistrationSuccessMessage":      true,
 	"newsletterAdminInviteMessage":               false,
 }
 

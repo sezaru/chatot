@@ -71,7 +71,7 @@ in
       ];
     };
 
-    vendorHash = "sha256-UEEBs745dZbqN4xCB4TdM/z9smacpGUzIBkJxthaIcQ=";
+    vendorHash = "sha256-AmV3m8HjGC0A3Ykt4JiiGKoGQLxilXMcuxG0odFK7Xs=";
     # whatsmeow carries one local fix (see the patch's header), applied to
     # the vendored copy so the hash above covers it.
     overrideModAttrs = _: {

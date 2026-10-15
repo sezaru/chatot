@@ -610,7 +610,12 @@ func fakeSendDelay() error {
 	if ms, err := strconv.Atoi(os.Getenv("CHATOT_FAKE_SENDDELAY")); err == nil && ms > 0 {
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 	}
-	if os.Getenv("CHATOT_FAKE_SENDFAIL") != "" {
+	switch os.Getenv("CHATOT_FAKE_SENDFAIL") {
+	case "":
+	case "admins":
+		// An admins-only group refusing us, as whatsmeow does.
+		return ErrSendNotAllowed
+	default:
 		return errors.New("chatot/client: fake send failure (CHATOT_FAKE_SENDFAIL)")
 	}
 	return nil
@@ -1482,7 +1487,13 @@ func (f *Fake) GroupInfo(ctx context.Context, jid string) (*GroupInfo, error) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return cloneGroupInfo(f.ensureGroupLocked(jid)), nil
+	g := cloneGroupInfo(f.ensureGroupLocked(jid))
+	if os.Getenv("CHATOT_FAKE_SENDFAIL") == "admins" {
+		// The group whose sends are being refused takes them from
+		// admins alone.
+		g.Announce = true
+	}
+	return g, nil
 }
 
 // ensureGroupLocked returns the stored group for jid, seeding the canned

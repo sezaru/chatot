@@ -27,7 +27,23 @@ func sendBlockLine(info *client.GroupInfo, ownJID string) string {
 	if info == nil || !info.Announce || isSelfAdmin(*info, ownJID) {
 		return ""
 	}
-	return "Only admins can send messages to this group"
+	return adminsOnlyLine
+}
+
+const adminsOnlyLine = "Only admins can send messages to this group"
+
+// refuseSends locks jid's composer after a send came back refused
+// (client.ErrSendNotAllowed): the group went admins-only, or we stopped
+// being an admin, before our last read of it caught up. A fresh read
+// follows, since whatsmeow refused on its own copy of the group: the
+// server's answer settles it, and updates that copy too. Must run on the
+// GTK main loop.
+func (c *Composer) refuseSends(jid string) {
+	c.blockMemo[jid] = adminsOnlyLine
+	if c.state.jid == jid {
+		c.applySendBlock(adminsOnlyLine)
+		c.refreshSendRule(jid)
+	}
 }
 
 // refreshSendRule settles whether jid takes our messages: the last answer
@@ -56,7 +72,9 @@ func (c *Composer) refreshSendRule(jid string) {
 			// A group that could not be read (offline, a fetch that
 			// failed) leaves the last answer standing: unlocking a chat
 			// that refused the reader's last message is the worse guess.
-			if err == nil && c.blockReq == jid && c.state.jid == jid {
+			// Nor does a read with a newer one queued behind it answer:
+			// it may predate a refused send.
+			if err == nil && !c.blockDirty && c.blockReq == jid && c.state.jid == jid {
 				line := sendBlockLine(info, own)
 				c.blockMemo[jid] = line
 				c.applySendBlock(line)
