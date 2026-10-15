@@ -76,6 +76,10 @@ CREATE TABLE IF NOT EXISTS messages (
     -- reads: title, description, canonical URL, JPEG thumbnail), NULL for
     -- a message without one. Kept across a re-upsert that lacks it.
     link_preview TEXT,
+    -- How the reader left the message's picture or link preview: 0 as the
+    -- collapse preference says, 1 collapsed, 2 expanded. Local only, and
+    -- never written by UpsertMessage, so a redelivery keeps it.
+    fold INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat_jid, msg_id)
 );
 

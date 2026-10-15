@@ -833,6 +833,10 @@ func (m *AccountManager) SetPlayPosition(jid, msgID string, ms int) error {
 	return m.active().SetPlayPosition(jid, msgID, ms)
 }
 
+func (m *AccountManager) SetMessageFold(jid, msgID string, fold MediaFold) error {
+	return m.active().SetMessageFold(jid, msgID, fold)
+}
+
 // SetTranscript stores a transcript in the active account's store.
 func (m *AccountManager) SetTranscript(jid, msgID, text string) error {
 	return m.active().SetTranscript(jid, msgID, text)

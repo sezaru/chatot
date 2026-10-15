@@ -71,6 +71,13 @@ func (s *Store) SetMessagesPlayed(chatJID string, msgIDs []string) error {
 	return err
 }
 
+// SetMessageFold remembers how the reader left msgID's picture or link
+// preview (see Message.Fold). No-op for an id not found.
+func (s *Store) SetMessageFold(chatJID, msgID string, fold int) error {
+	_, err := s.db.Exec(`UPDATE messages SET fold = ? WHERE chat_jid = ? AND msg_id = ?`, fold, chatJID, msgID)
+	return err
+}
+
 // MarkMessageDeleted applies a "delete for everyone" (REVOKE) to msgID: it
 // sets deleted=1 sticky, inserting a minimal stub row if the original message
 // hasn't been seen yet (a revoke can arrive before, or without, the original).
@@ -191,7 +198,7 @@ func (s *Store) Statuses(since int64, limit int) ([]Message, error) {
 const messageSelect = `
 	SELECT
 		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''), COALESCE(m.reply_to_text, ''), COALESCE(m.reply_to_from, ''),
-		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status, m.starred, m.forwarded, m.played, COALESCE(m.link_preview, ''),
+		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status, m.starred, m.forwarded, m.played, COALESCE(m.link_preview, ''), m.fold,
 		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, COALESCE(md.is_gif, 0), COALESCE(md.view_once, 0), COALESCE(md.viewed, 0), COALESCE(md.file_size, 0), COALESCE(md.duration_secs, 0), COALESCE(md.play_pos_ms, 0), COALESCE(md.transcript, ''), COALESCE(md.voice, 0)
 	FROM messages m
 	LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id`
@@ -260,7 +267,7 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 		if err := rows.Scan(
 			&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID, &m.ReplyToText, &m.ReplyToFrom,
 
-			&m.Kind, &m.Payload, &edited, &deleted, &m.Status, &starred, &forwarded, &played, &m.LinkPreview,
+			&m.Kind, &m.Payload, &edited, &deleted, &m.Status, &starred, &forwarded, &played, &m.LinkPreview, &m.Fold,
 			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb, &mediaIsGif, &mediaViewOnce, &mediaViewed, &mediaSize, &mediaSecs, &mediaPos, &mediaTranscript, &mediaVoice,
 		); err != nil {
 			return nil, err

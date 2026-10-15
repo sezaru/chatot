@@ -399,9 +399,9 @@ type ConversationView struct {
 	// until first used.
 	expandedText map[string]bool
 
-	// unfoldedMedia holds the folded attachments (see CollapseMedia) the
-	// reader opened this session. Nil until first used.
-	unfoldedMedia map[string]bool
+	// mediaFolds holds the folds the reader made in this view, by message,
+	// ahead of the store (see mediaFoldOf). Nil until first used.
+	mediaFolds map[string]client.MediaFold
 
 	// unsent holds, per chat, the optimistic rows the store does not have:
 	// sends in flight and sends that failed. Load appends them after the
@@ -2230,11 +2230,12 @@ type bubbleHooks struct {
 	// leaves long bodies folded with a working control.
 	textExpandedOf func(msgID string) bool
 	onExpandText   func(msgID string, open bool)
-	// mediaUnfoldedOf reports whether msgID's folded attachment is open,
-	// and onUnfoldMedia records a fold change. Both nil leaves every
-	// attachment folded under CollapseMedia, with a working control.
-	mediaUnfoldedOf func(msgID string) bool
-	onUnfoldMedia   func(msgID string, open bool)
+	// mediaFoldOf is msg's fold as the view knows it, and foldMediaNow
+	// collapses or expands one (the bubble's chevron, the menu's row): the
+	// row is rebuilt and the choice saved. Both nil leaves every bubble
+	// whole, with no fold control.
+	mediaFoldOf  func(msg client.Message) client.MediaFold
+	foldMediaNow func(msgID string, folded bool)
 	// voice hears a voice note start, stop and end (played flag, resume
 	// position, auto-advance); zero leaves the rows self-contained.
 	voice voiceHooks
@@ -2345,11 +2346,11 @@ func (cv *ConversationView) hooks() bubbleHooks {
 			onToggleTranscript: cv.setTranscriptOpen,
 			onTranscriptMore:   cv.setTranscriptMore,
 		},
-		transcriptOf:    cv.transcriptOf,
-		textExpandedOf:  cv.textExpanded,
-		onExpandText:    cv.setTextExpanded,
-		mediaUnfoldedOf: cv.mediaUnfolded,
-		onUnfoldMedia:   cv.setMediaUnfolded,
+		transcriptOf:   cv.transcriptOf,
+		textExpandedOf: cv.textExpanded,
+		onExpandText:   cv.setTextExpanded,
+		mediaFoldOf:    cv.mediaFoldOf,
+		foldMediaNow:   cv.foldMedia,
 	}
 }
 
@@ -2679,6 +2680,11 @@ func (h bubbleHooks) runMenuItems(msg client.Message, run []client.Message, canE
 	actions.Info = func() { showMessageInfoDialog(h.window, msg) }
 	if canDelete && h.onDelete != nil {
 		actions.Delete = func() { h.onDelete(msg) }
+	}
+	if h.foldMediaNow != nil && (len(run) > 1 || foldableMessage(msg)) {
+		folded := h.messageFolded(msg)
+		actions.Folded = folded
+		actions.Fold = func() { h.foldMediaNow(msg.ID, !folded) }
 	}
 	items := messageMenuItems(msg, actions)
 	if !canEdit || h.onEdit == nil {

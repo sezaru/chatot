@@ -79,6 +79,9 @@ type Message struct {
 	// LinkPreview is the opaque JSON card of a text message's link ("" for
 	// none); like Payload, only package client reads it.
 	LinkPreview string
+	// Fold is how the reader left the message's picture or link preview:
+	// 0 as the preference says, 1 collapsed, 2 expanded. See SetMessageFold.
+	Fold int
 }
 
 // PollVoteRow is a single voter's selection of one poll option, identified by

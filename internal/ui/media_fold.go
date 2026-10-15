@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"log"
 	"strconv"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
@@ -13,9 +14,16 @@ import (
 	"chatot/internal/client"
 )
 
-// CollapseMedia mirrors settings.CollapseMedia: photos, clips and albums
-// fold to one line in the thread until clicked, and a link preview takes
-// WhatsApp's compact card, a small picture beside the title.
+// A photo, clip, album or link preview can be collapsed in its bubble: a
+// picture folds to one line (a small square of it, what it is, a chevron),
+// a link preview to WhatsApp's compact card. Every such bubble carries the
+// control, a chevron in the picture's top corner on hover, and the message
+// menu has Collapse/Expand too. How the reader left each one is saved on
+// the message (client.Message.Fold); one they never touched follows
+// CollapseMedia.
+
+// CollapseMedia mirrors settings.CollapseMedia: whether a bubble the
+// reader has not folded or unfolded starts collapsed.
 var CollapseMedia = false
 
 // foldThumbSide is the folded line's thumbnail; linkThumbSide the compact
@@ -25,37 +33,113 @@ const (
 	linkThumbSide = 64
 )
 
-// foldsMedia reports whether mv folds under CollapseMedia: the pictures
-// and clips that take a bubble's height. Stickers are small already, and
-// voice notes and documents are one line anyway.
-func foldsMedia(mv mediaView) bool {
-	return CollapseMedia && !mv.ViewOnce && (mv.Kind == "image" || mv.Kind == "video")
+// foldableMedia reports whether mv can fold: the pictures and clips that
+// take a bubble's height. Stickers are small already, and voice notes and
+// documents are one line anyway.
+func foldableMedia(mv mediaView) bool {
+	return !mv.ViewOnce && (mv.Kind == "image" || mv.Kind == "video")
 }
 
-// mediaFoldTooltip says what clicking the folded line will do.
-func mediaFoldTooltip(open bool) string {
-	if open {
-		return "Collapse"
+// foldableMessage reports whether msg's bubble has something to fold: a
+// picture or clip, or a link preview.
+func foldableMessage(msg client.Message) bool {
+	if a := msg.Attachment; a != nil {
+		return !a.ViewOnce && (a.Kind == "image" || a.Kind == "video")
 	}
-	return "Show"
+	return linkVM(msg.LinkPreview) != nil
 }
 
-// buildMediaFold is a folded attachment: one line naming it, with a small
-// thumbnail, that unfolds body underneath and folds it away again. The
-// body is built on the first unfold. onToggle hears each change, so a
-// rebuilt row comes back the way the reader left it.
-func buildMediaFold(thumb gtk.Widgetter, title, meta string, open bool, body func() gtk.Widgetter, onToggle func(open bool)) gtk.Widgetter {
-	box := gtk.NewBox(gtk.OrientationVertical, 4)
-	box.AddCSSClass("chatot-media-fold")
+// foldMenuLabel and foldMenuIcon are the fold control's words and the
+// message menu's row, for a bubble that is collapsed now or not.
+func foldMenuLabel(folded bool) string {
+	if folded {
+		return "Expand"
+	}
+	return "Collapse"
+}
 
+func foldMenuIcon(folded bool) string {
+	if folded {
+		return "⤢"
+	}
+	return "⤡"
+}
+
+// foldFor is msg's fold: what the reader chose for it, else CollapseMedia.
+func foldFor(fold client.MediaFold) bool {
+	switch fold {
+	case client.FoldCollapsed:
+		return true
+	case client.FoldExpanded:
+		return false
+	}
+	return CollapseMedia
+}
+
+// messageFolded is whether msg's picture or link preview is collapsed.
+// The view's own copy of the fold wins: it is what the reader just did,
+// while msg may be a page read before the store heard of it.
+func (h bubbleHooks) messageFolded(msg client.Message) bool {
+	if h.mediaFoldOf != nil {
+		return foldFor(h.mediaFoldOf(msg))
+	}
+	return foldFor(msg.Fold)
+}
+
+// foldToggle is the fold control's action for msg, nil where the bubble
+// cannot fold (no conversation behind it, as in tests).
+func (h bubbleHooks) foldToggle(msg client.Message, folded bool) func() {
+	if h.foldMediaNow == nil {
+		return nil
+	}
+	id := msg.ID
+	return func() { h.foldMediaNow(id, !folded) }
+}
+
+// withFoldButton puts the fold control over content's top corner: the one
+// away from where a narrow window floats the bubble's own ⌄ and 🙂 (the
+// left of an outgoing bubble, the right of an incoming one). It shows
+// while the pointer is over the content.
+func withFoldButton(content gtk.Widgetter, folded, fromMe bool, toggle func()) gtk.Widgetter {
+	if toggle == nil {
+		return content
+	}
+	wrap := gtk.NewOverlay()
+	wrap.AddCSSClass("chatot-fold-wrap")
+	wrap.SetHAlign(gtk.AlignStart)
+	wrap.SetChild(content)
+	btn := gtk.NewButton()
+	btn.AddCSSClass("chatot-fold-btn")
+	if !folded {
+		btn.AddCSSClass("chatot-fold-btn-open")
+	}
+	btn.SetFocusOnClick(false)
+	btn.SetTooltipText(foldMenuLabel(folded))
+	btn.SetVAlign(gtk.AlignStart)
+	if fromMe {
+		btn.SetHAlign(gtk.AlignEnd)
+	} else {
+		btn.SetHAlign(gtk.AlignStart)
+	}
+	btn.SetMarginTop(6)
+	btn.SetMarginStart(6)
+	btn.SetMarginEnd(6)
+	btn.SetChild(newChevronGlyph(14))
+	btn.ConnectClicked(toggle)
+	wrap.AddOverlay(btn)
+	return wrap
+}
+
+// buildCollapsedRow is a collapsed picture: one line naming it beside a
+// small square of it, with a chevron; a click anywhere expands it.
+func buildCollapsedRow(thumb gtk.Widgetter, title, meta string, expand func()) gtk.Widgetter {
 	head := gtk.NewButton()
 	head.AddCSSClass("flat")
 	head.AddCSSClass("chatot-media-fold-head")
 	head.SetFocusOnClick(false)
+	head.SetTooltipText(foldMenuLabel(true))
 	row := gtk.NewBox(gtk.OrientationHorizontal, 9)
-	if thumb != nil {
-		row.Append(thumb)
-	}
+	row.Append(thumb)
 	col := gtk.NewBox(gtk.OrientationVertical, 1)
 	col.SetVAlign(gtk.AlignCenter)
 	col.SetHExpand(true)
@@ -75,38 +159,9 @@ func buildMediaFold(thumb gtk.Widgetter, title, meta string, open bool, body fun
 	chev.AddCSSClass("chatot-media-fold-chev")
 	row.Append(chev)
 	head.SetChild(row)
-	box.Append(head)
-
-	var built gtk.Widgetter
-	apply := func() {
-		if open && built == nil {
-			built = body()
-			box.Append(built)
-		}
-		if built != nil {
-			gtk.BaseWidget(built).SetVisible(open)
-		}
-		// Unfolded, the attachment itself is right below: the line
-		// keeps only its words and the chevron that folds it again.
-		if thumb != nil {
-			gtk.BaseWidget(thumb).SetVisible(!open)
-		}
-		if open {
-			head.AddCSSClass("chatot-media-fold-open")
-		} else {
-			head.RemoveCSSClass("chatot-media-fold-open")
-		}
-		head.SetTooltipText(mediaFoldTooltip(open))
-	}
-	apply()
-	head.ConnectClicked(func() {
-		open = !open
-		apply()
-		if onToggle != nil {
-			onToggle(open)
-		}
-	})
-	return box
+	head.AddCSSClass("chatot-media-fold")
+	head.ConnectClicked(expand)
+	return head
 }
 
 // mediaFoldThumb is the folded line's square: the downloaded picture
@@ -180,9 +235,7 @@ func albumFoldTitle(msgs []client.Message) string {
 
 // prefetchFolded downloads a folded attachment the auto-download
 // preference wants, as the tile it stands in for would have, so the
-// viewer and an unfold find the file. An open fold has the tile itself,
-// which downloads on its own. mv learns the path, so a body built
-// after the download lands shows the picture rather than a tile.
+// viewer and an expand find the file. mv learns the path.
 func prefetchFolded(mv *mediaView, msg client.Message, c client.Client, onLocal func(path string)) {
 	if mv.HasLocal || c == nil {
 		return
@@ -204,61 +257,53 @@ func prefetchFolded(mv *mediaView, msg client.Message, c client.Client, onLocal 
 	}, mv.Kind, msg.TS)
 }
 
-// buildFoldedMediaContent is buildMediaContent folded to one line.
-func buildFoldedMediaContent(msg client.Message, mv mediaView, h bubbleHooks, open bool) gtk.Widgetter {
+// buildFoldedMediaContent is a collapsed photo or clip.
+func buildFoldedMediaContent(msg client.Message, mv mediaView, h bubbleHooks) gtk.Widgetter {
 	state := mv
-	if !open {
-		prefetchFolded(&state, msg, h.c, mv.onLocal)
-	}
-	return buildMediaFold(mediaFoldThumb(mv, msg), mediaFoldTitle(mv), humanSize(mv.Size), open,
-		func() gtk.Widgetter { return buildMediaContent(msg, state, h.c, h.mediaOpener(msg)) },
-		h.mediaFoldRecorder(msg.ID))
+	prefetchFolded(&state, msg, h.c, mv.onLocal)
+	return buildCollapsedRow(mediaFoldThumb(mv, msg), mediaFoldTitle(mv), humanSize(mv.Size), h.foldToggle(msg, true))
 }
 
-// buildFoldedAlbumContent is an album folded to one line, its first
-// picture as the thumbnail.
-func buildFoldedAlbumContent(alb *albumView, h bubbleHooks, open bool) gtk.Widgetter {
+// buildFoldedAlbumContent is a collapsed album, its first picture as the
+// thumbnail.
+func buildFoldedAlbumContent(alb *albumView, h bubbleHooks) gtk.Widgetter {
 	for i, m := range alb.Msgs {
-		if !open && i < len(alb.Tiles) {
+		if i < len(alb.Tiles) {
 			prefetchFolded(&alb.Tiles[i], m, h.c, h.localRecorder(m.ID))
 		}
 	}
 	head := alb.Msgs[0]
-	return buildMediaFold(mediaFoldThumb(alb.Tiles[0], head), albumFoldTitle(alb.Msgs), "", open,
-		func() gtk.Widgetter { return buildAlbumContent(alb, h) },
-		h.mediaFoldRecorder(head.ID))
+	return buildCollapsedRow(mediaFoldThumb(alb.Tiles[0], head), albumFoldTitle(alb.Msgs), "", h.foldToggle(head, true))
 }
 
-// mediaFoldRecorder is the fold's report of a change to msgID; nil when
-// nobody listens.
-func (h bubbleHooks) mediaFoldRecorder(msgID string) func(open bool) {
-	if h.onUnfoldMedia == nil {
-		return nil
+// mediaFoldOf is msgID's fold as this view knows it: the reader's latest
+// choice, else what the message was read with.
+func (cv *ConversationView) mediaFoldOf(msg client.Message) client.MediaFold {
+	if fold, ok := cv.mediaFolds[msg.ID]; ok {
+		return fold
 	}
-	return func(open bool) { h.onUnfoldMedia(msgID, open) }
+	return msg.Fold
 }
 
-// mediaUnfolded reports whether the reader unfolded msgID's attachment.
-func (h bubbleHooks) mediaUnfolded(msgID string) bool {
-	return h.mediaUnfoldedOf != nil && h.mediaUnfoldedOf(msgID)
-}
-
-// mediaUnfolded reports whether msgID's folded attachment is open.
-func (cv *ConversationView) mediaUnfolded(msgID string) bool {
-	return cv.unfoldedMedia[msgID]
-}
-
-// setMediaUnfolded remembers the reader's fold of msgID's attachment, so a
-// rebuilt row (a reaction, a recycled row) shows it the same way.
-func (cv *ConversationView) setMediaUnfolded(msgID string, open bool) {
-	if cv.unfoldedMedia == nil {
-		cv.unfoldedMedia = map[string]bool{}
+// foldMedia collapses or expands msgID's picture or link preview: the row
+// is rebuilt at once, and the choice saved on the message so the chat
+// opens that way next time.
+func (cv *ConversationView) foldMedia(msgID string, folded bool) {
+	fold := client.FoldExpanded
+	if folded {
+		fold = client.FoldCollapsed
 	}
-	if open {
-		cv.unfoldedMedia[msgID] = true
-		return
+	if cv.mediaFolds == nil {
+		cv.mediaFolds = map[string]client.MediaFold{}
 	}
-	delete(cv.unfoldedMedia, msgID)
+	cv.mediaFolds[msgID] = fold
+	cv.refillRow(cv.positionOf(msgID))
+	jid := cv.jid
+	go func() {
+		if err := cv.c.SetMessageFold(jid, msgID, fold); err != nil {
+			log.Printf("chatot: save fold of %s: %v", msgID, err)
+		}
+	}()
 }
 
 // RefillRows re-renders every row on screen, for a preference that changes

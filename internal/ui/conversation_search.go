@@ -113,7 +113,10 @@ func (cv *ConversationView) MenuItemsForChat(jid string, ensureOpen func()) []me
 func (cv *ConversationView) MessageMenuItems(msg client.Message) []menuItem {
 	canEdit := false
 	canDelete := !msg.Deleted && msg.FromMe
-	return cv.hooks().menuItemsFor(msg, canEdit, canDelete)
+	// The viewer shows the attachment in full whatever its bubble does.
+	h := cv.hooks()
+	h.foldMediaNow = nil
+	return h.menuItemsFor(msg, canEdit, canDelete)
 }
 
 // showContactInfo opens the mockup's contact card for a 1:1 chat, wiring its

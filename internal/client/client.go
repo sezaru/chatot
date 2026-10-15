@@ -256,6 +256,9 @@ type Message struct {
 	// played-self receipt). Always false for our own messages, whose
 	// listened state is Status (a played receipt counts as read).
 	Played bool
+	// Fold is how the reader left the message's picture or link preview,
+	// kept across restarts. See SetMessageFold.
+	Fold MediaFold
 	// EventInvite is non-nil for a scheduled-event message (a calendar-style
 	// invite posted in a chat, typically a group).
 	EventInvite *EventInvite
@@ -523,6 +526,16 @@ type NewsletterMessage struct {
 	Attachment *Attachment
 }
 
+// MediaFold is how the reader left a message's picture or link preview.
+type MediaFold int
+
+const (
+	// FoldDefault follows the collapse preference.
+	FoldDefault MediaFold = iota
+	FoldCollapsed
+	FoldExpanded
+)
+
 // MsgRef points at a message being replied to or reacted to.
 type MsgRef struct {
 	ChatJID string
@@ -774,6 +787,10 @@ type Client interface {
 	// (ms from the start; 0 once it played through) so it resumes there.
 	// Local only, no event.
 	SetPlayPosition(jid, msgID string, ms int) error
+	// SetMessageFold remembers how the reader left msgID's picture or link
+	// preview, so it shows that way the next time the chat opens. Local
+	// only, no event.
+	SetMessageFold(jid, msgID string, fold MediaFold) error
 	// SetTranscript stores the text transcribed from msgID's audio, so it
 	// shows again without another run. Local only, no event.
 	SetTranscript(jid, msgID, text string) error

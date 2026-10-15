@@ -232,6 +232,7 @@ func messageFromStore(m store.Message, selfJID string) Message {
 		ID: m.ID, ChatJID: m.ChatJID, FromJID: m.FromJID, FromMe: m.FromMe,
 		Text: m.Text, TS: m.TS, Reactions: m.Reactions, Edited: m.Edited, Deleted: m.Deleted,
 		Status: m.Status, Starred: m.Starred, Forwarded: m.Forwarded, Played: m.Played,
+		Fold: MediaFold(m.Fold),
 	}
 	if m.ReplyToMsgID != "" {
 		out.ReplyTo = &MsgRef{ChatJID: m.ChatJID, MsgID: m.ReplyToMsgID, Text: m.ReplyToText, FromJID: m.ReplyToFrom}

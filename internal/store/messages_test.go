@@ -681,3 +681,25 @@ func TestDeleteChatDropsRowAndLabels(t *testing.T) {
 		t.Fatalf("chat b lost its label: %v", on)
 	}
 }
+
+// How the reader left a picture survives a redelivery of the message.
+func TestSetMessageFoldIsKept(t *testing.T) {
+	s := newTestStore(t)
+	must(t, s.UpsertChat(ChatRow{JID: "a@s.whatsapp.net"}))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "p1", TS: 1}))
+
+	msgs, err := s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if msgs[0].Fold != 0 {
+		t.Fatalf("a fresh message has fold %d, want 0", msgs[0].Fold)
+	}
+
+	must(t, s.SetMessageFold("a@s.whatsapp.net", "p1", 1))
+	must(t, s.UpsertMessage(MessageRow{ChatJID: "a@s.whatsapp.net", MsgID: "p1", TS: 1}))
+
+	msgs, err = s.Messages("a@s.whatsapp.net", 50)
+	must(t, err)
+	if msgs[0].Fold != 1 {
+		t.Fatalf("fold = %d after a redelivery, want 1", msgs[0].Fold)
+	}
+}

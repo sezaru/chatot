@@ -154,6 +154,10 @@ type messageMenuActions struct {
 	AddToStickers func()
 	// Download fetches an attachment the bubble only has a preview of.
 	Download func()
+	// Fold collapses or expands a bubble's picture or link preview; nil
+	// for a message with neither. Folded says which way it is now.
+	Fold   func()
+	Folded bool
 }
 
 // messageMenuItems is a message bubble's ⋯ menu.
@@ -172,6 +176,9 @@ func messageMenuItems(msg client.Message, a messageMenuActions) []menuItem {
 	}
 	if isStickerMessage(msg) {
 		items = append(items, menuItem{Icon: "🙂", Label: "Add to stickers", OnActivate: a.AddToStickers})
+	}
+	if a.Fold != nil {
+		items = append(items, menuItem{Icon: foldMenuIcon(a.Folded), Label: foldMenuLabel(a.Folded), OnActivate: a.Fold})
 	}
 	items = append(items,
 		menuItem{Icon: "⭐", Label: starMenuItemLabel(msg.Starred), OnActivate: a.Star},

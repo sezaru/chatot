@@ -2073,6 +2073,12 @@ func (w *Whatsmeow) MarkPlayed(ctx context.Context, jid, msgID string, notifySen
 	return nil
 }
 
+// SetMessageFold stores how the reader left msgID's picture or link
+// preview; see Client.
+func (w *Whatsmeow) SetMessageFold(jid, msgID string, fold MediaFold) error {
+	return w.store.SetMessageFold(jid, msgID, int(fold))
+}
+
 // SetPlayPosition stores where msgID's audio stopped; see Client.
 func (w *Whatsmeow) SetPlayPosition(jid, msgID string, ms int) error {
 	return w.store.SetMediaPlayPos(jid, msgID, ms)

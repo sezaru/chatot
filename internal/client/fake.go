@@ -1003,6 +1003,19 @@ func (f *Fake) MarkPlayedCalls() []MarkPlayedCall {
 	return append([]MarkPlayedCall(nil), f.markPlayed...)
 }
 
+// SetMessageFold stores the reader's fold on the message.
+func (f *Fake) SetMessageFold(jid, msgID string, fold MediaFold) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, m := range f.messages[jid] {
+		if m.ID == msgID {
+			f.messages[jid][i].Fold = fold
+			return nil
+		}
+	}
+	return fmt.Errorf("chatot/client: message %q not found in chat %q", msgID, jid)
+}
+
 // SetPlayPosition stores the playhead on the message's attachment.
 func (f *Fake) SetPlayPosition(jid, msgID string, ms int) error {
 	f.mu.Lock()

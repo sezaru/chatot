@@ -646,7 +646,7 @@ func prefNetwork(dialog *cardDialog, s *settings.Settings, onChange func(setting
 			return autoDownloadLabel(s.AutoDownload)
 		}))
 	collapse, _ := newSwitchRow("Collapse pictures and link previews",
-		"Photos and videos take one line until clicked",
+		"Photos, videos and link previews start collapsed",
 		s.CollapseMedia, func(on bool) {
 			s.CollapseMedia = on
 			CollapseMedia = on
