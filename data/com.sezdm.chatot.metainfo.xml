@@ -83,6 +83,17 @@
   </recommends>
 
   <releases>
+    <release version="0.18.2-beta" date="2026-10-14">
+      <description>
+        <p>More of what WhatsApp sends shows up:</p>
+        <ul>
+          <li>Meta AI answers read as text, with their lists, code and tables, instead of an unsupported message</li>
+          <li>Instant photos, stickers with sound, event invites, shared songs, location requests and shared-history notices show in the chat</li>
+          <li>A message to a group that only admins can post in is refused at once, and the composer says so</li>
+          <li>Files dropped on the open attachment tray join the ones already in it</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.18.1-beta" date="2026-10-14">
       <description>
         <p>Collapsing is per message, and the WhatsApp library is current:</p>
