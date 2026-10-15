@@ -96,11 +96,9 @@ func (h bubbleHooks) foldToggle(msg client.Message, folded bool) func() {
 	return func() { h.foldMediaNow(id, !folded) }
 }
 
-// withFoldButton puts the fold control over content's top corner: the one
-// away from where a narrow window floats the bubble's own ⌄ and 🙂 (the
-// left of an outgoing bubble, the right of an incoming one). It shows
-// while the pointer is over the content.
-func withFoldButton(content gtk.Widgetter, folded, fromMe bool, toggle func()) gtk.Widgetter {
+// withFoldButton puts the fold control over content's top-right corner,
+// whoever sent it. It shows while the pointer is over the content.
+func withFoldButton(content gtk.Widgetter, folded bool, toggle func()) gtk.Widgetter {
 	if toggle == nil {
 		return content
 	}
@@ -116,11 +114,7 @@ func withFoldButton(content gtk.Widgetter, folded, fromMe bool, toggle func()) g
 	btn.SetFocusOnClick(false)
 	btn.SetTooltipText(foldMenuLabel(folded))
 	btn.SetVAlign(gtk.AlignStart)
-	if fromMe {
-		btn.SetHAlign(gtk.AlignEnd)
-	} else {
-		btn.SetHAlign(gtk.AlignStart)
-	}
+	btn.SetHAlign(gtk.AlignEnd)
 	btn.SetMarginTop(6)
 	btn.SetMarginStart(6)
 	btn.SetMarginEnd(6)

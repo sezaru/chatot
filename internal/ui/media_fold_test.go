@@ -113,12 +113,15 @@ func TestFoldButton(t *testing.T) {
 		t.Skip("no display")
 	}
 	content := gtk.NewLabel("picture")
-	if got := withFoldButton(content, false, true, nil); got != gtk.Widgetter(content) {
+	if got := withFoldButton(content, false, nil); got != gtk.Widgetter(content) {
 		t.Error("a bubble with no conversation behind it got a fold control")
 	}
 	clicks := 0
-	wrap := withFoldButton(content, false, true, func() { clicks++ }).(*gtk.Overlay)
+	wrap := withFoldButton(content, false, func() { clicks++ }).(*gtk.Overlay)
 	btn := wrap.LastChild().(*gtk.Button)
+	if btn.HAlign() != gtk.AlignEnd || btn.VAlign() != gtk.AlignStart {
+		t.Error("the fold control is not in the top-right corner")
+	}
 	btn.Emit("clicked")
 	if clicks != 1 {
 		t.Errorf("clicking the fold control toggled %d times, want 1", clicks)

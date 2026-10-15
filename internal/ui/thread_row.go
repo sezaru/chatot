@@ -374,7 +374,7 @@ func (r *threadRow) fillContent(msg client.Message, vm bubbleView, h bubbleHooks
 		if toggle := h.foldToggle(msg, folded); folded && toggle != nil {
 			r.setContent(buildFoldedAlbumContent(vm.Album, h))
 		} else {
-			r.setContent(withFoldButton(buildAlbumContent(vm.Album, h), false, msg.FromMe, toggle))
+			r.setContent(withFoldButton(buildAlbumContent(vm.Album, h), false, toggle))
 		}
 	case vm.IsMedia:
 		media := vm.Media
@@ -396,7 +396,7 @@ func (r *threadRow) fillContent(msg client.Message, vm bubbleView, h bubbleHooks
 				r.setContent(buildFoldedMediaContent(msg, media, h))
 				break
 			}
-			content = withFoldButton(content, false, msg.FromMe, toggle)
+			content = withFoldButton(content, false, toggle)
 		}
 		r.setContent(content)
 	default:
@@ -407,7 +407,7 @@ func (r *threadRow) fillContent(msg client.Message, vm bubbleView, h bubbleHooks
 			if folded && toggle != nil {
 				card = buildCompactLinkCard(*vm.Link)
 			}
-			r.setContent(withFoldButton(card, folded && toggle != nil, msg.FromMe, toggle))
+			r.setContent(withFoldButton(card, folded && toggle != nil, toggle))
 		} else {
 			r.setContent(nil)
 		}
