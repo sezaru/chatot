@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.18.3-beta" date="2026-10-14">
+      <description>
+        <p>The collapse button sits in the top-right corner of every photo, album and link preview, whoever sent it.</p>
+      </description>
+    </release>
     <release version="0.18.2-beta" date="2026-10-14">
       <description>
         <p>More of what WhatsApp sends shows up:</p>
