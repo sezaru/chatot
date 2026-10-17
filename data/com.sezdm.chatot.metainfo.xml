@@ -83,6 +83,15 @@
   </recommends>
 
   <releases>
+    <release version="0.18.4-beta" date="2026-10-17">
+      <description>
+        <p>Two fixes:</p>
+        <ul>
+          <li>Playing through an album of videos, or video status updates, no longer eats memory until the computer slows to a crawl</li>
+          <li>A reaction to your message that you read here no longer notifies on your phone afterwards</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.18.3-beta" date="2026-10-14">
       <description>
         <p>The collapse button sits in the top-right corner of every photo, album and link preview, whoever sent it.</p>
