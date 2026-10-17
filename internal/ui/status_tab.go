@@ -656,9 +656,10 @@ type StatusPane struct {
 	hidden  bool
 	elapsed time.Duration
 
-	// video is the clip on show, when the update is one; videoUnwatch
-	// drops its watcher.
+	// video is the clip on show, when the update is one, and videoStage
+	// what paints it; videoUnwatch drops its watcher.
 	video        *mediaPlayer
+	videoStage   *videoStage
 	videoUnwatch func()
 }
 
@@ -1173,7 +1174,7 @@ func (p *StatusPane) showStatusMedia(item client.Message, path string, card *gtk
 		stage.SetCanTarget(false)
 		card.Remove(placeholder)
 		card.Append(coverInCard(stage))
-		p.attachVideo(player)
+		p.attachVideo(player, stage)
 		return
 	}
 	texture, err := gdk.NewTextureFromFilename(path)
@@ -1185,11 +1186,13 @@ func (p *StatusPane) showStatusMedia(item client.Message, path string, card *gtk
 	card.Append(coverInCard(coverPicture(texture)))
 }
 
-// attachVideo makes player the update on show: it starts unless the viewer
-// is held, its playhead drives the segment, and its end steps on.
-func (p *StatusPane) attachVideo(player *mediaPlayer) {
+// attachVideo makes player, painted by stage, the update on show: it starts
+// unless the viewer is held, its playhead drives the segment, and its end
+// steps on.
+func (p *StatusPane) attachVideo(player *mediaPlayer, stage *videoStage) {
 	p.detachVideo()
 	p.video = player
+	p.videoStage = stage
 	p.videoUnwatch = player.Watch(func() {
 		if p.video != player {
 			return
@@ -1210,16 +1213,21 @@ func (p *StatusPane) attachVideo(player *mediaPlayer) {
 	})
 }
 
-// detachVideo silences and forgets the clip on show, if any.
+// detachVideo stops and frees the clip on show, if any. Its card is on the
+// way out, and a clip only paused keeps its whole pipeline alive.
 func (p *StatusPane) detachVideo() {
 	if p.video == nil {
 		return
 	}
-	p.video.Pause()
 	if p.videoUnwatch != nil {
 		p.videoUnwatch()
 		p.videoUnwatch = nil
 	}
+	if p.videoStage != nil {
+		p.videoStage.release()
+		p.videoStage = nil
+	}
+	p.video.Close()
 	p.video = nil
 }
 

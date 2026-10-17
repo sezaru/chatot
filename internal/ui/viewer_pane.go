@@ -148,7 +148,11 @@ type AttachmentViewer struct {
 
 	// per-item state
 	player *mediaPlayer
-	zoom   float64 // multiple of the fitted size; 1 = Fit
+	// video is the stage painting player for a clip; posterCancel stops
+	// the clip's poster grab.
+	video        *videoStage
+	posterCancel context.CancelFunc
+	zoom         float64 // multiple of the fitted size; 1 = Fit
 	// actualBtn is the zoom bar's 1:1 (the picture's own pixels), lit
 	// like fitBtn when the zoom sits there.
 	actualBtn *gtk.Button
@@ -323,13 +327,30 @@ func (v *AttachmentViewer) Open(chat client.Chat, msgs []client.Message, msgID s
 	v.GrabFocus()
 }
 
-// Close pauses playback when the pane is left, and stops decoding strip
-// thumbnails.
+// Close stops playback when the pane is left, and stops decoding strip
+// thumbnails. The pane only comes back through Open, which shows its item
+// afresh, so the player is let go of rather than paused.
 func (v *AttachmentViewer) Close() {
-	if v.player != nil {
-		v.player.Pause()
-	}
+	v.releaseMedia()
 	v.stopFileThumbs()
+}
+
+// releaseMedia stops and frees the item's player, and the stage and
+// poster grab that go with a clip.
+func (v *AttachmentViewer) releaseMedia() {
+	if v.posterCancel != nil {
+		v.posterCancel()
+		v.posterCancel = nil
+	}
+	if v.video != nil {
+		v.video.release()
+		v.video = nil
+	}
+	if v.player != nil {
+		forgetSpeedPlayer(v.player)
+		v.player.Close()
+		v.player = nil
+	}
 }
 
 // Current is the message on show.
@@ -674,11 +695,7 @@ func (v *AttachmentViewer) show(i int) {
 		return
 	}
 	v.gen++
-	if v.player != nil {
-		v.player.Pause()
-		forgetSpeedPlayer(v.player)
-		v.player = nil
-	}
+	v.releaseMedia()
 	v.idx = i
 	m := v.items[i]
 	kind := viewerKind(m)
@@ -737,6 +754,7 @@ func (v *AttachmentViewer) show(i int) {
 		v.player = newMediaPlayer(path, m.Attachment.DurationSecs)
 		v.player.SetLoop(kind == "gif")
 		stage := newVideoStage(v.player, m.Attachment.Thumbnail)
+		v.video = stage
 		v.posterFromFile(stage, path)
 		v.stage.SetChild(v.centred(stage, true))
 		v.bottom.Append(newTransportBar(v.player, v.fullscreen))
@@ -960,8 +978,15 @@ func (v *AttachmentViewer) loadPhoto(path string) {
 // itself, unless the viewer has moved on or playback already started.
 func (v *AttachmentViewer) posterFromFile(stage *videoStage, path string) {
 	gen := v.gen
+	// Stepping on cancels the grab: an ffmpeg decoding an HD clip per item
+	// skipped adds up on a quick run through an album.
+	ctx, cancel := context.WithCancel(context.Background())
+	v.posterCancel = cancel
 	go func() {
-		jpeg, err := media.VideoPoster(context.Background(), path)
+		jpeg, err := media.VideoPoster(ctx, path)
+		if ctx.Err() != nil {
+			return
+		}
 		if err != nil {
 			log.Printf("chatot: viewer poster for %s: %v", filepath.Base(path), err)
 			return

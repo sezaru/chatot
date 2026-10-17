@@ -55,6 +55,8 @@ type mediaPlayer struct {
 	// swapping is set while SetSpeed replaces the stream: the old one's
 	// pause is not a stop worth reporting.
 	swapping bool
+	// closed is set by Close; a file landing afterwards is not loaded.
+	closed bool
 }
 
 // voiceSpeed is the tempo every voice note and audio plays at (1, 1.5 or
@@ -213,6 +215,9 @@ func newPendingPlayer(seconds int) *mediaPlayer {
 // (hundreds for the first), and a chat page can hold dozens of voice notes
 // that are never played.
 func (p *mediaPlayer) SetFile(path string) {
+	if p.closed {
+		return
+	}
 	p.path = path
 	if p.stream != nil {
 		// A stream already bound is swapped at once; the old one is
@@ -421,6 +426,21 @@ func (p *mediaPlayer) Pause() {
 	p.wantPlay = false
 	if p.stream != nil && p.stream.Playing() {
 		p.stream.Pause()
+	}
+}
+
+// Close is for a player nothing will show again: its watchers go, and
+// clearing the stream's file tears the GStreamer pipeline down. A paused
+// stream keeps the pipeline, decoders and last frame for as long as it
+// lives.
+func (p *mediaPlayer) Close() {
+	p.closed = true
+	p.wantPlay = false
+	p.pending = false
+	p.watchers = nil
+	if stream := p.stream; stream != nil {
+		p.stream = nil
+		stream.Clear()
 	}
 }
 
@@ -817,6 +837,23 @@ func (s *videoStage) bind(p *mediaPlayer) {
 		}
 	})
 	s.pic.ConnectDestroy(s.unwatch)
+}
+
+// release is for a stage that is being thrown away. Its picture holds the
+// stream, the stream's handlers hold the player, and the player's watcher
+// holds the stage; destroy, which would drop that watcher, never comes
+// while the loop stands. So the watcher goes here, and the pictures let go
+// of what they paint.
+func (s *videoStage) release() {
+	s.unwatch()
+	if s.bound != nil && !s.shared && s.pic.Realized() {
+		s.bound.Unrealize(s.pic.Native().Surface())
+	}
+	s.bound = nil
+	s.pic.SetPaintable(nil)
+	if s.poster != nil {
+		s.poster.SetPaintable(nil)
+	}
 }
 
 // ---- transport bar (the mockup's viewHasTransport row) ------------------
