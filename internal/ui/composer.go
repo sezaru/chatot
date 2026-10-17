@@ -323,9 +323,11 @@ func unreadMessageIDs(msgs []client.Message, count int) []string {
 
 // MarkReadOnOpen reports a just-opened chat's unread messages as read: to
 // the account's other devices always, to the senders when SendReadReceipts
-// allows. Runs the network call synchronously; callers invoke it from a
-// goroutine to keep the GTK main loop unblocked.
+// allows. Reactions to our messages count no unread, so they are reported
+// whatever the count. Runs the network calls synchronously; callers invoke
+// it from a goroutine to keep the GTK main loop unblocked.
 func MarkReadOnOpen(ctx context.Context, c client.Client, jid string, msgs []client.Message, unreadCount int) {
+	markReactionsRead(ctx, c, jid)
 	if unreadCount <= 0 {
 		return
 	}
@@ -340,6 +342,22 @@ func MarkReadOnArrival(ctx context.Context, c client.Client, msg client.Message)
 		return
 	}
 	markRead(ctx, c, msg.ChatJID, []string{msg.ID})
+}
+
+// MarkReactionOnArrival handles a reaction to one of our messages landing
+// in the chat the user is looking at: it is seen as it shows up, so the
+// phone should not notify it later.
+func MarkReactionOnArrival(ctx context.Context, c client.Client, r client.Reaction) {
+	if !r.TargetFromMe || r.Emoji == "" || r.ReactorJID == "" {
+		return
+	}
+	markReactionsRead(ctx, c, r.ChatJID)
+}
+
+func markReactionsRead(ctx context.Context, c client.Client, jid string) {
+	if err := c.MarkReactionsRead(ctx, jid); err != nil {
+		log.Printf("chatot: mark reactions read failed: %v", err)
+	}
 }
 
 // markRead sends the read for ids in jid. Opening the chat means the user

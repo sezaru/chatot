@@ -143,6 +143,11 @@ func (w *Whatsmeow) ingestReceipt(r *Receipt) error {
 			return err
 		}
 	}
+	// The phone's read can cover reactions to our messages too: those
+	// need no receipt from here any more.
+	if err := w.store.DropUnseenReactions(r.ChatJID, r.MsgIDs); err != nil {
+		return err
+	}
 	return w.store.MarkChatRead(r.ChatJID)
 }
 
@@ -235,8 +240,9 @@ func (w *Whatsmeow) canonicalUser(jid string) string {
 // ingestReaction stores the reaction and, for one somebody else left on a
 // message of ours, describes the target on the event (for the "Reacted 👍
 // to ..." notification) and bumps the chat so it surfaces in the list the
-// way WhatsApp does. Reacting to someone else's message, or to our own from
-// another device, is nobody's news.
+// way WhatsApp does; it stays unseen until MarkReactionsRead. Reacting to
+// someone else's message, or to our own from another device, is nobody's
+// news.
 func (w *Whatsmeow) ingestReaction(r *Reaction) error {
 	if r == nil {
 		return nil
@@ -253,7 +259,14 @@ func (w *Whatsmeow) ingestReaction(r *Reaction) error {
 	}
 	r.TargetFromMe, r.TargetPreview = true, preview
 	if r.Emoji == "" {
-		return nil
+		return w.store.ClearUnseenReaction(r.ChatJID, r.MsgID, r.ReactorJID)
+	}
+	if r.ID != "" {
+		if err := w.store.AddUnseenReaction(store.UnseenReaction{
+			ChatJID: r.ChatJID, MsgID: r.MsgID, ReactorJID: r.ReactorJID, ReactionID: r.ID,
+		}); err != nil {
+			return err
+		}
 	}
 	if err := w.store.BumpChatActivity(r.ChatJID, strings.HasSuffix(r.ChatJID, "@g.us"), r.TS, 0); err != nil {
 		return err

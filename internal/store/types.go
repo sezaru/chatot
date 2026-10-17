@@ -226,6 +226,16 @@ type ReactionRow struct {
 	TS         int64
 }
 
+// UnseenReaction is someone's reaction to one of our messages that this
+// account has not read yet. ReactionID is the reaction's own message id,
+// sent by ReactorJID: the two things its read receipt has to name.
+type UnseenReaction struct {
+	ChatJID    string
+	MsgID      string
+	ReactorJID string
+	ReactionID string
+}
+
 // MediaRow is the upsert seam for the media table, one row per message that
 // carries an attachment.
 type MediaRow struct {

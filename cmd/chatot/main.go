@@ -931,6 +931,13 @@ func activate(app *adw.Application, c client.Client) {
 						go ui.MarkReadOnArrival(context.Background(), c, msg)
 					}
 				})
+			case ev.Kind == client.EventReaction && ev.Reaction != nil && ev.Reaction.TargetFromMe:
+				r := *ev.Reaction
+				glib.IdleAdd(func() {
+					if win.IsActive() && conversation.CurrentJID() == r.ChatJID {
+						go ui.MarkReactionOnArrival(context.Background(), c, r)
+					}
+				})
 			}
 		}
 	}()
@@ -1119,18 +1126,18 @@ func sendPresence(c client.Client, available bool) {
 }
 
 // markReadOnOpen looks up jid's unread count from the chat list and marks
-// that many of its newest inbound messages read.
+// that many of its newest inbound messages read, along with its unread
+// reactions (which a chat missing from the list can still have).
 func markReadOnOpen(c client.Client, jid string, msgs []client.Message) {
-	chats, err := c.Chats(0)
-	if err != nil {
-		return
-	}
+	unread := 0
+	chats, _ := c.Chats(0)
 	for _, chat := range chats {
 		if chat.JID == jid {
-			ui.MarkReadOnOpen(context.Background(), c, jid, msgs, chat.UnreadCount)
-			return
+			unread = chat.UnreadCount
+			break
 		}
 	}
+	ui.MarkReadOnOpen(context.Background(), c, jid, msgs, unread)
 }
 
 // watchTrayUnread seeds the tray's unread tooltip and refreshes it on the

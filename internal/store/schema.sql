@@ -121,6 +121,17 @@ CREATE TABLE IF NOT EXISTS reactions (
 );
 CREATE INDEX IF NOT EXISTS idx_reactions_chat_ts ON reactions(chat_jid, ts);
 
+-- unseen_reactions holds reactions others left on our messages that this
+-- device has not read yet. reaction_id is the reaction's own message id,
+-- which the read receipt names so the phone drops its notification.
+CREATE TABLE IF NOT EXISTS unseen_reactions (
+    chat_jid TEXT NOT NULL,
+    msg_id TEXT NOT NULL,
+    reactor_jid TEXT NOT NULL,
+    reaction_id TEXT NOT NULL,
+    PRIMARY KEY (chat_jid, msg_id, reactor_jid)
+);
+
 -- poll_votes holds decrypted poll votes: one row per (voter, selected
 -- option). option_hash is the SHA-256 of the option name (WhatsApp transmits
 -- votes as hashes); the store persists the raw bytes without interpreting

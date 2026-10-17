@@ -40,3 +40,59 @@ func TestReactionBy(t *testing.T) {
 		t.Fatalf("ReactionBy after clearing = (%q, %v), want (\"\", nil)", got, err)
 	}
 }
+
+// An unread reaction is listed until it is read, by our own read or the
+// phone's receipt, or until it is taken back; a changed reaction replaces
+// the earlier one, whose id no longer needs a receipt.
+func TestUnseenReactions(t *testing.T) {
+	s := newTestStore(t)
+	const (
+		chat  = "1234567890@s.whatsapp.net"
+		other = "999@g.us"
+		alice = "111@s.whatsapp.net"
+		bob   = "222@s.whatsapp.net"
+	)
+	add := func(chat, msg, reactor, id string) {
+		t.Helper()
+		if err := s.AddUnseenReaction(UnseenReaction{ChatJID: chat, MsgID: msg, ReactorJID: reactor, ReactionID: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids := func(chat string) map[string]string {
+		t.Helper()
+		rows, err := s.UnseenReactions(chat)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]string{}
+		for _, r := range rows {
+			out[r.ReactionID] = r.ReactorJID
+		}
+		return out
+	}
+
+	add(chat, "M1", alice, "R1")
+	add(chat, "M1", alice, "R2") // alice changed the reaction
+	add(chat, "M2", bob, "R3")
+	add(other, "M9", alice, "R9")
+	if got := ids(chat); len(got) != 2 || got["R2"] != alice || got["R3"] != bob {
+		t.Fatalf("UnseenReactions = %v, want R2 by alice and R3 by bob", got)
+	}
+
+	if err := s.DropUnseenReactions(chat, []string{"R2", "M1"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(chat); len(got) != 1 || got["R3"] != bob {
+		t.Fatalf("after dropping R2 = %v, want R3 only", got)
+	}
+
+	if err := s.ClearUnseenReaction(chat, "M2", bob); err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(chat); len(got) != 0 {
+		t.Fatalf("after bob took the reaction back = %v, want none", got)
+	}
+	if got := ids(other); len(got) != 1 {
+		t.Fatalf("another chat's unread reaction went too: %v", got)
+	}
+}

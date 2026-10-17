@@ -2073,6 +2073,34 @@ func (w *Whatsmeow) MarkRead(ctx context.Context, jid string, msgIDs []string, n
 	return w.ClearUnread(jid)
 }
 
+// MarkReactionsRead sends read receipts for the reactions to our messages
+// in jid that have not been read yet, which is what clears the phone's
+// notification for them. They go out as read-self: nobody sees ticks on a
+// reaction, so the receipt is only for the account's own devices.
+func (w *Whatsmeow) MarkReactionsRead(ctx context.Context, jid string) error {
+	unseen, err := w.store.UnseenReactions(jid)
+	if err != nil || len(unseen) == 0 {
+		return err
+	}
+	chat, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("chatot/client: mark reactions read: parse jid %q: %w", jid, err)
+	}
+	ids := make([]string, len(unseen))
+	reactor := make(map[string]string, len(unseen))
+	for i, r := range unseen {
+		ids[i] = r.ReactionID
+		if parsed, err := types.ParseJID(r.ReactorJID); err == nil {
+			reactor[r.ReactionID] = parsed.ToNonAD().String()
+		}
+	}
+	batches := readBatches(ids, func(id string) string { return reactor[id] })
+	if err := w.sendReceiptBatches(ctx, chat, batches, types.ReceiptTypeReadSelf); err != nil {
+		return fmt.Errorf("chatot/client: mark reactions read: %w", err)
+	}
+	return w.store.DropUnseenReactions(jid, ids)
+}
+
 // MarkPlayed flags the voice note msgID in jid as listened to and sends
 // the played receipt: to the sender (who sees the blue microphone) when
 // notifySender is set, else the played-self form that only syncs the
@@ -2126,6 +2154,12 @@ func (w *Whatsmeow) sendReceipts(ctx context.Context, jid string, msgIDs []strin
 		}
 		return jid
 	})
+	return w.sendReceiptBatches(ctx, chat, batches, kind)
+}
+
+// sendReceiptBatches sends one receipt of the given kind per batch, each
+// naming its batch's sender.
+func (w *Whatsmeow) sendReceiptBatches(ctx context.Context, chat types.JID, batches []readBatch, kind types.ReceiptType) error {
 	for _, b := range batches {
 		sender, err := types.ParseJID(b.Sender)
 		if err != nil {

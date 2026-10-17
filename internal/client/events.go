@@ -232,6 +232,7 @@ func translateReaction(v *events.Message, r *waProto.ReactionMessage) *Event {
 	return &Event{Kind: EventReaction, Reaction: &Reaction{
 		ChatJID:    v.Info.Chat.String(),
 		MsgID:      r.GetKey().GetID(),
+		ID:         v.Info.ID,
 		ReactorJID: v.Info.Sender.String(),
 		Emoji:      r.GetText(),
 		TS:         v.Info.Timestamp.Unix(),

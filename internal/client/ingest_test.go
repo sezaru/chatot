@@ -441,3 +441,32 @@ func TestIngestPlayedReceiptFromReaderDoesNotFlagOurRows(t *testing.T) {
 		t.Error("Played = true on our own message; the flag is for inbound audio only")
 	}
 }
+
+// A reaction to our message waits, by its own message id and reactor, for
+// the read receipt that clears the phone's notification of it; one taken
+// back, or read on the phone, needs none.
+func TestIngestReactionOnOwnMessageIsUnseenUntilRead(t *testing.T) {
+	w := newIngestFixture(t)
+	jid := "1234567890@s.whatsapp.net"
+	must(t, w.ingestMessage(&Message{ChatJID: jid, ID: "m1", Text: "see you at 7", TS: 10, FromMe: true}))
+	must(t, w.ingestMessage(&Message{ChatJID: jid, ID: "m2", Text: "ok", TS: 11}))
+	must(t, w.ingestReaction(&Reaction{ChatJID: jid, MsgID: "m1", ID: "R1", ReactorJID: jid, Emoji: "👍", TS: 20}))
+	must(t, w.ingestReaction(&Reaction{ChatJID: jid, MsgID: "m2", ID: "R2", ReactorJID: jid, Emoji: "😂", TS: 21}))
+
+	unseen, err := w.store.UnseenReactions(jid)
+	must(t, err)
+	if len(unseen) != 1 || unseen[0].ReactionID != "R1" || unseen[0].ReactorJID != jid {
+		t.Fatalf("unseen = %+v, want only R1 (m2 is not ours)", unseen)
+	}
+
+	must(t, w.ingestReaction(&Reaction{ChatJID: jid, MsgID: "m1", ID: "R3", ReactorJID: jid, Emoji: "", TS: 22}))
+	if unseen, _ = w.store.UnseenReactions(jid); len(unseen) != 0 {
+		t.Fatalf("unseen after the reaction was taken back = %+v, want none", unseen)
+	}
+
+	must(t, w.ingestReaction(&Reaction{ChatJID: jid, MsgID: "m1", ID: "R4", ReactorJID: jid, Emoji: "❤️", TS: 23}))
+	must(t, w.ingestReceipt(&Receipt{ChatJID: jid, MsgIDs: []string{"R4"}, Read: true, Status: MessageStatusRead}))
+	if unseen, _ = w.store.UnseenReactions(jid); len(unseen) != 0 {
+		t.Fatalf("unseen after the phone read it = %+v, want none", unseen)
+	}
+}

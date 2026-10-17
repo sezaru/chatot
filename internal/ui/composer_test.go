@@ -503,3 +503,35 @@ func TestContactPicksSkipGroupsAndKeepPhones(t *testing.T) {
 		t.Error("selection label should change with the count")
 	}
 }
+
+// Reactions to our messages count no unread, so opening a chat reports
+// them even when its badge is clear.
+func TestMarkReadOnOpenReportsReactionsWithoutUnread(t *testing.T) {
+	f := client.NewFake()
+	MarkReadOnOpen(context.Background(), f, "1234567890@s.whatsapp.net", nil, 0)
+	if got := f.ReactionReadCalls(); len(got) != 1 || got[0] != "1234567890@s.whatsapp.net" {
+		t.Errorf("MarkReactionsRead calls = %v, want the opened chat", got)
+	}
+	if got := f.MarkReadCalls(); len(got) != 0 {
+		t.Errorf("MarkRead calls = %+v, want none with nothing unread", got)
+	}
+}
+
+func TestMarkReactionOnArrivalOnlyForReactionsToUs(t *testing.T) {
+	f := client.NewFake()
+	jid := "1234567890@s.whatsapp.net"
+	for _, r := range []client.Reaction{
+		{ChatJID: jid, MsgID: "m1", ReactorJID: jid, Emoji: "👍"},                    // their own message
+		{ChatJID: jid, MsgID: "m1", ReactorJID: jid, Emoji: "", TargetFromMe: true}, // taken back
+		{ChatJID: jid, MsgID: "m1", Emoji: "👍", TargetFromMe: true},                 // a refresh
+	} {
+		MarkReactionOnArrival(context.Background(), f, r)
+	}
+	if got := f.ReactionReadCalls(); len(got) != 0 {
+		t.Fatalf("MarkReactionsRead calls = %v, want none", got)
+	}
+	MarkReactionOnArrival(context.Background(), f, client.Reaction{ChatJID: jid, MsgID: "m1", ReactorJID: jid, Emoji: "👍", TargetFromMe: true})
+	if got := f.ReactionReadCalls(); len(got) != 1 || got[0] != jid {
+		t.Errorf("MarkReactionsRead calls = %v, want %s", got, jid)
+	}
+}

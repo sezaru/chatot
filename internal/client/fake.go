@@ -38,9 +38,11 @@ type Fake struct {
 	qr       qrFanout
 	loggedIn bool
 	// markReads records MarkRead calls for tests (see MarkReadCalls);
-	// markPlayed the MarkPlayed ones.
-	markReads  []MarkReadCall
-	markPlayed []MarkPlayedCall
+	// markPlayed the MarkPlayed ones, reactionReads the chats passed to
+	// MarkReactionsRead.
+	markReads     []MarkReadCall
+	markPlayed    []MarkPlayedCall
+	reactionReads []string
 	// stickers is the picker library, most recent first.
 	stickers []Sticker
 	// pairing marks a demo account that never links: Start emits a demo QR
@@ -971,6 +973,21 @@ func (f *Fake) MarkReadCalls() []MarkReadCall {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]MarkReadCall(nil), f.markReads...)
+}
+
+func (f *Fake) MarkReactionsRead(ctx context.Context, jid string) error {
+	f.mu.Lock()
+	f.reactionReads = append(f.reactionReads, jid)
+	f.mu.Unlock()
+	return nil
+}
+
+// ReactionReadCalls lists the chats MarkReactionsRead was called for,
+// oldest first.
+func (f *Fake) ReactionReadCalls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.reactionReads...)
 }
 
 // MarkPlayedCall records one Fake.MarkPlayed, for tests of the voice path.

@@ -825,6 +825,10 @@ func (m *AccountManager) MarkRead(ctx context.Context, jid string, msgIDs []stri
 	return m.active().MarkRead(ctx, jid, msgIDs, notifySender)
 }
 
+func (m *AccountManager) MarkReactionsRead(ctx context.Context, jid string) error {
+	return m.active().MarkReactionsRead(ctx, jid)
+}
+
 func (m *AccountManager) MarkPlayed(ctx context.Context, jid, msgID string, notifySender bool) error {
 	return m.active().MarkPlayed(ctx, jid, msgID, notifySender)
 }

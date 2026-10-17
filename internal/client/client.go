@@ -411,8 +411,11 @@ type Contact struct {
 
 // Reaction is a reaction added to, or (Emoji == "") cleared from, a message.
 type Reaction struct {
-	ChatJID    string
-	MsgID      string // the message being reacted to
+	ChatJID string
+	MsgID   string // the message being reacted to
+	// ID is the reaction's own message id, which a read receipt for it
+	// names; "" on the internal refresh events that only redraw MsgID.
+	ID         string
 	ReactorJID string
 	Emoji      string // "" clears the reaction
 	TS         int64
@@ -782,6 +785,10 @@ type Client interface {
 	// devices always, so their badges clear, and to the senders too when
 	// notifySender is set. It clears the local badge as well.
 	MarkRead(ctx context.Context, jid string, msgIDs []string, notifySender bool) error
+	// MarkReactionsRead reports the reactions others left on our messages
+	// in jid as read, to the account's other devices only, so the phone
+	// stops notifying them. Reactions already read are not sent again.
+	MarkReactionsRead(ctx context.Context, jid string) error
 	// MarkPlayed reports the inbound voice note or audio msgID in jid as
 	// listened to: it is flagged Played locally, the account's other
 	// devices hear of it always, and the sender too (their blue microphone)
