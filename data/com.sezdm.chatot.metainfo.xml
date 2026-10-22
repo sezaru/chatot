@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.18.5-beta" date="2026-10-22">
+      <description>
+        <p>A reply to a photo, video or sticker shows a small thumbnail of it in the quote, and in the reply bar while you write one.</p>
+      </description>
+    </release>
     <release version="0.18.4-beta" date="2026-10-17">
       <description>
         <p>Two fixes:</p>
