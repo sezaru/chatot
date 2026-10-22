@@ -718,8 +718,8 @@ func (m *AccountManager) LoggedIn() bool { return m.active().LoggedIn() }
 func (m *AccountManager) Paired() bool   { return m.active().Paired() }
 
 func (m *AccountManager) ContactName(jid string) string { return m.active().ContactName(jid) }
-func (m *AccountManager) MessagePreview(chatJID, msgID string) (string, bool) {
-	return m.active().MessagePreview(chatJID, msgID)
+func (m *AccountManager) MessageQuote(chatJID, msgID string) (string, []byte, bool) {
+	return m.active().MessageQuote(chatJID, msgID)
 }
 
 func (m *AccountManager) Logout(ctx context.Context) error { return m.active().Logout(ctx) }

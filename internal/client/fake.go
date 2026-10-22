@@ -1550,26 +1550,27 @@ func (f *Fake) CanonicalChatJID(jid string) string { return jid }
 
 // ContactName resolves a fixture person: the chat list's names plus the
 // group participants the fixture threads mention.
-// MessagePreview is the demo message's text or attachment label; see
-// Client.MessagePreview.
-func (f *Fake) MessagePreview(chatJID, msgID string) (string, bool) {
+// MessageQuote is the demo message's text or attachment label and its
+// picture's preview; see Client.MessageQuote.
+func (f *Fake) MessageQuote(chatJID, msgID string) (string, []byte, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, m := range f.messages[chatJID] {
 		if m.ID != msgID {
 			continue
 		}
+		thumb := QuoteThumbnail(m.Attachment)
 		switch {
 		case m.Text != "":
-			return m.Text, true
+			return m.Text, thumb, true
 		case m.Attachment != nil:
 			row := storeMediaRow(chatJID, msgID, m.Attachment)
-			return store.Preview(store.MessageRow{}, &row), true
+			return store.Preview(store.MessageRow{}, &row), thumb, true
 		default:
-			return store.Preview(storeMessageRow(&m), nil), true
+			return store.Preview(storeMessageRow(&m), nil), nil, true
 		}
 	}
-	return "", false
+	return "", nil, false
 }
 
 func (f *Fake) ContactName(jid string) string {

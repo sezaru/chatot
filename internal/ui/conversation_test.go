@@ -89,6 +89,28 @@ func TestBubbleVM_ReplyNotLoadedQuotesCarriedText(t *testing.T) {
 	}
 }
 
+func TestBubbleVM_ReplyToPictureShowsItsThumbnail(t *testing.T) {
+	now := mustParse(t, "2026-08-30 12:00:00")
+	jpeg := []byte{0xff, 0xd8, 0xff}
+	byID := map[string]client.Message{
+		"pic":  {ID: "pic", Attachment: &client.Attachment{Kind: "image", Thumbnail: jpeg}},
+		"once": {ID: "once", Attachment: &client.Attachment{Kind: "image", Thumbnail: jpeg, ViewOnce: true}},
+		"gone": {ID: "gone", Deleted: true, Attachment: &client.Attachment{Kind: "image", Thumbnail: jpeg}},
+		"text": {ID: "text", Text: "hi"},
+	}
+	for id, want := range map[string]bool{"pic": true, "once": false, "gone": false, "text": false} {
+		m := client.Message{ID: "r", Text: "nice", TS: now.Unix(), ReplyTo: &client.MsgRef{MsgID: id}}
+		if got := bubbleVM(m, nil, byID, now).QuotedThumb != nil; got != want {
+			t.Errorf("reply to %s: has thumbnail = %v, want %v", id, got, want)
+		}
+	}
+	// Not loaded: the thumbnail the reply carried.
+	m := client.Message{ID: "r", Text: "nice", TS: now.Unix(), ReplyTo: &client.MsgRef{MsgID: "paged-out", Text: "📷 Photo", Thumbnail: jpeg}}
+	if got := bubbleVM(m, nil, map[string]client.Message{}, now).QuotedThumb; string(got) != string(jpeg) {
+		t.Errorf("carried QuotedThumb = %v, want the reply's copy", got)
+	}
+}
+
 func TestBubbleVM_DaySeparator(t *testing.T) {
 	now := mustParse(t, "2026-08-30 18:00:00")
 	day1 := mustParse(t, "2026-08-30 09:00:00")

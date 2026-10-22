@@ -389,6 +389,7 @@ type Composer struct {
 	quoteBar   *gtk.Box
 	quoteLabel *gtk.Label
 	quoteName  *gtk.Label
+	quoteThumb *gtk.Picture
 	// chatName is the open chat's display name, shown as the reply bar's
 	// author line for an incoming message.
 	chatName  string
@@ -495,6 +496,8 @@ func NewComposer(c client.Client) *Composer {
 	quoteLabel.AddCSSClass("chatot-composer-quote-text")
 	quoteCol.Append(quoteLabel)
 	quoteBar.Append(quoteCol)
+	quoteThumb := newQuoteThumb()
+	quoteBar.Append(quoteThumb)
 
 	cancelQuote := gtk.NewButtonWithLabel("✕")
 	cancelQuote.AddCSSClass("flat")
@@ -612,6 +615,7 @@ func NewComposer(c client.Client) *Composer {
 		quoteBar:    quoteBar,
 		quoteLabel:  quoteLabel,
 		quoteName:   quoteName,
+		quoteThumb:  quoteThumb,
 		editBar:     editBar,
 		entry:       entry,
 		attachBtn:   attachBtn,
@@ -880,12 +884,9 @@ func (c *Composer) refreshQuoteBar() {
 		c.quoteBar.SetVisible(false)
 		return
 	}
-	text := target.Text
-	if text == "" {
-		text = "[media]"
-	}
 	c.quoteName.SetLabel(replyAuthorName(target, c.chatName))
-	c.quoteLabel.SetLabel(text)
+	c.quoteLabel.SetLabel(messageSnippet(target))
+	setQuoteThumb(c.quoteThumb, client.QuoteThumbnail(target.Attachment))
 	c.quoteBar.SetVisible(true)
 }
 

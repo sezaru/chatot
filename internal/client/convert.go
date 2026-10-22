@@ -94,6 +94,15 @@ func hashPollOption(name string) []byte {
 // shapes (see internal/store/types.go) so it never needs to import client,
 // keeping it a leaf, whatsmeow-agnostic, table-testable package.
 
+// QuoteThumbnail is the preview image a quote of attachment a shows beside
+// its text; see store.QuoteThumbnail.
+func QuoteThumbnail(a *Attachment) []byte {
+	if a == nil {
+		return nil
+	}
+	return store.QuoteThumbnail(a.Kind, a.ViewOnce, a.Thumbnail)
+}
+
 func storeMessageRow(m *Message) store.MessageRow {
 	row := store.MessageRow{
 		ChatJID:   m.ChatJID,
@@ -110,6 +119,7 @@ func storeMessageRow(m *Message) store.MessageRow {
 		row.ReplyToMsgID = m.ReplyTo.MsgID
 		row.ReplyToText = m.ReplyTo.Text
 		row.ReplyToFrom = nonADString(m.ReplyTo.FromJID)
+		row.ReplyToThumb = m.ReplyTo.Thumbnail
 	}
 	if lp := m.LinkPreview; lp != nil {
 		if b, err := json.Marshal(linkPayload{
@@ -235,7 +245,7 @@ func messageFromStore(m store.Message, selfJID string) Message {
 		Fold: MediaFold(m.Fold),
 	}
 	if m.ReplyToMsgID != "" {
-		out.ReplyTo = &MsgRef{ChatJID: m.ChatJID, MsgID: m.ReplyToMsgID, Text: m.ReplyToText, FromJID: m.ReplyToFrom}
+		out.ReplyTo = &MsgRef{ChatJID: m.ChatJID, MsgID: m.ReplyToMsgID, Text: m.ReplyToText, FromJID: m.ReplyToFrom, Thumbnail: m.ReplyToThumb}
 
 	}
 	if m.Attachment != nil {

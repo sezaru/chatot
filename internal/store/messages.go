@@ -8,9 +8,13 @@ import (
 // UpsertMessage inserts or updates a message row. An empty ReplyToMsgID
 // leaves any existing reply link untouched.
 func (s *Store) UpsertMessage(row MessageRow) error {
+	var replyThumb any
+	if len(row.ReplyToThumb) > 0 {
+		replyThumb = row.ReplyToThumb
+	}
 	_, err := s.db.Exec(`
-		INSERT INTO messages(chat_jid, msg_id, from_jid, from_me, text, ts, reply_to_msg_id, reply_to_text, reply_to_from, kind, payload, edited, deleted, forwarded, link_preview)
-		VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''))
+		INSERT INTO messages(chat_jid, msg_id, from_jid, from_me, text, ts, reply_to_msg_id, reply_to_text, reply_to_from, reply_to_thumb, kind, payload, edited, deleted, forwarded, link_preview)
+		VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''))
 		ON CONFLICT(chat_jid, msg_id) DO UPDATE SET
 			from_jid = excluded.from_jid,
 			from_me = excluded.from_me,
@@ -19,13 +23,14 @@ func (s *Store) UpsertMessage(row MessageRow) error {
 			reply_to_msg_id = COALESCE(excluded.reply_to_msg_id, messages.reply_to_msg_id),
 			reply_to_text = COALESCE(excluded.reply_to_text, messages.reply_to_text),
 			reply_to_from = COALESCE(excluded.reply_to_from, messages.reply_to_from),
+			reply_to_thumb = COALESCE(excluded.reply_to_thumb, messages.reply_to_thumb),
 			kind = excluded.kind,
 			payload = excluded.payload,
 			edited = messages.edited OR excluded.edited,
 			deleted = messages.deleted OR excluded.deleted,
 			forwarded = messages.forwarded OR excluded.forwarded,
 			link_preview = COALESCE(excluded.link_preview, messages.link_preview)
-	`, row.ChatJID, row.MsgID, row.FromJID, boolToInt(row.FromMe), row.Text, row.TS, row.ReplyToMsgID, row.ReplyToText, row.ReplyToFrom, row.Kind, row.Payload, boolToInt(row.Edited), boolToInt(row.Deleted), boolToInt(row.Forwarded), row.LinkPreview)
+	`, row.ChatJID, row.MsgID, row.FromJID, boolToInt(row.FromMe), row.Text, row.TS, row.ReplyToMsgID, row.ReplyToText, row.ReplyToFrom, replyThumb, row.Kind, row.Payload, boolToInt(row.Edited), boolToInt(row.Deleted), boolToInt(row.Forwarded), row.LinkPreview)
 	return err
 }
 
@@ -139,24 +144,58 @@ func (s *Store) MessageByID(chatJID, msgID string) (m Message, ok bool, err erro
 // what a reaction notification quotes. ok is false if the message isn't
 // stored.
 func (s *Store) MessagePreview(chatJID, msgID string) (preview string, fromMe bool, ok bool, err error) {
+	preview, fromMe, _, ok, err = s.messageQuote(chatJID, msgID)
+	return preview, fromMe, ok, err
+}
+
+// MessageQuote is what a reply's quote shows of a stored message: its
+// one-line preview and, for a picture, video or sticker, the small preview
+// image (nil otherwise; see QuoteThumbnail). ok is false if the message
+// isn't stored.
+func (s *Store) MessageQuote(chatJID, msgID string) (preview string, thumb []byte, ok bool, err error) {
+	preview, _, thumb, ok, err = s.messageQuote(chatJID, msgID)
+	return preview, thumb, ok, err
+}
+
+func (s *Store) messageQuote(chatJID, msgID string) (preview string, fromMe bool, thumb []byte, ok bool, err error) {
 	row := s.db.QueryRow(`
 		SELECT m.from_me, COALESCE(m.text, ''), m.kind, COALESCE(m.payload, ''), m.deleted,
-			COALESCE(md.kind, ''), COALESCE(md.caption, ''), COALESCE(md.filename, ''), COALESCE(md.duration_secs, 0), COALESCE(md.is_gif, 0)
+			COALESCE(md.kind, ''), COALESCE(md.caption, ''), COALESCE(md.filename, ''), COALESCE(md.duration_secs, 0), COALESCE(md.is_gif, 0),
+			md.thumbnail, COALESCE(md.view_once, 0)
 		FROM messages m
 		LEFT JOIN media md ON md.chat_jid = m.chat_jid AND md.msg_id = m.msg_id
 		WHERE m.chat_jid = ? AND m.msg_id = ?
 	`, chatJID, msgID)
 	var in previewInput
-	var fromMeInt, deleted, isGIF int
-	if err := row.Scan(&fromMeInt, &in.Text, &in.Kind, &in.Payload, &deleted, &in.MediaKind, &in.MediaCaption, &in.MediaFilename, &in.MediaSeconds, &isGIF); err != nil {
+	var fromMeInt, deleted, isGIF, viewOnce int
+	var mediaThumb []byte
+	if err := row.Scan(&fromMeInt, &in.Text, &in.Kind, &in.Payload, &deleted, &in.MediaKind, &in.MediaCaption, &in.MediaFilename, &in.MediaSeconds, &isGIF, &mediaThumb, &viewOnce); err != nil {
 		if err == sql.ErrNoRows {
-			return "", false, false, nil
+			return "", false, nil, false, nil
 		}
-		return "", false, false, err
+		return "", false, nil, false, err
 	}
 	in.MediaIsGIF = isGIF != 0
 	in.Deleted = deleted != 0
-	return buildPreview(in), fromMeInt != 0, true, nil
+	if !in.Deleted {
+		thumb = QuoteThumbnail(in.MediaKind, viewOnce != 0, mediaThumb)
+	}
+	return buildPreview(in), fromMeInt != 0, thumb, true, nil
+}
+
+// QuoteThumbnail is the preview image a quote of an attachment shows beside
+// its text, as WhatsApp's does: the embedded thumbnail of a picture, video
+// or sticker, nil for any other kind and for view-once media, whose quote
+// must not give it away.
+func QuoteThumbnail(kind string, viewOnce bool, thumb []byte) []byte {
+	if viewOnce || len(thumb) == 0 {
+		return nil
+	}
+	switch kind {
+	case "image", "video", "sticker":
+		return thumb
+	}
+	return nil
 }
 
 // statusBroadcastJID is the special chat every WhatsApp status ("story")
@@ -197,7 +236,7 @@ func (s *Store) Statuses(since int64, limit int) ([]Message, error) {
 // and MessagesBefore so both pages scan the same shape (see scanMessages).
 const messageSelect = `
 	SELECT
-		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''), COALESCE(m.reply_to_text, ''), COALESCE(m.reply_to_from, ''),
+		m.msg_id, m.from_jid, m.from_me, COALESCE(m.text, ''), m.ts, COALESCE(m.reply_to_msg_id, ''), COALESCE(m.reply_to_text, ''), COALESCE(m.reply_to_from, ''), m.reply_to_thumb,
 		m.kind, COALESCE(m.payload, ''), m.edited, m.deleted, m.status, m.starred, m.forwarded, m.played, COALESCE(m.link_preview, ''), m.fold,
 		COALESCE(md.kind, ''), COALESCE(md.filename, ''), COALESCE(md.caption, ''), COALESCE(md.mime_type, ''), COALESCE(md.local_path, ''), md.thumbnail, COALESCE(md.is_gif, 0), COALESCE(md.view_once, 0), COALESCE(md.viewed, 0), COALESCE(md.file_size, 0), COALESCE(md.duration_secs, 0), COALESCE(md.play_pos_ms, 0), COALESCE(md.transcript, ''), COALESCE(md.voice, 0)
 	FROM messages m
@@ -265,7 +304,7 @@ func (s *Store) pageFromRows(jid string, rows *sql.Rows) ([]Message, error) {
 		var mediaTranscript string
 		var mediaVoice int
 		if err := rows.Scan(
-			&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID, &m.ReplyToText, &m.ReplyToFrom,
+			&m.ID, &m.FromJID, &fromMe, &m.Text, &m.TS, &m.ReplyToMsgID, &m.ReplyToText, &m.ReplyToFrom, &m.ReplyToThumb,
 
 			&m.Kind, &m.Payload, &edited, &deleted, &m.Status, &starred, &forwarded, &played, &m.LinkPreview, &m.Fold,
 			&mediaKind, &mediaFilename, &mediaCaption, &mediaMime, &mediaLocal, &mediaThumb, &mediaIsGif, &mediaViewOnce, &mediaViewed, &mediaSize, &mediaSecs, &mediaPos, &mediaTranscript, &mediaVoice,

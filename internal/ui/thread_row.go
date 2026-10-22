@@ -4,6 +4,8 @@ import (
 	"chatot/internal/client"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 )
@@ -49,11 +51,13 @@ type threadRow struct {
 	fwd    *gtk.Label
 	quote  *gtk.Box
 	// quoteName and quoteText are the quote's two lines: who wrote the
-	// quoted message, then the message.
-	quoteName *gtk.Label
-	quoteText *gtk.Label
-	content   gtk.Widgetter
-	body      *gtk.Label
+	// quoted message, then the message; quoteThumb is the quoted picture's
+	// preview at the quote's end.
+	quoteName  *gtk.Label
+	quoteText  *gtk.Label
+	quoteThumb *gtk.Picture
+	content    gtk.Widgetter
+	body       *gtk.Label
 	// bodyHost is the clamp the body sits in; it is the bubble's child, so
 	// it is what the read-more, the choices and visibility act on.
 	bodyHost  *adw.Clamp
@@ -98,9 +102,10 @@ func newThreadRow() *threadRow {
 		hover:      newHoverButtons(),
 		author:     gtk.NewLabel(""),
 		fwd:        gtk.NewLabel("↩ Forwarded"),
-		quote:      gtk.NewBox(gtk.OrientationVertical, 1),
+		quote:      gtk.NewBox(gtk.OrientationHorizontal, 8),
 		quoteName:  gtk.NewLabel(""),
 		quoteText:  gtk.NewLabel(""),
+		quoteThumb: newQuoteThumb(),
 		body:       gtk.NewLabel(""),
 		footer:     gtk.NewBox(gtk.OrientationHorizontal, 4),
 		retry:      gtk.NewButtonWithLabel("↻ Retry"),
@@ -177,8 +182,16 @@ func (r *threadRow) buildBubbleInterior() {
 	r.quoteText.SetXAlign(0)
 	r.quoteText.SetWrap(true)
 	r.quoteText.SetWrapMode(pango.WrapWordChar)
-	r.quote.Append(r.quoteName)
-	r.quote.Append(r.quoteText)
+	quoteLines := gtk.NewBox(gtk.OrientationVertical, 1)
+	quoteLines.SetHExpand(true)
+	quoteLines.SetVAlign(gtk.AlignCenter)
+	quoteLines.Append(r.quoteName)
+	quoteLines.Append(r.quoteText)
+	r.quote.Append(quoteLines)
+	r.quote.Append(r.quoteThumb)
+	// The lines expand to push the picture to the bubble's edge; set
+	// explicitly, the quote stops that expanding the bubble itself.
+	r.quote.SetHExpand(false)
 	// The quote is the way back to what it answers.
 	click := gtk.NewGestureClick()
 	click.ConnectReleased(func(int, float64, float64) {
@@ -280,12 +293,13 @@ func (r *threadRow) fillBubble(msg client.Message, vm bubbleView, h bubbleHooks)
 		r.quoteName.SetLabel("")
 		r.quoteName.SetVisible(false)
 		r.quoteText.SetLabel("")
-
+		setQuoteThumb(r.quoteThumb, nil)
 	}
 	if vm.HasQuote {
 		r.quoteName.SetLabel(vm.QuotedAuthor)
 		r.quoteName.SetVisible(vm.QuotedAuthor != "")
 		r.quoteText.SetLabel(resolveMentionsPlain(vm.QuotedText, h.names))
+		setQuoteThumb(r.quoteThumb, vm.QuotedThumb)
 
 		r.quoteTo, r.onJumpTo = "", h.onJumpTo
 		if h.onJumpTo != nil && msg.ReplyTo != nil {
@@ -879,4 +893,35 @@ func (hb *hoverButtons) setVisible(on bool) {
 		return
 	}
 	hb.cur.setVisible(on)
+}
+
+// quoteThumbSide is the side of the square preview a quote of a picture
+// shows at its end, about the height of the quote's two lines.
+const quoteThumbSide = 40
+
+func newQuoteThumb() *gtk.Picture {
+	pic := gtk.NewPicture()
+	pic.AddCSSClass("chatot-quote-thumb")
+	pic.SetContentFit(gtk.ContentFitCover)
+	pic.SetCanShrink(true)
+	pic.SetSizeRequest(quoteThumbSide, quoteThumbSide)
+	pic.SetHAlign(gtk.AlignEnd)
+	pic.SetVAlign(gtk.AlignCenter)
+	pic.SetOverflow(gtk.OverflowHidden)
+	pic.SetVisible(false)
+	return pic
+}
+
+// setQuoteThumb shows thumb in pic, or hides pic when there is none or it
+// does not decode.
+func setQuoteThumb(pic *gtk.Picture, thumb []byte) {
+	if len(thumb) > 0 {
+		if tex, err := gdk.NewTextureFromBytes(glib.NewBytesWithGo(thumb)); err == nil {
+			pic.SetPaintable(tex)
+			pic.SetVisible(true)
+			return
+		}
+	}
+	pic.SetPaintable(nil)
+	pic.SetVisible(false)
 }

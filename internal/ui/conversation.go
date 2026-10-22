@@ -33,6 +33,9 @@ type bubbleView struct {
 	DayText          string
 	QuotedText       string
 	HasQuote         bool
+	// QuotedThumb is the quoted picture's, video's or sticker's preview,
+	// shown at the quote's end; nil for any other message.
+	QuotedThumb []byte
 	// QuotedFrom is who wrote the quoted message ("" when unknown), and
 	// QuotedMine whether we did; QuotedAuthor is the name the quote shows,
 	// resolved from them by the conversation.
@@ -142,11 +145,15 @@ func bubbleVM(m client.Message, prev *client.Message, byID map[string]client.Mes
 			// label ("📷 Photo") the way the chat list previews it.
 			v.QuotedText = messageSnippet(q)
 			v.QuotedFrom, v.QuotedMine = q.FromJID, q.FromMe
+			if !q.Deleted {
+				v.QuotedThumb = client.QuoteThumbnail(q.Attachment)
+			}
 		} else {
 			// Not among the loaded rows: the preview the reply carried,
 			// or the one fillQuote read off the store.
 			v.QuotedText = m.ReplyTo.Text
 			v.QuotedFrom = m.ReplyTo.FromJID
+			v.QuotedThumb = m.ReplyTo.Thumbnail
 		}
 		if v.QuotedText == "" {
 			v.QuotedText = "↩ reply"
@@ -358,7 +365,7 @@ type ConversationView struct {
 	composingGen map[string]int
 	// quotes caches the preview of a quoted message that is not among the
 	// loaded rows (paged out, or older than the store), by message id.
-	quotes map[string]string
+	quotes map[string]storedQuote
 	// chatIsGroup caches whether the open chat is a group (sender names).
 	chatIsGroup bool
 	// chatInfo is the open chat's row as of the last Load: the chat list
@@ -800,7 +807,7 @@ func NewConversationView(c client.Client) *ConversationView {
 		presence:             make(map[string]PresenceState),
 		composing:            make(composers),
 		composingGen:         make(map[string]int),
-		quotes:               make(map[string]string),
+		quotes:               make(map[string]storedQuote),
 		names:                make(map[string]string),
 		timers:               make(map[string]int64),
 		joinBanner:           joinBanner,
@@ -1977,28 +1984,39 @@ func (cv *ConversationView) syncComposing(jid string) {
 	}
 }
 
-// fillQuote gives a reply whose quoted message is neither loaded nor
-// carried with it the store's preview of that message, once per target:
-// the quote of a reply to something paged out reads like any other.
+// storedQuote is the store's preview of a quoted message: its one-line
+// text and its picture's preview.
+type storedQuote struct {
+	text  string
+	thumb []byte
+}
+
+// fillQuote gives a reply whose quoted message is not loaded the store's
+// preview of that message where the reply carried none (no text, or no
+// picture: replies stored before quotes kept one), once per target: the
+// quote of a reply to something paged out reads like any other.
 func (cv *ConversationView) fillQuote(m *client.Message) {
-	if m.ReplyTo == nil || m.ReplyTo.Text != "" {
+	if m.ReplyTo == nil || (m.ReplyTo.Text != "" && m.ReplyTo.Thumbnail != nil) {
 		return
 	}
 	if _, ok := cv.byID[m.ReplyTo.MsgID]; ok {
 		return
 	}
-	text, ok := cv.quotes[m.ReplyTo.MsgID]
+	q, ok := cv.quotes[m.ReplyTo.MsgID]
 	if !ok {
 		stop := perfStart("quoteRead")
-		text, _ = cv.c.MessagePreview(m.ReplyTo.ChatJID, m.ReplyTo.MsgID)
+		q.text, q.thumb, _ = cv.c.MessageQuote(m.ReplyTo.ChatJID, m.ReplyTo.MsgID)
 		stop()
-		cv.quotes[m.ReplyTo.MsgID] = text
+		cv.quotes[m.ReplyTo.MsgID] = q
 	}
-	if text != "" {
-		ref := *m.ReplyTo
-		ref.Text = text
-		m.ReplyTo = &ref
+	ref := *m.ReplyTo
+	if ref.Text == "" {
+		ref.Text = q.text
 	}
+	if ref.Thumbnail == nil {
+		ref.Thumbnail = q.thumb
+	}
+	m.ReplyTo = &ref
 }
 
 // quotedAuthor names the author of the message a bubble quotes, as

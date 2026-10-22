@@ -391,18 +391,20 @@ func extractText(m *waProto.Message, msg *Message) {
 		return
 	}
 	if id := ctx.GetStanzaID(); id != "" {
-		msg.ReplyTo = &MsgRef{ChatJID: msg.ChatJID, MsgID: id, Text: quotedPreview(msg.ChatJID, ctx.GetQuotedMessage()), FromJID: ctx.GetParticipant()}
+		text, thumb := quotedPreview(msg.ChatJID, ctx.GetQuotedMessage())
+		msg.ReplyTo = &MsgRef{ChatJID: msg.ChatJID, MsgID: id, Text: text, FromJID: ctx.GetParticipant(), Thumbnail: thumb}
 
 	}
 	msg.Forwarded = ctx.GetIsForwarded()
 }
 
 // quotedPreview renders the copy of the quoted message a reply carries as
-// the one-line stand-in a quote shows ("📷 Photo", the text), so a reply
-// to a message that never reached the store still quotes it.
-func quotedPreview(chatJID string, quoted *waProto.Message) string {
+// the one-line stand-in a quote shows ("📷 Photo", the text) and the
+// picture's preview beside it, so a reply to a message that never reached
+// the store still quotes it.
+func quotedPreview(chatJID string, quoted *waProto.Message) (string, []byte) {
 	if quoted == nil {
-		return ""
+		return "", nil
 	}
 	m := Message{ChatJID: chatJID}
 	extractText(quoted, &m)
@@ -411,7 +413,7 @@ func quotedPreview(chatJID string, quoted *waProto.Message) string {
 		row := storeMediaRow(chatJID, "", m.Attachment)
 		media = &row
 	}
-	return store.Preview(storeMessageRow(&m), media)
+	return store.Preview(storeMessageRow(&m), media), QuoteThumbnail(m.Attachment)
 }
 
 // marshalMedia serializes a media sub-message (ImageMessage, VideoMessage,

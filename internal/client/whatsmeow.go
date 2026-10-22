@@ -704,18 +704,18 @@ func jidUser(jid string) string {
 	return jid
 }
 
-// MessagePreview is a stored message's one-line stand-in; see
-// Client.MessagePreview.
-func (w *Whatsmeow) MessagePreview(chatJID, msgID string) (string, bool) {
+// MessageQuote is how a reply quotes a stored message; see
+// Client.MessageQuote.
+func (w *Whatsmeow) MessageQuote(chatJID, msgID string) (string, []byte, bool) {
 	if w.store == nil {
-		return "", false
+		return "", nil, false
 	}
-	preview, _, ok, err := w.store.MessagePreview(chatJID, msgID)
+	preview, thumb, ok, err := w.store.MessageQuote(chatJID, msgID)
 	if err != nil {
-		w.log.Warnf("chatot/client: message preview: %v", err)
-		return "", false
+		w.log.Warnf("chatot/client: message quote: %v", err)
+		return "", nil, false
 	}
-	return preview, ok
+	return preview, thumb, ok
 }
 
 // ContactName resolves a person's display name from the local contacts

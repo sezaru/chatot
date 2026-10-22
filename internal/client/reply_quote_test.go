@@ -103,3 +103,41 @@ func TestReplyAuthorRoundTripsThroughStore(t *testing.T) {
 		t.Errorf("messageFromStore ReplyTo = %+v", out.ReplyTo)
 	}
 }
+
+func TestReplyToPictureCarriesItsThumbnail(t *testing.T) {
+	chat := mustJID(t, "1234567890@s.whatsapp.net")
+	jpeg := []byte{0xff, 0xd8, 0xff}
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: chat},
+			ID:            "R1",
+		},
+		Message: &waE2E.Message{
+			ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+				Text: proto.String("Isso chama atenção?"),
+				ContextInfo: &waE2E.ContextInfo{
+					StanzaID:      proto.String("pic"),
+					QuotedMessage: &waE2E.Message{ImageMessage: &waE2E.ImageMessage{JPEGThumbnail: jpeg}},
+				},
+			},
+		},
+	}
+	e := translate(evt)
+	if e == nil || e.Message == nil || e.Message.ReplyTo == nil {
+		t.Fatalf("expected a reply, got %+v", e)
+	}
+	if ref := e.Message.ReplyTo; ref.Text != "📷 Photo" || string(ref.Thumbnail) != string(jpeg) {
+		t.Fatalf("ReplyTo = %q / %v, want the photo label and its thumbnail", ref.Text, ref.Thumbnail)
+	}
+
+	w := newIngestFixture(t)
+	must(t, w.ingestMessage(e.Message))
+	msgs, err := w.store.Messages(chat.String(), 10)
+	must(t, err)
+	if len(msgs) != 1 {
+		t.Fatalf("stored %d messages, want 1", len(msgs))
+	}
+	if out := messageFromStore(msgs[0], ""); out.ReplyTo == nil || string(out.ReplyTo.Thumbnail) != string(jpeg) {
+		t.Errorf("messageFromStore ReplyTo = %+v, want the thumbnail back", out.ReplyTo)
+	}
+}

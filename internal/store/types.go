@@ -49,6 +49,7 @@ type Message struct {
 	ReplyToMsgID string
 	ReplyToText  string              // the quoted message as the reply carried it, for one not stored
 	ReplyToFrom  string              // who wrote the quoted message, as the reply named them
+	ReplyToThumb []byte              // the quoted picture's preview, as the reply carried it
 	Reactions    map[string][]string // emoji -> reactor JIDs, oldest first
 	Attachment   *Attachment
 	// Kind is "" for a plain text/media message or a rich-kind tag (e.g.
@@ -166,6 +167,7 @@ type MessageRow struct {
 	ReplyToMsgID string // "" leaves any existing reply link untouched
 	ReplyToText  string // preview of the quoted message; "" leaves any existing one
 	ReplyToFrom  string // the quoted message's author; "" leaves any existing one
+	ReplyToThumb []byte // the quoted picture's preview; nil leaves any existing one
 
 	Kind      string // "" plain message; "location" etc. for a rich kind
 	Payload   string // opaque JSON body for a rich kind, "" otherwise

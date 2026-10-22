@@ -554,6 +554,9 @@ type MsgRef struct {
 	// FromJID is who wrote the quoted message (the reply's participant),
 	// for the quote's author line when the message itself is not loaded.
 	FromJID string
+	// Thumbnail is the quoted picture's, video's or sticker's small
+	// preview as the reply carried it, nil for any other message.
+	Thumbnail []byte
 }
 
 // Attachment describes media attached to a message, inbound or outbound.
@@ -899,10 +902,11 @@ type Client interface {
 	// "+number" for a phone-number JID, else "". Used for group senders and
 	// @mentions, which point at people who need not be chats of their own.
 	ContactName(jid string) string
-	// MessagePreview is the one-line stand-in for a stored message (its
-	// text, or "📷 Photo" for a picture), the way a reply quotes it; ok is
-	// false when the message is not stored.
-	MessagePreview(chatJID, msgID string) (preview string, ok bool)
+	// MessageQuote is how a reply quotes a stored message: its one-line
+	// stand-in (its text, or "📷 Photo" for a picture) and, for a picture,
+	// video or sticker, the small preview image; ok is false when the
+	// message is not stored.
+	MessageQuote(chatJID, msgID string) (preview string, thumb []byte, ok bool)
 	// OwnName returns this account's own profile (push) name, "" if unknown,
 	// for the account header and switcher.
 	OwnName() string

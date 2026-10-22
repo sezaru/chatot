@@ -1140,7 +1140,7 @@ func TestQuotedPreviewLabelsMediaAndRichKinds(t *testing.T) {
 		{"sticker", &waProto.Message{StickerMessage: &waE2E.StickerMessage{}}, "🙂 Sticker"},
 	}
 	for _, tc := range cases {
-		if got := quotedPreview("1@s.whatsapp.net", tc.msg); got != tc.want {
+		if got, _ := quotedPreview("1@s.whatsapp.net", tc.msg); got != tc.want {
 			t.Errorf("%s: quotedPreview = %q, want %q", tc.name, got, tc.want)
 		}
 	}

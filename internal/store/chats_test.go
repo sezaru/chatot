@@ -800,3 +800,47 @@ func TestChatsFindsEachLastMessageByRowid(t *testing.T) {
 		}
 	}
 }
+
+func TestMessageQuoteThumbnail(t *testing.T) {
+	s := newTestStore(t)
+	const chat = "a@s.whatsapp.net"
+	jpeg := []byte{0xff, 0xd8, 0xff}
+	for _, row := range []MediaRow{
+		{ChatJID: chat, MsgID: "pic", Kind: "image", Thumbnail: jpeg},
+		{ChatJID: chat, MsgID: "once", Kind: "image", Thumbnail: jpeg, ViewOnce: true},
+		{ChatJID: chat, MsgID: "doc", Kind: "document", Filename: "a.pdf", Thumbnail: jpeg},
+		{ChatJID: chat, MsgID: "gone", Kind: "video", Thumbnail: jpeg},
+	} {
+		must(t, s.UpsertMessage(MessageRow{ChatJID: chat, MsgID: row.MsgID, TS: 1}))
+		must(t, s.UpsertMedia(row))
+	}
+	must(t, s.MarkMessageDeleted(chat, "gone", 1))
+
+	preview, thumb, ok, err := s.MessageQuote(chat, "pic")
+	must(t, err)
+	if !ok || preview != "📷 Photo" || string(thumb) != string(jpeg) {
+		t.Fatalf("pic: ok=%v preview=%q thumb=%v, want the photo label and its thumbnail", ok, preview, thumb)
+	}
+	// A view-once picture's quote must not give it away, a document's quote
+	// has no picture, and a deleted message's quote shows only the tombstone.
+	for _, id := range []string{"once", "doc", "gone"} {
+		if _, thumb, ok, err := s.MessageQuote(chat, id); err != nil || !ok || thumb != nil {
+			t.Errorf("%s: ok=%v thumb=%v err=%v, want no thumbnail", id, ok, thumb, err)
+		}
+	}
+}
+
+func TestReplyToThumbRoundTrips(t *testing.T) {
+	s := newTestStore(t)
+	const chat = "a@s.whatsapp.net"
+	jpeg := []byte{0xff, 0xd8, 0xff}
+	must(t, s.UpsertMessage(MessageRow{ChatJID: chat, MsgID: "r", Text: "nice", TS: 1, ReplyToMsgID: "pic", ReplyToText: "📷 Photo", ReplyToThumb: jpeg}))
+	// A redelivery without the quote's copy keeps the picture.
+	must(t, s.UpsertMessage(MessageRow{ChatJID: chat, MsgID: "r", Text: "nice", TS: 1}))
+
+	msgs, err := s.Messages(chat, 10)
+	must(t, err)
+	if len(msgs) != 1 || string(msgs[0].ReplyToThumb) != string(jpeg) {
+		t.Fatalf("ReplyToThumb = %+v, want the carried thumbnail", msgs)
+	}
+}

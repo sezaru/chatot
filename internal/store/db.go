@@ -152,6 +152,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
 	}
+	if err := migrateAddColumn(db, "messages", "reply_to_thumb", "BLOB"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("chatot/store: migrate: %w", err)
+	}
 
 	if err := migrateAddColumn(db, "messages", "transcript", "TEXT"); err != nil {
 		db.Close()
