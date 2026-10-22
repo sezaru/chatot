@@ -109,17 +109,18 @@
         "expert": "expert",
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs_3",
+        "nixpkgs-codex": "nixpkgs-codex",
         "nixpkgs-flutter": "nixpkgs-flutter",
         "nixpkgs-secretspec": "nixpkgs-secretspec",
         "nixpkgs-unstable": "nixpkgs-unstable",
         "open-design": "open-design"
       },
       "locked": {
-        "lastModified": 1788902028,
-        "narHash": "sha256-Vq8fQhZWSIjNSwCdzUqGfFLT6sFKH3nriCxdfvF33GE=",
+        "lastModified": 1790737134,
+        "narHash": "sha256-Ejz5L00V30Y8nYzI0u9V4B8Mzx3ScE1wa3B3sQD8Aiw=",
         "owner": "sezaru",
         "repo": "nix-devkit",
-        "rev": "8677d360504d699ec61a3793b21d03aa010908d1",
+        "rev": "5d561f004c96293f32cb65764a30817ac06939ef",
         "type": "github"
       },
       "original": {
@@ -362,6 +363,22 @@
         "owner": "cachix",
         "ref": "rolling",
         "repo": "devenv-nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs-codex": {
+      "locked": {
+        "lastModified": 1789073787,
+        "narHash": "sha256-xfX/toC2QV707s06GbP4II/TxYF0fNQj7s5/LClNDKc=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "aff8a0b28396750446e5537a96461bc4facdb287",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixpkgs-unstable",
+        "repo": "nixpkgs",
         "type": "github"
       }
     },

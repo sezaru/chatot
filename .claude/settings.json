@@ -1,5 +1,6 @@
 {
   "enabledPlugins": {
+    "ui-design@dev-ai-plugins": true,
     "dev-workflow@dev-ai-plugins": true,
     "coding-guidelines@dev-ai-plugins": true
   },
@@ -7,7 +8,7 @@
     "dev-ai-plugins": {
       "source": {
         "source": "github",
-        "repo": "sezaru/dev-ai-plugins"
+        "repo": "Hexhound/dev-ai-plugins"
       }
     }
   }
