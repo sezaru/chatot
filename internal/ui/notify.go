@@ -3,7 +3,10 @@ package ui
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,6 +219,56 @@ func writeAppMarkIcon(dir string) (string, error) {
 	return path, nil
 }
 
+// thumbIconMaxAge is how long a picture written out for a message
+// notification is kept: the shell's history goes on pointing at the file
+// after the popup is gone.
+const thumbIconMaxAge = 7 * 24 * time.Hour
+
+// thumbIconPath is the picture a message notification shows in place of the
+// chat's: the preview a photo, video or sticker carries, written under
+// $XDG_CACHE_HOME/chatot/notify/thumbs. "" when the message has none, or
+// when the toast mustn't show what was sent.
+func thumbIconPath(a *client.Attachment) string {
+	if a == nil || !NotificationText {
+		return ""
+	}
+	thumb := client.QuoteThumbnail(a)
+	if len(thumb) == 0 {
+		return ""
+	}
+	path, err := writeThumbIcon(filepath.Join(cacheDir(), "notify", "thumbs"), thumb, time.Now())
+	if err != nil {
+		log.Printf("chatot: notification picture: %v", err)
+		return ""
+	}
+	return path
+}
+
+// writeThumbIcon writes thumb under dir, named by its content, and returns
+// its path; pictures there older than thumbIconMaxAge are removed first.
+func writeThumbIcon(dir string, thumb []byte, now time.Time) (string, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, e := range entries {
+			if info, err := e.Info(); err == nil && info.Mode().IsRegular() && now.Sub(info.ModTime()) > thumbIconMaxAge {
+				os.Remove(filepath.Join(dir, e.Name()))
+			}
+		}
+	}
+	ext := ".jpg"
+	if http.DetectContentType(thumb) == "image/png" {
+		ext = ".png"
+	}
+	sum := sha256.Sum256(thumb)
+	path := filepath.Join(dir, hex.EncodeToString(sum[:12])+ext)
+	if err := os.WriteFile(path, thumb, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 // fileIcon is the notification icon for the picture at path; nil for "".
 func fileIcon(path string) gio.Iconner {
 	if path == "" {
@@ -396,7 +449,12 @@ func (n *Notifier) handleMessage(msg client.Message) {
 		body = hiddenNotificationBody
 	}
 	title = accountPrefixedTitle(title, n.accountPrefix())
-	icon := n.iconPath(iconJID)
+	// A picture's toast shows the picture itself; the daemon takes a
+	// single image, so it stands in for the chat's.
+	icon := thumbIconPath(msg.Attachment)
+	if icon == "" {
+		icon = n.iconPath(iconJID)
+	}
 	glib.IdleAdd(func() {
 		focused, openJID := n.focused()
 		if !decideNotify(notifyInput{

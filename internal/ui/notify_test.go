@@ -244,3 +244,62 @@ func TestWriteAppMarkIconWritesOnceAndReuses(t *testing.T) {
 		t.Error("a stale mark was not replaced")
 	}
 }
+
+// A message's preview is written out by content for the daemon to read by
+// path, PNG keeps its extension, and pictures past their age are cleared.
+func TestWriteThumbIcon(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "thumbs")
+	now := time.Now()
+	jpeg := []byte("\xff\xd8\xff\xe0jpeg")
+	path, err := writeThumbIcon(dir, jpeg, now)
+	if err != nil || filepath.Ext(path) != ".jpg" {
+		t.Fatalf("jpeg = %q, %v; want a .jpg", path, err)
+	}
+	if data, _ := os.ReadFile(path); !bytes.Equal(data, jpeg) {
+		t.Fatalf("written = %q, want %q", data, jpeg)
+	}
+	if again, _ := writeThumbIcon(dir, jpeg, now); again != path {
+		t.Errorf("same picture = %q, want %q", again, path)
+	}
+	png, err := writeThumbIcon(dir, append([]byte("\x89PNG\r\n\x1a\n"), 0), now)
+	if err != nil || filepath.Ext(png) != ".png" || png == path {
+		t.Fatalf("png = %q, %v; want a second .png", png, err)
+	}
+	old := now.Add(-thumbIconMaxAge - time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writeThumbIcon(dir, []byte("other"), now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("a picture past thumbIconMaxAge was kept")
+	}
+	if _, err := os.Stat(png); err != nil {
+		t.Error("a recent picture was removed")
+	}
+}
+
+// Only a photo, video or sticker preview stands in for the chat's picture,
+// and never when the toast hides what was sent.
+func TestThumbIconPath(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	thumb := []byte("\xff\xd8\xff\xe0jpeg")
+	if thumbIconPath(nil) != "" {
+		t.Error("no attachment gave a picture")
+	}
+	if thumbIconPath(&client.Attachment{Kind: "document", Thumbnail: thumb}) != "" {
+		t.Error("a document gave a picture")
+	}
+	if thumbIconPath(&client.Attachment{Kind: "image", Thumbnail: thumb, ViewOnce: true}) != "" {
+		t.Error("a view-once photo gave a picture")
+	}
+	if thumbIconPath(&client.Attachment{Kind: "image", Thumbnail: thumb}) == "" {
+		t.Error("a photo gave no picture")
+	}
+	NotificationText = false
+	defer func() { NotificationText = true }()
+	if thumbIconPath(&client.Attachment{Kind: "image", Thumbnail: thumb}) != "" {
+		t.Error("a hidden-text toast gave a picture")
+	}
+}
