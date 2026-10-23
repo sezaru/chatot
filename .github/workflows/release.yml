@@ -52,7 +52,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: cachix/install-nix-action@v31
       - name: Build
         run: |
           nix bundle --accept-flake-config --bundler github:ralismark/nix-appimage .#chatot -o chatot-bundle
