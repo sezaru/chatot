@@ -83,6 +83,12 @@
   </recommends>
 
   <releases>
+    <release version="0.18.7-beta" date="2026-11-08">
+      <description>
+        <p>A message that failed to send can be deleted from its menu.</p>
+        <p>Catching up on messages after chatot was closed is much faster, and a banner shows the progress.</p>
+      </description>
+    </release>
     <release version="0.18.6-beta" date="2026-10-22">
       <description>
         <p>A notification for a photo, video or sticker shows the picture.</p>
