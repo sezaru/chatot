@@ -18,7 +18,7 @@ func TestSidebarRefreshEvent(t *testing.T) {
 	no := []client.EventKind{
 		client.EventPresence, client.EventChatPresence, client.EventReaction,
 		client.EventPollVote, client.EventCall, client.EventQR, client.EventAvatar,
-		client.EventNewsletterUpdate,
+		client.EventNewsletterUpdate, client.EventOfflineSync,
 	}
 	for _, k := range yes {
 		if !sidebarRefreshEvent(k) {

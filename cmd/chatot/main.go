@@ -136,7 +136,7 @@ func copyOfflineState(src string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for _, name := range []string{"session.db", "chatot.db", "chatot.db-wal", "chatot.db-shm"} {
+	for _, name := range []string{"session.db", "session.db-wal", "session.db-shm", "chatot.db", "chatot.db-wal", "chatot.db-shm"} {
 		if err := copyFile(filepath.Join(src, name), filepath.Join(dst, name)); err != nil && !os.IsNotExist(err) {
 			return "", err
 		}
@@ -798,8 +798,9 @@ func activate(app *adw.Application, c client.Client) {
 	// early event is dropped.
 	// The post-link backfill: a fresh pairing parks the window on the
 	// syncing screen until the chat list and recent messages have landed,
-	// then the older history streams behind a sidebar banner. sync is only
-	// ever touched on the main loop.
+	// then the older history streams behind a sidebar banner. The same
+	// banner counts the backlog the server replays on every connect. sync is
+	// only ever touched on the main loop.
 	var sync ui.SyncTracker
 	applySync := func() {
 		if sync.Blocking() {
@@ -917,6 +918,12 @@ func activate(app *adw.Application, c client.Client) {
 				h := ev.HistorySync
 				glib.IdleAdd(func() {
 					sync.Chunk(h, time.Now())
+					applySync()
+				})
+			case ev.Kind == client.EventOfflineSync && ev.OfflineSync != nil:
+				o := ev.OfflineSync
+				glib.IdleAdd(func() {
+					sync.Offline(o, time.Now())
 					applySync()
 				})
 			case ev.Kind == client.EventLoggedOut:
@@ -1143,16 +1150,35 @@ func markReadOnOpen(c client.Client, jid string, msgs []client.Message) {
 // watchTrayUnread seeds the tray's unread tooltip and refreshes it on the
 // events that move an unread count (new message, receipt, or a synced
 // pin/mute/unread change). Its own Events() subscription is independent of the
-// chat list's and the notifier's (fan-out bus).
+// chat list's and the notifier's (fan-out bus). A burst of events (the
+// backlog on connect, a busy group) costs one recount, not one per event:
+// each reads every chat.
 func watchTrayUnread(c client.Client, setUnread func(int)) {
 	setUnread(totalUnread(c))
-	for ev := range c.Events() {
-		switch ev.Kind {
-		case client.EventMessage, client.EventReceipt, client.EventChatUpdate, client.EventHistorySync:
+	events := c.Events()
+	var recount <-chan time.Time
+	for {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				return
+			}
+			switch ev.Kind {
+			case client.EventMessage, client.EventReceipt, client.EventChatUpdate, client.EventHistorySync:
+				if recount == nil {
+					recount = time.After(trayUnreadDebounce)
+				}
+			}
+		case <-recount:
+			recount = nil
 			setUnread(totalUnread(c))
 		}
 	}
 }
+
+// trayUnreadDebounce is how long the tray waits for more events before it
+// recounts the unread badge.
+const trayUnreadDebounce = 300 * time.Millisecond
 
 // totalUnread sums the unread counts across all chats outside the archive,
 // which the phone's badge leaves out too.

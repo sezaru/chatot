@@ -88,3 +88,58 @@ func TestGroupThousands(t *testing.T) {
 		t.Errorf("plural(1) = %q", got)
 	}
 }
+
+func TestSyncTrackerCatchUp(t *testing.T) {
+	t0 := time.Unix(1_700_000_000, 0)
+	var tr SyncTracker
+	tr.Offline(&client.OfflineSync{}, t0)
+	if tr.Background() {
+		t.Fatal("an empty backlog must not show the banner")
+	}
+	tr.Offline(&client.OfflineSync{Total: 1500, Messages: 1200}, t0)
+	if !tr.Background() || tr.Blocking() {
+		t.Fatal("a backlog shows the banner, never the blocking screen")
+	}
+	if got := tr.BannerText(); got != "Catching up · 0 of 1,200 messages" {
+		t.Fatalf("banner = %q", got)
+	}
+	tr.Offline(&client.OfflineSync{Total: 1500, Messages: 1200, Received: 300}, t0.Add(time.Second))
+	if f := tr.Fraction(); f != 0.25 {
+		t.Fatalf("fraction = %v, want 0.25", f)
+	}
+	// Received runs past Messages when the preview undercounted.
+	tr.Offline(&client.OfflineSync{Total: 1500, Messages: 1200, Received: 1300}, t0.Add(2*time.Second))
+	if got := tr.BannerText(); got != "Catching up · 1,200 of 1,200 messages" || tr.Fraction() != 1 {
+		t.Fatalf("overrun: banner %q fraction %v", got, tr.Fraction())
+	}
+	tr.Offline(&client.OfflineSync{Total: 1500, Messages: 1200, Received: 1200, Done: true}, t0.Add(3*time.Second))
+	if tr.Background() {
+		t.Fatal("the end of the backlog must retire the banner")
+	}
+
+	// Receipts only: no count to show, an indeterminate bar.
+	tr.Offline(&client.OfflineSync{Total: 40}, t0)
+	if tr.BannerText() != "Catching up…" || tr.Fraction() != -1 {
+		t.Fatalf("receipts only: banner %q fraction %v", tr.BannerText(), tr.Fraction())
+	}
+	if tr.Tick(t0.Add(syncCatchUpQuiet-time.Second)) || !tr.Background() {
+		t.Fatal("must hold until the quiet timeout")
+	}
+	if !tr.Tick(t0.Add(syncCatchUpQuiet)) || tr.Background() {
+		t.Fatal("a backlog whose end never comes must retire the banner")
+	}
+}
+
+func TestSyncTrackerHistoryOutranksCatchUp(t *testing.T) {
+	t0 := time.Unix(1_700_000_000, 0)
+	var tr SyncTracker
+	tr.Offline(&client.OfflineSync{Total: 10, Messages: 10}, t0)
+	tr.Chunk(chunk("full", 1, 10, 40), t0)
+	if got := tr.BannerText(); got != "Syncing older messages · 40%" {
+		t.Fatalf("banner = %q", got)
+	}
+	tr.Chunk(chunk("full", 1, 10, 100), t0)
+	if got := tr.BannerText(); !tr.Background() || got != "Catching up · 0 of 10 messages" {
+		t.Fatalf("after the history: background %v banner %q", tr.Background(), got)
+	}
+}

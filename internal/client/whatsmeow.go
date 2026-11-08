@@ -102,6 +102,8 @@ type Whatsmeow struct {
 	syncing   atomic.Bool
 	syncMu    sync.Mutex
 	syncTimer *time.Timer
+	// catchUp counts that same catch-up for the sidebar's sync banner.
+	catchUp offlineProgress
 
 	// proxyOverride, when non-empty, is the per-account proxy applied at Start
 	// in preference to the global CHATOT_PROXY.
@@ -140,7 +142,14 @@ func NewWhatsmeow(stateDir string) (*Whatsmeow, error) {
 
 	dbLog := newLogger("Database")
 	dbPath := filepath.Join(stateDir, "session.db")
-	dsn := fmt.Sprintf("file:%s?_foreign_keys=on", dbPath)
+	// whatsmeow commits its Signal state two or three times per message it
+	// decrypts, one message at a time. In SQLite's default rollback journal
+	// each commit is an fsync (~9 ms on a btrfs laptop), which paced the
+	// connect-time catch-up; WAL with synchronous=NORMAL only syncs at
+	// checkpoints. Immediate transactions keep WAL's concurrent connections
+	// from failing a read-to-write upgrade with SQLITE_BUSY instead of
+	// waiting.
+	dsn := fmt.Sprintf("file:%s?_foreign_keys=on&_journal_mode=WAL&_synchronous=NORMAL&_busy_timeout=10000&_txlock=immediate", dbPath)
 	container, err := sqlstore.New(context.Background(), "sqlite3", dsn, dbLog)
 	if err != nil {
 		return nil, fmt.Errorf("chatot/client: open whatsmeow store: %w", err)
@@ -202,6 +211,7 @@ func defaultStateDir() (string, error) {
 // raised it, which matters only for the logout branch: everything else acts on
 // the store, which every session shares.
 func (w *Whatsmeow) handleRaw(src *whatsmeow.Client, evt interface{}) {
+	w.trackOfflineSync(evt)
 	// Poll votes arrive as an events.Message wrapping a PollUpdateMessage;
 	// decrypt + tally them here (like applyHistorySync's early branch) and
 	// return, so they're never ingested as a blank text message.

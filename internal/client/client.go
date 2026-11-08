@@ -47,6 +47,10 @@ const (
 	// EventNewsletterUpdate signals a channel changed: a new post arrived or
 	// a live update moved its view/reaction counts. Newsletter names it.
 	EventNewsletterUpdate
+	// EventOfflineSync reports the backlog the server replays on connect
+	// (what arrived while chatot was closed or offline): its size, how much
+	// has landed, and when it is done. OfflineSync carries it.
+	EventOfflineSync
 )
 
 // Event is a normalized notification pushed on Client.Events(). Only the
@@ -70,6 +74,18 @@ type Event struct {
 	Avatar       *Avatar
 	ChatUpdate   *ChatUpdate
 	Newsletter   *NewsletterUpdate
+	OfflineSync  *OfflineSync
+}
+
+// OfflineSync is the state of the connect-time backlog. Total counts every
+// item the server announced (messages, receipts, notifications, app-state
+// changes) and Messages the messages among them; Received is how many of
+// those messages have been filed so far. Done marks the end of the backlog.
+type OfflineSync struct {
+	Total    int
+	Messages int
+	Received int
+	Done     bool
 }
 
 // NewsletterUpdate names the channel an EventNewsletterUpdate is about.
