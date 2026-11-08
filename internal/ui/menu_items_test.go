@@ -149,6 +149,35 @@ func TestChatMenuItems(t *testing.T) {
 	})
 }
 
+func TestFailedMessageMenu(t *testing.T) {
+	var discarded, deleted, retried bool
+	h := bubbleHooks{
+		onDiscard: func(client.Message) { discarded = true },
+		onDelete:  func(client.Message) { deleted = true },
+		onRetry:   func(client.Message) { retried = true },
+	}
+	msg := client.Message{ID: "local-1", FromMe: true, Text: "hi", Status: client.MessageStatusFailed}
+	items := h.runMenuItems(msg, nil, true, true)
+	want := []string{"Retry", "Copy text", "---", "Delete message"}
+	if got := labelsOf(items); !reflect.DeepEqual(got, want) {
+		t.Fatalf("failed message menu = %v, want %v", got, want)
+	}
+	for _, it := range items {
+		switch it.Label {
+		case "Retry", "Delete message":
+			it.OnActivate()
+		}
+	}
+	// The store never held a failed send: Delete drops the row instead of
+	// asking the server to delete it.
+	if !discarded || deleted {
+		t.Errorf("Delete: discarded=%v deleted=%v, want discard only", discarded, deleted)
+	}
+	if !retried {
+		t.Error("Retry did not re-send")
+	}
+}
+
 func TestMessageMenuItems(t *testing.T) {
 	t.Run("incoming message", func(t *testing.T) {
 		got := labelsOf(messageMenuItems(client.Message{}, messageMenuActions{}))

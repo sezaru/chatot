@@ -2224,6 +2224,9 @@ type bubbleHooks struct {
 	onOpenViewer func(client.Message)
 	// onRetry re-sends a failed optimistic message (the bubble's Retry).
 	onRetry func(client.Message)
+	// onDiscard drops a failed optimistic message. The store never held
+	// it, so removing the row is the whole delete.
+	onDiscard func(client.Message)
 	// onJumpTo scrolls the thread to msgID (the message a quote answers);
 	// nil leaves the quote inert.
 	onJumpTo func(msgID string)
@@ -2355,7 +2358,7 @@ func (cv *ConversationView) hooks() bubbleHooks {
 		onDelete: cv.onDelete, onStar: cv.onStar, onForward: cv.onForward, onStopLive: cv.onStopLive,
 		onOpenViewer: cv.onOpenViewer, onLocalPath: func(id, path string) { cv.setLocalPath(id, path) }, names: cv.mentionName, avatars: cv.avatarCache,
 		avatarGen: func(jid string) int { return cv.avatarGens[jid] },
-		onRetry:   cv.retrySend, reactorName: cv.senderName, onJumpTo: cv.jumpToQuoted,
+		onRetry:   cv.retrySend, onDiscard: cv.dropUnsent, reactorName: cv.senderName, onJumpTo: cv.jumpToQuoted,
 		onOpenSender:     cv.showSenderInfo,
 		onFetchThumbnail: cv.fetchThumbnail,
 		voice: voiceHooks{
@@ -2666,6 +2669,9 @@ func (h bubbleHooks) menuItemsFor(msg client.Message, canEdit, canDelete bool) [
 // (an album, msg its first picture): Forward sends the whole run, the way
 // it was posted. A nil run is the single message.
 func (h bubbleHooks) runMenuItems(msg client.Message, run []client.Message, canEdit, canDelete bool) []menuItem {
+	if msg.Status == client.MessageStatusFailed {
+		return h.failedMenuItems(msg)
+	}
 	actions := messageMenuActions{}
 	if h.onReply != nil {
 		actions.Reply = func() { h.onReply(msg) }
@@ -2709,6 +2715,21 @@ func (h bubbleHooks) runMenuItems(msg client.Message, run []client.Message, canE
 		items = withoutMenuItem(items, "Edit message")
 	}
 	return items
+}
+
+// failedMenuItems is failedMenuItems wired to msg, a send that failed.
+func (h bubbleHooks) failedMenuItems(msg client.Message) []menuItem {
+	actions := messageMenuActions{}
+	if h.onRetry != nil {
+		actions.Retry = func() { h.onRetry(msg) }
+	}
+	if text := copyableText(msg); text != "" {
+		actions.Copy = func() { copyText(h.toasts, text) }
+	}
+	if h.onDiscard != nil {
+		actions.Delete = func() { h.onDiscard(msg) }
+	}
+	return failedMenuItems(actions)
 }
 
 // downloadAttachment fetches msg's attachment off the main loop (the menu's

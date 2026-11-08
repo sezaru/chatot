@@ -662,10 +662,15 @@ func avatarGenOf(h bubbleHooks, jid string) int {
 }
 
 func (r *threadRow) renderHover(msg client.Message, vm bubbleView, h bubbleHooks) {
-	// A tombstone, a message still going out and a failed one have nothing to
-	// react to or act on, so the pair parks itself.
-	if vm.Deleted || vm.Pending || vm.Failed {
+	// A tombstone and a message still going out have nothing to react to or
+	// act on, so the pair parks itself. A failed one keeps the ⌄ for Retry
+	// and Delete; bind hides its 🙂.
+	if vm.Deleted || vm.Pending {
 		r.hover.park(r)
+		return
+	}
+	if vm.Failed {
+		r.hover.bind(r, msg, vm, h, false, true)
 		return
 	}
 	// Editing is a text-only, own-message affordance (WhatsApp only edits
@@ -785,7 +790,14 @@ func (hb *hoverButtons) bind(r *threadRow, msg client.Message, vm bubbleView, h 
 		want = hoverOutgoing
 	}
 	hb.place(r, want)
-	hb.smiley.SetSensitive(h.onReact != nil)
+	hb.smiley.SetSensitive(h.onReact != nil && !vm.Failed)
+	// Nothing reacts to a message that never left. Opacity, not visibility,
+	// so the pair keeps its width and the bubble does not shift.
+	if vm.Failed {
+		hb.smiley.SetOpacity(0)
+	} else {
+		hb.smiley.SetOpacity(1)
+	}
 
 	a := bubbleAffordances{
 		bubble:  r.bubble,

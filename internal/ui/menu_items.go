@@ -158,6 +158,8 @@ type messageMenuActions struct {
 	// for a message with neither. Folded says which way it is now.
 	Fold   func()
 	Folded bool
+	// Retry sends a failed message again; only failedMenuItems offers it.
+	Retry func()
 }
 
 // messageMenuItems is a message bubble's ⋯ menu.
@@ -193,6 +195,18 @@ func messageMenuItems(msg client.Message, a messageMenuActions) []menuItem {
 		menuItem{Icon: "ℹ", Label: "Message info", OnActivate: a.Info},
 		menuItem{Icon: "🗑", Label: "Delete message", Destructive: true, OnActivate: a.Delete},
 	)
+}
+
+// failedMenuItems is the ⌄ menu of a send that failed. The message never
+// left, so nothing else in the full menu applies to it: it can only go out
+// again, be copied, or be dropped.
+func failedMenuItems(a messageMenuActions) []menuItem {
+	return []menuItem{
+		{Icon: "↻", Label: "Retry", OnActivate: a.Retry},
+		{Icon: "📋", Label: "Copy text", OnActivate: a.Copy},
+		menuSeparator(),
+		{Icon: "🗑", Label: "Delete message", Destructive: true, OnActivate: a.Delete},
+	}
 }
 
 // needsDownload reports whether msg carries an attachment that is not on
