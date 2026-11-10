@@ -34,7 +34,7 @@ func newAsyncPicture(path string, side int) *gtk.Picture {
 // on the main loop, at once when it is memoised, else after decoding it in
 // the background. Nothing happens when the file cannot be decoded.
 func loadPictureAsync(path string, side int, set func(gdk.Paintabler)) {
-	key := path + "|" + strconv.Itoa(side)
+	key := pictureKey(path, side)
 	if t, ok := pictureTextures.get(key); ok {
 		set(t)
 		return
@@ -60,4 +60,9 @@ func loadPictureAsync(path string, side int, set func(gdk.Paintabler)) {
 			}
 		})
 	}()
+}
+
+// pictureKey is the cache key of path decoded to fit side px.
+func pictureKey(path string, side int) string {
+	return path + "|" + strconv.Itoa(side)
 }

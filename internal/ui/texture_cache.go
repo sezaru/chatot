@@ -54,6 +54,13 @@ func (c *textureCache) put(key string, tex *gdk.Texture, size int) {
 	c.bytes += size
 }
 
+// drop forgets key's entry, if any.
+func (c *textureCache) drop(key string) {
+	if el, ok := c.entries[key]; ok {
+		c.remove(el)
+	}
+}
+
 // dropPrefix forgets every entry whose key starts with prefix: a file
 // rewritten in place has stale decodes at every side.
 func (c *textureCache) dropPrefix(prefix string) {

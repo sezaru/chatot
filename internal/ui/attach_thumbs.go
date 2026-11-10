@@ -226,10 +226,32 @@ func gdkpixbufAtScale(path string, side int) (*gdkpixbuf.Pixbuf, error) {
 
 // fitSide is w×h scaled to fit a side×side box, keeping the aspect ratio
 // and at least a pixel on each side.
-func fitSide(w, h, side int) (int, int) {
+func fitSide(w, h, side int) (int, int) { return scaleSides(w, h, side, math.Min) }
+
+// coverSide is w×h scaled to just cover a side×side box, likewise.
+func coverSide(w, h, side int) (int, int) { return scaleSides(w, h, side, math.Max) }
+
+// scaleSides scales w×h by the ratio pick chooses of the two that bring
+// each side to side px.
+func scaleSides(w, h, side int, pick func(a, b float64) float64) (int, int) {
 	if w <= 0 || h <= 0 {
 		return side, side
 	}
-	scale := math.Min(float64(side)/float64(w), float64(side)/float64(h))
+	scale := pick(float64(side)/float64(w), float64(side)/float64(h))
 	return max(1, int(math.Round(float64(w)*scale))), max(1, int(math.Round(float64(h)*scale)))
+}
+
+// smallPixbufFromBytes decodes data and, when it is larger, scales it down
+// to just cover a side×side square, so a small tile does not keep a
+// full-size preview in memory.
+func smallPixbufFromBytes(data []byte, side int) (*gdkpixbuf.Pixbuf, error) {
+	pb, err := pixbufFromBytes(data)
+	if err != nil {
+		return nil, err
+	}
+	w, h := coverSide(pb.Width(), pb.Height(), side)
+	if w >= pb.Width() || h >= pb.Height() {
+		return pb, nil
+	}
+	return pb.ScaleSimple(w, h, gdkpixbuf.InterpBilinear), nil
 }

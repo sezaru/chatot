@@ -33,6 +33,12 @@ const (
 	linkThumbSide = 64
 )
 
+// foldThumbDecode is the side a downloaded picture is decoded to fit for
+// the folded square: three device pixels per point, so that a portrait or
+// landscape picture, fitted by its long side, still covers the square at
+// two.
+const foldThumbDecode = foldThumbSide * 3
+
 // foldableMedia reports whether mv can fold: the pictures and clips that
 // take a bubble's height. Stickers are small already, and voice notes and
 // documents are one line anyway.
@@ -159,8 +165,9 @@ func buildCollapsedRow(thumb gtk.Widgetter, title, meta string, expand func()) g
 }
 
 // mediaFoldThumb is the folded line's square: the downloaded picture
-// itself (decoded at the inline photo's size, so unfolding finds it
-// memoised), else the sender's embedded preview, else the kind's glyph.
+// itself, else the sender's embedded preview, else the kind's glyph. Each
+// is decoded at the square's size, not the bubble's: a folded picture
+// keeps only that much in memory.
 func mediaFoldThumb(mv mediaView, msg client.Message) gtk.Widgetter {
 	frame := gtk.NewOverlay()
 	frame.AddCSSClass("chatot-media-fold-thumb")
@@ -176,13 +183,13 @@ func mediaFoldThumb(mv mediaView, msg client.Message) gtk.Widgetter {
 		p.SetCanShrink(true)
 		p.SetContentFit(gtk.ContentFitCover)
 		frame.AddOverlay(p)
-		loadPictureAsync(mv.LocalPath, inlinePhotoSide*2, func(t gdk.Paintabler) { p.SetPaintable(t) })
+		loadPictureAsync(mv.LocalPath, foldThumbDecode, func(t gdk.Paintabler) { p.SetPaintable(t) })
 		return frame
 	}
 	// A downloaded clip's view drops the embedded preview (the tile grabs
 	// a frame from the file instead); the message still carries it.
 	if msg.Attachment != nil && len(msg.Attachment.Thumbnail) > 0 {
-		if pb, err := pixbufFromBytes(msg.Attachment.Thumbnail); err == nil {
+		if pb, err := smallPixbufFromBytes(msg.Attachment.Thumbnail, foldThumbSide*2); err == nil {
 			frame.AddOverlay(coverThumb(pb, foldThumbSide, foldThumbSide, 0, false))
 			return frame
 		}
@@ -291,13 +298,32 @@ func (cv *ConversationView) foldMedia(msgID string, folded bool) {
 		cv.mediaFolds = map[string]client.MediaFold{}
 	}
 	cv.mediaFolds[msgID] = fold
-	cv.refillRow(cv.positionOf(msgID))
+	pos := cv.positionOf(msgID)
+	if folded {
+		cv.forgetPictures(pos)
+	}
+	cv.refillRow(pos)
 	jid := cv.jid
 	go func() {
 		if err := cv.c.SetMessageFold(jid, msgID, fold); err != nil {
 			log.Printf("chatot: save fold of %s: %v", msgID, err)
 		}
 	}()
+}
+
+// forgetPictures drops the bubble-size decodes of the pictures in the
+// message at pos, or in its album: once folded, only the small square is
+// on screen, and the large textures would otherwise sit in the cache.
+func (cv *ConversationView) forgetPictures(pos int) {
+	if pos < 0 || pos >= len(cv.msgs) {
+		return
+	}
+	start, end := cv.albumSpan(pos)
+	for _, m := range cv.msgs[start : end+1] {
+		if a := m.Attachment; a != nil && a.LocalPath != "" {
+			pictureTextures.drop(pictureKey(a.LocalPath, inlinePhotoSide*2))
+		}
+	}
 }
 
 // RefillRows re-renders every row on screen, for a preference that changes
@@ -326,7 +352,7 @@ func buildCompactLinkCard(v linkView) gtk.Widgetter {
 	card.SetHAlign(gtk.AlignStart)
 
 	if len(v.Thumbnail) > 0 {
-		if pixbuf, err := pixbufFromBytes(v.Thumbnail); err == nil {
+		if pixbuf, err := smallPixbufFromBytes(v.Thumbnail, linkThumbSide*2); err == nil {
 			thumb := coverThumb(pixbuf, linkThumbSide, linkThumbSide, 0, false)
 			thumb.SetVAlign(gtk.AlignStart)
 			card.Append(thumb)

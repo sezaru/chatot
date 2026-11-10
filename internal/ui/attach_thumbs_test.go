@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"bytes"
 	"image"
 	"image/color"
 	"image/gif"
+	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
@@ -83,5 +85,38 @@ func TestImageThumbnailOfLargeGIF(t *testing.T) {
 	}
 	if pb.Width() != 388 || pb.Height() != 512 {
 		t.Errorf("thumbnail is %dx%d, want 388x512", pb.Width(), pb.Height())
+	}
+}
+
+func TestCoverSide(t *testing.T) {
+	cases := []struct{ w, h, side, ww, wh int }{
+		{1080, 1424, 80, 80, 105},
+		{1424, 1080, 80, 105, 80},
+		{100, 100, 80, 80, 80},
+	}
+	for _, c := range cases {
+		if w, h := coverSide(c.w, c.h, c.side); w != c.ww || h != c.wh {
+			t.Errorf("coverSide(%d, %d, %d) = %dx%d, want %dx%d", c.w, c.h, c.side, w, h, c.ww, c.wh)
+		}
+	}
+}
+
+func TestSmallPixbufFromBytes(t *testing.T) {
+	cases := []struct{ w, h, ww, wh int }{
+		{400, 200, 160, 80},
+		{50, 50, 50, 50},
+	}
+	for _, c := range cases {
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, c.w, c.h))); err != nil {
+			t.Fatal(err)
+		}
+		pb, err := smallPixbufFromBytes(buf.Bytes(), 80)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pb.Width() != c.ww || pb.Height() != c.wh {
+			t.Errorf("%dx%d shrank to %dx%d, want %dx%d", c.w, c.h, pb.Width(), pb.Height(), c.ww, c.wh)
+		}
 	}
 }
