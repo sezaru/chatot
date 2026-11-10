@@ -83,6 +83,14 @@
   </recommends>
 
   <releases>
+    <release version="0.18.8-beta" date="2026-11-09">
+      <description>
+        <p>A reply to a photo or video shows a small thumbnail of it instead of the picture at full size.</p>
+        <p>A GIF file is sent as an animated GIF, as WhatsApp sends it, and GIFs play in the viewer.</p>
+        <p>The viewer downloads the photo or video it moves to without a click.</p>
+        <p>A collapsed photo, video or link preview keeps only its small thumbnail in memory.</p>
+      </description>
+    </release>
     <release version="0.18.7-beta" date="2026-11-08">
       <description>
         <p>A message that failed to send can be deleted from its menu.</p>
