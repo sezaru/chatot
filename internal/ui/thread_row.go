@@ -4,8 +4,8 @@ import (
 	"chatot/internal/client"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
-	"github.com/diamondburned/gotk4/pkg/gdk/v4"
-	"github.com/diamondburned/gotk4/pkg/glib/v2"
+	"github.com/diamondburned/gotk4/pkg/cairo"
+	"github.com/diamondburned/gotk4/pkg/gdkpixbuf/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 )
@@ -55,7 +55,7 @@ type threadRow struct {
 	// preview at the quote's end.
 	quoteName  *gtk.Label
 	quoteText  *gtk.Label
-	quoteThumb *gtk.Picture
+	quoteThumb *quoteThumb
 	content    gtk.Widgetter
 	body       *gtk.Label
 	// bodyHost is the clamp the body sits in; it is the bubble's child, so
@@ -911,29 +911,45 @@ func (hb *hoverButtons) setVisible(on bool) {
 // shows at its end, about the height of the quote's two lines.
 const quoteThumbSide = 40
 
-func newQuoteThumb() *gtk.Picture {
-	pic := gtk.NewPicture()
-	pic.AddCSSClass("chatot-quote-thumb")
-	pic.SetContentFit(gtk.ContentFitCover)
-	pic.SetCanShrink(true)
-	pic.SetSizeRequest(quoteThumbSide, quoteThumbSide)
-	pic.SetHAlign(gtk.AlignEnd)
-	pic.SetVAlign(gtk.AlignCenter)
-	pic.SetOverflow(gtk.OverflowHidden)
-	pic.SetVisible(false)
-	return pic
+// quoteThumbRadius is the preview's corner radius.
+const quoteThumbRadius = 4
+
+// quoteThumb is that preview. It is drawn rather than a GtkPicture, whose
+// natural size is its image's: a quote of a message with a large embedded
+// thumbnail laid the picture out at full size and pushed the quote's text
+// aside.
+type quoteThumb struct {
+	*gtk.DrawingArea
+	pixbuf *gdkpixbuf.Pixbuf
 }
 
-// setQuoteThumb shows thumb in pic, or hides pic when there is none or it
+func newQuoteThumb() *quoteThumb {
+	area := gtk.NewDrawingArea()
+	area.AddCSSClass("chatot-quote-thumb")
+	area.SetContentWidth(quoteThumbSide)
+	area.SetContentHeight(quoteThumbSide)
+	area.SetSizeRequest(quoteThumbSide, quoteThumbSide)
+	area.SetHAlign(gtk.AlignEnd)
+	area.SetVAlign(gtk.AlignCenter)
+	area.SetVisible(false)
+	t := &quoteThumb{DrawingArea: area}
+	area.SetDrawFunc(func(_ *gtk.DrawingArea, cr *cairo.Context, w, h int) {
+		if t.pixbuf != nil {
+			paintCover(cr, t.pixbuf, w, h, quoteThumbRadius, false)
+		}
+	})
+	return t
+}
+
+// setQuoteThumb shows thumb in t, or hides t when there is none or it
 // does not decode.
-func setQuoteThumb(pic *gtk.Picture, thumb []byte) {
+func setQuoteThumb(t *quoteThumb, thumb []byte) {
+	t.pixbuf = nil
 	if len(thumb) > 0 {
-		if tex, err := gdk.NewTextureFromBytes(glib.NewBytesWithGo(thumb)); err == nil {
-			pic.SetPaintable(tex)
-			pic.SetVisible(true)
-			return
+		if pb, err := pixbufFromBytes(thumb); err == nil {
+			t.pixbuf = pb
 		}
 	}
-	pic.SetPaintable(nil)
-	pic.SetVisible(false)
+	t.SetVisible(t.pixbuf != nil)
+	t.QueueDraw()
 }

@@ -132,26 +132,32 @@ func coverThumb(pixbuf *gdkpixbuf.Pixbuf, w, h int, radius float64, alignTop boo
 	area.SetContentWidth(w)
 	area.SetContentHeight(h)
 	area.SetSizeRequest(w, h)
-	pw, ph := float64(pixbuf.Width()), float64(pixbuf.Height())
 	area.SetDrawFunc(func(_ *gtk.DrawingArea, cr *cairo.Context, width, height int) {
-		if pw <= 0 || ph <= 0 {
-			return
-		}
-		fw, fh := float64(width), float64(height)
-		roundedRectPath(cr, 0, 0, fw, fh, radius)
-		cr.Clip()
-		scale := math.Max(fw/pw, fh/ph)
-		dx := (fw - pw*scale) / 2
-		dy := (fh - ph*scale) / 2
-		if alignTop {
-			dy = 0
-		}
-		cr.Translate(dx, dy)
-		cr.Scale(scale, scale)
-		gdk.CairoSetSourcePixbuf(cr, pixbuf, 0, 0)
-		cr.Paint()
+		paintCover(cr, pixbuf, width, height, radius, alignTop)
 	})
 	return area
+}
+
+// paintCover paints pixbuf scaled to cover a width×height box, clipped to
+// radius-px rounded corners; alignTop as for coverThumb.
+func paintCover(cr *cairo.Context, pixbuf *gdkpixbuf.Pixbuf, width, height int, radius float64, alignTop bool) {
+	pw, ph := float64(pixbuf.Width()), float64(pixbuf.Height())
+	if pw <= 0 || ph <= 0 {
+		return
+	}
+	fw, fh := float64(width), float64(height)
+	roundedRectPath(cr, 0, 0, fw, fh, radius)
+	cr.Clip()
+	scale := math.Max(fw/pw, fh/ph)
+	dx := (fw - pw*scale) / 2
+	dy := (fh - ph*scale) / 2
+	if alignTop {
+		dy = 0
+	}
+	cr.Translate(dx, dy)
+	cr.Scale(scale, scale)
+	gdk.CairoSetSourcePixbuf(cr, pixbuf, 0, 0)
+	cr.Paint()
 }
 
 // roundedRectPath traces a rounded rectangle for a subsequent clip or fill.

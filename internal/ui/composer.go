@@ -389,7 +389,7 @@ type Composer struct {
 	quoteBar   *gtk.Box
 	quoteLabel *gtk.Label
 	quoteName  *gtk.Label
-	quoteThumb *gtk.Picture
+	quoteThumb *quoteThumb
 	// chatName is the open chat's display name, shown as the reply bar's
 	// author line for an incoming message.
 	chatName  string
