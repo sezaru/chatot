@@ -43,6 +43,11 @@ func viewerKind(m client.Message) string {
 	}
 	switch a.Kind {
 	case "image":
+		// A GIF sent as a picture (by a client that doesn't transcode
+		// it) still animates here.
+		if media.IsGIF(a.LocalPath, a.MimeType) {
+			return "gif"
+		}
 		return "photo"
 	case "video":
 		if a.IsGIF {
@@ -755,13 +760,24 @@ func (v *AttachmentViewer) show(i int) {
 		v.stage.SetChild(v.photoStage(m, path))
 		v.bottom.Append(v.zoomBar(false))
 	case kind == "video" || kind == "gif":
-		v.player = newMediaPlayer(path, m.Attachment.DurationSecs)
+		if media.IsGIF(path, "") {
+			// GTK cannot play a GIF file: it plays as the mp4 it is
+			// transcoded to.
+			v.player = newPendingPlayer(m.Attachment.DurationSecs)
+			v.playGIF(path)
+		} else {
+			v.player = newMediaPlayer(path, m.Attachment.DurationSecs)
+		}
 		v.player.SetLoop(kind == "gif")
 		stage := newVideoStage(v.player, m.Attachment.Thumbnail)
 		v.video = stage
 		v.posterFromFile(stage, path)
 		v.stage.SetChild(v.centred(stage, true))
 		v.bottom.Append(newTransportBar(v.player, v.fullscreen))
+		if kind == "gif" {
+			// A GIF plays on its own, as everywhere on WhatsApp.
+			v.player.Toggle()
+		}
 	case kind == "audio":
 		v.player = newPendingPlayer(m.Attachment.DurationSecs)
 		prepareSpeedable(v.player, path, m.Attachment.MimeType, func(err error) {
@@ -1027,6 +1043,26 @@ func (v *AttachmentViewer) loadPhoto(path string) {
 			v.picTex = gdk.NewTextureForPixbuf(pb)
 			v.picW, v.picH = v.picTex.Width(), v.picTex.Height()
 			v.applyZoom()
+		})
+	}()
+}
+
+// playGIF hands the stage's player the mp4 of the GIF at path once it is
+// made, unless the viewer has moved on.
+func (v *AttachmentViewer) playGIF(path string) {
+	gen, player := v.gen, v.player
+	go func() {
+		out, err := media.GIFVideo(context.Background(), playableCacheDir(), path)
+		glib.IdleAdd(func() {
+			if v.gen != gen {
+				return
+			}
+			if err != nil {
+				log.Printf("chatot: viewer gif %s: %v", filepath.Base(path), err)
+				v.stage.SetChild(v.clamped(v.brokenCard("This GIF can't be played here.", path), viewerCardW))
+				return
+			}
+			player.SetFile(out)
 		})
 	}()
 }
@@ -2009,7 +2045,7 @@ func (v *AttachmentViewer) stripTile(i int, m client.Message) (tile viewerTile, 
 				face = coverThumb(pb, viewerThumb, viewerThumb, 0, false)
 			}
 		}
-		if face == nil && kind == "photo" {
+		if face == nil && m.Attachment.Kind == "image" {
 			_, wantsFile = hasLocal(m)
 		}
 		if face == nil {

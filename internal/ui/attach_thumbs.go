@@ -97,7 +97,7 @@ func buildTrayPreview(path string) trayPreview {
 // encodes it as JPEG, for the thumbnail embedded in the message. gdk-pixbuf
 // is safe to use off the main loop, and its loaders cover SVG as well.
 func imageThumbnail(path string) ([]byte, error) {
-	pb, err := gdkpixbuf.NewPixbufFromFileAtScale(path, media.PreviewMaxSide, media.PreviewMaxSide, true)
+	pb, err := gdkpixbufAtScale(path, media.PreviewMaxSide)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +185,7 @@ func (t *AttachTray) newTrayThumb(path string, size int) gtk.Widgetter {
 	switch trayKindOf(path) {
 	case trayImage:
 		// Two device pixels per logical pixel keeps the tile crisp on HiDPI.
-		pb, err := gdkpixbuf.NewPixbufFromFileAtScale(path, size*2, size*2, true)
+		pb, err := gdkpixbufAtScale(path, size*2)
 		if err != nil {
 			return nil
 		}
@@ -207,7 +207,29 @@ func (t *AttachTray) newTrayThumb(path string, size int) gtk.Widgetter {
 }
 
 // gdkpixbufAtScale loads path scaled to fit a side×side box, keeping the
-// aspect ratio.
+// aspect ratio. A GIF whose frames add up to more than gdk-pixbuf's
+// animation limit fails to load at a size ("Not all frames of the GIF
+// image were loaded") while a plain load still yields its first frame, so
+// that is the fallback, scaled here.
 func gdkpixbufAtScale(path string, side int) (*gdkpixbuf.Pixbuf, error) {
-	return gdkpixbuf.NewPixbufFromFileAtScale(path, side, side, true)
+	pb, err := gdkpixbuf.NewPixbufFromFileAtScale(path, side, side, true)
+	if err == nil {
+		return pb, nil
+	}
+	full, ferr := gdkpixbuf.NewPixbufFromFile(path)
+	if ferr != nil {
+		return nil, err
+	}
+	w, h := fitSide(full.Width(), full.Height(), side)
+	return full.ScaleSimple(w, h, gdkpixbuf.InterpBilinear), nil
+}
+
+// fitSide is w×h scaled to fit a side×side box, keeping the aspect ratio
+// and at least a pixel on each side.
+func fitSide(w, h, side int) (int, int) {
+	if w <= 0 || h <= 0 {
+		return side, side
+	}
+	scale := math.Min(float64(side)/float64(w), float64(side)/float64(h))
+	return max(1, int(math.Round(float64(w)*scale))), max(1, int(math.Round(float64(h)*scale)))
 }

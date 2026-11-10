@@ -22,6 +22,7 @@ import (
 	"chatot/internal/audio"
 	"chatot/internal/client"
 	"chatot/internal/geo"
+	"chatot/internal/media"
 )
 
 // reactEmojis is the fixed quick-react set offered on every bubble.
@@ -988,11 +989,38 @@ func (c *Composer) send(msg client.Message) (string, error) {
 		}
 		return c.c.SendSticker(ctx, msg.ChatJID, path)
 	}
+	if a.IsGIF && media.IsGIF(a.LocalPath, "") {
+		return c.sendGIF(ctx, msg.ChatJID, a, msg.ReplyTo)
+	}
 	return c.c.SendMedia(ctx, msg.ChatJID, client.Attachment{
 		LocalPath: a.LocalPath, Filename: a.Filename, Caption: a.Caption,
 		Thumbnail: a.Thumbnail, DurationSecs: a.DurationSecs,
 		Width: a.Width, Height: a.Height,
 	}, msg.ReplyTo)
+}
+
+// sendGIF sends a GIF file the way WhatsApp's own apps do: transcoded to
+// an mp4 that plays looped and muted. Sent as a picture, it would arrive
+// as its first frame. Runs off the main loop.
+func (c *Composer) sendGIF(ctx context.Context, jid string, a client.Attachment, replyTo *client.MsgRef) (string, error) {
+	path, err := media.GIFVideo(ctx, playableCacheDir(), a.LocalPath)
+	if err != nil {
+		return "", err
+	}
+	if len(a.Thumbnail) == 0 {
+		if poster, err := media.VideoPoster(ctx, path); err == nil {
+			a.Thumbnail = poster
+		}
+	}
+	if info, err := media.ProbeVideo(ctx, path); err == nil {
+		a.Width, a.Height, a.DurationSecs = info.Width, info.Height, info.Seconds
+	}
+	return c.c.SendMedia(ctx, jid, client.Attachment{
+		LocalPath: path, MimeType: "video/mp4", IsGIF: true,
+		Filename: strings.TrimSuffix(a.Filename, filepath.Ext(a.Filename)) + ".mp4",
+		Caption:  a.Caption, Thumbnail: a.Thumbnail, DurationSecs: a.DurationSecs,
+		Width: a.Width, Height: a.Height,
+	}, replyTo)
 }
 
 // Resend is a failed bubble's Retry: the same content goes out again as a
@@ -1458,15 +1486,17 @@ func (c *Composer) sendTrayItem(item trayItem) {
 	// send has no business clearing it.
 	c.refreshQuoteBar()
 
-	c.dispatch(client.Message{
-		ChatJID: action.JID, FromMe: true, ReplyTo: action.ReplyTo,
-		Attachment: &client.Attachment{
-			Kind: guessAttachmentKind(action.Path), Filename: filepath.Base(action.Path),
-			LocalPath: action.Path, Caption: action.Caption,
-			Thumbnail: item.Preview.Image, DurationSecs: item.Preview.Seconds,
-			Width: item.Preview.Width, Height: item.Preview.Height,
-		},
-	})
+	att := &client.Attachment{
+		Kind: guessAttachmentKind(action.Path), Filename: filepath.Base(action.Path),
+		LocalPath: action.Path, Caption: action.Caption,
+		Thumbnail: item.Preview.Image, DurationSecs: item.Preview.Seconds,
+		Width: item.Preview.Width, Height: item.Preview.Height,
+	}
+	if media.IsGIF(action.Path, "") {
+		// It goes out as a GIF, so its bubble is one from the start.
+		att.Kind, att.IsGIF = "video", true
+	}
+	c.dispatch(client.Message{ChatJID: action.JID, FromMe: true, ReplyTo: action.ReplyTo, Attachment: att})
 }
 
 // pickSticker opens a file-choose dialog filtered to webp/images and, on a
