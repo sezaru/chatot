@@ -25,7 +25,16 @@ type Store struct {
 func Open(path string) (*Store, error) {
 	dsn := path
 	if path != ":memory:" {
-		dsn = fmt.Sprintf("file:%s?_foreign_keys=on", path)
+		// In the DSN, the driver applies these on every connection the pool
+		// opens; a PRAGMA run through db.Exec reaches one of them only.
+		// synchronous=NORMAL under WAL only fsyncs at checkpoints: a crash
+		// of the process can't lose committed writes, only a power cut can
+		// lose the tail, and a history backfill of thousands of messages
+		// costs a few fsyncs rather than one per row. Every transaction
+		// here writes, so it takes the write lock at BEGIN: a deferred one
+		// upgrading later fails at once with "database is locked" instead
+		// of waiting out the busy timeout.
+		dsn = fmt.Sprintf("file:%s?_foreign_keys=on&_journal_mode=WAL&_synchronous=NORMAL&_busy_timeout=10000&_txlock=immediate", path)
 	}
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
@@ -36,17 +45,13 @@ func Open(path string) (*Store, error) {
 		// pin the pool to one connection so the schema/data survive.
 		db.SetMaxOpenConns(1)
 	}
-	// synchronous=NORMAL under WAL only fsyncs at checkpoints; a crash of
-	// the process can't lose committed writes, only a power cut can lose
-	// the tail, and it turns a history backfill of thousands of messages
-	// from one fsync per row into a few.
-	pragmas := "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;"
 	if path == ":memory:" {
-		pragmas = "PRAGMA foreign_keys=ON;" // WAL is a no-op (and noisy) on :memory:
-	}
-	if _, err := db.Exec(pragmas); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("chatot/store: pragmas: %w", err)
+		// WAL is a no-op (and noisy) on :memory:, and its one connection
+		// takes the pragma.
+		if _, err := db.Exec("PRAGMA foreign_keys=ON;"); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("chatot/store: pragmas: %w", err)
+		}
 	}
 	if _, err := db.Exec(schemaSQL); err != nil {
 		db.Close()
