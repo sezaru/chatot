@@ -1,16 +1,21 @@
 package ui
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/gdkpixbuf/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
+
+	"chatot/internal/media"
 )
 
 // trayItem is one queued attachment: the file plus the caption typed for it.
@@ -490,7 +495,17 @@ func (t *AttachTray) newTrayPreview(path string) gtk.Widgetter {
 	p := t.previews[path]
 	switch trayKindOf(path) {
 	case trayImage:
-		pic := gtk.NewPictureForFilename(path)
+		if media.IsGIF(path, "") {
+			return t.gifStage(path, p)
+		}
+		// Decoded off the main loop, so a large picture cannot stall it, and
+		// at no more than its own size: the stage scales down, never up.
+		pic := gtk.NewPicture()
+		side := 2 * trayStageW
+		if w, h, _ := gdkpixbuf.PixbufGetFileInfo(path); w > 0 && h > 0 {
+			side = min(side, max(w, h))
+		}
+		loadPictureAsync(path, side, pic.SetPaintable)
 		return trayStage(pic)
 	case trayVideo:
 		return t.videoStage(path, p)
@@ -554,6 +569,34 @@ func (t *AttachTray) videoStage(path string, p trayPreview) gtk.Widgetter {
 	stage.AddCSSClass("chatot-tray-image")
 	stage.Append(view)
 	stage.Append(newTransportBar(player, nil))
+	return trayFit(stage, trayStageW)
+}
+
+// gifStage previews a GIF as it will be sent: the looping clip it is
+// transcoded to, playing on its own, with its first frame (the tray's
+// thumbnail) shown until the clip is ready.
+func (t *AttachTray) gifStage(path string, p trayPreview) gtk.Widgetter {
+	player := newPendingPlayer(p.Seconds)
+	player.SetLoop(true)
+	player.Toggle()
+	view := newVideoStage(player, p.Image)
+	view.SetHExpand(true)
+	view.SetVExpand(true)
+	view.ConnectUnrealize(player.Pause)
+	go func() {
+		out, err := media.GIFVideo(context.Background(), playableCacheDir(), path)
+		glib.IdleAdd(func() {
+			if err != nil {
+				log.Printf("chatot: tray gif %s: %v", filepath.Base(path), err)
+				return
+			}
+			player.SetFile(out)
+		})
+	}()
+
+	stage := gtk.NewBox(gtk.OrientationVertical, 0)
+	stage.AddCSSClass("chatot-tray-image")
+	stage.Append(view)
 	return trayFit(stage, trayStageW)
 }
 
