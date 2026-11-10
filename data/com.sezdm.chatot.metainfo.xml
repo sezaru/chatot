@@ -83,6 +83,13 @@
   </recommends>
 
   <releases>
+    <release version="0.18.9-beta" date="2026-11-10">
+      <description>
+        <p>A large GIF shows in the attachment preview, playing, and GIFs keep looping instead of stopping after one pass.</p>
+        <p>Saving messages no longer makes one write wait on another for as long as before.</p>
+        <p>If the window freezes, the log records what it was doing.</p>
+      </description>
+    </release>
     <release version="0.18.8-beta" date="2026-11-09">
       <description>
         <p>A reply to a photo or video shows a small thumbnail of it instead of the picture at full size.</p>
