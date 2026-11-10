@@ -170,7 +170,11 @@ type AttachmentViewer struct {
 	mapZoom   int
 	mapView   *mapView
 	mapLbl    *gtk.Label
-	loading   bool
+	// fetching holds the ids of the downloads in flight, so coming back to
+	// an item mid-download does not fetch it a second time; fetchUI is the
+	// shown item's download stage, which a landing download updates.
+	fetching map[string]bool
+	fetchUI  *fetchUI
 	// gen invalidates async work (downloads, page renders) from a previous
 	// item once the user has moved on.
 	gen int
@@ -709,7 +713,7 @@ func (v *AttachmentViewer) show(i int) {
 	v.picTex = nil
 	v.anchor = zoomAnchor{}
 	v.mapView = nil
-	v.loading = false
+	v.fetchUI = nil
 
 	// header
 	v.glyph.SetLabel(viewerGlyph(kind))
@@ -861,8 +865,27 @@ func (v *AttachmentViewer) clamped(w gtk.Widgetter, maxW int) gtk.Widgetter {
 
 // ---- stages -------------------------------------------------------------
 
+// fetchUI is a download stage's widgets: the ⬇ disc and its two lines.
+type fetchUI struct {
+	disc       *gtk.Button
+	title, sub *gtk.Label
+}
+
+func (f *fetchUI) busy() {
+	f.disc.SetSensitive(false)
+	f.sub.SetLabel("Downloading…")
+}
+
+func (f *fetchUI) failed() {
+	f.disc.SetSensitive(true)
+	f.disc.AddCSSClass("chatot-viewer-fetch-failed")
+	f.title.SetLabel("Download failed")
+	f.sub.SetLabel("Click to retry — the sender may need to be online")
+}
+
 // fetchStage is the not-downloaded state: a 64px ⬇ disc, the kind and
-// size, and the invitation to fetch it into this view.
+// size, and the invitation to fetch it into this view. A photo, clip or
+// GIF is fetched straight away: stepping onto one is asking to see it.
 func (v *AttachmentViewer) fetchStage(m client.Message, kind string) gtk.Widgetter {
 	col := gtk.NewBox(gtk.OrientationVertical, 13)
 	col.SetHAlign(gtk.AlignCenter)
@@ -884,44 +907,79 @@ func (v *AttachmentViewer) fetchStage(m client.Message, kind string) gtk.Widgett
 	sub.AddCSSClass("chatot-viewer-fetch-sub")
 	col.Append(sub)
 
-	disc.ConnectClicked(func() { v.download(m, col, disc, title, sub) })
+	ui := &fetchUI{disc: disc, title: title, sub: sub}
+	v.fetchUI = ui
+	disc.ConnectClicked(func() { v.download(m, ui) })
+	if v.fetching[m.ID] {
+		ui.busy()
+	} else if viewerAutoFetch(kind) {
+		v.download(m, ui)
+	}
 	return col
 }
 
-// download fetches the current attachment and re-renders the stage.
-func (v *AttachmentViewer) download(m client.Message, col *gtk.Box, disc *gtk.Button, title, sub *gtk.Label) {
-	if v.loading {
+// viewerAutoFetch reports whether the viewer downloads an item of kind as
+// soon as it shows it, rather than waiting for the ⬇.
+func viewerAutoFetch(kind string) bool {
+	switch kind {
+	case "photo", "video", "gif":
+		return true
+	}
+	return false
+}
+
+// download fetches m's attachment. The file is kept even when the viewer
+// has moved on by the time it lands: the item, its strip tile and the
+// thread learn of it, so coming back to it, or scrolling to its bubble,
+// finds it downloaded. The stage is re-rendered if m is still the one
+// shown.
+func (v *AttachmentViewer) download(m client.Message, ui *fetchUI) {
+	ui.busy()
+	if v.fetching[m.ID] {
 		return
 	}
-	v.loading = true
-	gen := v.gen
-	disc.SetSensitive(false)
-	sub.SetLabel("Downloading…")
+	if v.fetching == nil {
+		v.fetching = map[string]bool{}
+	}
+	v.fetching[m.ID] = true
 	go func() {
 		path, err := v.c.DownloadMedia(context.Background(), m.ID)
 		glib.IdleAdd(func() {
-			if v.gen != gen {
-				return
-			}
-			v.loading = false
+			delete(v.fetching, m.ID)
+			i := v.itemIndex(m)
+			shown := i >= 0 && i == v.idx
 			if err != nil {
-				disc.SetSensitive(true)
-				disc.AddCSSClass("chatot-viewer-fetch-failed")
-				title.SetLabel("Download failed")
-				sub.SetLabel("Click to retry — the sender may need to be online")
+				if shown && v.fetchUI != nil {
+					v.fetchUI.failed()
+				}
 				return
 			}
-			a := *m.Attachment
-			a.LocalPath = path
-			m.Attachment = &a
-			v.items[v.idx] = m
 			if v.onDownloaded != nil {
 				v.onDownloaded(m.ID, path)
 			}
-			v.show(v.idx)
+			if i < 0 {
+				return
+			}
+			a := *v.items[i].Attachment
+			a.LocalPath = path
+			v.items[i].Attachment = &a
+			if shown {
+				v.show(v.idx)
+			}
 			v.refreshStrip()
 		})
 	}()
+}
+
+// itemIndex is where m sits in the viewer's items, -1 once it has gone (a
+// deletion, another chat opened).
+func (v *AttachmentViewer) itemIndex(m client.Message) int {
+	for i, it := range v.items {
+		if it.ID == m.ID && it.ChatJID == m.ChatJID && it.Attachment != nil {
+			return i
+		}
+	}
+	return -1
 }
 
 // photoStage is the picture on the dark stage, fitted or zoomed (see
