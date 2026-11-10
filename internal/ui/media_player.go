@@ -247,7 +247,6 @@ func (p *mediaPlayer) attach(stream *gtk.MediaFile) {
 	p.stream = stream
 	p.pending = false
 	stream.SetMuted(p.muted)
-	stream.SetLoop(p.loop)
 	// A stream replaced by SetFile keeps its handlers; they do nothing.
 	current := func() bool { return p.stream == stream }
 	for _, prop := range []string{"timestamp", "playing", "ended", "prepared", "duration"} {
@@ -258,6 +257,18 @@ func (p *mediaPlayer) attach(stream *gtk.MediaFile) {
 		})
 	}
 	stream.NotifyProperty("ended", func() {
+		if current() && stream.Ended() && p.loop {
+			// The stream's own loop left a GIF on its last frame after one
+			// pass (GTK 4.22, GStreamer backend), so the player wraps it:
+			// the same seek and play that replays a finished clip.
+			glib.IdleAdd(func() {
+				if current() && stream.Ended() {
+					stream.Seek(0)
+					stream.Play()
+				}
+			})
+			return
+		}
 		if current() && stream.Ended() {
 			p.ended = true
 			if p.onEnded != nil {
@@ -518,13 +529,8 @@ func (p *mediaPlayer) SetMuted(muted bool) {
 // Muted reports the audio state.
 func (p *mediaPlayer) Muted() bool { return p.muted }
 
-// SetLoop makes playback wrap (GIF-style clips).
-func (p *mediaPlayer) SetLoop(loop bool) {
-	p.loop = loop
-	if p.stream != nil {
-		p.stream.SetLoop(loop)
-	}
-}
+// SetLoop makes playback wrap (GIF-style clips); see attach.
+func (p *mediaPlayer) SetLoop(loop bool) { p.loop = loop }
 
 // playableCacheDir is where MP3s GTK cannot play are transcoded to.
 func playableCacheDir() string {
