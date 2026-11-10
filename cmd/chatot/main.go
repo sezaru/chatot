@@ -976,6 +976,8 @@ func activate(app *adw.Application, c client.Client) {
 	win.Present()
 	go sendPresence(c, true)
 	chatList.PreloadCommunities()
+	// A freeze from here on logs where the main loop was stuck.
+	ui.WatchMainLoop()
 
 	// Dev/screenshot hooks: CHATOT_SHOT_CHAT=<jid> opens that chat on launch;
 	// CHATOT_SHOT_MEDIA=1 then opens its Media/Links/Docs page. Both no-op unset.
