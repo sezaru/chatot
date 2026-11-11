@@ -4325,6 +4325,15 @@ button.chatot-member-more {
 	background-color: @chatot_accent_hover;
 }
 
+.chatot-viewer-secondary {
+	min-height: 28px;
+	padding: 0 13px;
+	border-radius: 8px;
+	font-size: 12.5px;
+	font-weight: bold;
+	margin-left: 3px;
+}
+
 .chatot-viewer-stage {
 	background-color: @window_bg_color;
 }
@@ -4352,7 +4361,7 @@ button.chatot-member-more {
 	box-shadow: none;
 }
 
-.chatot-viewer-stage-dark .chatot-viewer-nav {
+.chatot-viewer-nav.chatot-viewer-nav-dark {
 	background-color: alpha(#141414, 0.6);
 	color: #ffffff;
 }

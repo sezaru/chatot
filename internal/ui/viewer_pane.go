@@ -117,6 +117,7 @@ type AttachmentViewer struct {
 	starBtn    *gtk.Button
 	infoBtn    *gtk.Button
 	primaryBtn *gtk.Button
+	saveBtn    *gtk.Button
 	menuBtn    *gtk.Button
 
 	stage    *gtk.Overlay // the current stage widget sits as its child
@@ -218,17 +219,27 @@ func NewAttachmentViewer(c client.Client, onBack func()) *AttachmentViewer {
 	v.stage.SetVExpand(true)
 	v.stage.SetHExpand(true)
 	v.stageBox.Append(v.stage)
-	main.Append(v.stageBox)
+	v.bottom = gtk.NewBox(gtk.OrientationVertical, 0)
+
+	// The ‹ › buttons ride over the stage and the bar under it together:
+	// that pair always spans the same height, while the stage alone
+	// shrinks by whatever bars (zoom, transport, caption) the item brings,
+	// which moved the buttons up and down from one item to the next.
+	stageCol := gtk.NewBox(gtk.OrientationVertical, 0)
+	stageCol.Append(v.stageBox)
+	stageCol.Append(v.bottom)
+	navLayer := gtk.NewOverlay()
+	navLayer.SetVExpand(true)
+	navLayer.SetHExpand(true)
+	navLayer.SetChild(stageCol)
+	main.Append(navLayer)
 
 	v.prevBtn = v.navButton("‹", "Previous · ←", func() { v.step(-1) })
 	v.prevBtn.SetHAlign(gtk.AlignStart)
 	v.nextBtn = v.navButton("›", "Next · →", func() { v.step(1) })
 	v.nextBtn.SetHAlign(gtk.AlignEnd)
-	v.stage.AddOverlay(v.prevBtn)
-	v.stage.AddOverlay(v.nextBtn)
-
-	v.bottom = gtk.NewBox(gtk.OrientationVertical, 0)
-	main.Append(v.bottom)
+	navLayer.AddOverlay(v.prevBtn)
+	navLayer.AddOverlay(v.nextBtn)
 
 	stripRow := gtk.NewBox(gtk.OrientationHorizontal, 7)
 	stripRow.AddCSSClass("chatot-viewer-strip")
@@ -285,6 +296,7 @@ func (v *AttachmentViewer) SetCollapsed(collapsed bool) {
 	v.replyBtn.SetVisible(!collapsed)
 	v.forwardBtn.SetVisible(!collapsed)
 	v.starBtn.SetVisible(!collapsed)
+	v.refreshSaveBtn()
 	if collapsed {
 		v.bodyRow.Remove(v.details)
 		v.body.AddOverlay(v.details)
@@ -483,6 +495,22 @@ func (v *AttachmentViewer) buildHeader() gtk.Widgetter {
 	})
 	h.Append(v.menuBtn)
 
+	// saveBtn is Save… beside a primary that is something else (Open on a
+	// document), so every downloaded file can be saved from the header.
+	v.saveBtn = gtk.NewButtonWithLabel("Save…")
+	v.saveBtn.AddCSSClass("flat")
+	v.saveBtn.AddCSSClass("chatot-viewer-secondary")
+	v.saveBtn.SetVAlign(gtk.AlignCenter)
+	v.saveBtn.SetFocusOnClick(false)
+	v.saveBtn.SetTooltipText("Save a copy · Ctrl+S")
+	v.saveBtn.SetVisible(false)
+	v.saveBtn.ConnectClicked(func() {
+		if m, ok := v.Current(); ok {
+			v.saveAs(m)
+		}
+	})
+	h.Append(v.saveBtn)
+
 	v.primaryBtn = gtk.NewButtonWithLabel("Save…")
 	v.primaryBtn.AddCSSClass("chatot-viewer-primary")
 	v.primaryBtn.SetVAlign(gtk.AlignCenter)
@@ -565,6 +593,15 @@ func (v *AttachmentViewer) onKey(keyval uint, state gdk.ModifierType) bool {
 			return false
 		}
 		v.copyCurrent()
+	case gdk.KEY_s:
+		if state&gdk.ControlMask == 0 {
+			return false
+		}
+		if m, ok := v.Current(); ok && viewerKind(m) != "location" {
+			if _, local := hasLocal(m); local {
+				v.saveAs(m)
+			}
+		}
 	case gdk.KEY_Left:
 		v.step(-1)
 	case gdk.KEY_Right:
@@ -730,8 +767,12 @@ func (v *AttachmentViewer) show(i int) {
 	dark := kind == "photo" || kind == "video" || kind == "gif"
 	if dark {
 		v.stageBox.AddCSSClass("chatot-viewer-stage-dark")
+		v.prevBtn.AddCSSClass("chatot-viewer-nav-dark")
+		v.nextBtn.AddCSSClass("chatot-viewer-nav-dark")
 	} else {
 		v.stageBox.RemoveCSSClass("chatot-viewer-stage-dark")
+		v.prevBtn.RemoveCSSClass("chatot-viewer-nav-dark")
+		v.nextBtn.RemoveCSSClass("chatot-viewer-nav-dark")
 	}
 	for _, ring := range v.navRings {
 		ring.QueueDraw()
@@ -749,6 +790,7 @@ func (v *AttachmentViewer) show(i int) {
 	default:
 		v.primaryBtn.SetLabel("Save…")
 	}
+	v.refreshSaveBtn()
 
 	removeAllChildren(v.bottom)
 	switch {
@@ -2431,8 +2473,13 @@ func (v *AttachmentViewer) menuItemsFor(m client.Message) []menuItem {
 	if path, ok := copyablePhoto(m); ok {
 		items = append(items,
 			menuItem{Icon: "📋", Label: "Copy image", Accel: "Ctrl+C", OnActivate: func() { v.copyImage(path) }},
-			menuSeparator(),
 		)
+	}
+	if _, local := hasLocal(m); local && viewerKind(m) != "location" {
+		items = append(items, menuItem{Icon: "💾", Label: "Save as…", Accel: "Ctrl+S", OnActivate: func() { v.saveAs(m) }})
+	}
+	if len(items) > 0 {
+		items = append(items, menuSeparator())
 	}
 	if v.onMenu != nil {
 		items = append(items, v.onMenu(m)...)
@@ -2514,4 +2561,18 @@ func scaledPaintable(tex *gdk.Texture, w, h float32) gdk.Paintabler {
 	snap := gtk.NewSnapshot()
 	snap.AppendScaledTexture(tex, gsk.ScalingFilterTrilinear, graphene.RectAlloc().Init(0, 0, w, h))
 	return snap.ToPaintable(graphene.NewSizeAlloc().Init(w, h))
+}
+
+// refreshSaveBtn shows the header's secondary Save… for a downloaded
+// document, whose primary button is Open. Collapsed, the header has no room
+// for it; ⋯ and Ctrl+S still save.
+func (v *AttachmentViewer) refreshSaveBtn() {
+	m, ok := v.Current()
+	if !ok || v.collapsed {
+		v.saveBtn.SetVisible(false)
+		return
+	}
+	kind := viewerKind(m)
+	_, local := hasLocal(m)
+	v.saveBtn.SetVisible(local && (kind == "pdf" || kind == "file"))
 }
