@@ -83,6 +83,13 @@
   </recommends>
 
   <releases>
+    <release version="0.18.11-beta" date="2026-11-11">
+      <description>
+        <p>Photos waiting to be sent show large, filling the window up to their own size, and typing a caption no longer lags with several files queued.</p>
+        <p>The attachment viewer's previous and next buttons stay at the same height from one file to the next.</p>
+        <p>Documents such as PDFs can be saved from the viewer: a Save button beside Open, Save as in the menu, and Ctrl+S.</p>
+      </description>
+    </release>
     <release version="0.18.10-beta" date="2026-11-11">
       <description>
         <p>A reply with a photo is as wide as the photo, and a long quoted message shows in three lines.</p>
