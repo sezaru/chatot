@@ -83,6 +83,12 @@
   </recommends>
 
   <releases>
+    <release version="0.18.10-beta" date="2026-11-11">
+      <description>
+        <p>A reply with a photo is as wide as the photo, and a long quoted message shows in three lines.</p>
+        <p>Clicking an attachment while it downloads no longer shows it more than once.</p>
+      </description>
+    </release>
     <release version="0.18.9-beta" date="2026-11-10">
       <description>
         <p>A large GIF shows in the attachment preview, playing, and GIFs keep looping instead of stopping after one pass.</p>
