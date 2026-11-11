@@ -104,6 +104,8 @@ type Whatsmeow struct {
 	syncTimer *time.Timer
 	// catchUp counts that same catch-up for the sidebar's sync banner.
 	catchUp offlineProgress
+	// downloads keeps one DownloadMedia per message in flight.
+	downloads flight
 
 	// proxyOverride, when non-empty, is the per-account proxy applied at Start
 	// in preference to the global CHATOT_PROXY.
@@ -2691,7 +2693,13 @@ func (w *Whatsmeow) RejectCall(ctx context.Context, callJID, callID string) erro
 // decodeDownloadable). Already-downloaded media (local_path set and the
 // file still present) is returned without hitting the network. On success,
 // triggers cache eviction so the cache stays under maxMediaCacheBytes.
+// Callers asking for a message already downloading wait for that download
+// rather than fetching and writing the file a second time.
 func (w *Whatsmeow) DownloadMedia(ctx context.Context, msgID string) (string, error) {
+	return w.downloads.do(ctx, msgID, func() (string, error) { return w.downloadMedia(ctx, msgID) })
+}
+
+func (w *Whatsmeow) downloadMedia(ctx context.Context, msgID string) (string, error) {
 	row, ok, err := w.store.MediaByMsgID(msgID)
 	if err != nil {
 		return "", fmt.Errorf("chatot/client: download media: lookup: %w", err)

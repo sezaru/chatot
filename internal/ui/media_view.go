@@ -38,7 +38,9 @@ type mediaView struct {
 	// onLocal, when set by the bubble, records that its own download put
 	// the file at path, so the view's message list (and the viewer opened
 	// from it) sees the attachment as downloaded rather than asking again.
-	onLocal      func(path string)
+	onLocal func(path string)
+	// downloading is set while downloadAndSwap fetches the file.
+	downloading  bool
 	IsGIF        bool
 	ViewOnce     bool
 	Viewed       bool
@@ -467,12 +469,19 @@ func withMediaOpener(widget gtk.Widgetter, mv mediaView, open func(path string))
 
 // downloadAndSwap downloads msg's media off the main loop and, on success,
 // replaces `current` in slot with the inline widget (image/video/audio) or the
-// document "Open" row; on failure it swaps in a click-to-retry state.
+// document "Open" row; on failure it swaps in a click-to-retry state. A
+// click while the download runs does nothing: each landing download would
+// otherwise add its own copy of the row.
 func downloadAndSwap(mv *mediaView, msg client.Message, c client.Client, slot *gtk.Box, current gtk.Widgetter, circle *gtk.Label, open func(path string)) {
+	if mv.downloading {
+		return
+	}
+	mv.downloading = true
 	circle.SetText("…")
 	go func() {
 		path, err := c.DownloadMedia(context.Background(), msg.ID)
 		glib.IdleAdd(func() {
+			mv.downloading = false
 			if err != nil {
 				slot.Remove(current)
 				slot.Append(buildMediaRetry(mv, msg, c, slot, open))
