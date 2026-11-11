@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.18.12-beta" date="2026-11-11">
+      <description>
+        <p>A reply to a photo quotes the photo right away instead of showing "Unsupported message" for a few seconds.</p>
+      </description>
+    </release>
     <release version="0.18.11-beta" date="2026-11-11">
       <description>
         <p>Photos waiting to be sent show large, filling the window up to their own size, and typing a caption no longer lags with several files queued.</p>
