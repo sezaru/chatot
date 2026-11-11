@@ -141,3 +141,22 @@ func TestReplyToPictureCarriesItsThumbnail(t *testing.T) {
 		t.Errorf("messageFromStore ReplyTo = %+v, want the thumbnail back", out.ReplyTo)
 	}
 }
+
+// A reply stored with the "Unsupported" quote an empty quoted copy used to
+// get comes back without it, so the quote reads the stored photo.
+func TestStoredUnsupportedQuoteIsDropped(t *testing.T) {
+	w := newIngestFixture(t)
+	chat := "1234567890@s.whatsapp.net"
+	m := Message{ID: "r", ChatJID: chat, FromJID: chat, Text: "reply", TS: 2,
+		ReplyTo: &MsgRef{ChatJID: chat, MsgID: "pic", Text: unsupportedText}}
+	must(t, w.ingestMessage(&m))
+
+	msgs, err := w.store.Messages(chat, 10)
+	must(t, err)
+	if len(msgs) != 1 {
+		t.Fatalf("stored %d messages, want 1", len(msgs))
+	}
+	if out := messageFromStore(msgs[0], ""); out.ReplyTo == nil || out.ReplyTo.Text != "" {
+		t.Errorf("messageFromStore ReplyTo = %+v, want no text", out.ReplyTo)
+	}
+}

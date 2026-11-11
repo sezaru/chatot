@@ -220,14 +220,18 @@ var noiseFields = map[string]bool{
 // hasPayload reports whether m carries anything beyond protocol noise, i.e.
 // something a person would expect to see a bubble for. Used after the
 // typed extraction failed to decide between "drop silently" and "show an
-// Unsupported placeholder".
+// Unsupported placeholder". An empty conversation is nothing either: it is
+// the stub copy of a quoted photo some replies carry.
 func hasPayload(m *waProto.Message) bool {
 	if m == nil {
 		return false
 	}
 	found := false
-	m.ProtoReflect().Range(func(fd protoreflect.FieldDescriptor, _ protoreflect.Value) bool {
+	m.ProtoReflect().Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
 		if noiseFields[string(fd.Name())] {
+			return true
+		}
+		if fd.Kind() == protoreflect.StringKind && v.String() == "" {
 			return true
 		}
 		found = true

@@ -246,6 +246,12 @@ func messageFromStore(m store.Message, selfJID string) Message {
 	}
 	if m.ReplyToMsgID != "" {
 		out.ReplyTo = &MsgRef{ChatJID: m.ChatJID, MsgID: m.ReplyToMsgID, Text: m.ReplyToText, FromJID: m.ReplyToFrom, Thumbnail: m.ReplyToThumb}
+		if out.ReplyTo.Text == unsupportedText {
+			// A reply stored while an empty quoted copy still counted as
+			// a payload says "Unsupported" for a photo; "" has the quote
+			// read the stored message instead.
+			out.ReplyTo.Text = ""
+		}
 
 	}
 	if m.Attachment != nil {

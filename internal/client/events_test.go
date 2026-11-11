@@ -1138,6 +1138,8 @@ func TestQuotedPreviewLabelsMediaAndRichKinds(t *testing.T) {
 		{"image", &waProto.Message{ImageMessage: &waE2E.ImageMessage{Caption: proto.String("sunset")}}, "📷 sunset"},
 		{"voice", &waProto.Message{AudioMessage: &waE2E.AudioMessage{Seconds: proto.Uint32(6)}}, "🎤 0:06"},
 		{"sticker", &waProto.Message{StickerMessage: &waE2E.StickerMessage{}}, "🙂 Sticker"},
+		// The stub some replies to a photo carry: the store has the photo.
+		{"empty", &waProto.Message{Conversation: proto.String("")}, ""},
 	}
 	for _, tc := range cases {
 		if got, _ := quotedPreview("1@s.whatsapp.net", tc.msg); got != tc.want {
