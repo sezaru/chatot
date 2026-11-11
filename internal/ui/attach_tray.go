@@ -110,9 +110,12 @@ type AttachTray struct {
 	// clipboard's files or picture could not be read.
 	pasteAsText bool
 	// previews caches the helper results per path for the tray's lifetime,
-	// so redraws (every caption keystroke rebuilds the strip) never rerun
-	// ffmpeg or pdftoppm. An entry with Done=false is still being built.
+	// so redraws never rerun ffmpeg or pdftoppm or decode a picture again.
+	// An entry with Done=false is still being built.
 	previews map[string]trayPreview
+	// markers are the strip tiles' 💬, by item, so typing a caption only
+	// shows or hides one instead of rebuilding the strip.
+	markers []*gtk.Label
 }
 
 // NewAttachTray builds the tray hidden. onSend receives the queued items when
@@ -170,10 +173,14 @@ func NewAttachTray(onSend func([]trayItem), onAddReq func()) *AttachTray {
 	t.caption.SetHExpand(true)
 	// Store the caption as it is typed rather than only on send, so switching
 	// thumbnails doesn't silently drop what was written for the current one.
+	// Only the tile's 💬 follows: rebuilding the strip on every keystroke
+	// made typing lag behind with a few pictures queued.
 	t.caption.ConnectChanged(func() {
 		if t.selected >= 0 && t.selected < len(t.items) {
 			t.items[t.selected].Caption = t.caption.Text()
-			t.refreshStrip()
+			if t.selected < len(t.markers) {
+				t.markers[t.selected].SetVisible(t.items[t.selected].Caption != "")
+			}
 		}
 	})
 	t.caption.ConnectActivate(t.send)
@@ -348,6 +355,14 @@ func (t *AttachTray) discard() {
 
 // Close discards every queued item and hides the tray.
 func (t *AttachTray) Close() {
+	// The stage's large decodes go with the tray rather than crowding
+	// avatars and thread photos out of the shared cache.
+	for _, item := range t.items {
+		if trayKindOf(item.Path) != trayImage {
+			continue
+		}
+		pictureTextures.drop(pictureKey(item.Path, trayPictureSide(item.Path)))
+	}
 	t.items = nil
 	t.selected = 0
 	t.previews = map[string]trayPreview{}
@@ -369,9 +384,15 @@ func (t *AttachTray) ensurePreview(path string) {
 				return // the tray was closed meanwhile
 			}
 			t.previews[path] = p
-			if t.Visible() {
-				t.refresh()
+			if !t.Visible() {
+				return
 			}
+			// Only what shows this file is redrawn: the caption being
+			// typed is left alone.
+			if t.selected >= 0 && t.selected < len(t.items) && t.items[t.selected].Path == path {
+				t.refreshStage()
+			}
+			t.refreshStrip()
 		})
 	}()
 }
@@ -450,17 +471,65 @@ func (t *AttachTray) refresh() {
 		t.caption.SetPlaceholderText("Audio files can't have a caption")
 	}
 
-	removeAllChildren(t.preview)
-	t.preview.Append(t.newTrayPreview(item.Path))
+	t.refreshStage()
 	t.refreshStrip()
 }
 
+// refreshStage rebuilds the big preview for the selected item.
+func (t *AttachTray) refreshStage() {
+	removeAllChildren(t.preview)
+	t.preview.Append(t.newTrayPreview(t.items[t.selected].Path))
+}
+
 // trayStageW is the mockup's preview slot: a 4:3 card at most 460px wide.
-// trayCardW is the narrower "No preview available" card.
+// Media larger than that gets a stage at its own shape and up to its own
+// size instead (see trayFitMedia). trayCardW is the narrower "No preview
+// available" card; trayStagePad is the stage card's padding, both sides.
 const (
-	trayStageW = 460
-	trayCardW  = 360
+	trayStageW   = 460
+	trayCardW    = 360
+	trayStagePad = 16
 )
+
+// trayPictureMax is the longest side a queued picture is decoded at for
+// the stage: enough to fill a large window, without holding a camera
+// photo's full resolution in memory.
+const trayPictureMax = 1600
+
+// trayPictureSide is the side the stage decodes the picture at path to:
+// its own size up to trayPictureMax, so the stage never upscales.
+func trayPictureSide(path string) int {
+	if w, h, _ := gdkpixbuf.PixbufGetFileInfo(path); w > 0 && h > 0 {
+		return min(trayPictureMax, max(w, h))
+	}
+	return trayPictureMax
+}
+
+// trayFitMedia lays a stage out at the media's own aspect ratio, as large
+// as the pane allows but never past the media's own size, so a photo fills
+// a big window rather than the mockup's 460px slot. Media no bigger than
+// that slot, or of unknown size, keeps the slot.
+func trayFitMedia(w gtk.Widgetter, mediaW, mediaH int) gtk.Widgetter {
+	if mediaW <= 0 || mediaH <= 0 || max(mediaW, mediaH) <= trayStageW {
+		return trayFit(w, trayStageW)
+	}
+	if side := max(mediaW, mediaH); side > trayPictureMax {
+		mediaW, mediaH = fitSide(mediaW, mediaH, trayPictureMax)
+	}
+	frame := gtk.NewAspectFrame(0.5, 0.5, float32(mediaW)/float32(mediaH), false)
+	frame.SetChild(w)
+	frame.SetHExpand(true)
+	frame.SetVExpand(true)
+	tall := adw.NewClamp()
+	tall.SetOrientation(gtk.OrientationVertical)
+	tall.SetMaximumSize(mediaH + trayStagePad)
+	tall.SetTighteningThreshold(mediaH + trayStagePad)
+	tall.SetChild(frame)
+	tall.SetVExpand(true)
+	wide := trayClamp(tall, mediaW+trayStagePad)
+	gtk.BaseWidget(wide).SetVExpand(true)
+	return wide
+}
 
 // trayFit lays w out the way the mockup's slot does (max-width:min(100%,
 // Npx) with a 4:3 aspect ratio): as wide as the pane allows up to maxW,
@@ -501,12 +570,9 @@ func (t *AttachTray) newTrayPreview(path string) gtk.Widgetter {
 		// Decoded off the main loop, so a large picture cannot stall it, and
 		// at no more than its own size: the stage scales down, never up.
 		pic := gtk.NewPicture()
-		side := 2 * trayStageW
-		if w, h, _ := gdkpixbuf.PixbufGetFileInfo(path); w > 0 && h > 0 {
-			side = min(side, max(w, h))
-		}
-		loadPictureAsync(path, side, pic.SetPaintable)
-		return trayStage(pic)
+		loadPictureAsync(path, trayPictureSide(path), pic.SetPaintable)
+		w, h, _ := gdkpixbuf.PixbufGetFileInfo(path)
+		return trayStage(pic, w, h)
 	case trayVideo:
 		return t.videoStage(path, p)
 	case trayAudio:
@@ -515,17 +581,17 @@ func (t *AttachTray) newTrayPreview(path string) gtk.Widgetter {
 		if len(p.Image) > 0 {
 			if pixbuf, err := pixbufFromBytes(p.Image); err == nil {
 				pic := gtk.NewPictureForPaintable(gdk.NewTextureForPixbuf(pixbuf))
-				return trayStage(pic)
+				return trayStage(pic, pixbuf.Width(), pixbuf.Height())
 			}
 		}
 	}
 	return trayNoPreview(path, p)
 }
 
-// trayStage wraps a picture in the tinted 4:3 card the mockup's stage is,
+// trayStage wraps a w×h picture in the tinted card the mockup's stage is,
 // so a small picture reads as a preview rather than as a stray icon
-// floating in the middle of an empty pane.
-func trayStage(pic *gtk.Picture) gtk.Widgetter {
+// floating in the middle of an empty pane; see trayFitMedia for its size.
+func trayStage(pic *gtk.Picture, w, h int) gtk.Widgetter {
 	pic.SetCanShrink(true)
 	// ScaleDown, not Contain: Contain happily blows a 32px icon up to the
 	// full 460px stage. The preview should never upscale past 1:1.
@@ -536,7 +602,7 @@ func trayStage(pic *gtk.Picture) gtk.Widgetter {
 	stage := gtk.NewBox(gtk.OrientationVertical, 0)
 	stage.AddCSSClass("chatot-tray-image")
 	stage.Append(pic)
-	return trayFit(stage, trayStageW)
+	return trayFitMedia(stage, w, h)
 }
 
 // videoStage is a GtkVideo in the stage card with the clip's poster frame
@@ -569,7 +635,7 @@ func (t *AttachTray) videoStage(path string, p trayPreview) gtk.Widgetter {
 	stage.AddCSSClass("chatot-tray-image")
 	stage.Append(view)
 	stage.Append(newTransportBar(player, nil))
-	return trayFit(stage, trayStageW)
+	return trayFitMedia(stage, p.Width, p.Height)
 }
 
 // gifStage previews a GIF as it will be sent: the looping clip it is
@@ -597,7 +663,8 @@ func (t *AttachTray) gifStage(path string, p trayPreview) gtk.Widgetter {
 	stage := gtk.NewBox(gtk.OrientationVertical, 0)
 	stage.AddCSSClass("chatot-tray-image")
 	stage.Append(view)
-	return trayFit(stage, trayStageW)
+	w, h, _ := gdkpixbuf.PixbufGetFileInfo(path)
+	return trayFitMedia(stage, w, h)
 }
 
 // audioStage is the audio card: the 🎵 glyph, the file's type, size and
@@ -674,6 +741,7 @@ func trayMetaWithDuration(path string, seconds int) string {
 // its own ✕, then the dashed ＋.
 func (t *AttachTray) refreshStrip() {
 	removeAllChildren(t.strip)
+	t.markers = t.markers[:0]
 	for i, item := range t.items {
 		idx := i
 		tile := gtk.NewButton()
@@ -708,13 +776,13 @@ func (t *AttachTray) refreshStrip() {
 		del.ConnectClicked(func() { t.remove(idx) })
 		stack.AddOverlay(del)
 
-		if item.Caption != "" {
-			marker := gtk.NewLabel("💬")
-			marker.AddCSSClass("chatot-tray-captioned")
-			marker.SetHAlign(gtk.AlignStart)
-			marker.SetVAlign(gtk.AlignEnd)
-			stack.AddOverlay(marker)
-		}
+		marker := gtk.NewLabel("💬")
+		marker.AddCSSClass("chatot-tray-captioned")
+		marker.SetHAlign(gtk.AlignStart)
+		marker.SetVAlign(gtk.AlignEnd)
+		marker.SetVisible(item.Caption != "")
+		stack.AddOverlay(marker)
+		t.markers = append(t.markers, marker)
 		t.strip.Append(stack)
 	}
 

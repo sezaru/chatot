@@ -53,6 +53,9 @@ type trayPreview struct {
 	Width   int
 	Height  int
 	Done    bool // the helpers have run, whether or not they produced anything
+	// Thumb is the strip tile's face, decoded here, off the main loop: a
+	// tile decoding its picture itself stalled the tray on every redraw.
+	Thumb *gdkpixbuf.Pixbuf
 }
 
 // buildTrayPreview runs the helpers for path off the main loop. It never
@@ -89,6 +92,13 @@ func buildTrayPreview(path string) trayPreview {
 		} else if err != media.ErrNoRenderer {
 			log.Printf("chatot: pdf page for %s: %v", filepath.Base(path), err)
 		}
+	}
+	// Two device pixels per logical pixel keeps the tile crisp on HiDPI.
+	side := trayTileSize * 2
+	if trayKindOf(path) == trayImage {
+		p.Thumb, _ = gdkpixbufAtScale(path, side)
+	} else if len(p.Image) > 0 {
+		p.Thumb, _ = smallPixbufFromBytes(p.Image, side)
 	}
 	return p
 }
@@ -177,29 +187,13 @@ func roundedRectPath(cr *cairo.Context, x, y, w, h, r float64) {
 // thumbRadius is the strip tile's corner radius, per the mockup.
 const thumbRadius = 8
 
-// newTrayThumb builds the strip tile's picture for path: the file itself
-// for an image, the poster/page for a video or PDF once the helpers have
-// produced one. nil means "use the glyph".
+// newTrayThumb builds the strip tile's picture for path from the face the
+// helpers decoded: the picture itself, or a video's poster or a PDF's page.
+// nil, until they have run or when there is none, means "use the glyph".
 func (t *AttachTray) newTrayThumb(path string, size int) gtk.Widgetter {
-	var pixbuf *gdkpixbuf.Pixbuf
-	switch trayKindOf(path) {
-	case trayImage:
-		// Two device pixels per logical pixel keeps the tile crisp on HiDPI.
-		pb, err := gdkpixbufAtScale(path, size*2)
-		if err != nil {
-			return nil
-		}
-		pixbuf = pb
-	default:
-		p, ok := t.previews[path]
-		if !ok || len(p.Image) == 0 {
-			return nil
-		}
-		pb, err := pixbufFromBytes(p.Image)
-		if err != nil {
-			return nil
-		}
-		pixbuf = pb
+	pixbuf := t.previews[path].Thumb
+	if pixbuf == nil {
+		return nil
 	}
 	thumb := coverThumb(pixbuf, size, size, thumbRadius, trayKindOf(path) == trayPDF)
 	thumb.AddCSSClass("chatot-tray-thumb")
