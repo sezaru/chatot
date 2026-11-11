@@ -56,8 +56,11 @@ type threadRow struct {
 	quoteName  *gtk.Label
 	quoteText  *gtk.Label
 	quoteThumb *quoteThumb
-	content    gtk.Widgetter
-	body       *gtk.Label
+	// quoteHost is the clamp the quote sits in, the bubble's child: it
+	// holds the quote to the width of a picture or card under it.
+	quoteHost *adw.Clamp
+	content   gtk.Widgetter
+	body      *gtk.Label
 	// bodyHost is the clamp the body sits in; it is the bubble's child, so
 	// it is what the read-more, the choices and visibility act on.
 	bodyHost  *adw.Clamp
@@ -182,6 +185,10 @@ func (r *threadRow) buildBubbleInterior() {
 	r.quoteText.SetXAlign(0)
 	r.quoteText.SetWrap(true)
 	r.quoteText.SetWrapMode(pango.WrapWordChar)
+	// A long quoted message is a reminder of what is answered, not a
+	// copy of it: three lines, as WhatsApp shows.
+	r.quoteText.SetLines(3)
+	r.quoteText.SetEllipsize(pango.EllipsizeEnd)
 	quoteLines := gtk.NewBox(gtk.OrientationVertical, 1)
 	quoteLines.SetHExpand(true)
 	quoteLines.SetVAlign(gtk.AlignCenter)
@@ -200,6 +207,11 @@ func (r *threadRow) buildBubbleInterior() {
 		}
 	})
 	r.quote.AddController(click)
+	r.quoteHost = adw.NewClamp()
+	r.quoteHost.SetUnit(adw.LengthUnitPx)
+	r.quoteHost.SetMaximumSize(chatMaxWidth)
+	r.quoteHost.SetTighteningThreshold(chatMaxWidth)
+	r.quoteHost.SetChild(r.quote)
 
 	// The name line and the avatar beside a group bubble open the sender's
 	// card, as tapping a member does on the phone.
@@ -263,7 +275,7 @@ func (r *threadRow) buildBubbleInterior() {
 
 	r.bubble.Append(r.author)
 	r.bubble.Append(r.fwd)
-	r.bubble.Append(r.quote)
+	r.bubble.Append(r.quoteHost)
 	r.bubble.Append(r.bodyHost)
 	r.bubble.Append(r.footer)
 }
@@ -288,7 +300,10 @@ func (r *threadRow) fillBubble(msg client.Message, vm bubbleView, h bubbleHooks)
 	}
 	r.fwd.SetVisible(vm.Forwarded)
 
-	r.quote.SetVisible(vm.HasQuote)
+	r.quoteHost.SetVisible(vm.HasQuote)
+	wide := contentWidthCap(vm)
+	r.quoteHost.SetMaximumSize(wide)
+	r.quoteHost.SetTighteningThreshold(wide)
 	if !vm.HasQuote {
 		r.quoteName.SetLabel("")
 		r.quoteName.SetVisible(false)
@@ -324,7 +339,7 @@ func (r *threadRow) setContent(w gtk.Widgetter) {
 		r.content = nil
 	}
 	if w != nil {
-		r.bubble.InsertChildAfter(w, r.quote)
+		r.bubble.InsertChildAfter(w, r.quoteHost)
 		r.content = w
 	}
 }
@@ -434,6 +449,21 @@ func (r *threadRow) fillContent(msg client.Message, vm bubbleView, h bubbleHooks
 	}
 }
 
+// contentWidthCap is how wide the quote and the caption may be: the width
+// of the picture, clip, album or link card in the bubble, so they wrap to
+// it rather than widen the bubble past it, else chatMaxWidth.
+func contentWidthCap(vm bubbleView) int {
+	switch {
+	case vm.Link != nil:
+		return linkCardW
+	case vm.Album != nil:
+		return albumWidth
+	case vm.IsMedia && isVisualKind(vm.Media.Kind):
+		return inlinePhotoSide
+	}
+	return chatMaxWidth
+}
+
 func (r *threadRow) fillBody(msg client.Message, vm bubbleView, h bubbleHooks) {
 	// A caption reads like a text bubble's body, under the picture: links
 	// open, mentions resolve, the text copies.
@@ -444,16 +474,9 @@ func (r *threadRow) fillBody(msg client.Message, vm bubbleView, h bubbleHooks) {
 	// A link card fixes the bubble's width, so the text under it wraps to
 	// the card rather than reaching past it and pulling the card wide.
 	// A photo or clip does the same for its caption.
-	if vm.Link != nil {
-		r.bodyHost.SetMaximumSize(linkCardW)
-		r.bodyHost.SetTighteningThreshold(linkCardW)
-	} else if caption && isVisualKind(vm.Media.Kind) {
-		r.bodyHost.SetMaximumSize(inlinePhotoSide)
-		r.bodyHost.SetTighteningThreshold(inlinePhotoSide)
-	} else {
-		r.bodyHost.SetMaximumSize(chatMaxWidth)
-		r.bodyHost.SetTighteningThreshold(chatMaxWidth)
-	}
+	wide := contentWidthCap(vm)
+	r.bodyHost.SetMaximumSize(wide)
+	r.bodyHost.SetTighteningThreshold(wide)
 	setCSSClass(r.body, "chatot-bubble-caption", caption)
 	setCSSClass(r.body, "chatot-bubble-deleted", !caption && vm.Deleted)
 	setCSSClass(r.body, "chatot-emoji-only", !caption && vm.IsEmojiOnly)

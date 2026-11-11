@@ -58,9 +58,10 @@
     *gtk.Box .horizontal
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
-          *gtk.Box .chatot-bubble-quote.horizontal
-            *gtk.Box .vertical
-              *gtk.Label .chatot-bubble-quote-text text="hello there"
+          *adw.Clamp
+            *gtk.Box .chatot-bubble-quote.horizontal
+              *gtk.Box .vertical
+                *gtk.Label .chatot-bubble-quote-text text="hello there"
           *adw.Clamp
             *gtk.Label .chatot-bubble-text text="answering"
           *gtk.Box .horizontal
@@ -78,10 +79,11 @@
     *gtk.Box .horizontal
       *gtk.Overlay
         *gtk.Box .chatot-bubble.chatot-bubble-in.vertical
-          *gtk.Box .chatot-bubble-quote.horizontal
-            *gtk.Box .vertical
-              *gtk.Label .chatot-bubble-quote-name text="Alice"
-              *gtk.Label .chatot-bubble-quote-text text="what alice said"
+          *adw.Clamp
+            *gtk.Box .chatot-bubble-quote.horizontal
+              *gtk.Box .vertical
+                *gtk.Label .chatot-bubble-quote-name text="Alice"
+                *gtk.Label .chatot-bubble-quote-text text="what alice said"
           *adw.Clamp
             *gtk.Label .chatot-bubble-text text="answering alice"
           *gtk.Box .horizontal

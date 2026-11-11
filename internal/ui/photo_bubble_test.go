@@ -55,3 +55,38 @@ func TestPhotoBubble_MeasuresOneSize(t *testing.T) {
 		t.Errorf("caption not rendered: %q", r.body.Text())
 	}
 }
+
+// A reply with a photo is as wide as the photo: a long quoted message wraps
+// inside it rather than stretching the bubble across the thread, which left
+// the photo at one edge and the caption floating in the middle.
+func TestPhotoBubble_QuoteWrapsToThePhoto(t *testing.T) {
+	if !gtk.InitCheck() {
+		t.Skip("no display")
+	}
+	path := filepath.Join(t.TempDir(), "photo.png")
+	pb := gdkpixbuf.NewPixbuf(gdkpixbuf.ColorspaceRGB, false, 8, 600, 800)
+	pb.Fill(0xffffffff)
+	if err := pb.Savev(path, "png", nil, nil); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	tex := gdk.NewTextureForPixbuf(pb)
+	pictureTextures.put(path+"|"+strconv.Itoa(inlinePhotoSide*2), tex, textureBytes(tex))
+
+	quoted := strings.Repeat("In her uniform there is a small metal thing that looks a bit odd. ", 6)
+	msg := client.Message{ID: "p", FromMe: true, TS: time.Now().Unix(),
+		ReplyTo:    &client.MsgRef{MsgID: "q", Text: quoted},
+		Attachment: &client.Attachment{Kind: "image", MimeType: "image/png", LocalPath: path, Caption: "Just to reiterate, here is an image"}}
+	vm := bubbleVM(msg, nil, nil, time.Now())
+	if !vm.HasQuote {
+		t.Fatal("the reply has no quote to measure")
+	}
+	r := newThreadRow()
+	r.render(msg, vm, bubbleHooks{})
+
+	_, photo, _, _ := gtk.BaseWidget(r.content).Measure(gtk.OrientationHorizontal, -1)
+	_, bubble, _, _ := gtk.BaseWidget(r.bubble).Measure(gtk.OrientationHorizontal, -1)
+	// The bubble's own padding is all it may add to the photo.
+	if bubble > photo+40 {
+		t.Errorf("bubble is %dpx wide around a %dpx photo; the quote widened it", bubble, photo)
+	}
+}
