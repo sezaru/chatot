@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.18.13-beta" date="2026-11-14">
+      <description>
+        <p>Following a reply to one picture of an album lands on that picture: its tile is framed and the rest dimmed, a picture hidden behind "+N" comes forward, and a click on the album opens it.</p>
+      </description>
+    </release>
     <release version="0.18.12-beta" date="2026-11-11">
       <description>
         <p>A reply to a photo quotes the photo right away instead of showing "Unsupported message" for a few seconds.</p>
