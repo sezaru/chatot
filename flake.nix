@@ -2,7 +2,7 @@
   description = "chatot — GTK4 WhatsApp client (whatsmeow, in-process)";
 
   inputs = {
-    devenv.url = "github:cachix/devenv";
+    devenv.follows = "devkit/devenv";
 
     nixpkgs.url = "github:cachix/devenv-nixpkgs/rolling";
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
