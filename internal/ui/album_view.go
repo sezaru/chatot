@@ -18,12 +18,17 @@ import (
 // its picture once the file is cached, else the sender's preview under a
 // download disc. A click opens the viewer on that picture (every picture
 // of the run is a step of it) or fetches it; a right-click offers the
-// message menu for that one picture.
+// message menu for that one picture. While a picture is in focus (Focus),
+// its tile is ringed and a click on any tile opens it.
 func buildAlbumContent(alb *albumView, h bubbleHooks) gtk.Widgetter {
 	grid := gtk.NewBox(gtk.OrientationVertical, albumTileGap)
 	grid.AddCSSClass("chatot-album")
 	grid.SetOverflow(gtk.OverflowHidden)
 	grid.SetHAlign(gtk.AlignStart)
+	var spot *albumSpot
+	if alb.Focus != "" {
+		spot = &albumSpot{}
+	}
 	i := 0
 	for _, row := range albumRows(len(alb.Tiles)) {
 		line := gtk.NewBox(gtk.OrientationHorizontal, albumTileGap)
@@ -35,7 +40,12 @@ func buildAlbumContent(alb *albumView, h bubbleHooks) gtk.Widgetter {
 			if i == len(alb.Tiles)-1 {
 				more = alb.More
 			}
-			line.Append(newAlbumTile(alb.Msgs[i], alb.Tiles[i], size, more, h))
+			msg := alb.tileMsg(i)
+			t := newAlbumTile(msg, alb.Tiles[i], size, more, h)
+			if spot != nil {
+				t.spotlight(spot, msg.ID == alb.Focus)
+			}
+			line.Append(t.overlay)
 			i++
 		}
 		grid.Append(line)
@@ -57,9 +67,19 @@ type albumTileWidget struct {
 	// fetch is out.
 	disc *gtk.Label
 	busy bool
+	// count is the "+N" on the last tile, ring the focused tile's frame:
+	// both stay over a picture that lands later.
+	count *gtk.Label
+	ring  *gtk.Box
+	// spot is the grid's spotlight, nil when no picture is in focus.
+	spot *albumSpot
 }
 
-func newAlbumTile(msg client.Message, mv mediaView, size albumTile, more int, h bubbleHooks) gtk.Widgetter {
+// albumSpot is an album's spotlight: target is the tile of the picture in
+// focus, the one a click on any tile opens.
+type albumSpot struct{ target *albumTileWidget }
+
+func newAlbumTile(msg client.Message, mv mediaView, size albumTile, more int, h bubbleHooks) *albumTileWidget {
 	t := &albumTileWidget{overlay: gtk.NewOverlay(), msg: msg, mv: mv, w: size.W, h: size.H, hooks: h}
 	t.overlay.AddCSSClass("chatot-album-tile")
 	t.overlay.SetOverflow(gtk.OverflowHidden)
@@ -76,6 +96,7 @@ func newAlbumTile(msg client.Message, mv mediaView, size albumTile, more int, h 
 		count.AddCSSClass("chatot-album-more")
 		count.SetCanTarget(false)
 		t.overlay.AddOverlay(count)
+		t.count = count
 	}
 
 	click := gtk.NewGestureClick()
@@ -88,8 +109,43 @@ func newAlbumTile(msg client.Message, mv mediaView, size albumTile, more int, h 
 	t.overlay.AddController(right)
 	shotRegister(msg.ID, func(s *bubbleShot) {
 		s.tileMenu = func() { t.menu(float64(size.W)/2, float64(size.H)/2) }
+		s.tileClick = t.activate
 	})
-	return t.overlay
+	return t
+}
+
+// spotlight puts the tile under s: the focused one is ringed and its "+N"
+// (a picture brought up from behind it) fades for the while, every other
+// one dims. The animations in style.css run tileFocusDuration and end
+// where the plain grid is, so the refill that ends the focus is seamless.
+func (t *albumTileWidget) spotlight(s *albumSpot, focused bool) {
+	t.spot = s
+	if !focused {
+		t.overlay.AddCSSClass("chatot-album-tile-dim")
+		return
+	}
+	s.target = t
+	ring := gtk.NewBox(gtk.OrientationVertical, 0)
+	ring.AddCSSClass("chatot-album-tile-ring")
+	ring.SetCanTarget(false)
+	t.overlay.AddOverlay(ring)
+	t.ring = ring
+	if t.count != nil {
+		t.count.AddCSSClass("chatot-album-more-peek")
+	}
+}
+
+// raiseOverlays puts the count and the ring back on top after a picture
+// was laid over the tile.
+func (t *albumTileWidget) raiseOverlays() {
+	if t.count != nil {
+		t.overlay.RemoveOverlay(t.count)
+		t.overlay.AddOverlay(t.count)
+	}
+	if t.ring != nil {
+		t.overlay.RemoveOverlay(t.ring)
+		t.overlay.AddOverlay(t.ring)
+	}
 }
 
 // setBase puts the sender's preview under everything, or a hatch when the
@@ -164,8 +220,13 @@ func (t *albumTileWidget) showDownload() {
 }
 
 // activate is the tile's click: the viewer for a cached picture, a fetch
-// for one that is not.
+// for one that is not. While a picture is in focus, any tile's click is
+// that picture's.
 func (t *albumTileWidget) activate() {
+	if t.spot != nil && t.spot.target != nil && t.spot.target != t {
+		t.spot.target.activate()
+		return
+	}
 	if t.mv.HasLocal {
 		t.hooks.mediaOpener(t.msg)(t.mv.LocalPath)
 		return
@@ -200,6 +261,7 @@ func (t *albumTileWidget) download() {
 			t.overlay.RemoveOverlay(t.disc)
 			t.disc = nil
 			t.showLocal()
+			t.raiseOverlays()
 		})
 	}()
 }

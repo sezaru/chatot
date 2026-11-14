@@ -4921,6 +4921,51 @@ button.chatot-reactor-btn {
 	animation: chatot-row-flash 1.6s ease-out;
 }
 
+/* A jump to one picture of an album spotlights its tile instead: a white
+   frame over it (white reads on any picture and on either bubble), the
+   other tiles dimmed, and a "+N" it was hidden behind faded off it. The
+   rules hold that state, for when animations are off; the animations ease
+   in and back out over tileFocusDuration (conversation_search.go) and stay
+   at their end until the refill that ends the focus. The ring's radius is
+   the grid's, so it follows the clip at the grid's corners. */
+@keyframes chatot-album-tile-dim {
+	0% { opacity: 1; }
+	6% { opacity: 0.35; }
+	88% { opacity: 0.35; }
+	100% { opacity: 1; }
+}
+
+@keyframes chatot-album-tile-show {
+	0% { opacity: 0; }
+	6% { opacity: 1; }
+	88% { opacity: 1; }
+	100% { opacity: 0; }
+}
+
+@keyframes chatot-album-more-peek {
+	0% { opacity: 1; }
+	6% { opacity: 0; }
+	88% { opacity: 0; }
+	100% { opacity: 1; }
+}
+
+.chatot-album-tile-dim {
+	opacity: 0.35;
+	animation: chatot-album-tile-dim 5s ease-in-out forwards;
+}
+
+.chatot-album-tile-ring {
+	border: 3px solid white;
+	border-radius: 10px;
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+	animation: chatot-album-tile-show 5s ease-in-out forwards;
+}
+
+.chatot-album-more-peek {
+	opacity: 0;
+	animation: chatot-album-more-peek 5s ease-in-out forwards;
+}
+
 /* Link card: WhatsApp's preview of a pasted link, above the text. A wash
    like the quote's so it reads as part of the bubble; the picture is clipped
    to the card's top corners by the card's own overflow. */

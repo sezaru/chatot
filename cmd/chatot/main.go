@@ -1483,6 +1483,11 @@ func shotHook(state string, msgIdx int, d shotDeps) {
 		d.conversation.ShowHoverActions(msgIdx)
 	case "quotejump":
 		d.conversation.JumpToQuoted(msgIdx)
+	case "tilefocus":
+		// ARG=click:IDX also clicks the tile of the picture at IDX, inside
+		// the focus.
+		clickIdx, err := strconv.Atoi(strings.TrimPrefix(arg, "click:"))
+		d.conversation.FocusAlbumTile(msgIdx, clickIdx, err == nil)
 	case "miniplayer":
 		// Plays the voice note at MSG, then opens ARG (Ada by default) so
 		// the note carries on in the sidebar's mini-player.

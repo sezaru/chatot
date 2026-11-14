@@ -142,6 +142,38 @@ type albumView struct {
 	// More is the count the last tile's "+N" stands for: the pictures past
 	// the tiles, 0 when every one has a tile.
 	More int
+	// Focus is the picture a jump from a reply landed on: its tile is
+	// ringed, the others dimmed, and a click anywhere on the grid opens it
+	// (see ConversationView.focusTile). Peek is its index in Msgs when it
+	// is one of the pictures behind "+N", shown on the last tile meanwhile;
+	// 0 when it has a tile of its own.
+	Focus string
+	Peek  int
+}
+
+// tileMsg is the message tile i shows.
+func (v *albumView) tileMsg(i int) client.Message {
+	if v.Peek > 0 && i == len(v.Tiles)-1 {
+		return v.Msgs[v.Peek]
+	}
+	return v.Msgs[i]
+}
+
+// focus spotlights id when it is one of the run's pictures; one behind
+// "+N" takes the last tile's place, so the picture the reply was about is
+// on screen rather than under the count.
+func (v *albumView) focus(id string) {
+	for i, m := range v.Msgs {
+		if m.ID != id {
+			continue
+		}
+		v.Focus = id
+		if last := len(v.Tiles) - 1; i > last {
+			v.Peek = i
+			v.Tiles[last] = mediaVM(m)
+		}
+		return
+	}
 }
 
 // albumVM derives the album view for run (at least two members, head first).

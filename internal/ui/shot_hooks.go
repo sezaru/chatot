@@ -33,6 +33,8 @@ type bubbleShot struct {
 	// tileMenu opens the picture's own menu when it is a tile of an album
 	// (nil for any other bubble).
 	tileMenu func()
+	// tileClick is a primary click on that tile.
+	tileClick func()
 }
 
 var shotRegistry map[string]*bubbleShot
@@ -222,6 +224,27 @@ func (cv *ConversationView) PopupAlbumTileMenu(idx int) {
 	if s := cv.shotFor(idx); s != nil && s.tileMenu != nil {
 		s.tileMenu()
 	}
+}
+
+// FocusAlbumTile lands on the picture at idx the way a jump from a reply
+// quoting it does; with click it then clicks the tile of the picture at
+// clickIdx 1.5 s later, inside the focus.
+func (cv *ConversationView) FocusAlbumTile(idx, clickIdx int, click bool) {
+	m, ok := cv.MessageAt(idx)
+	if !ok {
+		return
+	}
+	cv.jumpToQuoted(m.ID)
+	if !click {
+		return
+	}
+	glib.TimeoutAdd(1500, func() bool {
+		if s := cv.shotFor(clickIdx); s != nil && s.tileClick != nil {
+			trace(1, "shot: clicking the tile of %d", clickIdx)
+			s.tileClick()
+		}
+		return false
+	})
 }
 
 // RetryLast presses Retry on the newest bubble when it is a failed send.

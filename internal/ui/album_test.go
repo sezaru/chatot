@@ -226,3 +226,28 @@ func TestAlbumJoins_TheirDeviceSuffixIsNotAnotherSender(t *testing.T) {
 		t.Error("another sender still breaks the run")
 	}
 }
+
+func TestAlbumFocus_PeeksAPictureBehindTheCount(t *testing.T) {
+	var run []client.Message
+	for i := 0; i < 6; i++ {
+		run = append(run, albumPhoto("p"+string(rune('0'+i)), "a", int64(1000+i)))
+	}
+	v := albumVM(run)
+	v.focus("p1")
+	if v.Focus != "p1" || v.Peek != 0 || v.tileMsg(3).ID != "p3" {
+		t.Errorf("tiled picture: focus=%q peek=%d last=%s", v.Focus, v.Peek, v.tileMsg(3).ID)
+	}
+	v = albumVM(run)
+	v.focus("p5")
+	if v.Focus != "p5" || v.Peek != 5 || v.tileMsg(3).ID != "p5" || v.Tiles[3].MsgID != "p5" {
+		t.Errorf("hidden picture: focus=%q peek=%d last=%s/%s", v.Focus, v.Peek, v.tileMsg(3).ID, v.Tiles[3].MsgID)
+	}
+	if v.More != 2 || v.tileMsg(0).ID != "p0" {
+		t.Errorf("the count and the other tiles moved: more=%d first=%s", v.More, v.tileMsg(0).ID)
+	}
+	v = albumVM(run)
+	v.focus("elsewhere")
+	if v.Focus != "" || v.Peek != 0 {
+		t.Errorf("a stranger's id focused: focus=%q peek=%d", v.Focus, v.Peek)
+	}
+}

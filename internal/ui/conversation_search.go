@@ -427,12 +427,40 @@ func (cv *ConversationView) jumpAndFlash(msgID, missing string) {
 		showToast(cv.toastOverlay, missing)
 		return
 	}
-	cv.flashID = msgID
 	trace(1, "jumpToQuoted %s -> row %d", msgID, cv.positionOf(msgID))
+	// A flash over a whole album does not say which picture it was: an
+	// open grid spotlights the one tile instead. A collapsed album has no
+	// tiles, so its bubble flashes.
+	if head, end := cv.albumSpan(cv.positionOf(msgID)); end > head && !foldFor(cv.mediaFoldOf(cv.msgs[head])) {
+		cv.focusTile(msgID)
+		return
+	}
+	cv.flashID = msgID
 	cv.refillRow(cv.positionOf(msgID))
 	glib.TimeoutAdd(uint(rowFlashDuration/time.Millisecond), func() bool {
 		if cv.flashID == msgID {
 			cv.flashID = ""
+			cv.refillRow(cv.positionOf(msgID))
+		}
+		return false
+	})
+}
+
+// tileFocusDuration is how long a picture in an album stays in focus after
+// a jump lands on it: ringed, the rest of the grid dimmed, and a click on
+// the grid opening it. Matches the chatot-album-tile-* animations in
+// style.css.
+const tileFocusDuration = 5 * time.Second
+
+// focusTile spotlights msgID, a picture in an open album, for
+// tileFocusDuration (albumView.focus): one hidden behind "+N" is shown on
+// that tile meanwhile.
+func (cv *ConversationView) focusTile(msgID string) {
+	cv.tileFocusID = msgID
+	cv.refillRow(cv.positionOf(msgID))
+	glib.TimeoutAdd(uint(tileFocusDuration/time.Millisecond), func() bool {
+		if cv.tileFocusID == msgID {
+			cv.tileFocusID = ""
 			cv.refillRow(cv.positionOf(msgID))
 		}
 		return false

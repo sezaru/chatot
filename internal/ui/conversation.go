@@ -465,6 +465,10 @@ type ConversationView struct {
 	// flashID is the message whose row is being flashed after a jump from
 	// a reply quote, so fillRow can tag it; cleared when the flash ends.
 	flashID string
+	// tileFocusID is the picture in an album a jump landed on, spotlit in
+	// its grid (albumView.Focus) rather than flashing the whole bubble;
+	// cleared when the focus ends. See focusTile.
+	tileFocusID string
 	// laidOut reports whether the thread has had a layout since Load
 	// (its scrollable height changed); pendingJump is the message a
 	// JumpTo asked for before that, run on the first one. See JumpTo.
@@ -940,6 +944,9 @@ func (cv *ConversationView) fillRow(box *gtk.Box, pos int) {
 	vm := bubbleVM(msg, prev, cv.byID, time.Now())
 	if end > start {
 		applyAlbum(&vm, cv.msgs[start:end+1])
+		if cv.tileFocusID != "" {
+			vm.Album.focus(cv.tileFocusID)
+		}
 	}
 	if cv.chatIsGroup && !msg.FromMe {
 		vm.Author = cv.senderName(msg.FromJID)
