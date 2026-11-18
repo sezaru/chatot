@@ -24,14 +24,24 @@ func recordArgs(outPath string) []string {
 		"-y",
 		"-f", "pulse", "-i", "default",
 		"-ac", "1",
-		// Level metering for the composer's trace: an RMS reading every
-		// 50 ms (2400 samples at 48 kHz), printed to stderr as
-		// "lavfi.astats.Overall.RMS_level=-23.4" lines (see parseLevelLine).
-		"-af", levelFilter,
+		// Timestamps are recounted from the samples themselves (see
+		// sampleClock), then level metering for the composer's trace: an
+		// RMS reading every 50 ms (2400 samples at 48 kHz), printed to
+		// stderr as "lavfi.astats.Overall.RMS_level=-23.4" lines (see
+		// parseLevelLine).
+		"-af", sampleClock + "," + levelFilter,
 		"-c:a", "libopus", "-application", "voip",
 		outPath,
 	}
 }
+
+// sampleClock restamps every audio frame from the number of samples before
+// it. ffmpeg's pulse input stamps frames with the wall clock, which drifts
+// from the sample count, and the ogg muxer turns those stamps into granule
+// positions: the file then starts at a negative time and claims fewer
+// samples per page than it holds. chatot's player shrugs that off, but
+// WhatsApp's apps refuse to play such a voice note.
+const sampleClock = "asetpts=N/SR/TB"
 
 // levelFilter is the ffmpeg audio filter chain that measures the input
 // while it is being encoded; the audio itself passes through unchanged.
@@ -79,6 +89,7 @@ func concatArgs(listPath, outPath string) []string {
 	return []string{
 		"-y",
 		"-f", "concat", "-safe", "0", "-i", listPath,
+		"-af", sampleClock,
 		"-c:a", "libopus", "-application", "voip",
 		outPath,
 	}

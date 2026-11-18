@@ -93,7 +93,7 @@ func TestConcatArgs(t *testing.T) {
 		t.Fatalf("concatArgs = %v", got)
 	}
 	joined := " " + join(got) + " "
-	for _, frag := range []string{" -f concat ", " -safe 0 ", " -i /tmp/list.txt ", " -c:a libopus "} {
+	for _, frag := range []string{" -f concat ", " -safe 0 ", " -i /tmp/list.txt ", " -af " + sampleClock + " ", " -c:a libopus "} {
 		if !contains(joined, frag) {
 			t.Errorf("concatArgs missing %q in %v", frag, got)
 		}
@@ -160,7 +160,9 @@ func TestRecordArgsMeter(t *testing.T) {
 	args := recordArgs("/tmp/x.ogg")
 	found := false
 	for i, a := range args {
-		if a == "-af" && i+1 < len(args) && args[i+1] == levelFilter {
+		// Restamped from the sample count first (WhatsApp rejects the
+		// wall-clock granules), then metered.
+		if a == "-af" && i+1 < len(args) && args[i+1] == sampleClock+","+levelFilter {
 			found = true
 		}
 	}
