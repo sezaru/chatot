@@ -83,6 +83,12 @@
   </recommends>
 
   <releases>
+    <release version="0.18.14-beta" date="2026-11-18">
+      <description>
+        <p>Voice notes recorded in chatot play in WhatsApp's apps; they used to open only in another chatot.</p>
+        <p>Preferences › Network has a Microphone setting for voice notes: the system default, or any microphone the computer has.</p>
+      </description>
+    </release>
     <release version="0.18.13-beta" date="2026-11-14">
       <description>
         <p>Following a reply to one picture of an album lands on that picture: its tile is framed and the rest dimmed, a picture hidden behind "+N" comes forward, and a click on the album opens it.</p>
