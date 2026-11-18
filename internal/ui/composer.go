@@ -1776,7 +1776,7 @@ func (c *Composer) toggleRecording() {
 		return
 	}
 
-	rec := &audio.Recorder{}
+	rec := &audio.Recorder{Source: Microphone}
 	if err := rec.Start(); err != nil {
 		log.Printf("chatot: start recording failed: %v", err)
 		return

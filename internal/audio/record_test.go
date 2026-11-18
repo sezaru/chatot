@@ -8,7 +8,7 @@ import (
 )
 
 func TestRecordArgs(t *testing.T) {
-	args := recordArgs("/tmp/out.ogg")
+	args := recordArgs("/tmp/out.ogg", "")
 
 	want := map[string]bool{"libopus": false, "mono": false}
 	for i, a := range args {
@@ -30,6 +30,16 @@ func TestRecordArgs(t *testing.T) {
 	last := args[len(args)-1]
 	if last != "/tmp/out.ogg" || !strings.HasSuffix(last, ".ogg") {
 		t.Errorf("recordArgs last element = %q, want ogg output path last", last)
+	}
+}
+
+func TestRecordArgsSource(t *testing.T) {
+	// No pick records from the system default; a pick names its source.
+	for source, want := range map[string]string{"": "default", "alsa_input.usb-mic": "alsa_input.usb-mic"} {
+		joined := " " + join(recordArgs("/tmp/out.ogg", source)) + " "
+		if !contains(joined, " -f pulse -i "+want+" ") {
+			t.Errorf("recordArgs(source %q) = %s, want -i %s", source, joined, want)
+		}
 	}
 }
 
@@ -157,7 +167,7 @@ func TestParseLevelLine(t *testing.T) {
 }
 
 func TestRecordArgsMeter(t *testing.T) {
-	args := recordArgs("/tmp/x.ogg")
+	args := recordArgs("/tmp/x.ogg", "")
 	found := false
 	for i, a := range args {
 		// Restamped from the sample count first (WhatsApp rejects the

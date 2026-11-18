@@ -1,5 +1,6 @@
-// Package audio captures voice notes from the default microphone via an
-// ffmpeg subprocess, encoding straight to mono ogg/opus.
+// Package audio captures voice notes from a PulseAudio source (the system
+// default unless one is picked) via an ffmpeg subprocess, encoding straight
+// to mono ogg/opus.
 package audio
 
 import (
@@ -16,13 +17,16 @@ import (
 	"time"
 )
 
-// recordArgs builds the ffmpeg invocation for capturing the default
-// PulseAudio source to a mono opus/ogg file at outPath. Pure so it's
-// unit-testable without spawning ffmpeg.
-func recordArgs(outPath string) []string {
+// recordArgs builds the ffmpeg invocation for capturing the PulseAudio
+// source named source ("" for the system default) to a mono opus/ogg file
+// at outPath. Pure so it's unit-testable without spawning ffmpeg.
+func recordArgs(outPath, source string) []string {
+	if source == "" {
+		source = "default"
+	}
 	return []string{
 		"-y",
-		"-f", "pulse", "-i", "default",
+		"-f", "pulse", "-i", source,
 		"-ac", "1",
 		// Timestamps are recounted from the samples themselves (see
 		// sampleClock), then level metering for the composer's trace: an
@@ -128,6 +132,11 @@ func durationSeconds(start, end time.Time) int {
 // (or the ALSA buffer burst) a SIGSTOP'd capture would. Stop joins the
 // segments.
 type Recorder struct {
+	// Source is the PulseAudio source to record from (Source.Name), or ""
+	// for the system default. A source that has gone away records from the
+	// default too: the sound server falls back by itself.
+	Source string
+
 	cmd     *exec.Cmd
 	outPath string // the segment being captured, "" while paused
 	start   time.Time
@@ -157,7 +166,7 @@ func (r *Recorder) readLevels(stderr io.Reader) {
 	}
 }
 
-// Start launches ffmpeg capturing the default mic to a temp ogg file.
+// Start launches ffmpeg capturing r.Source to a temp ogg file.
 // Returns an error if ffmpeg isn't on PATH or fails to start (e.g. no
 // PulseAudio source) rather than panicking.
 func (r *Recorder) Start() error {
@@ -172,7 +181,7 @@ func (r *Recorder) startSegment() error {
 	outPath := f.Name()
 	_ = f.Close()
 
-	cmd := exec.Command("ffmpeg", recordArgs(outPath)...)
+	cmd := exec.Command("ffmpeg", recordArgs(outPath, r.Source)...)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		os.Remove(outPath)

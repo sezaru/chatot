@@ -656,6 +656,9 @@ func prefNetwork(dialog *cardDialog, s *settings.Settings, onChange func(setting
 			onChange(*s)
 		})
 	media.Add(collapse)
+	voice := newSettingsCard()
+	voice.Add(microphoneRow(s, onChange))
+
 	// A missing model is fetched at once (asked first: it is a large
 	// download) when automatic transcripts are switched on, so the next
 	// voice note does not sit untranscribed with nothing to say why.
@@ -743,6 +746,7 @@ func prefNetwork(dialog *cardDialog, s *settings.Settings, onChange func(setting
 	return prefPage(
 		newSettingsGroup("PROXY", proxy),
 		newSettingsGroup("MEDIA", media),
+		newSettingsGroup("VOICE NOTES", voice),
 		newSettingsGroup("TRANSCRIPTS", transcripts),
 		newSettingsGroup("GIFS", gifs),
 		newSettingsGroup("ACCOUNTS", accounts),

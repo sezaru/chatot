@@ -1111,6 +1111,7 @@ func applySettings(s settings.Settings) {
 	ui.TranscriptsExpanded = s.TranscriptsExpanded
 	ui.CollapseMedia = s.CollapseMedia
 	ui.TranscribeModel = s.TranscribeModel
+	ui.Microphone = s.Microphone
 	ui.GIFService = s.GIFService
 	ui.AccountColors = s.AccountColors
 	ui.GIFAPIKey = s.GIFAPIKey

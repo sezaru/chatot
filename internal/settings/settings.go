@@ -91,6 +91,9 @@ type Settings struct {
 	// "turbo". Each is downloaded once, the first time it is needed, and
 	// switching keeps the other one on disk.
 	TranscribeModel string `json:"transcribeModel"`
+	// Microphone is the PulseAudio source voice notes are recorded from
+	// (audio.Source.Name), or "" for the system default.
+	Microphone string `json:"microphone"`
 	// VerboseLogging turns on whatsmeow's info and debug lines in the log.
 	VerboseLogging bool `json:"verboseLogging"`
 	// VoiceSpeed is the tempo every voice note and audio plays at: 1, 1.5
