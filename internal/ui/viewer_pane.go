@@ -1160,9 +1160,7 @@ func (v *AttachmentViewer) pictureScroller() gtk.Widgetter {
 	motion.ConnectMotion(func(x, y float64) { px, py = x, y })
 	scroller.AddController(motion)
 	wheel.ConnectScroll(func(_, dy float64) bool {
-		// A wheel notch is dy = ±1; a touchpad streams fractions of that,
-		// so the zoom follows the finger instead of jumping a step.
-		v.zoomAt(scroller, math.Pow(wheelZoomPerNotch, -dy), px, py)
+		v.zoomAt(scroller, scrollZoomFactor(wheel.Unit(), dy), px, py)
 		return true
 	})
 	scroller.AddController(wheel)
@@ -1215,9 +1213,25 @@ func (v *AttachmentViewer) pictureScroller() gtk.Widgetter {
 }
 
 // wheelZoomPerNotch is the zoom change of one wheel notch: fine enough that
-// a few notches feel continuous, and a touchpad's fractional deltas finer
-// still.
+// a few notches feel continuous. A high-resolution wheel's fractional
+// deltas zoom by the matching fraction.
 const wheelZoomPerNotch = 1.12
+
+// touchpadZoomPerPixel is the zoom change per pixel of two-finger scrolling
+// (Loupe's rate). A touchpad reports pixels, not notches: taken as notches,
+// one ordinary swipe of a hundred pixels or so zoomed ~1.12^100, straight
+// to the limit.
+const touchpadZoomPerPixel = 1.005
+
+// scrollZoomFactor is the zoom a scroll event of dy applies: up (dy < 0)
+// zooms in. Exponential, so two half steps make one whole.
+func scrollZoomFactor(unit gdk.ScrollUnit, dy float64) float64 {
+	per := wheelZoomPerNotch
+	if unit == gdk.ScrollUnitSurface {
+		per = touchpadZoomPerPixel
+	}
+	return math.Pow(per, -dy)
+}
 
 // viewerPicMargin is the margin around the picture in its scroller: the
 // scrolled content is the picture plus twice this on each axis.

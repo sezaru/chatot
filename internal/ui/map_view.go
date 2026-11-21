@@ -96,20 +96,49 @@ func newMapView(tiles *geo.TileCache) *mapView {
 	})
 	m.AddController(drag)
 
-	scroll := gtk.NewEventControllerScroll(gtk.EventControllerScrollVertical | gtk.EventControllerScrollDiscrete)
+	// Not GTK's discrete mode: that steps every 10 touchpad pixels, so an
+	// ordinary swipe jumped the map ten zoom levels.
+	scroll := gtk.NewEventControllerScroll(gtk.EventControllerScrollVertical)
+	var steps scrollSteps
+	scroll.ConnectScrollBegin(func() { steps.reset() })
 	scroll.ConnectScroll(func(_, dy float64) bool {
 		if !m.interactive {
 			return false
 		}
-		if dy < 0 {
-			m.ZoomBy(1)
-		} else if dy > 0 {
-			m.ZoomBy(-1)
+		per := 1.0
+		if scroll.Unit() == gdk.ScrollUnitSurface {
+			per = mapTouchpadPixelsPerLevel
+		}
+		if n := steps.add(dy / per); n != 0 {
+			m.ZoomBy(-n) // up (dy < 0) zooms in
 		}
 		return true
 	})
 	m.AddController(scroll)
 	return m
+}
+
+// mapTouchpadPixelsPerLevel is how far two fingers scroll to change the
+// map one zoom level; a wheel changes one level per notch.
+const mapTouchpadPixelsPerLevel = 100.0
+
+// scrollSteps turns scroll deltas, in notches, into whole steps: fractions
+// (a high-resolution wheel, a touchpad) add up until they make one.
+// Turning back drops what had built up the other way.
+type scrollSteps struct{ acc float64 }
+
+func (s *scrollSteps) reset() { s.acc = 0 }
+
+// add takes d notches and returns how many whole steps they complete,
+// negative for upward scrolling.
+func (s *scrollSteps) add(d float64) int {
+	if d*s.acc < 0 {
+		s.acc = 0
+	}
+	s.acc += d
+	n := int(s.acc) // truncates toward zero
+	s.acc -= float64(n)
+	return n
 }
 
 // SetCentre moves the viewport.
