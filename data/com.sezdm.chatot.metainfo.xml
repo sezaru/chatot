@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.18.15-beta" date="2026-11-21">
+      <description>
+        <p>Scrolling with two fingers on a touchpad zooms a picture or the location map gently instead of leaping several steps at once.</p>
+      </description>
+    </release>
     <release version="0.18.14-beta" date="2026-11-18">
       <description>
         <p>Voice notes recorded in chatot play in WhatsApp's apps; they used to open only in another chatot.</p>
