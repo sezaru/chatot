@@ -2,6 +2,7 @@ package store
 
 import (
 	"reflect"
+	"strconv"
 	"testing"
 )
 
@@ -107,5 +108,67 @@ func TestSetMediaThumbnail(t *testing.T) {
 	must(t, err)
 	if len(msgs) != 1 || msgs[0].Attachment == nil || string(msgs[0].Attachment.Thumbnail) != "\x02\x03" {
 		t.Fatalf("got %+v", msgs)
+	}
+}
+
+func TestChatAttachments(t *testing.T) {
+	s := newTestStore(t)
+	const jid = "chat@s.whatsapp.net"
+	add := func(id string, ts int64, kind string, viewOnce bool) {
+		t.Helper()
+		must(t, s.UpsertMessage(MessageRow{ChatJID: jid, MsgID: id, TS: ts}))
+		if kind != "" {
+			must(t, s.UpsertMedia(MediaRow{ChatJID: jid, MsgID: id, Kind: kind, MimeType: "x/y", Caption: "cap " + id, ViewOnce: viewOnce}))
+		}
+	}
+	add("p1", 100, "image", false)
+	add("v1", 200, "video", false)
+	add("d1", 300, "document", false)
+	add("once", 400, "image", true)
+	add("gone", 500, "image", false)
+	add("text", 600, "", false)
+	add("p2", 700, "image", false)
+	must(t, s.MarkMessageDeleted(jid, "gone", 500))
+	must(t, s.UpsertReaction(ReactionRow{ChatJID: jid, MsgID: "p2", ReactorJID: "x@s.whatsapp.net", Emoji: "👍", TS: 701}))
+
+	got, err := s.ChatAttachments(jid, "image", "video")
+	if err != nil {
+		t.Fatalf("ChatAttachments: %v", err)
+	}
+	var ids []string
+	for _, m := range got {
+		ids = append(ids, m.ID)
+	}
+	// Oldest first; no document, view-once, deleted or plain text message.
+	if want := []string{"p1", "v1", "p2"}; !reflect.DeepEqual(ids, want) {
+		t.Fatalf("ChatAttachments ids = %v, want %v", ids, want)
+	}
+	if got[0].Attachment == nil || got[0].Attachment.Caption != "cap p1" {
+		t.Errorf("p1 attachment = %+v, want its caption", got[0].Attachment)
+	}
+	if len(got[2].Reactions["👍"]) != 1 {
+		t.Errorf("p2 reactions = %v, want one 👍", got[2].Reactions)
+	}
+
+	docs, err := s.ChatAttachments(jid, "document")
+	if err != nil || len(docs) != 1 || docs[0].ID != "d1" {
+		t.Errorf("ChatAttachments(document) = %v, %v; want d1", docs, err)
+	}
+}
+
+func TestReactionsForManyIDs(t *testing.T) {
+	s := newTestStore(t)
+	const jid = "chat@s.whatsapp.net"
+	ids := make([]string, 2*reactionBatch+7)
+	for i := range ids {
+		ids[i] = "m" + strconv.Itoa(i)
+	}
+	must(t, s.UpsertReaction(ReactionRow{ChatJID: jid, MsgID: ids[len(ids)-1], ReactorJID: "x@s.whatsapp.net", Emoji: "🎉", TS: 1}))
+	got, err := s.reactionsFor(jid, ids)
+	if err != nil {
+		t.Fatalf("reactionsFor: %v", err)
+	}
+	if len(got[ids[len(ids)-1]]["🎉"]) != 1 {
+		t.Errorf("reactions in the last batch = %v, want one 🎉", got)
 	}
 }

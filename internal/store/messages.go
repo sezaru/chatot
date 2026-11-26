@@ -377,6 +377,21 @@ func (s *Store) reactionsFor(chatJID string, msgIDs []string) (map[string]map[st
 	if len(msgIDs) == 0 {
 		return nil, nil
 	}
+	out := make(map[string]map[string][]string)
+	// A media page can ask for thousands of messages at once, past
+	// SQLite's limit on bound parameters, so the ids go in batches.
+	for start := 0; start < len(msgIDs); start += reactionBatch {
+		if err := s.reactionsInto(out, chatJID, msgIDs[start:min(start+reactionBatch, len(msgIDs))]); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// reactionBatch is how many message ids one reactions query binds.
+const reactionBatch = 500
+
+func (s *Store) reactionsInto(out map[string]map[string][]string, chatJID string, msgIDs []string) error {
 	placeholders := strings.TrimRight(strings.Repeat("?,", len(msgIDs)), ",")
 	args := make([]any, 0, len(msgIDs)+1)
 	args = append(args, chatJID)
@@ -389,22 +404,21 @@ func (s *Store) reactionsFor(chatJID string, msgIDs []string) (map[string]map[st
 		ORDER BY ts ASC
 	`, args...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
 
-	out := make(map[string]map[string][]string)
 	for rows.Next() {
 		var msgID, reactor, emoji string
 		if err := rows.Scan(&msgID, &reactor, &emoji); err != nil {
-			return nil, err
+			return err
 		}
 		if out[msgID] == nil {
 			out[msgID] = make(map[string][]string)
 		}
 		out[msgID][emoji] = append(out[msgID][emoji], reactor)
 	}
-	return out, rows.Err()
+	return rows.Err()
 }
 
 // StarredMessages returns starred messages across every chat, newest first,

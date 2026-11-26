@@ -146,3 +146,27 @@ func URLHost(rawURL string) string {
 	}
 	return u.Host
 }
+
+// ChatAttachments returns jid's messages carrying an attachment of one of
+// kinds ("image", "video", "document", …), oldest first, with the same
+// enrichment as Messages. Deleted and view-once messages are left out, as
+// on the media page they feed.
+func (s *Store) ChatAttachments(jid string, kinds ...string) ([]Message, error) {
+	if len(kinds) == 0 {
+		return nil, nil
+	}
+	args := make([]any, 0, len(kinds)+1)
+	args = append(args, jid)
+	for _, k := range kinds {
+		args = append(args, k)
+	}
+	rows, err := s.db.Query(messageSelect+`
+		WHERE m.chat_jid = ? AND md.kind IN (`+strings.TrimRight(strings.Repeat("?,", len(kinds)), ",")+`)
+			AND m.deleted = 0 AND COALESCE(md.view_once, 0) = 0
+		ORDER BY m.ts DESC, m.rowid DESC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	return s.pageFromRows(jid, rows)
+}

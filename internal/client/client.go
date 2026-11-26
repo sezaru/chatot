@@ -865,6 +865,11 @@ type Client interface {
 	ChatMedia(jid string) ([]MediaItem, error)
 	// ChatDocs returns jid's document attachments, newest first.
 	ChatDocs(jid string) ([]DocItem, error)
+	// ChatAttachments returns jid's messages with an attachment of one of
+	// kinds ("image", "video", "document", …), oldest first and fully
+	// populated, so the media page can hand them to the attachment viewer.
+	// Deleted and view-once messages are left out.
+	ChatAttachments(jid string, kinds ...string) ([]Message, error)
 	// ChatLinks returns jid's messages containing a URL, newest first, one
 	// link per message (the first URL found).
 	ChatLinks(jid string) ([]LinkItem, error)

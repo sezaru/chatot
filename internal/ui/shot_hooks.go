@@ -985,3 +985,16 @@ func (cv *ConversationView) LoadOlderPages(n int) {
 		cv.prependOlder(older)
 	}
 }
+
+// OpenNewest opens the n-th newest picture or clip on the Media tab in the
+// viewer, as clicking its tile does, and logs how long that took on the
+// main loop. No-op before the tab has loaded.
+func (p *MediaPage) OpenNewest(n int) {
+	i := len(p.media) - 1 - n
+	if i < 0 || i >= len(p.media) || p.onOpen == nil {
+		return
+	}
+	start := time.Now()
+	p.onOpen(p.jid, p.media, p.media[i].ID)
+	log.Printf("chatot: shot: opened item %d of %d in the viewer in %v", i+1, len(p.media), time.Since(start))
+}

@@ -802,6 +802,20 @@ func (w *Whatsmeow) ChatDocs(jid string) ([]DocItem, error) {
 	return out, nil
 }
 
+// ChatAttachments reads jid's messages with an attachment of one of kinds
+// from the local store, oldest first.
+func (w *Whatsmeow) ChatAttachments(jid string, kinds ...string) ([]Message, error) {
+	rows, err := w.store.ChatAttachments(jid, kinds...)
+	if err != nil {
+		return nil, fmt.Errorf("chatot/client: chat attachments: %w", err)
+	}
+	out := make([]Message, len(rows))
+	for i, m := range rows {
+		out[i] = messageFromStore(m, w.ownJID())
+	}
+	return out, nil
+}
+
 // ChatLinks reads jid's messages containing a URL from the local store.
 func (w *Whatsmeow) ChatLinks(jid string) ([]LinkItem, error) {
 	rows, err := w.store.ChatLinks(jid)

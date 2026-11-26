@@ -1988,6 +1988,18 @@ button.chatot-pane-row:active {
 	opacity: 0.45;
 }
 
+/* The Media tab is a list view of tile rows on the pane's own surface:
+   no row chrome, hover or focus ring of its own. */
+.chatot-mediagrid-list {
+	background: none;
+}
+
+.chatot-mediagrid-list > row {
+	padding: 0;
+	background: none;
+	outline-width: 0;
+}
+
 /* Media grid tiles: square, 9px radius, with the date burned into the
    bottom-left corner over a shadow so it reads on any thumbnail. */
 .chatot-mediagrid-tile {
@@ -2003,7 +2015,8 @@ button.chatot-pane-row:active {
 	opacity: 0.55;
 }
 
-/* Day section caption above each grid. */
+/* Day caption over a day's first row of tiles. The row above leaves its
+   8px under it, so a later day sits 14px below the tiles before it. */
 .chatot-mediagrid-day {
 	font-size: 11.5px;
 	font-weight: bold;
@@ -2011,15 +2024,16 @@ button.chatot-pane-row:active {
 	margin: 6px 0 8px 0;
 }
 
-.chatot-mediagrid-day:not(:first-child) {
-	margin-top: 14px;
-}
-
 .chatot-mediagrid-date {
 	font-size: 10.5px;
 	color: #ffffff;
 	margin: 0 0 6px 7px;
 	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+/* A clip's length, in the opposite corner. */
+.chatot-mediagrid-length {
+	margin: 0 7px 6px 0;
 }
 
 /* Empty states for both panes: a tinted disc over two lines of explanation. */

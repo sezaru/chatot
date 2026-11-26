@@ -323,18 +323,42 @@ func activate(app *adw.Application, c client.Client) {
 
 	// The attachment viewer is a page of the same pane (the mockup's
 	// pane === 'viewer'): every picture, clip, voice note, file and location
-	// in the open chat navigates as one sequence there.
-	viewer := ui.NewAttachmentViewer(c, showChat)
+	// in the open chat navigates as one sequence there. Opened from the
+	// media page, it pages through that tab's attachments instead, and its
+	// ← goes back there.
+	viewerFromMedia := false
+	viewer := ui.NewAttachmentViewer(c, func() {
+		if viewerFromMedia {
+			viewerFromMedia = false
+			rightPane.SetVisibleChildName("media")
+			return
+		}
+		showChat()
+	})
 	rightPane.AddNamed(viewer, "viewer")
 	conversation.OnOpenViewerRequested(func(msg client.Message) {
+		viewerFromMedia = false
 		viewer.Open(chatByJIDOrEmpty(c, msg.ChatJID), conversation.Messages(), msg.ID)
 		rightPane.SetVisibleChildName("viewer")
 	})
+	mediaPage.OnOpen(func(jid string, items []client.Message, msgID string) {
+		viewerFromMedia = true
+		viewer.Open(chatByJIDOrEmpty(c, jid), items, msgID)
+		rightPane.SetVisibleChildName("viewer")
+	})
 	viewer.OnMenu(conversation.MessageMenuItems)
-	viewer.OnReply(composer.StartReply)
-	viewer.OnDownloaded(conversation.SetLocalPath)
+	// A reply is written in the thread, wherever the viewer was opened from.
+	viewer.OnReply(func(msg client.Message) {
+		viewerFromMedia = false
+		showChat()
+		composer.StartReply(msg)
+	})
+	viewer.OnDownloaded(func(msgID, path string) {
+		conversation.SetLocalPath(msgID, path)
+		mediaPage.SetLocalPath(msgID, path)
+	})
 	// A message deleted (for me or for everyone, here or on the phone)
-	// leaves the viewer too, not just the thread.
+	// leaves the viewer and the media page too, not just the thread.
 	viewerEvents := c.Events()
 	go func() {
 		for ev := range viewerEvents {
@@ -342,7 +366,10 @@ func activate(app *adw.Application, c client.Client) {
 				continue
 			}
 			r := *ev.Revoke
-			glib.IdleAdd(func() { viewer.Remove(r.ChatJID, r.MsgID) })
+			glib.IdleAdd(func() {
+				viewer.Remove(r.ChatJID, r.MsgID)
+				mediaPage.Remove(r.ChatJID, r.MsgID)
+			})
 		}
 	}()
 
@@ -980,12 +1007,17 @@ func activate(app *adw.Application, c client.Client) {
 	ui.WatchMainLoop()
 
 	// Dev/screenshot hooks: CHATOT_SHOT_CHAT=<jid> opens that chat on launch;
-	// CHATOT_SHOT_MEDIA=1 then opens its Media/Links/Docs page. Both no-op unset.
+	// CHATOT_SHOT_MEDIA=1 then opens its Media/Links/Docs page, and
+	// CHATOT_SHOT_MEDIA_OPEN=<n> its n-th newest tile in the viewer a
+	// few seconds later. All no-op unset.
 	if jid := os.Getenv("CHATOT_SHOT_CHAT"); jid != "" {
 		openChat(jid)
 		if os.Getenv("CHATOT_SHOT_MEDIA") == "1" {
 			mediaPage.Load(jid)
 			rightPane.SetVisibleChildName("media")
+			if n, err := strconv.Atoi(os.Getenv("CHATOT_SHOT_MEDIA_OPEN")); err == nil {
+				glib.TimeoutAdd(3000, func() bool { mediaPage.OpenNewest(n); return false })
+			}
 		}
 	}
 	// openByPhone opens the chat with an E.164 number, prefilling text: a

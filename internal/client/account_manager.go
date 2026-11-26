@@ -916,6 +916,10 @@ func (m *AccountManager) ChatDocs(jid string) ([]DocItem, error) {
 	return m.active().ChatDocs(jid)
 }
 
+func (m *AccountManager) ChatAttachments(jid string, kinds ...string) ([]Message, error) {
+	return m.active().ChatAttachments(jid, kinds...)
+}
+
 func (m *AccountManager) ChatLinks(jid string) ([]LinkItem, error) {
 	return m.active().ChatLinks(jid)
 }

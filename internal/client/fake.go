@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1282,6 +1283,26 @@ func (f *Fake) ChatDocs(jid string) ([]DocItem, error) {
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].TS > out[j].TS })
+	return out, nil
+}
+
+// ChatAttachments returns jid's seeded messages with an attachment of one
+// of kinds, oldest first.
+func (f *Fake) ChatAttachments(jid string, kinds ...string) ([]Message, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []Message
+	for _, m := range f.messages[jid] {
+		if m.Deleted || m.Attachment == nil || m.Attachment.ViewOnce || !slices.Contains(kinds, m.Attachment.Kind) {
+			continue
+		}
+		// A copy: DownloadThumbnail writes to the fake's own attachments
+		// from another goroutine.
+		a := *m.Attachment
+		m.Attachment = &a
+		out = append(out, m)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].TS < out[j].TS })
 	return out, nil
 }
 

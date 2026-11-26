@@ -138,8 +138,8 @@ type AttachmentViewer struct {
 	tiles []viewerTile
 	// stripStop stops the thumbnail decodes for a strip since rebuilt.
 	stripStop *atomic.Bool
-	// thumbs holds the strip faces decoded from local files (pictures
-	// with no embedded thumbnail), by path, for the chat on show.
+	// thumbs holds the decoded strip faces, by stripFaceSource key, for
+	// the chat on show.
 	thumbs map[string]*gdkpixbuf.Pixbuf
 	// replyBtn and forwardBtn are the header's icon actions that go when
 	// the window is collapsed (Star is starBtn); see SetCollapsed.
@@ -1024,7 +1024,7 @@ func (v *AttachmentViewer) download(m client.Message, ui *fetchUI) {
 			if shown {
 				v.show(v.idx)
 			}
-			v.refreshStrip()
+			v.refreshTile(i)
 		})
 	}()
 }
@@ -1946,9 +1946,9 @@ func (v *AttachmentViewer) refreshStrip() {
 	v.tiles = v.tiles[:0]
 	var pending []int
 	for i, m := range v.items {
-		tile, wantsFile := v.stripTile(i, m)
+		tile, wantsFace := v.stripTile(i, m)
 		v.tiles = append(v.tiles, tile)
-		if wantsFile {
+		if wantsFace {
 			pending = append(pending, i)
 		}
 		v.strip.Append(tile.btn)
@@ -1959,7 +1959,25 @@ func (v *AttachmentViewer) refreshStrip() {
 	if v.idx < len(v.tiles) {
 		v.scrollStripTo(v.tiles[v.idx].btn)
 	}
-	v.loadFileThumbs(pending)
+	v.loadStripFaces(pending)
+}
+
+// refreshTile rebuilds item i's strip tile in place (its download landed)
+// instead of the whole strip, which opened from the media page holds every
+// picture in the chat.
+func (v *AttachmentViewer) refreshTile(i int) {
+	if len(v.tiles) != len(v.items) || i < 0 || i >= len(v.tiles) {
+		v.refreshStrip()
+		return
+	}
+	old := v.tiles[i].btn
+	tile, wantsFace := v.stripTile(i, v.items[i])
+	v.strip.InsertChildAfter(tile.btn, old)
+	v.strip.Remove(old)
+	v.tiles[i] = tile
+	if wantsFace {
+		v.loadStripFaces([]int{i})
+	}
 }
 
 // selectTile moves the selected mark to v.idx and brings that tile into
@@ -1978,59 +1996,98 @@ func (v *AttachmentViewer) selectTile() {
 	v.scrollStripTo(v.tiles[v.idx].btn)
 }
 
-// loadFileThumbs gives the tiles at idxs (pictures with no embedded
-// thumbnail) a face decoded from the file itself. That decode reads the
-// whole picture, and a chat of screenshots has dozens of multi-megabyte
-// PNGs, so it runs off the main loop, nearest the selected tile first.
-func (v *AttachmentViewer) loadFileThumbs(idxs []int) {
+// stripFaceSource is where tile m's face comes from: its embedded
+// thumbnail, and the downloaded picture, tried when there is no thumbnail
+// or it does not decode. key names the decode in v.thumbs; "" when there
+// is nothing to decode.
+func stripFaceSource(m client.Message) (key string, data []byte, path string) {
+	if m.Attachment == nil {
+		return "", nil, ""
+	}
+	if m.Attachment.Kind == "image" {
+		path, _ = hasLocal(m)
+	}
+	data = m.Attachment.Thumbnail
+	switch {
+	case len(data) > 0:
+		return "msg:" + m.ID, data, path
+	case path != "":
+		return path, nil, path
+	}
+	return "", nil, ""
+}
+
+// loadStripFaces gives the tiles at idxs (pictures and clips) a face,
+// decoded from the embedded thumbnail or the file itself. Opened from the
+// media page the strip holds every picture in the chat, a chat of
+// screenshots has dozens of multi-megabyte PNGs, and even the thumbnails
+// add up to tens of megabytes, so it all runs off the main loop, nearest
+// the selected tile first, scaled down to the tile.
+func (v *AttachmentViewer) loadStripFaces(idxs []int) {
 	if v.thumbs == nil {
 		v.thumbs = map[string]*gdkpixbuf.Pixbuf{}
 	}
-	var paths []string
-	var todo []int
+	type job struct {
+		i    int
+		key  string
+		data []byte
+		path string
+	}
+	var todo []job
 	for _, i := range idxs {
-		path, _ := hasLocal(v.items[i])
-		if pb, ok := v.thumbs[path]; ok {
+		key, data, path := stripFaceSource(v.items[i])
+		if key == "" {
+			continue
+		}
+		if pb, ok := v.thumbs[key]; ok {
 			v.tiles[i].overlay.SetChild(coverThumb(pb, viewerThumb, viewerThumb, 0, false))
 			continue
 		}
-		todo = append(todo, i)
+		todo = append(todo, job{i, key, data, path})
 	}
 	if len(todo) == 0 {
 		return
 	}
 	at := v.idx
-	slices.SortStableFunc(todo, func(a, b int) int { return absInt(a-at) - absInt(b-at) })
-	for _, i := range todo {
-		path, _ := hasLocal(v.items[i])
-		paths = append(paths, path)
+	slices.SortStableFunc(todo, func(a, b job) int { return absInt(a.i-at) - absInt(b.i-at) })
+	// One flag per strip: a tile refreshed on its own decodes under it
+	// too, so rebuilding the strip stops every decode left for the old one.
+	stop := v.stripStop
+	if stop == nil {
+		stop = new(atomic.Bool)
+		v.stripStop = stop
 	}
-	stop := new(atomic.Bool)
-	v.stripStop = stop
 	go func() {
-		for n, path := range paths {
+		for _, j := range todo {
 			if stop.Load() {
 				return
 			}
-			pb, err := gdkpixbufAtScale(path, viewerThumb*2)
+			var pb *gdkpixbuf.Pixbuf
+			var err error
+			if j.data != nil {
+				pb, err = smallPixbufFromBytes(j.data, viewerThumb*2)
+			}
+			if pb == nil && j.path != "" {
+				if pb, err = gdkpixbufAtScale(j.path, viewerThumb*2); err == nil {
+					pb = pb.ApplyEmbeddedOrientation()
+				}
+			}
 			if err != nil {
-				log.Printf("chatot: viewer strip thumb for %s: %v", filepath.Base(path), err)
+				log.Printf("chatot: viewer strip thumb for %s: %v", filepath.Base(j.key), err)
 				continue
 			}
-			pb = pb.ApplyEmbeddedOrientation()
-			i := todo[n]
 			glib.IdleAdd(func() {
 				if stop.Load() {
 					return
 				}
-				v.thumbs[path] = pb
-				v.tiles[i].overlay.SetChild(coverThumb(pb, viewerThumb, viewerThumb, 0, false))
+				v.thumbs[j.key] = pb
+				v.tiles[j.i].overlay.SetChild(coverThumb(pb, viewerThumb, viewerThumb, 0, false))
 			})
 		}
 	}()
 }
 
-// stopFileThumbs abandons the decodes loadFileThumbs has left to run.
+// stopFileThumbs abandons the decodes loadStripFaces has left to run.
 func (v *AttachmentViewer) stopFileThumbs() {
 	if v.stripStop != nil {
 		v.stripStop.Store(true)
@@ -2061,7 +2118,7 @@ func (v *AttachmentViewer) scrollStripTo(tile gtk.Widgetter) {
 // stripTile is one 52px filmstrip tile: a cover thumbnail for a picture or
 // clip, a coloured extension tile for a document, a glyph otherwise, with
 // a small badge (⬇ pending, the clip's length, GIF).
-func (v *AttachmentViewer) stripTile(i int, m client.Message) (tile viewerTile, wantsFile bool) {
+func (v *AttachmentViewer) stripTile(i int, m client.Message) (tile viewerTile, wantsFace bool) {
 	kind := viewerKind(m)
 	overlay := gtk.NewOverlay()
 	overlay.AddCSSClass("chatot-viewer-thumb")
@@ -2096,20 +2153,13 @@ func (v *AttachmentViewer) stripTile(i int, m client.Message) (tile viewerTile, 
 		lbl.AddCSSClass("chatot-viewer-thumb-chip")
 		face = lbl
 	default:
-		if len(m.Attachment.Thumbnail) > 0 {
-			if pb, err := pixbufFromBytes(m.Attachment.Thumbnail); err == nil {
-				face = coverThumb(pb, viewerThumb, viewerThumb, 0, false)
-			}
-		}
-		if face == nil && m.Attachment.Kind == "image" {
-			_, wantsFile = hasLocal(m)
-		}
-		if face == nil {
-			lbl := gtk.NewLabel(viewerGlyph(kind))
-			lbl.AddCSSClass("chatot-viewer-thumb-glyph")
-			lbl.AddCSSClass("chatot-media-hatch")
-			face = lbl
-		}
+		// The glyph holds the place of a face loadStripFaces decodes later.
+		key, _, _ := stripFaceSource(m)
+		wantsFace = key != ""
+		lbl := gtk.NewLabel(viewerGlyph(kind))
+		lbl.AddCSSClass("chatot-viewer-thumb-glyph")
+		lbl.AddCSSClass("chatot-media-hatch")
+		face = lbl
 	}
 	// No expand flags on the face: GTK propagates them up to the strip,
 	// which would then claim the stage's height.
@@ -2143,7 +2193,7 @@ func (v *AttachmentViewer) stripTile(i int, m client.Message) (tile viewerTile, 
 	btn.SetTooltipText(viewerTitle(m, kind) + " · " + time.Unix(m.TS, 0).Format("15:04"))
 	idx := i
 	btn.ConnectClicked(func() { v.show(idx) })
-	return viewerTile{btn: btn, overlay: overlay}, wantsFile
+	return viewerTile{btn: btn, overlay: overlay}, wantsFace
 }
 
 func localOK(m client.Message) bool {
