@@ -83,6 +83,11 @@
   </recommends>
 
   <releases>
+    <release version="0.18.16-beta" date="2026-11-26">
+      <description>
+        <p>The media page of a chat with thousands of pictures opens at once, shows a preview for far more of them, and opens a picture, clip or document in the built-in viewer instead of another program.</p>
+      </description>
+    </release>
     <release version="0.18.15-beta" date="2026-11-21">
       <description>
         <p>Scrolling with two fingers on a touchpad zooms a picture or the location map gently instead of leaping several steps at once.</p>
